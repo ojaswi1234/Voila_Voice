@@ -4,6 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:web_socket_channel/web_socket_channel.dart';
 
+// Backend URL from build-time configuration
+const backendUrl = String.fromEnvironment('BACKEND_URL', defaultValue: 'wss://voila-voice.onrender.com/ws');
+
 void main() {
   runApp(const VoiceCliApp());
 }
@@ -52,12 +55,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
 
   void _connectToBackend() {
     try {
-      // Use Render backend URL when deployed, localhost for development
-      final backendUrl = String.fromEnvironment(
-        'BACKEND_URL', 
-        defaultValue: 'ws://10.0.2.2:8090/ws' // Android emulator localhost
-      );
-      
+      // Use backend URL from build-time configuration
       channel = WebSocketChannel.connect(
         Uri.parse(backendUrl),
       );
@@ -154,11 +152,6 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
 
   Future<void> _checkBackendHealth() async {
     try {
-      final backendUrl = String.fromEnvironment(
-        'BACKEND_URL', 
-        defaultValue: 'ws://10.0.2.2:8090/ws'
-      );
-      
       // Convert WebSocket URL to HTTP URL for health check
       final httpUrl = backendUrl.replace('ws://', 'http://').replace('wss://', 'https://').replace('/ws', '/health');
       
