@@ -3,6 +3,9 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:web_socket_channel/web_socket_channel.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'device_identity.dart';
+import 'package:uuid/uuid.dart';
 
 // Backend URL from build-time configuration
 var backendUrl = String.fromEnvironment('BACKEND_URL', defaultValue: 'wss://voila-voice.onrender.com/ws');
@@ -18,10 +21,24 @@ class VoiceCliApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Voice CLI',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF6750A4),
+          brightness: Brightness.light,
+        ),
         useMaterial3: true,
+        textTheme: GoogleFonts.interTextTheme(),
       ),
+      darkTheme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF6750A4),
+          brightness: Brightness.dark,
+        ),
+        useMaterial3: true,
+        textTheme: GoogleFonts.interTextTheme(ThemeData.dark().textTheme),
+      ),
+      themeMode: ThemeMode.system,
       home: const VoiceHomePage(),
     );
   }
@@ -37,6 +54,7 @@ class VoiceHomePage extends StatefulWidget {
 class _VoiceHomePageState extends State<VoiceHomePage> {
   late WebSocketChannel channel;
   final TextEditingController _controller = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
   final List<Map<String, dynamic>> _messages = [];
   String _activeDevice = 'laptop-1';
   bool _isConnected = false;
@@ -45,17 +63,27 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   String _backendStatus = 'Checking...';
   Timer? _healthCheckTimer;
   Map<String, dynamic> _devices = {};
+  String? _currentDeviceId;
+  String? _currentDeviceName;
+  String _sessionId = '';
 
   @override
   void initState() {
     super.initState();
+    _initializeDeviceIdentity();
     _connectToBackend();
     _startHealthChecks();
   }
 
+  Future<void> _initializeDeviceIdentity() async {
+    _currentDeviceId = await DeviceIdentity.getDeviceId();
+    _currentDeviceName = await DeviceIdentity.getDeviceName();
+    _sessionId = const Uuid().v4();
+    setState(() {});
+  }
+
   void _connectToBackend() {
     try {
-      // Use backend URL from build-time configuration
       channel = WebSocketChannel.connect(
         Uri.parse(backendUrl),
       );
@@ -64,11 +92,9 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
         setState(() {
           _isConnected = true;
           
-          // Try to parse as JSON for enhanced responses
           try {
             final jsonResponse = jsonDecode(message);
             
-            // Handle device list response
             if (jsonResponse is List) {
               _devices = {};
               for (var device in jsonResponse) {
@@ -104,8 +130,8 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
             });
           }
           
-          // Trigger health check after successful connection
           _checkBackendHealth();
+          _scrollToBottom();
         });
       }, onError: (error) {
         setState(() {
@@ -126,7 +152,6 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
           });
         });
         
-        // Auto-reconnect after delay
         Future.delayed(const Duration(seconds: 5), () {
           _connectToBackend();
         });
@@ -144,18 +169,15 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   }
 
   void _startHealthChecks() {
-    // Check health every 30 seconds
     _healthCheckTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       _checkBackendHealth();
     });
     
-    // Initial check
     _checkBackendHealth();
   }
 
   Future<void> _checkBackendHealth() async {
     try {
-      // Convert WebSocket URL to HTTP URL for health check
       String httpUrl = backendUrl;
       httpUrl = httpUrl.replaceAll('ws://', 'http://');
       httpUrl = httpUrl.replaceAll('wss://', 'https://');
@@ -166,7 +188,6 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
       if (response.statusCode == 200) {
         final healthData = jsonDecode(response.body);
         
-        // Check if local agents are connected
         final deviceCount = healthData['devices'] is int 
             ? healthData['devices'] as int 
             : (healthData['devices'] as List?)?.length ?? 0;
@@ -192,20 +213,40 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
     }
   }
 
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
   @override
   void dispose() {
     _healthCheckTimer?.cancel();
     channel.sink.close();
     _controller.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
-  void _sendMessage() {
+  void _sendMessage() async {
     if (_controller.text.isNotEmpty) {
+      final deviceInfo = await DeviceIdentity.getDeviceInfo();
       final message = {
         'type': 'command',
         'device_id': _activeDevice,
+        'client_device_id': _currentDeviceId,
+        'client_device_name': _currentDeviceName,
+        'session_id': _sessionId,
         'command': _controller.text,
+        'idempotency_key': const Uuid().v4(),
+        'client_timestamp': DateTime.now().millisecondsSinceEpoch,
+        ...deviceInfo,
       };
       
       channel.sink.add(jsonEncode(message));
@@ -217,13 +258,17 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
         });
       });
       _controller.clear();
+      _scrollToBottom();
     }
   }
 
-  void _switchDevice(String deviceId) {
+  void _switchDevice(String deviceId) async {
     final message = {
       'type': 'switch_device',
       'device_id': deviceId,
+      'client_device_id': _currentDeviceId,
+      'client_device_name': _currentDeviceName,
+      'session_id': _sessionId,
     };
     
     channel.sink.add(jsonEncode(message));
@@ -237,91 +282,194 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
     });
   }
 
-  void _getDevices() {
+  void _getDevices() async {
     final message = {
       'type': 'get_devices',
+      'client_device_id': _currentDeviceId,
+      'client_device_name': _currentDeviceName,
+      'session_id': _sessionId,
     };
     
     channel.sink.add(jsonEncode(message));
-  }
-
-  void _lockDevice(String deviceId) {
-    final message = {
-      'type': 'lock_device',
-      'device_id': deviceId,
-    };
-    
-    channel.sink.add(jsonEncode(message));
-    setState(() {
-      _messages.add({
-        'type': 'system',
-        'content': 'Attempting to lock device: $deviceId',
-        'timestamp': DateTime.now().toString(),
-      });
-    });
-  }
-
-  void _unlockDevice(String deviceId) {
-    final message = {
-      'type': 'unlock_device',
-      'device_id': deviceId,
-    };
-    
-    channel.sink.add(jsonEncode(message));
-    setState(() {
-      _messages.add({
-        'type': 'system',
-        'content': 'Attempting to unlock device: $deviceId',
-        'timestamp': DateTime.now().toString(),
-      });
-    });
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        title: Row(
+      backgroundColor: colorScheme.surface,
+      body: SafeArea(
+        child: Column(
           children: [
-            const Text('Voice CLI Remote'),
-            const Spacer(),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: _isConnected ? Colors.green : Colors.red,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                _isConnected ? 'Connected' : 'Disconnected',
-                style: const TextStyle(color: Colors.white, fontSize: 12),
-              ),
+            _buildHeader(colorScheme),
+            _buildConnectionFlow(colorScheme),
+            _buildDeviceSelector(colorScheme),
+            Expanded(
+              child: _buildMessagesList(colorScheme),
             ),
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: _isHealthy ? Colors.blue : Colors.orange,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                _backendStatus,
-                style: const TextStyle(color: Colors.white, fontSize: 10),
-              ),
-            ),
+            _buildInputArea(colorScheme),
           ],
         ),
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            // Device switcher
-            Row(
+    );
+  }
+
+  Widget _buildHeader(ColorScheme colorScheme) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        boxShadow: [
+          BoxShadow(
+            color: colorScheme.shadow.withOpacity(0.1),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.graphic_eq,
+            color: colorScheme.primary,
+            size: 28,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Active Device: ', style: TextStyle(fontWeight: FontWeight.bold)),
-                DropdownButton<String>(
+                Text(
+                  'Voice CLI',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w600,
+                    color: colorScheme.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    _buildStatusChip(
+                      _isConnected ? 'Connected' : 'Disconnected',
+                      _isConnected ? Colors.green : Colors.red,
+                    ),
+                    const SizedBox(width: 8),
+                    _buildStatusChip(
+                      _backendStatus,
+                      _isHealthy ? Colors.blue : Colors.orange,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatusChip(String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 12,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildConnectionFlow(ColorScheme colorScheme) {
+    return Container(
+      margin: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _buildFlowIndicator('Mobile', true, colorScheme),
+              const Icon(Icons.arrow_forward, size: 16, color: Colors.grey),
+              _buildFlowIndicator('Backend', _isHealthy, colorScheme),
+              const Icon(Icons.arrow_forward, size: 16, color: Colors.grey),
+              _buildFlowIndicator('Local Agent', _localAgentConnected, colorScheme),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Mobile → Backend → Local Agent → Backend → Mobile',
+            style: TextStyle(
+              fontSize: 11,
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFlowIndicator(String label, bool isActive, ColorScheme colorScheme) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: isActive ? colorScheme.primary : colorScheme.surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: isActive ? colorScheme.primary : colorScheme.outline,
+          width: 1,
+        ),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: isActive ? colorScheme.onPrimary : colorScheme.onSurfaceVariant,
+          fontSize: 12,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDeviceSelector(ColorScheme colorScheme) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        children: [
+          Text(
+            'Active Device:',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: colorScheme.onSurface,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: colorScheme.outline),
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
                   value: _activeDevice,
+                  isExpanded: true,
                   items: _devices.entries.map((entry) {
                     final device = entry.value;
                     final isLocked = device['locked'] == true;
@@ -329,10 +477,10 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                       value: entry.key,
                       child: Row(
                         children: [
-                          Text(device['name']),
+                          Text(device['name'] ?? entry.key),
                           if (isLocked) ...[
                             const SizedBox(width: 8),
-                            Icon(Icons.lock, size: 16, color: Colors.red),
+                            Icon(Icons.lock, size: 16, color: colorScheme.error),
                           ],
                         ],
                       ),
@@ -344,174 +492,136 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                     }
                   },
                 ),
-                const Spacer(),
-                ElevatedButton(
-                  onPressed: _getDevices,
-                  child: const Text('Refresh Devices'),
-                ),
-                ElevatedButton(
-                  onPressed: _checkBackendHealth,
-                  child: const Text('Check Health'),
-                ),
-                ElevatedButton(
-                  onPressed: () => _lockDevice(_activeDevice),
-                  child: const Text('Lock Device'),
-                ),
-                ElevatedButton(
-                  onPressed: () => _unlockDevice(_activeDevice),
-                  child: const Text('Unlock Device'),
-                ),
-              ],
-            ),
-            const Divider(),
-            
-            // Connection flow indicator
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.grey[100],
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Column(
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      _buildFlowIndicator('Mobile', true), // Mobile is always running
-                      const Icon(Icons.arrow_forward, size: 16),
-                      _buildFlowIndicator('Backend (Render)', _isHealthy),
-                      const Icon(Icons.arrow_forward, size: 16),
-                      _buildFlowIndicator('Local Agent', _localAgentConnected),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Complete Chain: Mobile → Backend → Local Agent → Backend → Mobile',
-                    style: const TextStyle(fontSize: 10, color: Colors.grey),
-                  ),
-                ],
               ),
             ),
-            const Divider(),
-            
-            // Messages list
-            Expanded(
-              child: ListView.builder(
-                itemCount: _messages.length,
-                itemBuilder: (context, index) {
-                  final message = _messages[index];
-                  final type = message['type'] as String?;
-                  final content = message['content'] as String?;
-                  
-                  if (type == null || content == null) {
-                    return const SizedBox.shrink();
-                  }
-                  
-                  Color? bgColor;
-                  IconData? icon;
-                  
-                  switch (type) {
-                    case 'user':
-                      bgColor = Colors.blue[100];
-                      icon = Icons.person;
-                      break;
-                    case 'response':
-                      bgColor = Colors.green[100];
-                      icon = Icons.check_circle;
-                      break;
-                    case 'error':
-                      bgColor = Colors.red[100];
-                      icon = Icons.error;
-                      break;
-                    case 'system':
-                      bgColor = Colors.grey[200];
-                      icon = Icons.info;
-                      break;
-                    default:
-                      bgColor = Colors.white;
-                      icon = Icons.message;
-                  }
-                  
-                  return Card(
-                    color: bgColor,
-                    margin: const EdgeInsets.symmetric(vertical: 4),
-                    child: ListTile(
-                      leading: Icon(icon),
-                      title: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            content,
-                            style: const TextStyle(fontSize: 14),
-                          ),
-                          if (message.containsKey('summary') && message['summary'] != null)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 8.0),
-                              child: Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: Colors.amber[50],
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: Colors.amber),
-                                ),
-                                child: Row(
-                                  children: [
-                                    const Icon(Icons.auto_awesome, size: 16, color: Colors.amber),
-                                    const SizedBox(width: 4),
-                                    Expanded(
-                                      child: Text(
-                                        message['summary']?.toString() ?? '',
-                                        style: const TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.amber,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                      subtitle: Text(
-                        message['timestamp']?.toString() ?? '',
-                        style: const TextStyle(fontSize: 10, color: Colors.grey),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-            const Divider(),
-            
-            // Input field
+          ),
+          const SizedBox(width: 8),
+          IconButton(
+            onPressed: _getDevices,
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Refresh Devices',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMessagesList(ColorScheme colorScheme) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: ListView.builder(
+        controller: _scrollController,
+        itemCount: _messages.length,
+        itemBuilder: (context, index) {
+          final message = _messages[index];
+          final type = message['type'] as String?;
+          final content = message['content'] as String?;
+          
+          if (type == null || content == null) {
+            return const SizedBox.shrink();
+          }
+          
+          return _buildMessageCard(message, colorScheme);
+        },
+      ),
+    );
+  }
+
+  Widget _buildMessageCard(Map<String, dynamic> message, ColorScheme colorScheme) {
+    final type = message['type'] as String;
+    final content = message['content'] as String;
+    
+    Color? bgColor;
+    IconData? icon;
+    
+    switch (type) {
+      case 'user':
+        bgColor = colorScheme.primaryContainer;
+        icon = Icons.person;
+        break;
+      case 'response':
+        bgColor = colorScheme.tertiaryContainer;
+        icon = Icons.check_circle;
+        break;
+      case 'error':
+        bgColor = colorScheme.errorContainer;
+        icon = Icons.error;
+        break;
+      case 'system':
+        bgColor = colorScheme.surfaceContainer;
+        icon = Icons.info;
+        break;
+      default:
+        bgColor = colorScheme.surface;
+        icon = Icons.message;
+    }
+    
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      color: bgColor,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
             Row(
               children: [
+                Icon(icon, size: 18, color: colorScheme.onSurfaceVariant),
+                const SizedBox(width: 8),
                 Expanded(
-                  child: TextField(
-                    controller: _controller,
-                    decoration: InputDecoration(
-                      hintText: 'Enter command (e.g., "start the local development server")',
-                      border: const OutlineInputBorder(),
-                      suffixIcon: IconButton(
-                        icon: const Icon(Icons.mic),
-                        onPressed: () {
-                          // TODO: Implement speech-to-text
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Speech-to-text coming soon!')),
-                          );
-                        },
-                      ),
+                  child: Text(
+                    content,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: colorScheme.onSurface,
                     ),
                   ),
                 ),
-                const SizedBox(width: 8),
-                ElevatedButton(
-                  onPressed: _sendMessage,
-                  child: const Text('Send'),
-                ),
               ],
+            ),
+            if (message.containsKey('summary') && message['summary'] != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: colorScheme.secondaryContainer,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.auto_awesome,
+                        size: 16,
+                        color: colorScheme.onSecondaryContainer,
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          message['summary']?.toString() ?? '',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: colorScheme.onSecondaryContainer,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            const SizedBox(height: 4),
+            Text(
+              message['timestamp']?.toString() ?? '',
+              style: TextStyle(
+                fontSize: 10,
+                color: colorScheme.onSurfaceVariant,
+              ),
             ),
           ],
         ),
@@ -519,16 +629,56 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
     );
   }
 
-  Widget _buildFlowIndicator(String label, bool isActive) {
+  Widget _buildInputArea(ColorScheme colorScheme) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: isActive ? Colors.green : Colors.grey,
-        borderRadius: BorderRadius.circular(12),
+        color: colorScheme.surface,
+        boxShadow: [
+          BoxShadow(
+            color: colorScheme.shadow.withOpacity(0.1),
+            blurRadius: 4,
+            offset: const Offset(0, -2),
+          ),
+        ],
       ),
-      child: Text(
-        label,
-        style: const TextStyle(color: Colors.white, fontSize: 10),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _controller,
+              decoration: InputDecoration(
+                hintText: 'Enter command...',
+                hintStyle: TextStyle(color: colorScheme.onSurfaceVariant),
+                filled: true,
+                fillColor: colorScheme.surfaceContainerLow,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(24),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 12,
+                ),
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.mic),
+                  onPressed: () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Speech-to-text coming soon!')),
+                    );
+                  },
+                ),
+              ),
+              onSubmitted: (_) => _sendMessage(),
+            ),
+          ),
+          const SizedBox(width: 12),
+          FloatingActionButton(
+            onPressed: _sendMessage,
+            backgroundColor: colorScheme.primary,
+            child: Icon(Icons.send, color: colorScheme.onPrimary),
+          ),
+        ],
       ),
     );
   }

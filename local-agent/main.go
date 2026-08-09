@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -122,8 +124,9 @@ type ConnectionData struct {
 	BackendURL  string `json:"backend_url"`
 	DeviceID    string `json:"device_id"`
 	DeviceName  string `json:"device_name"`
-	Passphrase  string `json:"passphrase"`
-	Connected   bool   `json:"connected"`
+	Passphrase     string `json:"passphrase"`
+	SecurityPhrase string `json:"security_phrase"`
+	Connected      bool   `json:"connected"`
 	LastConnected string `json:"last_connected"`
 }
 
@@ -131,7 +134,7 @@ type ConnectionData struct {
 type model struct {
 	state          string // "setup", "connected", "menu", "loading"
 	connectionData ConnectionData
-	inputStep      int // 0: backend, 1: device name, 2: passphrase
+	inputStep      int // 0: backend, 1: device name, 2: passphrase, 3: security phrase
 	currentInput   string
 	selectedOption int
 	messages       []string
@@ -251,12 +254,18 @@ func (m model) handleEnter() (model, tea.Cmd) {
 			m.currentInput = ""
 		case 1:
 			m.connectionData.DeviceName = m.currentInput
+			// Generate device ID from device name and random UUID
+			if m.connectionData.DeviceID == "" {
+				m.connectionData.DeviceID = "device-" + generateUUID()
+			}
 			m.inputStep = 2
 			m.currentInput = ""
 		case 2:
 			m.connectionData.Passphrase = m.currentInput
 			m.inputStep = 3
 			m.currentInput = ""
+		case 3:
+			m.connectionData.SecurityPhrase = m.currentInput
 			m.isLoading = true
 			return m, m.testConnection()
 		}
@@ -371,6 +380,22 @@ func (m model) setupView() string {
 		content.WriteString(inputStyle.Render(strings.Repeat("*", len(m.currentInput)) + "_"))
 		content.WriteString("\n\n")
 		content.WriteString(subtitleStyle.Render("Enter your secure passphrase"))
+	case 3:
+		content.WriteString("Backend URL: ")
+		content.WriteString(successStyle.Render(m.connectionData.BackendURL))
+		content.WriteString("\n\n")
+		content.WriteString("Device Name: ")
+		content.WriteString(successStyle.Render(m.connectionData.DeviceName))
+		content.WriteString("\n\n")
+		content.WriteString("Passphrase: ")
+		content.WriteString(successStyle.Render(strings.Repeat("*", len(m.connectionData.Passphrase))))
+		content.WriteString("\n\n")
+		content.WriteString("Security Phrase: ")
+		content.WriteString(inputStyle.Render(m.currentInput + "_"))
+		content.WriteString("\n\n")
+		content.WriteString(subtitleStyle.Render("Enter phrase to verify your identity"))
+		content.WriteString("\n")
+		content.WriteString(subtitleStyle.Render("This phrase will be required for new sessions"))
 	}
 
 	if m.isLoading {
@@ -621,13 +646,23 @@ func getExecutableDir() string {
 	return filepath.Dir(exe)
 }
 
+func generateUUID() string {
+	b := make([]byte, 16)
+	_, err := rand.Read(b)
+	if err != nil {
+		log.Printf("Error generating UUID: %v", err)
+		return "fallback-" + fmt.Sprintf("%d", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(b)[:8]
+}
+
 // Main
 func main() {
 	// Try to load existing connection
 	data, err := loadConnectionData()
-	if err == nil && data.Connected {
+	if err == nil && data.Connected && data.SecurityPhrase != "" {
 		log.Printf("Auto-connecting with backend: %s", data.BackendURL)
-		// Auto-connect if connection exists
+		// Auto-connect if connection exists and security phrase is set
 		initialModel := model{
 			state:          "connected",
 			connectionData: data,
@@ -643,7 +678,7 @@ func main() {
 		}
 		return
 	} else {
-		log.Printf("Setup required. Error: %v, Connected: %v", err, data.Connected)
+		log.Printf("Setup required. Error: %v, Connected: %v, SecurityPhrase: %v", err, data.Connected, data.SecurityPhrase != "")
 	}
 
 	// New setup

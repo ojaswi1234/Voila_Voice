@@ -41,6 +41,7 @@ mobile-agent/web/
 mobile-agent/windows/
 mobile-agent/test/
 mobile-agent/lib/*.backup
+mobile-agent/assets/fonts/*.ttf
 
 # IDE
 .vscode/
