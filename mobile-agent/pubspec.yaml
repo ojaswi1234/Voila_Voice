@@ -9,8 +9,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  web_socket_channel: ^2.4.0
-  speech_to_text: ^6.6.0
+  web_socket_channel: ^3.0.3
+  speech_to_text: ^7.2.0
   permission_handler: ^11.0.0
   http: ^1.2.0
 

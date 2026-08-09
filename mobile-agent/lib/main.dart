@@ -72,7 +72,10 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
             if (jsonResponse is List) {
               _devices = {};
               for (var device in jsonResponse) {
-                _devices[device['id']] = device;
+                final deviceId = device['id'];
+                if (deviceId != null) {
+                  _devices[deviceId] = device;
+                }
               }
               _messages.add({
                 'type': 'system',
@@ -164,7 +167,9 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
         final healthData = jsonDecode(response.body);
         
         // Check if local agents are connected
-        final deviceCount = healthData['devices'] as int;
+        final deviceCount = healthData['devices'] is int 
+            ? healthData['devices'] as int 
+            : (healthData['devices'] as List?)?.length ?? 0;
         _localAgentConnected = deviceCount > 0;
         
         setState(() {
@@ -395,8 +400,12 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                 itemCount: _messages.length,
                 itemBuilder: (context, index) {
                   final message = _messages[index];
-                  final type = message['type'] as String;
-                  final content = message['content'] as String;
+                  final type = message['type'] as String?;
+                  final content = message['content'] as String?;
+                  
+                  if (type == null || content == null) {
+                    return const SizedBox.shrink();
+                  }
                   
                   Color? bgColor;
                   IconData? icon;
@@ -451,7 +460,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                                     const SizedBox(width: 4),
                                     Expanded(
                                       child: Text(
-                                        message['summary'] as String,
+                                        message['summary']?.toString() ?? '',
                                         style: const TextStyle(
                                           fontSize: 12,
                                           fontWeight: FontWeight.bold,
@@ -466,7 +475,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                         ],
                       ),
                       subtitle: Text(
-                        message['timestamp'] as String,
+                        message['timestamp']?.toString() ?? '',
                         style: const TextStyle(fontSize: 10, color: Colors.grey),
                       ),
                     ),
