@@ -3,8 +3,8 @@ services:
     name: voice-cli-backend
     runtime: go
     plan: free
-    buildCommand: cd backend && go build -o main main.go
-    startCommand: cd backend && ./main
+    buildCommand: go build -o app main.go
+    startCommand: ./app
     envVars:
       - key: PORT
         value: 10000
