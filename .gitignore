@@ -34,6 +34,12 @@ mobile-agent/pubspec.lock
 mobile-agent/android/.gradle/
 mobile-agent/android/app/build/
 mobile-agent/android/local.properties
+mobile-agent/ios/
+mobile-agent/linux/
+mobile-agent/macos/
+mobile-agent/web/
+mobile-agent/windows/
+mobile-agent/test/
 
 # IDE
 .vscode/

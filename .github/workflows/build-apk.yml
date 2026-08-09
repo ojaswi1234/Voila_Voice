@@ -20,6 +20,14 @@ jobs:
         channel: 'stable'
         cache: true
         
+    - name: Create Flutter project structure
+      run: |
+        # Create proper Flutter project structure
+        cd mobile-agent
+        flutter create --org com.voicecli --project-name voice_cli_temp .
+        # Restore our custom lib files
+        git checkout lib/main.dart -- lib/
+        
     - name: Install dependencies
       working-directory: ./mobile-agent
       run: flutter pub get
