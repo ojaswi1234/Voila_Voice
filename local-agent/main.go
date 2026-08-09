@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -141,7 +142,6 @@ type model struct {
 }
 
 // Messages
-type inputMsg string
 type connectionResultMsg struct {
 	success bool
 	message string
@@ -183,13 +183,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(m.currentInput) > 0 {
 				m.currentInput = m.currentInput[:len(m.currentInput)-1]
 			}
+		case tea.KeyCtrlV:
+			// Handle clipboard paste
+			if m.state == "setup" {
+				// Try to get clipboard content
+				cmd := exec.Command("powershell", "-Command", "Get-Clipboard")
+				output, err := cmd.Output()
+				if err == nil {
+					pastedText := strings.TrimSpace(string(output))
+					m.currentInput += pastedText
+				}
+			}
 		default:
-			if m.state == "setup" && len(msg.String()) == 1 {
+			if m.state == "setup" && len(msg.String()) >= 1 {
 				m.currentInput += msg.String()
 			}
 		}
-	case inputMsg:
-		m.currentInput = string(msg)
 	case connectionResultMsg:
 		m.isLoading = false
 		if msg.success {
@@ -232,7 +241,12 @@ func (m model) handleEnter() (model, tea.Cmd) {
 	if m.state == "setup" {
 		switch m.inputStep {
 		case 0:
-			m.connectionData.BackendURL = m.currentInput
+			// Use hardcoded URL if input is empty, otherwise use user input
+			if m.currentInput == "" {
+				m.connectionData.BackendURL = "https://voila-voice.onrender.com" // Default hardcoded URL
+			} else {
+				m.connectionData.BackendURL = m.currentInput
+			}
 			m.inputStep = 1
 			m.currentInput = ""
 		case 1:
@@ -328,13 +342,16 @@ func (m model) setupView() string {
 	content.WriteString(separatorStyle.Render(separatorLine))
 	content.WriteString("\n\n")
 	content.WriteString(subtitleStyle.Render("Enter your connection details:\n\n"))
+	content.WriteString(subtitleStyle.Render("💡 Tip: Use Ctrl+V to paste from clipboard\n\n"))
 
 	switch m.inputStep {
 	case 0:
 		content.WriteString("Backend URL: ")
 		content.WriteString(inputStyle.Render(m.currentInput + "_"))
 		content.WriteString("\n\n")
-		content.WriteString(subtitleStyle.Render("Example: http://localhost:8090 or https://your-backend.onrender.com"))
+		content.WriteString(subtitleStyle.Render("Press Enter for default: https://voila-voice.onrender.com"))
+		content.WriteString("\n")
+		content.WriteString(subtitleStyle.Render("Or paste custom URL with Ctrl+V"))
 	case 1:
 		content.WriteString("Backend URL: ")
 		content.WriteString(successStyle.Render(m.connectionData.BackendURL))
@@ -554,7 +571,7 @@ func executeCommand(command string) (string, error) {
 
 // Save/Load connection data
 func saveConnectionData(data ConnectionData) error {
-	file, err := os.Create("connection.json")
+	file, err := os.Create("connection_data.json")
 	if err != nil {
 		return err
 	}
@@ -564,7 +581,7 @@ func saveConnectionData(data ConnectionData) error {
 }
 
 func loadConnectionData() (ConnectionData, error) {
-	file, err := os.Open("connection.json")
+	file, err := os.Open("connection_data.json")
 	if err != nil {
 		return ConnectionData{}, err
 	}
@@ -582,7 +599,7 @@ func setupAutoStart() error {
 	if runtime.GOOS == "windows" {
 		script = fmt.Sprintf(`@echo off
 cd /d "%s"
-antigravity.exe
+antigravity
 `, getExecutableDir())
 		os.WriteFile("start_agent.bat", []byte(script), 0644)
 	} else {
@@ -601,7 +618,7 @@ func getExecutableDir() string {
 	if err != nil {
 		return "."
 	}
-	return exe[:len(exe)-len("/antigravity")]
+	return filepath.Dir(exe)
 }
 
 // Main
@@ -609,6 +626,7 @@ func main() {
 	// Try to load existing connection
 	data, err := loadConnectionData()
 	if err == nil && data.Connected {
+		log.Printf("Auto-connecting with backend: %s", data.BackendURL)
 		// Auto-connect if connection exists
 		initialModel := model{
 			state:          "connected",
@@ -624,6 +642,8 @@ func main() {
 			log.Fatalf("Error running program: %v", err)
 		}
 		return
+	} else {
+		log.Printf("Setup required. Error: %v, Connected: %v", err, data.Connected)
 	}
 
 	// New setup

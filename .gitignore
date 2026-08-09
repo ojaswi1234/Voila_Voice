@@ -66,6 +66,10 @@ scripts/ngrok.exe
 scripts/ngrok_url.txt
 scripts/*.zip
 
+# Mobile SDK downloads
+mobile-agent/android_sdk/*.zip
+mobile-agent/flutter_sdk/*.zip
+
 # Local agent
 local-agent/connection.json
 local-agent/start_agent.bat
