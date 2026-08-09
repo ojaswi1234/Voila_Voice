@@ -1,0 +1,35 @@
+name: Keep Render Backend Awake
+
+on:
+  schedule:
+    # Run every 10 minutes to prevent Render from sleeping
+    - cron: '*/10 * * * *'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  keep-alive:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Ping Health Endpoint
+        run: |
+          echo "Pinging Render backend health endpoint..."
+          response=$(curl -s -o /dev/null -w "%{http_code}" ${{ secrets.RENDER_BACKEND_URL }}/health)
+          echo "Health check status: $response"
+          
+          if [ $response -eq 200 ]; then
+            echo "✅ Backend is awake and healthy"
+          else
+            echo "❌ Backend might be sleeping, status: $response"
+          fi
+      
+      - name: Ping Status Endpoint
+        run: |
+          echo "Pinging status endpoint..."
+          curl -s ${{ secrets.RENDER_BACKEND_URL }}/status | jq '.'
+      
+      - name: Timestamp
+        run: echo "Keep-alive ping completed at $(date)"
+      
+      - name: Wait before next ping
+        run: sleep 30

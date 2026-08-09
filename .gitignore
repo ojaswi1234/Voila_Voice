@@ -1,0 +1,61 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Go workspace file
+go.work
+
+# Dependency directories
+vendor/
+
+# Build output
+backend/main
+local-agent/main
+local-agent/tasks.json
+
+# Flutter
+mobile-agent/build/
+mobile-agent/.dart_tool/
+mobile-agent/.flutter-plugins
+mobile-agent/.flutter-plugins-dependencies
+mobile-agent/.packages
+mobile-agent/.pub-cache/
+mobile-agent/.pub/
+mobile-agent/pubspec.lock
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Environment files
+.env
+.env.local
+
+# Test files
+test_*.ps1
+test_*.bat
+test_*.go
+test_*.txt
+
+# Temporary files
+*.tmp
+*.temp

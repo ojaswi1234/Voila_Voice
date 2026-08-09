@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: voice-cli-backend
+    runtime: go
+    plan: free
+    buildCommand: cd backend && go build -o main main.go
+    startCommand: cd backend && ./main
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: DEVICE_1_NAME
+        value: Development Laptop
+      - key: DEVICE_1_ADDRESS
+        value: https://your-ngrok-url.ngrok-free.app
+      - key: DEVICE_2_NAME
+        value: Production Server
+      - key: DEVICE_2_ADDRESS
+        value: https://your-ngrok-url-2.ngrok-free.app
