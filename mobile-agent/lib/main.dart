@@ -5,7 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 // Backend URL from build-time configuration
-final backendUrl = String.fromEnvironment('BACKEND_URL', defaultValue: 'wss://voila-voice.onrender.com/ws');
+var backendUrl = String.fromEnvironment('BACKEND_URL', defaultValue: 'wss://voila-voice.onrender.com/ws');
 
 void main() {
   runApp(const VoiceCliApp());
