@@ -33,6 +33,12 @@ jobs:
         # Restore custom main.dart
         cp lib/main.dart.backup lib/main.dart
         rm lib/main.dart.backup
+        
+    - name: Fix Android minSdkVersion
+      working-directory: ./mobile-agent
+      run: |
+        # Update minSdkVersion to 21 for speech_to_text compatibility
+        sed -i 's/minSdkVersion 19/minSdkVersion 21/g' android/app/build.gradle
       
     - name: Install dependencies
       working-directory: ./mobile-agent
