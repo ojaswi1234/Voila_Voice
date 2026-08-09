@@ -53,7 +53,7 @@ jobs:
     - name: Verify Flutter installation
       run: flutter doctor
 
-        - name: Build APK with backend URL
+    - name: Build APK with backend URL
       working-directory: ./mobile-agent
       env:
         BACKEND_URL: ${{ secrets.RENDER_BACKEND_URL }}
