@@ -20,6 +20,9 @@ jobs:
         channel: 'stable'
         cache: true
         
+    - name: Accept Android licenses
+      run: yes | flutter doctor --android-licenses
+        
     - name: Create Flutter project structure
       working-directory: ./mobile-agent
       run: |
@@ -30,6 +33,10 @@ jobs:
         # Restore custom main.dart
         cp lib/main.dart.backup lib/main.dart
         rm lib/main.dart.backup
+      
+    - name: Install dependencies
+      working-directory: ./mobile-agent
+      run: flutter pub get
       
     - name: Verify Flutter installation
       run: flutter doctor
