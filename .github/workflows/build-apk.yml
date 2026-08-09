@@ -21,19 +21,15 @@ jobs:
         cache: true
         
     - name: Create Flutter project structure
-      run: |
-        # Create temporary Flutter project in different directory
-        cd ..
-        flutter create --org com.voicecli --project-name voice_cli_temp temp_flutter
-        # Copy only Android structure to mobile-agent
-        cp -r temp_flutter/android mobile-agent/
-        # Clean up temporary project
-        rm -rf temp_flutter
-        cd mobile-agent
-        
-    - name: Install dependencies
       working-directory: ./mobile-agent
-      run: flutter pub get
+      run: |
+        # Backup custom lib/main.dart
+        cp lib/main.dart lib/main.dart.backup
+        # Create Flutter project structure
+        flutter create --org com.voicecli --project-name voice_cli_temp .
+        # Restore custom main.dart
+        cp lib/main.dart.backup lib/main.dart
+        rm lib/main.dart.backup
       
     - name: Verify Flutter installation
       run: flutter doctor

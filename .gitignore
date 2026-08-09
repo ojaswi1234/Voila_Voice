@@ -40,6 +40,7 @@ mobile-agent/macos/
 mobile-agent/web/
 mobile-agent/windows/
 mobile-agent/test/
+mobile-agent/lib/*.backup
 
 # IDE
 .vscode/
