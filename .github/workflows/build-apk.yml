@@ -58,8 +58,15 @@ jobs:
       env:
         BACKEND_URL: ${{ secrets.RENDER_BACKEND_URL }}
       run: |
+        # Check if BACKEND_URL is set
+        if [ -z "$BACKEND_URL" ]; then
+          echo "ERROR: BACKEND_URL secret is not set!"
+          echo "Please set RENDER_BACKEND_URL in GitHub repository secrets"
+          exit 1
+        fi
         # Convert HTTP URL to WebSocket URL
-        WS_URL="${BACKEND_URL/http:/wss:}/ws"
+        WS_URL="${BACKEND_URL/http:/wss:}"
+        WS_URL="${WS_URL}/ws"
         echo "Original backend URL: $BACKEND_URL"
         echo "Converted WebSocket URL: $WS_URL"
         echo "Building APK with WebSocket URL: $WS_URL"

@@ -8,7 +8,7 @@ import 'device_identity.dart';
 import 'package:uuid/uuid.dart';
 
 // Backend URL from build-time configuration
-var backendUrl = String.fromEnvironment('BACKEND_URL', defaultValue: 'wss://voila-voice.onrender.com/ws');
+var backendUrl = String.fromEnvironment('BACKEND_URL', defaultValue: '');
 
 void main() {
   runApp(const VoiceCliApp());
