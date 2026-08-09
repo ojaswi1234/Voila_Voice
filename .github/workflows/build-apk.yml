@@ -16,7 +16,7 @@ jobs:
     - name: Set up Flutter
       uses: subosito/flutter-action@v2
       with:
-        flutter-version: '3.44.9'
+        flutter-version: '3.24.0'
         channel: 'stable'
         cache: true
         
@@ -34,26 +34,11 @@ jobs:
         cp lib/main.dart.backup lib/main.dart
         rm lib/main.dart.backup
         
-    - name: Fix Android minSdkVersion
-      working-directory: ./mobile-agent
-      run: |
-        # Update minSdkVersion to 21 for speech_to_text compatibility
-        if [ -f android/app/build.gradle.kts ]; then
-          sed -i 's/minSdkVersion = 19/minSdkVersion = 21/g' android/app/build.gradle.kts
-        elif [ -f android/app/build.gradle ]; then
-          sed -i 's/minSdkVersion 19/minSdkVersion 21/g' android/app/build.gradle
-        fi
+    - name: Skip minSdkVersion fix (handled by flutter create)
+      run: echo "Flutter create should handle minSdkVersion"
         
-    - name: Fix AndroidManifest.xml
-      working-directory: ./mobile-agent
-      run: |
-        # Ensure AndroidManifest.xml has required permissions
-        cat > android/app/src/main/AndroidManifest.xml << 'EOF'
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <uses-permission android:name="android.permission.INTERNET"/>
-    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
-</manifest>
-EOF
+    - name: Skip AndroidManifest fix (handled by flutter create)
+      run: echo "Flutter create should handle AndroidManifest"
       
     - name: Install dependencies
       working-directory: ./mobile-agent
