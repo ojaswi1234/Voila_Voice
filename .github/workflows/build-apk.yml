@@ -42,8 +42,12 @@ jobs:
         # Update minSdkVersion to 21 for speech_to_text compatibility
         if [ -f android/app/build.gradle ]; then
           sed -i 's/minSdkVersion 19/minSdkVersion 21/g' android/app/build.gradle
+          # Update Kotlin version for compatibility
+          sed -i 's/ext.kotlin_version = .*/ext.kotlin_version = "1.9.22"/g' android/build.gradle
         elif [ -f android/app/build.gradle.kts ]; then
           sed -i 's/minSdkVersion = 19/minSdkVersion = 21/g' android/app/build.gradle.kts
+          # Update Kotlin version for compatibility
+          sed -i 's/kotlin("android").version.*/kotlin("android").version("1.9.22")/g' android/settings.gradle.kts
         fi
       
     - name: Install dependencies

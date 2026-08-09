@@ -107,8 +107,11 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                   if (deviceFingerprint != null) {
                     _devices[deviceId] = device;
                     // Auto-save desktop devices for quick reconnect
-                    await DeviceIdentity.saveDevice(deviceId, device);
-                    _savedDevices = await DeviceIdentity.getSavedDevices();
+                    DeviceIdentity.saveDevice(deviceId, device);
+                    DeviceIdentity.getSavedDevices().then((devices) {
+                      _savedDevices = devices;
+                      setState(() {});
+                    });
                   }
                 }
               }
