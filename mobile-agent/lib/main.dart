@@ -8,7 +8,31 @@ import 'device_identity.dart';
 import 'package:uuid/uuid.dart';
 
 // Backend URL from build-time configuration
-var backendUrl = String.fromEnvironment('BACKEND_URL', defaultValue: '');
+// Backend URL from build-time configuration (safe default + scheme fix)
+const String _rawBackendUrl = String.fromEnvironment(
+  'BACKEND_URL',
+  defaultValue: 'wss://voila-voice.onrender.com/ws',
+);
+
+String get backendUrl {
+  var url = _rawBackendUrl.trim();
+
+  if (url.startsWith('https://')) {
+    url = url.replaceFirst('https://', 'wss://');
+  } else if (url.startsWith('http://')) {
+    url = url.replaceFirst('http://', 'ws://');
+  }
+
+  if (!url.startsWith('ws://') && !url.startsWith('wss://')) {
+    url = 'wss://voila-voice.onrender.com/ws';
+  }
+
+  if (!url.endsWith('/ws')) {
+    url = url.endsWith('/') ? '${url}ws' : '$url/ws';
+  }
+
+  return url;
+}
 
 void main() {
   runApp(const VoiceCliApp());
@@ -86,8 +110,10 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
 
   void _connectToBackend() {
     try {
+      final url = backendUrl;
+      debugPrint('Connecting WebSocket to: $url');
       channel = WebSocketChannel.connect(
-        Uri.parse(backendUrl),
+        Uri.parse(url),
       );
       
       channel.stream.listen((message) {
