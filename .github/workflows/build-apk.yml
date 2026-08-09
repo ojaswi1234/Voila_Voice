@@ -16,7 +16,7 @@ jobs:
     - name: Set up Flutter
       uses: subosito/flutter-action@v2
       with:
-        flutter-version: '3.19.0'
+        flutter-version: '3.44.9'
         channel: 'stable'
         cache: true
         
@@ -42,6 +42,10 @@ jobs:
           sed -i 's/minSdkVersion 19/minSdkVersion 21/g' android/app/build.gradle
         elif [ -f android/app/build.gradle.kts ]; then
           sed -i 's/minSdkVersion = 19/minSdkVersion = 21/g' android/app/build.gradle.kts
+        fi
+        # Ensure AndroidManifest.xml has required permissions
+        if ! grep -q "android.permission.RECORD_AUDIO" android/app/src/main/AndroidManifest.xml; then
+          sed -i '/manifest/a\    <uses-permission android:name="android.permission.RECORD_AUDIO"/>' android/app/src/main/AndroidManifest.xml
         fi
       
     - name: Install dependencies

@@ -4,13 +4,13 @@ publish_to: 'none'
 version: 1.0.0+1
 
 environment:
-  sdk: '>=3.0.0 <4.0.0'
+  sdk: '>=3.12.0 <4.0.0'
 
 dependencies:
   flutter:
     sdk: flutter
   web_socket_channel: ^3.0.3
-  speech_to_text: ^7.2.0
+  speech_to_text: ^7.5.0
   permission_handler: ^11.0.0
   http: ^1.2.0
 
