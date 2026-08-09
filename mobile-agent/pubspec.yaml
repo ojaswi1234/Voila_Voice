@@ -13,7 +13,6 @@ dependencies:
   speech_to_text: ^6.6.0
   permission_handler: ^11.0.0
   http: ^1.2.0
-  persistent_device_id: ^0.3.0
   flutter_secure_storage: ^9.0.0
   device_info_plus: ^10.0.0
   uuid: ^4.0.0

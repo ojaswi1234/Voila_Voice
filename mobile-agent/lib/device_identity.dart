@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:persistent_device_id/persistent_device_id.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:uuid/uuid.dart';
@@ -22,19 +21,7 @@ class DeviceIdentity {
       return deviceId;
     }
 
-    try {
-      deviceId = await PersistentDeviceId().getDeviceId();
-      if (deviceId != null) {
-        // Use mobile- prefix for mobile devices
-        deviceId = 'mobile-${deviceId.substring(0, 8)}';
-        await _storage.write(key: 'device_id', value: deviceId);
-        _cachedDeviceId = deviceId;
-        return deviceId;
-      }
-    } catch (e) {
-      debugPrint('Error getting persistent device ID: $e');
-    }
-
+    // Use mobile- prefix for mobile devices with UUID
     deviceId = 'mobile-${_uuid.v4().substring(0, 8)}';
     await _storage.write(key: 'device_id', value: deviceId);
     _cachedDeviceId = deviceId;

@@ -35,6 +35,16 @@ jobs:
         cp lib/main.dart.backup lib/main.dart
         cp lib/device_identity.dart.backup lib/device_identity.dart
         rm lib/main.dart.backup lib/device_identity.dart.backup
+        
+    - name: Fix Android minSdkVersion
+      working-directory: ./mobile-agent
+      run: |
+        # Update minSdkVersion to 21 for speech_to_text compatibility
+        if [ -f android/app/build.gradle ]; then
+          sed -i 's/minSdkVersion 19/minSdkVersion 21/g' android/app/build.gradle
+        elif [ -f android/app/build.gradle.kts ]; then
+          sed -i 's/minSdkVersion = 19/minSdkVersion = 21/g' android/app/build.gradle.kts
+        fi
       
     - name: Install dependencies
       working-directory: ./mobile-agent
