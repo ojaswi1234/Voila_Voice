@@ -29,13 +29,29 @@ jobs:
         # Backup custom lib files
         cp lib/main.dart lib/main.dart.backup
         cp lib/device_identity.dart lib/device_identity.dart.backup
+
         # Create Flutter project structure
         flutter create --org com.voicecli --project-name voice_cli_temp .
-        cp android/app/src/main/AndroidManifest.xml.backup android/app/src/main/AndroidManifest.xml
+
         # Restore custom lib files
         cp lib/main.dart.backup lib/main.dart
         cp lib/device_identity.dart.backup lib/device_identity.dart
         rm lib/main.dart.backup lib/device_identity.dart.backup
+
+        # Ensure INTERNET permission in the GENERATED main manifest
+        MANIFEST="android/app/src/main/AndroidManifest.xml"
+        if [ ! -f "$MANIFEST" ]; then
+          echo "ERROR: $MANIFEST not found after flutter create"
+          exit 1
+        fi
+
+        if ! grep -q 'android.permission.INTERNET' "$MANIFEST"; then
+          # Insert permissions right after the opening <manifest ...> tag
+          sed -i '0,/<manifest[^>]*>/s||&\n    <uses-permission android:name="android.permission.INTERNET"/>\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>\n    <uses-permission android:name="android.permission.RECORD_AUDIO"/>|' "$MANIFEST"
+        fi
+
+        echo "----- Permissions in AndroidManifest.xml -----"
+        grep 'uses-permission' "$MANIFEST" || echo "WARNING: no uses-permission found"
 
     - name: Fix Android minSdkVersion
       working-directory: ./mobile-agent
