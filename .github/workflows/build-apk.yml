@@ -22,11 +22,14 @@ jobs:
         
     - name: Create Flutter project structure
       run: |
-        # Create proper Flutter project structure
+        # Backup our custom lib folder
         cd mobile-agent
+        mv lib lib_backup
+        # Create proper Flutter project structure
         flutter create --org com.voicecli --project-name voice_cli_temp .
-        # Restore our custom lib files
-        git checkout lib/main.dart -- lib/
+        # Restore our custom lib folder
+        rm -rf lib
+        mv lib_backup lib
         
     - name: Install dependencies
       working-directory: ./mobile-agent
