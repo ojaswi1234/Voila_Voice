@@ -31,6 +31,7 @@ jobs:
         cp lib/device_identity.dart lib/device_identity.dart.backup
         # Create Flutter project structure
         flutter create --org com.voicecli --project-name voice_cli_temp .
+        cp android/app/src/main/AndroidManifest.xml.backup android/app/src/main/AndroidManifest.xml
         # Restore custom lib files
         cp lib/main.dart.backup lib/main.dart
         cp lib/device_identity.dart.backup lib/device_identity.dart
