@@ -8,21 +8,21 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      
+
     - name: Set up Flutter
       uses: subosito/flutter-action@v2
       with:
         flutter-version: '3.27.0'
         channel: 'stable'
         cache: true
-        
+
     - name: Accept Android licenses
       run: yes | flutter doctor --android-licenses
-        
+
     - name: Create Flutter project structure
       working-directory: ./mobile-agent
       run: |
@@ -35,7 +35,7 @@ jobs:
         cp lib/main.dart.backup lib/main.dart
         cp lib/device_identity.dart.backup lib/device_identity.dart
         rm lib/main.dart.backup lib/device_identity.dart.backup
-        
+
     - name: Fix Android minSdkVersion
       working-directory: ./mobile-agent
       run: |
@@ -45,33 +45,41 @@ jobs:
         elif [ -f android/app/build.gradle.kts ]; then
           sed -i 's/minSdkVersion = 19/minSdkVersion = 21/g' android/app/build.gradle.kts
         fi
-      
+
     - name: Install dependencies
       working-directory: ./mobile-agent
       run: flutter pub get
-      
+
     - name: Verify Flutter installation
       run: flutter doctor
-      
+
     - name: Build APK with backend URL
       working-directory: ./mobile-agent
       env:
         BACKEND_URL: ${{ secrets.RENDER_BACKEND_URL }}
       run: |
-        # Check if BACKEND_URL is set
         if [ -z "$BACKEND_URL" ]; then
-          echo "ERROR: BACKEND_URL secret is not set!"
+          echo "ERROR: RENDER_BACKEND_URL secret is not set!"
           echo "Please set RENDER_BACKEND_URL in GitHub repository secrets"
           exit 1
         fi
-        # Convert HTTP URL to WebSocket URL
-        WS_URL="${BACKEND_URL/http:/wss:}"
-        WS_URL="${WS_URL}/ws"
+
+        # Properly convert https → wss and http → ws
+        WS_URL="$BACKEND_URL"
+        WS_URL="${WS_URL/https:\/\//wss:\/\/}"
+        WS_URL="${WS_URL/http:\/\//ws:\/\/}"
+
+        # Ensure /ws path (avoid double /ws)
+        if [[ "$WS_URL" != */ws ]]; then
+          WS_URL="${WS_URL%/}/ws"
+        fi
+
         echo "Original backend URL: $BACKEND_URL"
         echo "Converted WebSocket URL: $WS_URL"
         echo "Building APK with WebSocket URL: $WS_URL"
+
         flutter build apk --release --dart-define=BACKEND_URL=$WS_URL
-      
+
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
