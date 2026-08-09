@@ -38,15 +38,22 @@ jobs:
       working-directory: ./mobile-agent
       run: |
         # Update minSdkVersion to 21 for speech_to_text compatibility
-        if [ -f android/app/build.gradle ]; then
-          sed -i 's/minSdkVersion 19/minSdkVersion 21/g' android/app/build.gradle
-        elif [ -f android/app/build.gradle.kts ]; then
+        if [ -f android/app/build.gradle.kts ]; then
           sed -i 's/minSdkVersion = 19/minSdkVersion = 21/g' android/app/build.gradle.kts
+        elif [ -f android/app/build.gradle ]; then
+          sed -i 's/minSdkVersion 19/minSdkVersion 21/g' android/app/build.gradle
         fi
+        
+    - name: Fix AndroidManifest.xml
+      working-directory: ./mobile-agent
+      run: |
         # Ensure AndroidManifest.xml has required permissions
-        if ! grep -q "android.permission.RECORD_AUDIO" android/app/src/main/AndroidManifest.xml; then
-          sed -i '/manifest/a\    <uses-permission android:name="android.permission.RECORD_AUDIO"/>' android/app/src/main/AndroidManifest.xml
-        fi
+        cat > android/app/src/main/AndroidManifest.xml << 'EOF'
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+</manifest>
+EOF
       
     - name: Install dependencies
       working-directory: ./mobile-agent
