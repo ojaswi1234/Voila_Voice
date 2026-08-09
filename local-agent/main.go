@@ -340,8 +340,20 @@ func (m model) testConnection() tea.Cmd {
 
 func (m model) startServer() tea.Cmd {
 	return func() tea.Msg {
-		// Start the HTTP server in background
 		go startHTTPServer(m.connectionData.Passphrase)
+
+		go func(data ConnectionData) {
+			for {
+				addr := getNgrokPublicURL()
+				if addr == "" {
+					log.Println("ngrok URL not available yet (is ngrok running?)")
+				} else if err := registerWithBackend(data, addr); err != nil {
+					log.Printf("register error: %v", err)
+				}
+				time.Sleep(30 * time.Second)
+			}
+		}(m.connectionData)
+
 		return serverStatusMsg{running: true}
 	}
 }
@@ -538,6 +550,34 @@ func (m model) wrapContent(content string) string {
 var server *http.Server
 var serverRunning bool
 
+
+func getNgrokPublicURL() string {
+	resp, err := http.Get("http://127.0.0.1:4040/api/tunnels")
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Tunnels []struct {
+			PublicURL string `json:"public_url"`
+			Proto     string `json:"proto"`
+		} `json:"tunnels"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return ""
+	}
+	for _, t := range result.Tunnels {
+		if strings.HasPrefix(t.PublicURL, "https://") {
+			return t.PublicURL
+		}
+	}
+	if len(result.Tunnels) > 0 {
+		return result.Tunnels[0].PublicURL
+	}
+	return ""
+}
+
 func startHTTPServer(passphrase string) {
 	if serverRunning {
 		return
@@ -584,7 +624,7 @@ func startHTTPServer(passphrase string) {
 		json.NewEncoder(w).Encode(map[string]string{"output": output})
 	})
 
-	server = &http.Server{
+	server = &http.Server{    
 		Addr:    ":8088",
 		Handler: mux,
 	}
@@ -632,6 +672,40 @@ func saveConnectionData(data ConnectionData) error {
 	defer file.Close()
 
 	return json.NewEncoder(file).Encode(data)
+}
+
+func registerWithBackend(data ConnectionData, publicAddress string) error {
+	secret := os.Getenv("AGENT_REGISTER_SECRET")
+	if secret == "" {
+		// fallback: same secret you configured in agent setup / connection_data if you store it
+		return fmt.Errorf("AGENT_REGISTER_SECRET not set")
+	}
+
+	body, _ := json.Marshal(map[string]string{
+		"device_id":    data.DeviceID,
+		"device_name":  data.DeviceName,
+		"address":      publicAddress, // ngrok https URL, no trailing path
+		"fingerprint":  data.DeviceFingerprint,
+		"type":         "desktop",
+	})
+
+	req, err := http.NewRequest(http.MethodPost, strings.TrimRight(data.BackendURL, "/")+"/register", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Agent-Secret", secret)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("register failed: %s", resp.Status)
+	}
+	log.Printf("Registered with backend as %s @ %s", data.DeviceID, publicAddress)
+	return nil
 }
 
 func loadConnectionData() (ConnectionData, error) {
@@ -716,6 +790,17 @@ func main() {
 			isLoading:      false,
 		}
 		go startHTTPServer(data.Passphrase)
+go func(data ConnectionData) {
+	for {
+		addr := getNgrokPublicURL()
+		if addr == "" {
+			log.Println("ngrok URL not available yet (is ngrok running?)")
+		} else if err := registerWithBackend(data, addr); err != nil {
+			log.Printf("register error: %v", err)
+		}
+		time.Sleep(30 * time.Second)
+	}
+}(data)
 		p := tea.NewProgram(initialModel)
 		if _, err := p.Run(); err != nil {
 			log.Fatalf("Error running program: %v", err)

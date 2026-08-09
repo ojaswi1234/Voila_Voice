@@ -29,6 +29,8 @@ type Device struct {
 	AuthToken string
 	LockedBy  string // Mobile device ID that has exclusive access
 	LockedAt  time.Time
+	Fingerprint string // NEW
+	Type        string // "desktop" | etc.
 }
 
 type Backend struct {
@@ -388,6 +390,7 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 						"locked":  d.LockedBy != "",
 						"lockedBy": d.LockedBy,
 						"lastSeen": d.LastSeen,
+						"fingerprint": d.Fingerprint,
 					})
 				}
 				jsonData, _ := json.Marshal(deviceList)
@@ -481,7 +484,72 @@ func main() {
 		
 		json.NewEncoder(w).Encode(response)
 	})
-	
+
+	http.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Shared secret so random internet clients can't register devices
+	expected := os.Getenv("AGENT_REGISTER_SECRET")
+	if expected == "" {
+		http.Error(w, "Registration disabled", http.StatusServiceUnavailable)
+		return
+	}
+	if r.Header.Get("X-Agent-Secret") != expected {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	var req struct {
+		DeviceID    string `json:"device_id"`
+		DeviceName  string `json:"device_name"`
+		Address     string `json:"address"` // e.g. https://xxxx.ngrok-free.app
+		Fingerprint string `json:"fingerprint"`
+		Type        string `json:"type"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
+	if req.DeviceID == "" || req.Address == "" {
+		http.Error(w, "device_id and address required", http.StatusBadRequest)
+		return
+	}
+	if req.Type == "" {
+		req.Type = "desktop"
+	}
+
+	backend.mu.Lock()
+	defer backend.mu.Unlock()
+
+	d, exists := backend.devices[req.DeviceID]
+	if !exists {
+		d = &Device{ID: req.DeviceID}
+		backend.devices[req.DeviceID] = d
+		if backend.activeDevice == "" {
+			backend.activeDevice = req.DeviceID
+		}
+	}
+	d.Name = req.DeviceName
+	d.Address = strings.TrimRight(req.Address, "/")
+	d.Fingerprint = req.Fingerprint
+	d.Type = req.Type
+	d.Active = true
+	d.LastSeen = time.Now()
+	if d.AuthToken == "" {
+		d.AuthToken = generateAuthToken()
+	}
+
+	log.Printf("Device registered: %s (%s) @ %s", d.Name, d.ID, d.Address)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"status":    "ok",
+		"device_id": d.ID,
+	})
+})
 	// Health check endpoint for Render keep-alive
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

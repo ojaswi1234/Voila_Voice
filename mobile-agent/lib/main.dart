@@ -98,6 +98,8 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
     _initializeDeviceIdentity();
     _connectToBackend();
     _startHealthChecks();
+
+    Future.delayed(const Duration(seconds: 1), _getDevices);
   }
 
   Future<void> _initializeDeviceIdentity() async {
