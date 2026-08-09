@@ -153,7 +153,10 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   Future<void> _checkBackendHealth() async {
     try {
       // Convert WebSocket URL to HTTP URL for health check
-      final httpUrl = backendUrl.replace('ws://', 'http://').replace('wss://', 'https://').replace('/ws', '/health');
+      String httpUrl = backendUrl;
+      httpUrl = httpUrl.replaceAll('ws://', 'http://');
+      httpUrl = httpUrl.replaceAll('wss://', 'https://');
+      httpUrl = httpUrl.replaceAll('/ws', '/health');
       
       final response = await http.get(Uri.parse(httpUrl));
       
