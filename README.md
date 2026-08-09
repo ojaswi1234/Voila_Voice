@@ -5,7 +5,7 @@ Zero Trust voice-controlled remote CLI execution system.
 ## Architecture
 
 - **Mobile Agent**: Flutter app for voice capture and WebSocket communication
-- **Backend**: Go server for routing, device registry, and token optimization  
+- **Backend**: Go server at root level for routing, device registry, and token optimization  
 - **Local Agent**: Go CLI (Antigravity) for secure local execution with offline queue
 
 ## Deployment Strategy
@@ -34,7 +34,6 @@ cd scripts
 python setup_ngrok.py  # or: npm install && npm start
 
 # Terminal 3: Start backend with auto-detection
-cd backend
 NGROK_AUTO_DETECT=true go run main.go
 ```
 

@@ -12,7 +12,7 @@ start "Ngrok" cmd /k "cd scripts && python setup_ngrok.py"
 timeout /t 5
 
 echo Starting Backend with Ngrok Auto-Detection...
-start "Backend" cmd /k "cd backend && set NGROK_AUTO_DETECT=true && go run main.go"
+start "Backend" cmd /k "set NGROK_AUTO_DETECT=true && go run main.go"
 
 echo All services started!
 echo Local Agent: TUI Setup in new window
