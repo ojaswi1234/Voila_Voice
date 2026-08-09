@@ -22,14 +22,14 @@ jobs:
         
     - name: Create Flutter project structure
       run: |
-        # Backup our custom lib folder
+        # Create temporary Flutter project in different directory
+        cd ..
+        flutter create --org com.voicecli --project-name voice_cli_temp temp_flutter
+        # Copy only Android structure to mobile-agent
+        cp -r temp_flutter/android mobile-agent/
+        # Clean up temporary project
+        rm -rf temp_flutter
         cd mobile-agent
-        mv lib lib_backup
-        # Create proper Flutter project structure
-        flutter create --org com.voicecli --project-name voice_cli_temp .
-        # Restore our custom lib folder
-        rm -rf lib
-        mv lib_backup lib
         
     - name: Install dependencies
       working-directory: ./mobile-agent
