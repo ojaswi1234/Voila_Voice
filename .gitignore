@@ -31,6 +31,9 @@ mobile-agent/.packages
 mobile-agent/.pub-cache/
 mobile-agent/.pub/
 mobile-agent/pubspec.lock
+mobile-agent/android/.gradle/
+mobile-agent/android/app/build/
+mobile-agent/android/local.properties
 
 # IDE
 .vscode/

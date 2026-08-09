@@ -1,4 +1,4 @@
-name: voice_cli_mobile
+name: voice_cli_temp
 description: Voice-to-CLI Mobile Agent
 publish_to: 'none'
 version: 1.0.0+1
