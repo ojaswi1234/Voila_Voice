@@ -1,0 +1,17 @@
+{
+  "name": "ngrok-setup",
+  "version": "1.0.0",
+  "description": "Automatic ngrok download and setup",
+  "main": "setup_ngrok.js",
+  "scripts": {
+    "start": "node setup_ngrok.js",
+    "install": "npm install",
+    "stop": "node stop_ngrok.js"
+  },
+  "dependencies": {
+    "unzipper": "^0.10.11"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}

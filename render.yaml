@@ -8,6 +8,8 @@ services:
     envVars:
       - key: PORT
         value: 10000
+      - key: NGROK_AUTO_DETECT
+        value: "false"
       - key: DEVICE_1_NAME
         value: Development Laptop
       - key: DEVICE_1_ADDRESS

@@ -59,3 +59,14 @@ test_*.txt
 # Temporary files
 *.tmp
 *.temp
+
+# Ngrok
+scripts/ngrok
+scripts/ngrok.exe
+scripts/ngrok_url.txt
+scripts/*.zip
+
+# Local agent
+local-agent/connection.json
+local-agent/start_agent.bat
+local-agent/start_agent.sh

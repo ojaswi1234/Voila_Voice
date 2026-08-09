@@ -41,6 +41,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   bool _localAgentConnected = false;
   String _backendStatus = 'Checking...';
   Timer? _healthCheckTimer;
+  Map<String, dynamic> _devices = {};
 
   @override
   void initState() {
@@ -68,7 +69,19 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
           // Try to parse as JSON for enhanced responses
           try {
             final jsonResponse = jsonDecode(message);
-            if (jsonResponse is Map && jsonResponse.containsKey('summary')) {
+            
+            // Handle device list response
+            if (jsonResponse is List) {
+              _devices = {};
+              for (var device in jsonResponse) {
+                _devices[device['id']] = device;
+              }
+              _messages.add({
+                'type': 'system',
+                'content': 'Device list updated: ${_devices.length} devices',
+                'timestamp': DateTime.now().toString(),
+              });
+            } else if (jsonResponse is Map && jsonResponse.containsKey('summary')) {
               _messages.add({
                 'type': 'response',
                 'content': jsonResponse['output'] ?? message,
@@ -231,6 +244,38 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
     channel.sink.add(jsonEncode(message));
   }
 
+  void _lockDevice(String deviceId) {
+    final message = {
+      'type': 'lock_device',
+      'device_id': deviceId,
+    };
+    
+    channel.sink.add(jsonEncode(message));
+    setState(() {
+      _messages.add({
+        'type': 'system',
+        'content': 'Attempting to lock device: $deviceId',
+        'timestamp': DateTime.now().toString(),
+      });
+    });
+  }
+
+  void _unlockDevice(String deviceId) {
+    final message = {
+      'type': 'unlock_device',
+      'device_id': deviceId,
+    };
+    
+    channel.sink.add(jsonEncode(message));
+    setState(() {
+      _messages.add({
+        'type': 'system',
+        'content': 'Attempting to unlock device: $deviceId',
+        'timestamp': DateTime.now().toString(),
+      });
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -276,10 +321,22 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                 const Text('Active Device: ', style: TextStyle(fontWeight: FontWeight.bold)),
                 DropdownButton<String>(
                   value: _activeDevice,
-                  items: const [
-                    DropdownMenuItem(value: 'laptop-1', child: Text('Development Laptop')),
-                    DropdownMenuItem(value: 'laptop-2', child: Text('Production Server')),
-                  ],
+                  items: _devices.entries.map((entry) {
+                    final device = entry.value;
+                    final isLocked = device['locked'] == true;
+                    return DropdownMenuItem(
+                      value: entry.key,
+                      child: Row(
+                        children: [
+                          Text(device['name']),
+                          if (isLocked) ...[
+                            const SizedBox(width: 8),
+                            Icon(Icons.lock, size: 16, color: Colors.red),
+                          ],
+                        ],
+                      ),
+                    );
+                  }).toList(),
                   onChanged: (value) {
                     if (value != null) {
                       _switchDevice(value);
@@ -294,6 +351,14 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                 ElevatedButton(
                   onPressed: _checkBackendHealth,
                   child: const Text('Check Health'),
+                ),
+                ElevatedButton(
+                  onPressed: () => _lockDevice(_activeDevice),
+                  child: const Text('Lock Device'),
+                ),
+                ElevatedButton(
+                  onPressed: () => _unlockDevice(_activeDevice),
+                  child: const Text('Unlock Device'),
                 ),
               ],
             ),

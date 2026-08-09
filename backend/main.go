@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -26,6 +27,8 @@ type Device struct {
 	Active    bool
 	LastSeen  time.Time
 	AuthToken string
+	LockedBy  string // Mobile device ID that has exclusive access
+	LockedAt  time.Time
 }
 
 type Backend struct {
@@ -33,6 +36,13 @@ type Backend struct {
 	activeDevice string
 	tokenCounter int
 	mu           sync.RWMutex
+	clients      map[string]*WebSocketClient // Track connected mobile clients
+}
+
+type WebSocketClient struct {
+	conn        *websocket.Conn
+	clientID    string
+	connectedAt time.Time
 }
 
 func NewBackend() *Backend {
@@ -40,6 +50,7 @@ func NewBackend() *Backend {
 		devices:      make(map[string]*Device),
 		activeDevice: "",
 		tokenCounter: 0,
+		clients:      make(map[string]*WebSocketClient),
 	}
 }
 
@@ -138,6 +149,60 @@ func (b *Backend) getAllDevices() []*Device {
 	return devices
 }
 
+func (b *Backend) lockDevice(deviceID, clientID string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	
+	device, exists := b.devices[deviceID]
+	if !exists {
+		return fmt.Errorf("device not found")
+	}
+	
+	// Check if already locked by another client
+	if device.LockedBy != "" && device.LockedBy != clientID {
+		return fmt.Errorf("device already locked by another mobile device")
+	}
+	
+	// Lock the device
+	device.LockedBy = clientID
+	device.LockedAt = time.Now()
+	log.Printf("Device %s locked by client %s", deviceID, clientID)
+	return nil
+}
+
+func (b *Backend) unlockDevice(deviceID, clientID string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	
+	device, exists := b.devices[deviceID]
+	if !exists {
+		return fmt.Errorf("device not found")
+	}
+	
+	// Only the client that locked can unlock
+	if device.LockedBy != "" && device.LockedBy != clientID {
+		return fmt.Errorf("device locked by another client")
+	}
+	
+	device.LockedBy = ""
+	device.LockedAt = time.Time{}
+	log.Printf("Device %s unlocked by client %s", deviceID, clientID)
+	return nil
+}
+
+func (b *Backend) isDeviceLocked(deviceID, clientID string) bool {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	
+	device, exists := b.devices[deviceID]
+	if !exists {
+		return false
+	}
+	
+	// Device is locked and client doesn't have the lock
+	return device.LockedBy != "" && device.LockedBy != clientID
+}
+
 func generateAuthToken() string {
 	return fmt.Sprintf("token-%d", time.Now().UnixNano())
 }
@@ -219,7 +284,19 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 		}
 		defer conn.Close()
 
-		log.Println("Mobile client connected")
+		// Generate unique client ID
+		clientID := fmt.Sprintf("client-%d", time.Now().UnixNano())
+		
+		// Register client
+		b.mu.Lock()
+		b.clients[clientID] = &WebSocketClient{
+			conn:        conn,
+			clientID:    clientID,
+			connectedAt: time.Now(),
+		}
+		b.mu.Unlock()
+
+		log.Printf("Mobile client connected: %s", clientID)
 
 		for {
 			messageType, message, err := conn.ReadMessage()
@@ -228,7 +305,7 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				break
 			}
 
-			log.Printf("Received: %s", message)
+			log.Printf("Received from %s: %s", clientID, message)
 
 			// Parse message
 			var msg map[string]string
@@ -251,7 +328,20 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 					}
 				}
 				
+				// Check if device is locked by another client
+				if b.isDeviceLocked(deviceID, clientID) {
+					conn.WriteMessage(messageType, []byte("ERROR: Device is locked by another mobile device"))
+					continue
+				}
+				
+				// Lock device for this command
+				b.lockDevice(deviceID, clientID)
+				
 				result, err := b.forwardCommand(deviceID, command)
+				
+				// Unlock device after command
+				b.unlockDevice(deviceID, clientID)
+				
 				if err != nil {
 					log.Printf("Forward error: %v", err)
 					conn.WriteMessage(messageType, []byte("ERROR: "+err.Error()))
@@ -263,9 +353,28 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				deviceID := msg["device_id"]
 				err := b.setActiveDevice(deviceID)
 				if err != nil {
+					log.Printf("Switch device error: %v", err)
 					conn.WriteMessage(messageType, []byte("ERROR: "+err.Error()))
 				} else {
 					conn.WriteMessage(messageType, []byte("OK: Device switched"))
+				}
+				
+			case "lock_device":
+				deviceID := msg["device_id"]
+				err := b.lockDevice(deviceID, clientID)
+				if err != nil {
+					conn.WriteMessage(messageType, []byte("ERROR: "+err.Error()))
+				} else {
+					conn.WriteMessage(messageType, []byte("OK: Device locked"))
+				}
+				
+			case "unlock_device":
+				deviceID := msg["device_id"]
+				err := b.unlockDevice(deviceID, clientID)
+				if err != nil {
+					conn.WriteMessage(messageType, []byte("ERROR: "+err.Error()))
+				} else {
+					conn.WriteMessage(messageType, []byte("OK: Device unlocked"))
 				}
 				
 			case "get_devices":
@@ -276,6 +385,8 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 						"id":      d.ID,
 						"name":    d.Name,
 						"active":  d.ID == b.activeDevice,
+						"locked":  d.LockedBy != "",
+						"lockedBy": d.LockedBy,
 						"lastSeen": d.LastSeen,
 					})
 				}
@@ -299,6 +410,22 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				conn.WriteMessage(messageType, message)
 			}
 		}
+		
+		// Client disconnected - cleanup
+		b.mu.Lock()
+		delete(b.clients, clientID)
+		
+		// Unlock all devices locked by this client
+		for deviceID, device := range b.devices {
+			if device.LockedBy == clientID {
+				device.LockedBy = ""
+				device.LockedAt = time.Time{}
+				log.Printf("Device %s unlocked (client %s disconnected)", deviceID, clientID)
+			}
+		}
+		b.mu.Unlock()
+		
+		log.Printf("Mobile client disconnected: %s", clientID)
 	}
 }
 
@@ -307,6 +434,11 @@ var startTime time.Time
 func main() {
 	startTime = time.Now()
 	backend := NewBackend()
+	
+	// Auto-detect ngrok URL if NGROK_AUTO_DETECT is enabled
+	if os.Getenv("NGROK_AUTO_DETECT") == "true" {
+		go autoDetectNgrokURL(backend)
+	}
 	
 	// Register devices from environment variables or defaults
 	device1Name := os.Getenv("DEVICE_1_NAME")
@@ -380,6 +512,31 @@ func main() {
 		json.NewEncoder(w).Encode(stats)
 	})
 	
+	// Update device address endpoint
+	http.HandleFunc("/update-device", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		
+		var req struct {
+			DeviceID string `json:"device_id"`
+			Address  string `json:"address"`
+		}
+		json.NewDecoder(r.Body).Decode(&req)
+		
+		backend.mu.Lock()
+		if device, exists := backend.devices[req.DeviceID]; exists {
+			device.Address = req.Address
+			device.LastSeen = time.Now()
+			log.Printf("Updated device %s address to %s", req.DeviceID, req.Address)
+		}
+		backend.mu.Unlock()
+		
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]string{"status": "updated"})
+	})
+	
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8090"
@@ -387,4 +544,61 @@ func main() {
 	
 	log.Printf("Backend server starting on port %s", port)
 	log.Fatal(http.ListenAndServe(":"+port, nil))
+}
+
+func autoDetectNgrokURL(backend *Backend) {
+	// Check ngrok API every 30 seconds
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	
+	for range ticker.C {
+		ngrokURL, err := getNgrokURL()
+		if err != nil {
+			log.Printf("Failed to get ngrok URL: %v", err)
+			continue
+		}
+		
+		if ngrokURL != "" {
+			// Update device 1 address with ngrok URL
+			backend.mu.Lock()
+			if device, exists := backend.devices["laptop-1"]; exists {
+				if device.Address != ngrokURL {
+					device.Address = ngrokURL
+					device.LastSeen = time.Now()
+					log.Printf("Auto-updated device 1 address to ngrok URL: %s", ngrokURL)
+				}
+			}
+			backend.mu.Unlock()
+		}
+	}
+}
+
+func getNgrokURL() (string, error) {
+	// Try to get ngrok URL from local ngrok API
+	resp, err := http.Get("http://localhost:4040/api/tunnels")
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	
+	var result struct {
+		Tunnels []struct {
+			PublicURL string `json:"public_url"`
+		} `json:"tunnels"`
+	}
+	
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	
+	if err := json.Unmarshal(body, &result); err != nil {
+		return "", err
+	}
+	
+	if len(result.Tunnels) > 0 {
+		return result.Tunnels[0].PublicURL, nil
+	}
+	
+	return "", fmt.Errorf("no ngrok tunnels found")
 }
