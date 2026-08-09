@@ -31,7 +31,9 @@ jobs:
       working-directory: ./mobile-agent
       env:
         BACKEND_URL: ${{ secrets.RENDER_BACKEND_URL }}
-      run: flutter build apk --release --dart-define=BACKEND_URL=$BACKEND_URL
+      run: |
+        echo "Building APK with backend URL: $BACKEND_URL"
+        flutter build apk --release --dart-define=BACKEND_URL=$BACKEND_URL
       
     - name: Upload APK
       uses: actions/upload-artifact@v4
