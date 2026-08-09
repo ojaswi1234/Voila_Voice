@@ -32,8 +32,11 @@ jobs:
       env:
         BACKEND_URL: ${{ secrets.RENDER_BACKEND_URL }}
       run: |
-        echo "Building APK with backend URL: $BACKEND_URL"
-        flutter build apk --release --dart-define=BACKEND_URL=$BACKEND_URL
+        # Convert HTTP URL to WebSocket URL
+        WS_URL="${BACKEND_URL/http:/wss:}/ws"
+        echo "Converting backend URL: $BACKEND_URL -> $WS_URL"
+        echo "Building APK with WebSocket URL: $WS_URL"
+        flutter build apk --release --dart-define=BACKEND_URL=$WS_URL
       
     - name: Upload APK
       uses: actions/upload-artifact@v4
