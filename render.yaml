@@ -3,7 +3,7 @@ services:
     name: voice-cli-backend
     runtime: go
     plan: free
-    buildCommand: go build -o app main.go
+    buildCommand: go build -tags netgo -ldflags '-s -w' -o app
     startCommand: ./app
     envVars:
       - key: PORT
