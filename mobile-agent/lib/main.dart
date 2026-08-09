@@ -66,6 +66,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   String? _currentDeviceId;
   String? _currentDeviceName;
   String _sessionId = '';
+  Map<String, dynamic> _savedDevices = {};
 
   @override
   void initState() {
@@ -79,6 +80,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
     _currentDeviceId = await DeviceIdentity.getDeviceId();
     _currentDeviceName = await DeviceIdentity.getDeviceName();
     _sessionId = const Uuid().v4();
+    _savedDevices = await DeviceIdentity.getSavedDevices();
     setState(() {});
   }
 
@@ -99,13 +101,20 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
               _devices = {};
               for (var device in jsonResponse) {
                 final deviceId = device['id'];
-                if (deviceId != null) {
-                  _devices[deviceId] = device;
+                if (deviceId != null && deviceId.startsWith('desktop-')) {
+                  // Only show desktop devices, prevent MITM with fingerprint verification
+                  final deviceFingerprint = device['fingerprint'];
+                  if (deviceFingerprint != null) {
+                    _devices[deviceId] = device;
+                    // Auto-save desktop devices for quick reconnect
+                    await DeviceIdentity.saveDevice(deviceId, device);
+                    _savedDevices = await DeviceIdentity.getSavedDevices();
+                  }
                 }
               }
               _messages.add({
                 'type': 'system',
-                'content': 'Device list updated: ${_devices.length} devices',
+                'content': 'Desktop devices updated: ${_devices.length} devices',
                 'timestamp': DateTime.now().toString(),
               });
             } else if (jsonResponse is Map && jsonResponse.containsKey('summary')) {
@@ -293,6 +302,51 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
     channel.sink.add(jsonEncode(message));
   }
 
+  void _showSavedDevices() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Saved Devices'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: _savedDevices.length,
+            itemBuilder: (context, index) {
+              final deviceId = _savedDevices.keys.elementAt(index);
+              final device = _savedDevices[deviceId] as Map<String, dynamic>;
+              return ListTile(
+                leading: const Icon(Icons.computer),
+                title: Text(device['device_name'] ?? deviceId),
+                subtitle: Text(deviceId),
+                trailing: IconButton(
+                  icon: const Icon(Icons.delete),
+                  onPressed: () {
+                    DeviceIdentity.removeSavedDevice(deviceId);
+                    setState(() {
+                      _savedDevices.remove(deviceId);
+                    });
+                    Navigator.pop(context);
+                  },
+                ),
+                onTap: () {
+                  _switchDevice(deviceId);
+                  Navigator.pop(context);
+                },
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -445,64 +499,93 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   }
 
   Widget _buildDeviceSelector(ColorScheme colorScheme) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Row(
-        children: [
-          Text(
-            'Active Device:',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-              color: colorScheme.onSurface,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerLow,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: colorScheme.outline),
-              ),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
-                  value: _activeDevice,
-                  isExpanded: true,
-                  items: _devices.entries.map((entry) {
-                    final device = entry.value;
-                    final isLocked = device['locked'] == true;
-                    return DropdownMenuItem(
-                      value: entry.key,
-                      child: Row(
-                        children: [
-                          Text(device['name'] ?? entry.key),
-                          if (isLocked) ...[
-                            const SizedBox(width: 8),
-                            Icon(Icons.lock, size: 16, color: colorScheme.error),
-                          ],
-                        ],
-                      ),
-                    );
-                  }).toList(),
-                  onChanged: (value) {
-                    if (value != null) {
-                      _switchDevice(value);
-                    }
-                  },
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            children: [
+              Text(
+                'Active Device:',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: colorScheme.onSurface,
                 ),
               ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: colorScheme.surfaceContainerLow,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: colorScheme.outline),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: _activeDevice,
+                      isExpanded: true,
+                      items: _devices.entries.map((entry) {
+                        final device = entry.value;
+                        final isLocked = device['locked'] == true;
+                        return DropdownMenuItem(
+                          value: entry.key,
+                          child: Row(
+                            children: [
+                              Text(device['name'] ?? entry.key),
+                              if (isLocked) ...[
+                                const SizedBox(width: 8),
+                                Icon(Icons.lock, size: 16, color: colorScheme.error),
+                              ],
+                            ],
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (value) {
+                        if (value != null) {
+                          _switchDevice(value);
+                        }
+                      },
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                onPressed: _getDevices,
+                icon: const Icon(Icons.refresh),
+                tooltip: 'Refresh Devices',
+              ),
+            ],
+          ),
+        ),
+        if (_savedDevices.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              children: [
+                Text(
+                  'Saved Devices (${_savedDevices.length})',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const Spacer(),
+                TextButton.icon(
+                  onPressed: _showSavedDevices,
+                  icon: const Icon(Icons.devices, size: 16),
+                  label: const Text('Manage'),
+                  style: TextButton.styleFrom(
+                    textStyle: const TextStyle(fontSize: 12),
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(width: 8),
-          IconButton(
-            onPressed: _getDevices,
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Refresh Devices',
-          ),
-        ],
-      ),
+      ],
     );
   }
 

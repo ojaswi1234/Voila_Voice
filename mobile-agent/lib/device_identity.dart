@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:persistent_device_id/persistent_device_id.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -24,6 +25,8 @@ class DeviceIdentity {
     try {
       deviceId = await PersistentDeviceId().getDeviceId();
       if (deviceId != null) {
+        // Use mobile- prefix for mobile devices
+        deviceId = 'mobile-${deviceId.substring(0, 8)}';
         await _storage.write(key: 'device_id', value: deviceId);
         _cachedDeviceId = deviceId;
         return deviceId;
@@ -32,7 +35,7 @@ class DeviceIdentity {
       debugPrint('Error getting persistent device ID: $e');
     }
 
-    deviceId = _uuid.v4();
+    deviceId = 'mobile-${_uuid.v4().substring(0, 8)}';
     await _storage.write(key: 'device_id', value: deviceId);
     _cachedDeviceId = deviceId;
     return deviceId;
@@ -111,5 +114,48 @@ class DeviceIdentity {
     await _storage.delete(key: 'device_name');
     _cachedDeviceId = null;
     _cachedDeviceName = null;
+  }
+
+  // Saved devices management
+  static Future<void> saveDevice(String deviceId, Map<String, dynamic> deviceInfo) async {
+    final savedDevices = await getSavedDevices();
+    savedDevices[deviceId] = deviceInfo;
+    await _storage.write(key: 'saved_devices', value: jsonEncode(savedDevices));
+  }
+
+  static Future<Map<String, dynamic>> getSavedDevices() async {
+    final savedDevicesJson = await _storage.read(key: 'saved_devices');
+    if (savedDevicesJson == null) {
+      return {};
+    }
+    try {
+      return jsonDecode(savedDevicesJson) as Map<String, dynamic>;
+    } catch (e) {
+      debugPrint('Error decoding saved devices: $e');
+      return {};
+    }
+  }
+
+  static Future<void> removeSavedDevice(String deviceId) async {
+    final savedDevices = await getSavedDevices();
+    savedDevices.remove(deviceId);
+    await _storage.write(key: 'saved_devices', value: jsonEncode(savedDevices));
+  }
+
+  static Future<bool> verifyDevice(String deviceId, String deviceFingerprint) async {
+    final savedDevices = await getSavedDevices();
+    final device = savedDevices[deviceId];
+    if (device == null) {
+      return false;
+    }
+    // Verify fingerprint matches to prevent MITM
+    return device['fingerprint'] == deviceFingerprint;
+  }
+
+  static Future<String> generateDeviceFingerprint() async {
+    final deviceInfo = await getDeviceInfo();
+    final fingerprintString = jsonEncode(deviceInfo);
+    final bytes = utf8.encode(fingerprintString);
+    return base64.encode(bytes);
   }
 }

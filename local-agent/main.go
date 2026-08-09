@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -121,13 +122,14 @@ const (
 
 // Connection data
 type ConnectionData struct {
-	BackendURL  string `json:"backend_url"`
-	DeviceID    string `json:"device_id"`
-	DeviceName  string `json:"device_name"`
+	BackendURL     string `json:"backend_url"`
+	DeviceID       string `json:"device_id"`
+	DeviceName     string `json:"device_name"`
 	Passphrase     string `json:"passphrase"`
 	SecurityPhrase string `json:"security_phrase"`
+	DeviceFingerprint string `json:"device_fingerprint"`
 	Connected      bool   `json:"connected"`
-	LastConnected string `json:"last_connected"`
+	LastConnected   string `json:"last_connected"`
 }
 
 // Model
@@ -254,9 +256,9 @@ func (m model) handleEnter() (model, tea.Cmd) {
 			m.currentInput = ""
 		case 1:
 			m.connectionData.DeviceName = m.currentInput
-			// Generate device ID from device name and random UUID
+			// Generate desktop device ID from device name and random UUID
 			if m.connectionData.DeviceID == "" {
-				m.connectionData.DeviceID = "device-" + generateUUID()
+				m.connectionData.DeviceID = "desktop-" + generateUUID()
 			}
 			m.inputStep = 2
 			m.currentInput = ""
@@ -266,6 +268,10 @@ func (m model) handleEnter() (model, tea.Cmd) {
 			m.currentInput = ""
 		case 3:
 			m.connectionData.SecurityPhrase = m.currentInput
+			// Generate device fingerprint for MITM prevention
+			if m.connectionData.DeviceFingerprint == "" {
+				m.connectionData.DeviceFingerprint = generateDeviceFingerprint()
+			}
 			m.isLoading = true
 			return m, m.testConnection()
 		}
@@ -302,9 +308,32 @@ func (m model) testConnection() tea.Cmd {
 	return func() tea.Msg {
 		// Return loading state first
 		time.Sleep(500 * time.Millisecond)
-		// Simulate connection test
-		time.Sleep(500 * time.Millisecond)
-		m.connectionData.DeviceID = fmt.Sprintf("device-%d", time.Now().Unix())
+		// Test actual connection to backend
+		resp, err := http.Get(m.connectionData.BackendURL + "/health")
+		if err != nil {
+			return connectionResultMsg{success: false, message: "Failed to connect to backend: " + err.Error()}
+		}
+		defer resp.Body.Close()
+		
+		if resp.StatusCode != 200 {
+			return connectionResultMsg{success: false, message: "Backend returned status: " + resp.Status}
+		}
+		
+		// Register device with backend including fingerprint
+		deviceData := map[string]interface{}{
+			"device_id":    m.connectionData.DeviceID,
+			"device_name":  m.connectionData.DeviceName,
+			"fingerprint": m.connectionData.DeviceFingerprint,
+			"type":         "desktop",
+		}
+		jsonData, _ := json.Marshal(deviceData)
+		resp, err = http.Post(m.connectionData.BackendURL+"/register", "application/json", bytes.NewBuffer(jsonData))
+		if err != nil {
+			// Registration failed but connection succeeded
+			return connectionResultMsg{success: true, message: "Connection successful (registration skipped)"}
+		}
+		defer resp.Body.Close()
+		
 		return connectionResultMsg{success: true, message: "Connection successful"}
 	}
 }
@@ -654,6 +683,21 @@ func generateUUID() string {
 		return "fallback-" + fmt.Sprintf("%d", time.Now().UnixNano())
 	}
 	return hex.EncodeToString(b)[:8]
+}
+
+func generateDeviceFingerprint() string {
+	// Generate fingerprint from system info
+	hostname, _ := os.Hostname()
+	osName := runtime.GOOS
+	arch := runtime.GOARCH
+	user := os.Getenv("USER")
+	if user == "" {
+		user = os.Getenv("USERNAME")
+	}
+	
+	fingerprintData := fmt.Sprintf("%s|%s|%s|%s|%d", hostname, osName, arch, user, time.Now().Unix()/(86400))
+	hash := sha256.Sum256([]byte(fingerprintData))
+	return hex.EncodeToString(hash[:])[:16]
 }
 
 // Main
