@@ -279,12 +279,21 @@ func (m model) handleEnter() (model, tea.Cmd) {
 		m.state = "menu"
 		m.selectedOption = 0
 	} else if m.state == "menu" {
+		backgroundRunning := isBackgroundServiceRunning()
+		
 		switch m.selectedOption {
-		case 0: // Stop Service
-			if m.serverRunning {
-				return m, m.stopServer()
+		case 0: // Stop Service / Stop Background Service
+			if backgroundRunning {
+				// Stop background service by killing the process
+				m.messages = []string{successStyle.Render("Stopping background service...")}
+				stopBackgroundService()
+				return m, nil
 			} else {
-				return m, m.startServer()
+				if m.serverRunning {
+					return m, m.stopServer()
+				} else {
+					return m, m.startServer()
+				}
 			}
 		case 1: // Delete Connection
 			m.connectionData = ConnectionData{}
@@ -508,6 +517,13 @@ func (m model) menuView() string {
 	content.WriteString("\n\n")
 	
 	content.WriteString(statusStyle.Render(fmt.Sprintf("Status: %s", m.status)))
+	
+	// Show background service status
+	if isBackgroundServiceRunning() {
+		content.WriteString("\n\n")
+		content.WriteString(successStyle.Render("● Background service running"))
+	}
+	
 	content.WriteString("\n\n")
 	content.WriteString(separatorStyle.Render(separatorLine))
 	content.WriteString("\n\n")
@@ -517,6 +533,16 @@ func (m model) menuView() string {
 		"🗑  Delete Connection",
 		"📊 View Status",
 		"🚪 Exit",
+	}
+	
+	// Add option to stop background service if running
+	if isBackgroundServiceRunning() {
+		options = []string{
+			"⏯  Stop Background Service",
+			"🗑  Delete Connection",
+			"📊 View Status",
+			"🚪 Exit",
+		}
 	}
 
 	for i, option := range options {
@@ -612,6 +638,11 @@ func startHTTPServer(passphrase string) {
 			w.WriteHeader(http.StatusUnauthorized)
 			json.NewEncoder(w).Encode(map[string]string{"status": "unauthorized"})
 		}
+	})
+
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "mode": "background"})
 	})
 
 	mux.HandleFunc("/execute", func(w http.ResponseWriter, r *http.Request) {
@@ -754,20 +785,28 @@ func setupAutoStart() error {
 }
 
 func setupWindowsAutoStart(exePath string) error {
-	// Add to Windows startup folder
-	startupFolder := filepath.Join(os.Getenv("APPDATA"), "Microsoft", "Windows", "Start Menu", "Programs", "Startup")
+	// Create a scheduled task instead of startup folder for better background behavior
+	taskName := "AntigravityVoiceCLI"
 	
-	// Create a batch file that runs the agent in background without TUI
-	batchContent := fmt.Sprintf(`@echo off
-start "" /B "%s" --background > nul 2>&1
-`, exePath)
+	// Delete existing task if it exists
+	exec.Command("schtasks", "/delete", "/tn", taskName, "/f").Run()
 	
-	batchPath := filepath.Join(startupFolder, "antigravity.bat")
-	if err := os.WriteFile(batchPath, []byte(batchContent), 0644); err != nil {
-		return fmt.Errorf("failed to create startup batch file: %w", err)
+	// Create new scheduled task to run at logon with hidden window
+	cmdArgs := []string{
+		"schtasks", "/create",
+		"/tn", taskName,
+		"/tr", fmt.Sprintf(`"%s" --background`, exePath),
+		"/sc", "onlogon",
+		"/rl", "highest",
+		"/f",
 	}
 	
-	log.Printf("Auto-start configured: %s", batchPath)
+	cmd := exec.Command(cmdArgs[0], cmdArgs[1:]...)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to create scheduled task: %w, output: %s", err, string(output))
+	}
+	
+	log.Printf("Auto-start configured: Scheduled task '%s'", taskName)
 	return nil
 }
 
@@ -785,6 +824,7 @@ func setupMacAutoStart(exePath string) error {
     <key>ProgramArguments</key>
     <array>
         <string>%s</string>
+        <string>--background</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
@@ -818,7 +858,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=%s
+ExecStart=%s --background
 Restart=always
 RestartSec=10
 
@@ -872,8 +912,110 @@ func generateDeviceFingerprint() string {
 	return hex.EncodeToString(hash[:])[:16]
 }
 
+func runBackgroundMode() {
+	data, err := loadConnectionData()
+	if err != nil {
+		log.Fatalf("Background mode requires connection data: %v", err)
+	}
+	
+	if !data.Connected || data.SecurityPhrase == "" {
+		log.Fatalf("Background mode requires completed setup")
+	}
+	
+	log.Printf("Starting Antigravity in background mode...")
+	log.Printf("Backend: %s", data.BackendURL)
+	log.Printf("Device: %s (%s)", data.DeviceName, data.DeviceID)
+	
+	// Start HTTP server
+	go startHTTPServer(data.Passphrase)
+	
+	// Start ngrok registration loop
+	go func(data ConnectionData) {
+		for {
+			addr := getNgrokPublicURL()
+			if addr == "" {
+				log.Println("ngrok URL not available yet (is ngrok running?)")
+			} else if err := registerWithBackend(data, addr); err != nil {
+				log.Printf("register error: %v", err)
+			}
+			time.Sleep(30 * time.Second)
+		}
+	}(data)
+	
+	// Start presence polling
+	go func() {
+		for {
+			time.Sleep(20 * time.Second)
+			healthURL := data.BackendURL + "/health"
+			req, err := http.NewRequest("GET", healthURL, nil)
+			if err == nil {
+				if strings.Contains(data.BackendURL, "ngrok") || strings.Contains(data.BackendURL, "ngrok-free") {
+					req.Header.Set("ngrok-skip-browser-warning", "true")
+				}
+				resp, err := http.DefaultClient.Do(req)
+				if err == nil && resp.StatusCode == 200 {
+					var healthData struct {
+						Status          string `json:"status"`
+						MobileClients   int    `json:"mobile_clients"`
+					}
+					json.NewDecoder(resp.Body).Decode(&healthData)
+					resp.Body.Close()
+					log.Printf("Presence: Backend OK, Mobile clients: %d", healthData.MobileClients)
+				} else {
+					log.Printf("Presence: Backend unreachable")
+				}
+			} else {
+				log.Printf("Presence: Backend unreachable")
+			}
+		}
+	}()
+	
+	// Keep running indefinitely
+	select {}
+}
+
+func stopBackgroundService() {
+	if runtime.GOOS == "windows" {
+		exec.Command("taskkill", "/F", "/IM", "antigravity.exe").Run()
+	} else if runtime.GOOS == "darwin" {
+		exec.Command("launchctl", "unload", filepath.Join(os.Getenv("HOME"), "Library", "LaunchAgents", "com.voicecli.antigravity.plist")).Run()
+	} else {
+		exec.Command("systemctl", "--user", "stop", "antigravity.service").Run()
+	}
+	log.Println("Background service stop command executed")
+}
+
+func isBackgroundServiceRunning() bool {
+	// Simple check: try to connect to the local HTTP server
+	resp, err := http.Get("http://localhost:8088/health")
+	if err == nil && resp.StatusCode == 200 {
+		resp.Body.Close()
+		return true
+	}
+	return false
+}
+
 // Main
 func main() {
+	// Check for background mode flag
+	backgroundMode := false
+	for _, arg := range os.Args {
+		if arg == "--background" || arg == "-b" {
+			backgroundMode = true
+			break
+		}
+	}
+	
+	if backgroundMode {
+		runBackgroundMode()
+		return
+	}
+	
+	// Check if background service is already running
+	if isBackgroundServiceRunning() {
+		log.Println("Background service already running. Launching TUI in management mode...")
+	}
+	
 	// Try to load existing connection
 	data, err := loadConnectionData()
 	if err == nil && data.Connected && data.SecurityPhrase != "" {

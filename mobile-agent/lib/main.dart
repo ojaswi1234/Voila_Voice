@@ -125,7 +125,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
     }
   }
 
-  Future<void> _requestMicrophonePermission() async {
+  Future<bool> _requestMicrophonePermission() async {
     final status = await Permission.microphone.request();
     
     if (status.isDenied) {
@@ -140,15 +140,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
     if (status.isPermanentlyDenied) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Microphone permission permanently denied. Please enable in app settings.'),
-            action: SnackBarAction(
-              label: 'Settings',
-              onPressed: () {
-                openAppSettings();
-              },
-            ),
-          ),
+          const SnackBar(content: Text('Microphone permission permanently denied. Please enable in app settings.')),
         );
       }
       return false;
@@ -180,7 +172,9 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
 
   Future<void> _startListening() async {
     final hasPermission = await _requestMicrophonePermission();
-    if (!hasPermission) return;
+    if (!hasPermission) {
+      return;
+    }
     
     setState(() {
       _isListening = true;

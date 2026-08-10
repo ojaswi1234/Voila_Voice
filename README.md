@@ -104,6 +104,7 @@ voice-cli-system/
 - ✅ **TUI interface** with bubbletea for setup and management
 - ✅ **One-time connection setup** with interactive wizard
 - ✅ **Auto-start on device boot** after initial setup
+- ✅ **Background mode** (`--background` flag) for system service
 - ✅ **Device management** with delete connection option
 - ✅ **Stop/start controls** for service management
 - ✅ **Security disconnect** handling for auth/anomaly issues
