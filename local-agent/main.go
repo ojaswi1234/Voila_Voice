@@ -757,26 +757,32 @@ func isNgrokRunning() bool {
 }
 
 func startNgrok() error {
-	// Try to start ngrok using the Python script first
-	scriptPath := filepath.Join(getExecutableDir(), "..", "scripts", "setup_ngrok.py")
+	// Try to start ngrok directly if it exists
+	scriptsDir := filepath.Join(getExecutableDir(), "..", "scripts")
+	ngrokPath := filepath.Join(scriptsDir, "ngrok.exe")
+	
+	if _, err := os.Stat(ngrokPath); err == nil {
+		log.Printf("Starting ngrok directly: %s", ngrokPath)
+		cmd := exec.Command(ngrokPath, "http", "8088")
+		cmd.Dir = scriptsDir
+		if err := cmd.Start(); err != nil {
+			return fmt.Errorf("failed to start ngrok: %w", err)
+		}
+		log.Println("Ngrok started in background")
+		return nil
+	}
+	
+	// Fall back to Python script
+	scriptPath := filepath.Join(scriptsDir, "setup_ngrok.py")
 	if _, err := os.Stat(scriptPath); err == nil {
 		log.Printf("Starting ngrok using Python script: %s", scriptPath)
 		cmd := exec.Command("python", scriptPath)
 		if err := cmd.Start(); err != nil {
 			log.Printf("Failed to start ngrok with Python script: %v", err)
-			// Try Node script as fallback
 			return startNgrokNode()
 		}
-		// Wait for ngrok to be ready
-		log.Println("Waiting for ngrok to start...")
-		for i := 0; i < 30; i++ {
-			time.Sleep(1 * time.Second)
-			if isNgrokRunning() {
-				log.Println("Ngrok is now running")
-				return nil
-			}
-		}
-		return fmt.Errorf("ngrok did not start within 30 seconds")
+		log.Println("Ngrok started in background")
+		return nil
 	}
 	return startNgrokNode()
 }
@@ -789,16 +795,8 @@ func startNgrokNode() error {
 		if err := cmd.Start(); err != nil {
 			return fmt.Errorf("failed to start ngrok with Node script: %w", err)
 		}
-		// Wait for ngrok to be ready
-		log.Println("Waiting for ngrok to start...")
-		for i := 0; i < 30; i++ {
-			time.Sleep(1 * time.Second)
-			if isNgrokRunning() {
-				log.Println("Ngrok is now running")
-				return nil
-			}
-		}
-		return fmt.Errorf("ngrok did not start within 30 seconds")
+		log.Println("Ngrok started in background")
+		return nil
 	}
 	return fmt.Errorf("no ngrok setup script found")
 }
@@ -1217,8 +1215,33 @@ func main() {
 	}
 	
 	// Check if background service is already running
-	if isBackgroundServiceRunning() {
+	backgroundRunning := isBackgroundServiceRunning()
+	if backgroundRunning {
 		log.Println("Background service already running. Launching TUI in management mode...")
+		// Load connection data for backend access
+		data, err := loadConnectionData()
+		if err != nil {
+			log.Printf("Warning: Could not load connection data: %v", err)
+			data = ConnectionData{}
+		}
+		// Launch in menu mode to manage background service
+		initialModel := model{
+			state:          "menu",
+			connectionData: data,
+			inputStep:      0,
+			currentInput:   "",
+			selectedOption: 0,
+			messages:       []string{successStyle.Render("Background service running")},
+			status:         "Background Service Active",
+			isRunning:      true,
+			serverRunning:  true,
+			isLoading:      false,
+		}
+		p := tea.NewProgram(initialModel)
+		if _, err := p.Run(); err != nil {
+			log.Fatalf("Error running program: %v", err)
+		}
+		return
 	}
 	
 	// Try to load existing connection
