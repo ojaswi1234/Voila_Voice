@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -157,6 +158,12 @@ type serverStatusMsg struct {
 type securityDisconnectMsg struct{}
 type loadingMsg struct{}
 type tickMsg time.Time
+type successMsg struct {
+	message string
+}
+type errorMsg struct {
+	message string
+}
 
 // Init
 func (m model) Init() tea.Cmd {
@@ -178,11 +185,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleEnter()
 		case tea.KeyUp:
 			if m.state == "menu" {
-				m.selectedOption = (m.selectedOption - 1 + 4) % 4
+				m.selectedOption = (m.selectedOption - 1 + 7) % 7
 			}
 		case tea.KeyDown:
 			if m.state == "menu" {
-				m.selectedOption = (m.selectedOption + 1) % 4
+				m.selectedOption = (m.selectedOption + 1) % 7
 			}
 		case tea.KeyBackspace:
 			if len(m.currentInput) > 0 {
@@ -238,6 +245,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.isRunning = false
 		m.serverRunning = false
 		return m, m.stopServer()
+	case successMsg:
+		m.messages = append(m.messages, successStyle.Render("✓ "+msg.message))
+	case errorMsg:
+		m.messages = append(m.messages, errorStyle.Render("✗ "+msg.message))
+		if msg.message == "Local data cleared" {
+			m.connectionData = ConnectionData{}
+			m.state = "setup"
+			m.inputStep = 0
+			m.currentInput = ""
+		}
 	}
 	return m, nil
 }
@@ -284,7 +301,6 @@ func (m model) handleEnter() (model, tea.Cmd) {
 		switch m.selectedOption {
 		case 0: // Stop Service / Stop Background Service
 			if backgroundRunning {
-				// Stop background service by killing the process
 				m.messages = []string{successStyle.Render("Stopping background service...")}
 				stopBackgroundService()
 				return m, nil
@@ -301,9 +317,15 @@ func (m model) handleEnter() (model, tea.Cmd) {
 			m.inputStep = 0
 			m.currentInput = ""
 			m.messages = []string{warningStyle.Render("Connection deleted")}
-		case 2: // View Status
+		case 2: // Start Ngrok
+			return m, m.startNgrok()
+		case 3: // Clear Backend Data
+			return m, m.clearBackendData()
+		case 4: // Clear Local Data
+			return m, m.clearLocalData()
+		case 5: // View Status
 			m.status = fmt.Sprintf("Status: %s | Connected: %v", m.status, m.connectionData.Connected)
-		case 3: // Exit
+		case 6: // Exit
 			if m.serverRunning {
 				return m, m.stopServer()
 			}
@@ -339,21 +361,7 @@ func (m model) testConnection() tea.Cmd {
 			return connectionResultMsg{success: false, message: "Backend returned status: " + resp.Status}
 		}
 		
-		// Register device with backend including fingerprint
-		deviceData := map[string]interface{}{
-			"device_id":    m.connectionData.DeviceID,
-			"device_name":  m.connectionData.DeviceName,
-			"fingerprint": m.connectionData.DeviceFingerprint,
-			"type":         "desktop",
-		}
-		jsonData, _ := json.Marshal(deviceData)
-		resp, err = http.Post(m.connectionData.BackendURL+"/register", "application/json", bytes.NewBuffer(jsonData))
-		if err != nil {
-			// Registration failed but connection succeeded
-			return connectionResultMsg{success: true, message: "Connection successful (registration skipped)"}
-		}
-		defer resp.Body.Close()
-		
+		// Successfully connected to backend - registration happens in background loop when ngrok is available
 		return connectionResultMsg{success: true, message: "Connection successful"}
 	}
 }
@@ -366,9 +374,25 @@ func (m model) startServer() tea.Cmd {
 			for {
 				addr := getNgrokPublicURL()
 				if addr == "" {
-					log.Println("ngrok URL not available yet (is ngrok running?)")
-				} else if err := registerWithBackend(data, addr); err != nil {
-					log.Printf("register error: %v", err)
+					if !isNgrokRunning() {
+						log.Println("Ngrok not running, attempting to start...")
+						if err := startNgrok(); err != nil {
+							log.Printf("Failed to start ngrok: %v (skipping registration)", err)
+							time.Sleep(30 * time.Second)
+							continue
+						}
+						// Wait a bit for ngrok to be fully ready
+						time.Sleep(3 * time.Second)
+						addr = getNgrokPublicURL()
+					}
+					if addr == "" {
+						log.Println("ngrok URL not available yet (is ngrok running?)")
+					}
+				}
+				if addr != "" {
+					if err := registerWithBackend(data, addr); err != nil {
+						log.Printf("register error: %v", err)
+					}
 				}
 				time.Sleep(30 * time.Second)
 			}
@@ -380,9 +404,65 @@ func (m model) startServer() tea.Cmd {
 
 func (m model) stopServer() tea.Cmd {
 	return func() tea.Msg {
-		// Stop the HTTP server
 		stopHTTPServer()
 		return serverStatusMsg{running: false}
+	}
+}
+
+func (m model) clearBackendData() tea.Cmd {
+	return func() tea.Msg {
+		if m.connectionData.SecurityPhrase == "" {
+			return errorMsg{"Security phrase not configured"}
+		}
+		
+		clearURL := strings.TrimRight(m.connectionData.BackendURL, "/") + "/clear-all-devices"
+		reqBody := map[string]string{"security_phrase": m.connectionData.SecurityPhrase}
+		bodyBytes, _ := json.Marshal(reqBody)
+		
+		req, err := http.NewRequest(http.MethodPost, clearURL, bytes.NewReader(bodyBytes))
+		if err != nil {
+			return errorMsg{fmt.Sprintf("Failed to create request: %v", err)}
+		}
+		req.Header.Set("Content-Type", "application/json")
+		
+		if strings.Contains(m.connectionData.BackendURL, "ngrok") || strings.Contains(m.connectionData.BackendURL, "ngrok-free") {
+			req.Header.Set("ngrok-skip-browser-warning", "true")
+		}
+		
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return errorMsg{fmt.Sprintf("Failed to clear backend data: %v", err)}
+		}
+		defer resp.Body.Close()
+		
+		if resp.StatusCode != 200 {
+			body, _ := io.ReadAll(resp.Body)
+			return errorMsg{fmt.Sprintf("Backend returned: %s - %s", resp.Status, string(body))}
+		}
+		
+		return successMsg{"Backend data cleared successfully"}
+	}
+}
+
+func (m model) clearLocalData() tea.Cmd {
+	return func() tea.Msg {
+		err := os.Remove("connection_data.json")
+		if err != nil && !os.IsNotExist(err) {
+			return errorMsg{fmt.Sprintf("Failed to clear local data: %v", err)}
+		}
+		return successMsg{"Local data cleared"}
+	}
+}
+
+func (m model) startNgrok() tea.Cmd {
+	return func() tea.Msg {
+		if isNgrokRunning() {
+			return successMsg{"Ngrok is already running"}
+		}
+		if err := startNgrok(); err != nil {
+			return errorMsg{fmt.Sprintf("Failed to start ngrok: %v", err)}
+		}
+		return successMsg{"Ngrok started successfully"}
 	}
 }
 
@@ -531,6 +611,9 @@ func (m model) menuView() string {
 	options := []string{
 		"⏯  Stop/Start Service",
 		"🗑  Delete Connection",
+		"🌐 Start Ngrok",
+		"🧹 Clear Backend Data",
+		"💾 Clear Local Data",
 		"📊 View Status",
 		"🚪 Exit",
 	}
@@ -540,6 +623,9 @@ func (m model) menuView() string {
 		options = []string{
 			"⏯  Stop Background Service",
 			"🗑  Delete Connection",
+			"🌐 Start Ngrok",
+			"🧹 Clear Backend Data",
+			"💾 Clear Local Data",
 			"📊 View Status",
 			"🚪 Exit",
 		}
@@ -613,6 +699,62 @@ func getNgrokPublicURL() string {
 		return result.Tunnels[0].PublicURL
 	}
 	return ""
+}
+
+func isNgrokRunning() bool {
+	resp, err := http.Get("http://127.0.0.1:4040/api/tunnels")
+	if err != nil {
+		return false
+	}
+	resp.Body.Close()
+	return resp.StatusCode == 200
+}
+
+func startNgrok() error {
+	// Try to start ngrok using the Python script first
+	scriptPath := filepath.Join(getExecutableDir(), "..", "scripts", "setup_ngrok.py")
+	if _, err := os.Stat(scriptPath); err == nil {
+		log.Printf("Starting ngrok using Python script: %s", scriptPath)
+		cmd := exec.Command("python", scriptPath)
+		if err := cmd.Start(); err != nil {
+			log.Printf("Failed to start ngrok with Python script: %v", err)
+			// Try Node script as fallback
+			return startNgrokNode()
+		}
+		// Wait for ngrok to be ready
+		log.Println("Waiting for ngrok to start...")
+		for i := 0; i < 30; i++ {
+			time.Sleep(1 * time.Second)
+			if isNgrokRunning() {
+				log.Println("Ngrok is now running")
+				return nil
+			}
+		}
+		return fmt.Errorf("ngrok did not start within 30 seconds")
+	}
+	return startNgrokNode()
+}
+
+func startNgrokNode() error {
+	scriptPath := filepath.Join(getExecutableDir(), "..", "scripts", "setup_ngrok.js")
+	if _, err := os.Stat(scriptPath); err == nil {
+		log.Printf("Starting ngrok using Node script: %s", scriptPath)
+		cmd := exec.Command("node", scriptPath)
+		if err := cmd.Start(); err != nil {
+			return fmt.Errorf("failed to start ngrok with Node script: %w", err)
+		}
+		// Wait for ngrok to be ready
+		log.Println("Waiting for ngrok to start...")
+		for i := 0; i < 30; i++ {
+			time.Sleep(1 * time.Second)
+			if isNgrokRunning() {
+				log.Println("Ngrok is now running")
+				return nil
+			}
+		}
+		return fmt.Errorf("ngrok did not start within 30 seconds")
+	}
+	return fmt.Errorf("no ngrok setup script found")
 }
 
 func startHTTPServer(passphrase string) {
@@ -724,11 +866,12 @@ func registerWithBackend(data ConnectionData, publicAddress string) error {
 	}
 
 	body, _ := json.Marshal(map[string]string{
-		"device_id":    data.DeviceID,
-		"device_name":  data.DeviceName,
-		"address":      publicAddress, // ngrok https URL, no trailing path
-		"fingerprint":  data.DeviceFingerprint,
-		"type":         "desktop",
+		"device_id":       data.DeviceID,
+		"device_name":     data.DeviceName,
+		"address":         publicAddress, // ngrok https URL, no trailing path
+		"fingerprint":     data.DeviceFingerprint,
+		"type":            "desktop",
+		"security_phrase": data.SecurityPhrase, // Send security phrase for authentication
 	})
 
 	req, err := http.NewRequest(http.MethodPost, strings.TrimRight(data.BackendURL, "/")+"/register", bytes.NewReader(body))
@@ -934,9 +1077,24 @@ func runBackgroundMode() {
 		for {
 			addr := getNgrokPublicURL()
 			if addr == "" {
-				log.Println("ngrok URL not available yet (is ngrok running?)")
-			} else if err := registerWithBackend(data, addr); err != nil {
-				log.Printf("register error: %v", err)
+				if !isNgrokRunning() {
+					log.Println("Ngrok not running, attempting to start...")
+					if err := startNgrok(); err != nil {
+						log.Printf("Failed to start ngrok: %v (skipping registration)", err)
+						time.Sleep(30 * time.Second)
+						continue
+					}
+					time.Sleep(3 * time.Second)
+					addr = getNgrokPublicURL()
+				}
+				if addr == "" {
+					log.Println("ngrok URL not available yet (is ngrok running?)")
+				}
+			}
+			if addr != "" {
+				if err := registerWithBackend(data, addr); err != nil {
+					log.Printf("register error: %v", err)
+				}
 			}
 			time.Sleep(30 * time.Second)
 		}
@@ -960,6 +1118,7 @@ func runBackgroundMode() {
 					}
 					json.NewDecoder(resp.Body).Decode(&healthData)
 					resp.Body.Close()
+					
 					log.Printf("Presence: Backend OK, Mobile clients: %d", healthData.MobileClients)
 				} else {
 					log.Printf("Presence: Backend unreachable")
@@ -1034,8 +1193,11 @@ func main() {
 			for {
 				addr := getNgrokPublicURL()
 				if addr == "" {
-					log.Println("ngrok URL not available yet (is ngrok running?)")
-				} else if err := registerWithBackend(data, addr); err != nil {
+					log.Println("ngrok URL not available yet (is ngrok running?) - skipping registration")
+					time.Sleep(30 * time.Second)
+					continue
+				}
+				if err := registerWithBackend(data, addr); err != nil {
 					log.Printf("register error: %v", err)
 				}
 				time.Sleep(30 * time.Second)
@@ -1059,6 +1221,7 @@ func main() {
 						}
 						json.NewDecoder(resp.Body).Decode(&healthData)
 						resp.Body.Close()
+						
 						log.Printf("Presence: Backend OK, Mobile clients: %d", healthData.MobileClients)
 					} else {
 						log.Printf("Presence: Backend unreachable")

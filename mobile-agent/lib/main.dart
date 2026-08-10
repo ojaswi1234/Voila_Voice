@@ -98,6 +98,9 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   bool _isListening = false;
   bool _speechAvailable = false;
   bool _speechInitialized = false;
+  
+  // Security phrase for backend operations
+  String _securityPhrase = '';
 
   @override
   void initState() {
@@ -251,6 +254,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                   // Only show desktop devices, prevent MITM with fingerprint verification
                   final deviceFingerprint = device['fingerprint'];
                   final deviceOnline = device['online'] == true;
+                  final deviceReachable = device['reachable'] == true;
                   if (deviceFingerprint != null) {
                     _devices[deviceId] = device;
                     // Auto-save desktop devices for quick reconnect
@@ -262,9 +266,16 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                   }
                 }
               }
+              // Clear stale saved devices that aren't in current backend list
+              if (_devices.isEmpty) {
+                _savedDevices = {};
+                setState(() {});
+              }
+              final onlineCount = _devices.values.where((d) => d['online'] == true).length;
+              final reachableCount = _devices.values.where((d) => d['reachable'] == true).length;
               _messages.add({
                 'type': 'system',
-                'content': 'Desktop devices updated: ${_devices.length} devices (${_devices.values.where((d) => d['online'] == true).length} online)',
+                'content': 'Desktop devices updated: ${_devices.length} devices ($onlineCount online, $reachableCount reachable)',
                 'timestamp': DateTime.now().toString(),
               });
             } else if (jsonResponse is Map && jsonResponse.containsKey('summary')) {
@@ -272,6 +283,23 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                 'type': 'response',
                 'content': jsonResponse['output'] ?? message,
                 'summary': jsonResponse['summary'],
+                'timestamp': DateTime.now().toString(),
+              });
+            } else if (message.contains('OK: All devices cleared')) {
+              _messages.add({
+                'type': 'system',
+                'content': 'Backend data cleared successfully',
+                'timestamp': DateTime.now().toString(),
+              });
+              _devices = {};
+              _savedDevices = {};
+              DeviceIdentity.clearAllSavedDevices();
+              setState(() {});
+              _getDevices(); // Refresh device list
+            } else if (message.contains('ERROR:')) {
+              _messages.add({
+                'type': 'error',
+                'content': message.replace('ERROR: ', ''),
                 'timestamp': DateTime.now().toString(),
               });
             } else {
@@ -352,13 +380,15 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
             ? healthData['devices_online'] as int 
             : 0;
         
-        // Check if active device is specifically online
+        // Check if active device is specifically online and reachable
         bool activeDeviceOnline = false;
         if (healthData['online_devices'] is List) {
           final onlineDevices = healthData['online_devices'] as List;
           for (var device in onlineDevices) {
             if (device['id'] == _activeDevice && device['online'] == true) {
-              activeDeviceOnline = true;
+              // Device is online, check if reachable
+              final reachable = device['reachable'] == true;
+              activeDeviceOnline = reachable;
               break;
             }
           }
@@ -366,7 +396,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
         
         setState(() {
           _isHealthy = true;
-          _localAgentConnected = activeDeviceOnline; // Only show connected if active device is online
+          _localAgentConnected = activeDeviceOnline; // Only show connected if active device is reachable
           _backendStatus = 'Healthy (${healthData['uptime']})';
         });
       } else {
@@ -466,6 +496,109 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
     };
     
     channel.sink.add(jsonEncode(message));
+  }
+
+  void _clearBackendData() async {
+    final securityPhrase = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Enter Security Phrase'),
+        content: TextField(
+          obscureText: true,
+          decoration: const InputDecoration(
+            hintText: 'Security phrase',
+          ),
+          onChanged: (value) {
+            _securityPhrase = value;
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, null),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, _securityPhrase),
+            child: const Text('Continue'),
+          ),
+        ],
+      ),
+    );
+    
+    if (securityPhrase == null || securityPhrase!.isEmpty) {
+      return;
+    }
+    
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Clear Backend Data'),
+        content: const Text('This will delete all devices and data from the backend. This action cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Clear'),
+          ),
+        ],
+      ),
+    );
+    
+    if (confirmed == true) {
+      final message = {
+        'type': 'clear_all_devices',
+        'security_phrase': securityPhrase,
+      };
+      
+      channel.sink.add(jsonEncode(message));
+      setState(() {
+        _messages.add({
+          'type': 'system',
+          'content': 'Requesting backend data clear...',
+          'timestamp': DateTime.now().toString(),
+        });
+      });
+    }
+    
+    _securityPhrase = '';
+  }
+
+  void _clearLocalData() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Clear Local Data'),
+        content: const Text('This will clear all locally cached device data. You will need to reconnect to devices.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Clear'),
+          ),
+        ],
+      ),
+    );
+    
+    if (confirmed == true) {
+      await DeviceIdentity.clearAllSavedDevices();
+      setState(() {
+        _savedDevices = {};
+        _devices = {};
+        _messages.add({
+          'type': 'system',
+          'content': 'Local data cleared',
+          'timestamp': DateTime.now().toString(),
+        });
+      });
+    }
   }
 
   void _showSavedDevices() {
@@ -573,8 +706,13 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                 Row(
                   children: [
                     _buildStatusChip(
-                      _isConnected ? 'Connected' : 'Disconnected',
+                      'Backend: ${_isConnected ? 'Connected' : 'Disconnected'}',
                       _isConnected ? Colors.green : Colors.red,
+                    ),
+                    const SizedBox(width: 8),
+                    _buildStatusChip(
+                      'Desktop: ${_localAgentConnected ? 'Online' : 'Offline'}',
+                      _localAgentConnected ? Colors.green : Colors.orange,
                     ),
                     const SizedBox(width: 8),
                     _buildStatusChip(
@@ -622,16 +760,16 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              _buildFlowIndicator('Mobile', true, colorScheme),
+              _buildFlowIndicator('Mobile', _isConnected, colorScheme),
               const Icon(Icons.arrow_forward, size: 16, color: Colors.grey),
-              _buildFlowIndicator('Backend', _isHealthy, colorScheme),
+              _buildFlowIndicator('Backend', _isConnected && _isHealthy, colorScheme),
               const Icon(Icons.arrow_forward, size: 16, color: Colors.grey),
               _buildFlowIndicator('Local Agent', _localAgentConnected, colorScheme),
             ],
           ),
           const SizedBox(height: 8),
           Text(
-            'Mobile → Backend → Local Agent → Backend → Mobile',
+            _getConnectionFlowText(),
             style: TextStyle(
               fontSize: 11,
               color: colorScheme.onSurfaceVariant,
@@ -662,6 +800,19 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
         ),
       ),
     );
+  }
+
+  String _getConnectionFlowText() {
+    if (!_isConnected) {
+      return 'Mobile → Backend (disconnected)';
+    }
+    if (!_isHealthy) {
+      return 'Mobile → Backend (unhealthy) → Local Agent (unknown)';
+    }
+    if (_localAgentConnected) {
+      return 'Mobile → Backend (OK) → Local Agent (online) ✓';
+    }
+    return 'Mobile → Backend (OK) → Local Agent (offline)';
   }
 
   Widget _buildDeviceSelector(ColorScheme colorScheme) {
@@ -722,6 +873,16 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                 onPressed: _getDevices,
                 icon: const Icon(Icons.refresh),
                 tooltip: 'Refresh Devices',
+              ),
+              IconButton(
+                onPressed: _clearBackendData,
+                icon: const Icon(Icons.delete_sweep),
+                tooltip: 'Clear Backend Data',
+              ),
+              IconButton(
+                onPressed: _clearLocalData,
+                icon: const Icon(Icons.delete),
+                tooltip: 'Clear Local Data',
               ),
             ],
           ),

@@ -129,6 +129,10 @@ class DeviceIdentity {
     await _storage.write(key: 'saved_devices', value: jsonEncode(savedDevices));
   }
 
+  static Future<void> clearAllSavedDevices() async {
+    await _storage.delete(key: 'saved_devices');
+  }
+
   static Future<bool> verifyDevice(String deviceId, String deviceFingerprint) async {
     final savedDevices = await getSavedDevices();
     final device = savedDevices[deviceId];

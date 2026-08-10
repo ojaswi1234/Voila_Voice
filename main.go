@@ -33,6 +33,8 @@ type Device struct {
 	LockedAt  time.Time
 	Fingerprint string // NEW
 	Type        string // "desktop" | etc.
+	Reachable   bool // NEW: direct ping result
+	LastPing    time.Time // NEW: last time backend pinged this device
 }
 
 type Backend struct {
@@ -71,7 +73,11 @@ func (b *Backend) markStaleDevices() {
 	for _, device := range b.devices {
 		if device.Type == "desktop" || strings.HasPrefix(device.ID, "desktop-") {
 			// Desktop devices are online only if they've heartbeated within TTL
+			wasActive := device.Active
 			device.Active = now.Sub(device.LastSeen) < deviceOnlineTTL
+			if wasActive && !device.Active {
+				log.Printf("Device marked offline: %s (%s) - last seen %v ago", device.Name, device.ID, now.Sub(device.LastSeen))
+			}
 		}
 	}
 }
@@ -82,6 +88,50 @@ func (b *Backend) startPresenceTicker() {
 	
 	for range ticker.C {
 		b.markStaleDevices()
+		b.pingAllDevices()
+	}
+}
+
+func (b *Backend) pingAllDevices() {
+	b.mu.RLock()
+	devices := make([]*Device, 0, len(b.devices))
+	for _, d := range b.devices {
+		devices = append(devices, d)
+	}
+	b.mu.RUnlock()
+	
+	// Ping all devices concurrently
+	var wg sync.WaitGroup
+	for _, device := range devices {
+		wg.Add(1)
+		go func(d *Device) {
+			defer wg.Done()
+			b.pingDevice(d)
+		}(device)
+	}
+	wg.Wait()
+}
+
+func (b *Backend) pingDevice(device *Device) {
+	if device.Address == "" {
+		return
+	}
+	
+	// Ping device's HTTP endpoint
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get(strings.TrimRight(device.Address, "/") + "/health")
+	
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	
+	if d, exists := b.devices[device.ID]; exists {
+		d.LastPing = time.Now()
+		if err == nil && resp.StatusCode == 200 {
+			d.Reachable = true
+			resp.Body.Close()
+		} else {
+			d.Reachable = false
+		}
 	}
 }
 
@@ -178,6 +228,17 @@ func (b *Backend) getAllDevices() []*Device {
 		devices = append(devices, device)
 	}
 	return devices
+}
+
+func (b *Backend) clearAllDevices() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	
+	count := len(b.devices)
+	b.devices = make(map[string]*Device)
+	b.activeDevice = ""
+	b.tokenCounter = 0
+	log.Printf("Cleared all devices and data (%d devices removed)", count)
 }
 
 func (b *Backend) lockDevice(deviceID, clientID string) error {
@@ -420,9 +481,11 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 						"name":        d.Name,
 						"active":      d.ID == b.activeDevice,
 						"online":      d.Active,
+						"reachable":   d.Reachable,
 						"locked":      d.LockedBy != "",
 						"lockedBy":    d.LockedBy,
 						"lastSeen":    d.LastSeen,
+						"lastPing":    d.LastPing,
 						"fingerprint":  d.Fingerprint,
 						"type":        d.Type,
 					})
@@ -441,6 +504,35 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				
 				jsonData, _ := json.Marshal(stats)
 				conn.WriteMessage(messageType, jsonData)
+				
+			case "clear_all_devices":
+				var req struct {
+					SecurityPhrase string `json:"security_phrase"`
+				}
+				if err := json.Unmarshal(message, &req); err == nil {
+					if req.SecurityPhrase != "" {
+						b.mu.RLock()
+						validPhrase := false
+						for _, device := range b.devices {
+							if device.AuthToken == req.SecurityPhrase {
+								validPhrase = true
+								break
+							}
+						}
+						b.mu.RUnlock()
+						
+						if validPhrase {
+							b.clearAllDevices()
+							conn.WriteMessage(messageType, []byte("OK: All devices cleared"))
+						} else {
+							conn.WriteMessage(messageType, []byte("ERROR: Invalid security phrase"))
+						}
+					} else {
+						conn.WriteMessage(messageType, []byte("ERROR: Security phrase required"))
+					}
+				} else {
+					conn.WriteMessage(messageType, []byte("ERROR: Invalid request format"))
+				}
 				
 			default:
 				// Echo for PoC compatibility
@@ -520,6 +612,53 @@ func main() {
 		
 		json.NewEncoder(w).Encode(response)
 	})
+	
+	// Clear all devices endpoint (requires security phrase)
+	http.HandleFunc("/clear-all-devices", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		
+		var req struct {
+			SecurityPhrase string `json:"security_phrase"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			log.Printf("Clear devices failed: bad request - %v", err)
+			http.Error(w, "Bad request", http.StatusBadRequest)
+			return
+		}
+		
+		if req.SecurityPhrase == "" {
+			log.Printf("Clear devices failed: missing security phrase")
+			http.Error(w, "Security phrase required", http.StatusBadRequest)
+			return
+		}
+		
+		// Verify security phrase matches connected devices
+		backend.mu.RLock()
+		validPhrase := false
+		for _, device := range backend.devices {
+			if device.AuthToken == req.SecurityPhrase {
+				validPhrase = true
+				break
+			}
+		}
+		backend.mu.RUnlock()
+		
+		if !validPhrase {
+			log.Printf("Clear devices denied: invalid security phrase")
+			http.Error(w, "Unauthorized: Invalid security phrase", http.StatusUnauthorized)
+			return
+		}
+		
+		count := len(backend.devices)
+		backend.clearAllDevices()
+		log.Printf("Backend data cleared by client with valid security phrase (%d devices removed)", count)
+		
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "message": "All devices cleared"})
+	})
 
 	http.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -534,6 +673,7 @@ func main() {
 		return
 	}
 	if r.Header.Get("X-Agent-Secret") != expected {
+		log.Printf("Registration denied: invalid or missing X-Agent-Secret header")
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -544,18 +684,23 @@ func main() {
 		Address     string `json:"address"` // e.g. https://xxxx.ngrok-free.app
 		Fingerprint string `json:"fingerprint"`
 		Type        string `json:"type"`
+		SecurityPhrase string `json:"security_phrase"` // NEW: client's security phrase
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("Registration failed: bad request - %v", err)
 		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
 	}
 	if req.DeviceID == "" || req.Address == "" {
+		log.Printf("Registration failed: missing required fields (device_id=%s, address=%s)", req.DeviceID, req.Address)
 		http.Error(w, "device_id and address required", http.StatusBadRequest)
 		return
 	}
 	if req.Type == "" {
 		req.Type = "desktop"
 	}
+
+	log.Printf("Registration request: device_id=%s, name=%s, address=%s, type=%s", req.DeviceID, req.DeviceName, req.Address, req.Type)
 
 	backend.mu.Lock()
 	defer backend.mu.Unlock()
@@ -577,8 +722,15 @@ func main() {
 	if d.AuthToken == "" {
 		d.AuthToken = generateAuthToken()
 	}
+	
+	// Store security phrase as AuthToken if provided (for client authentication)
+	if req.SecurityPhrase != "" {
+		d.AuthToken = req.SecurityPhrase
+		log.Printf("Device registered with custom security phrase")
+	}
 
-	log.Printf("Device registered: %s (%s) @ %s (online: %v)", d.Name, d.ID, d.Address, d.Active)
+	wasNew := !exists
+	log.Printf("Device registered: %s (%s) @ %s (online: %v, new: %v, total devices: %d)", d.Name, d.ID, d.Address, d.Active, wasNew, len(backend.devices))
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
@@ -606,6 +758,8 @@ func main() {
 					"name":        device.Name,
 					"lastSeen":    device.LastSeen.Format(time.RFC3339),
 					"online":      device.Active,
+					"reachable":   device.Reachable,
+					"lastPing":    device.LastPing.Format(time.RFC3339),
 					"fingerprint":  device.Fingerprint,
 					"type":        device.Type,
 				})
