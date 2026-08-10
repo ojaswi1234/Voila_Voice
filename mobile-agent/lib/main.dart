@@ -4,10 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:speech_to_text/speech_to_text.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'device_identity.dart';
 import 'package:uuid/uuid.dart';
 
-// Backend URL from build-time configuration
 // Backend URL from build-time configuration (safe default + scheme fix)
 const String _rawBackendUrl = String.fromEnvironment(
   'BACKEND_URL',
@@ -91,6 +92,12 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   String? _currentDeviceName;
   String _sessionId = '';
   Map<String, dynamic> _savedDevices = {};
+  
+  // Speech-to-text state
+  final SpeechToText _speechToText = SpeechToText();
+  bool _isListening = false;
+  bool _speechAvailable = false;
+  bool _speechInitialized = false;
 
   @override
   void initState() {
@@ -98,8 +105,125 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
     _initializeDeviceIdentity();
     _connectToBackend();
     _startHealthChecks();
+    _initializeSpeech();
 
     Future.delayed(const Duration(seconds: 1), _getDevices);
+  }
+
+  Future<void> _initializeSpeech() async {
+    if (_speechInitialized) return;
+    
+    _speechAvailable = await _speechToText.initialize();
+    _speechInitialized = true;
+    
+    if (!_speechAvailable) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Speech recognition not available on this device')),
+        );
+      }
+    }
+  }
+
+  Future<void> _requestMicrophonePermission() async {
+    final status = await Permission.microphone.request();
+    
+    if (status.isDenied) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Microphone permission denied')),
+        );
+      }
+      return false;
+    }
+    
+    if (status.isPermanentlyDenied) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Microphone permission permanently denied. Please enable in app settings.'),
+            action: SnackBarAction(
+              label: 'Settings',
+              onPressed: () {
+                openAppSettings();
+              },
+            ),
+          ),
+        );
+      }
+      return false;
+    }
+    
+    return true;
+  }
+
+  void _toggleListening() async {
+    if (!_speechInitialized) {
+      await _initializeSpeech();
+    }
+    
+    if (!_speechAvailable) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Speech recognition not available on this device')),
+        );
+      }
+      return;
+    }
+    
+    if (_isListening) {
+      await _stopListening();
+    } else {
+      await _startListening();
+    }
+  }
+
+  Future<void> _startListening() async {
+    final hasPermission = await _requestMicrophonePermission();
+    if (!hasPermission) return;
+    
+    setState(() {
+      _isListening = true;
+    });
+    
+    try {
+      await _speechToText.listen(
+        onResult: (result) {
+          if (result.finalResult) {
+            setState(() {
+              _controller.text = result.recognizedWords;
+              _isListening = false;
+            });
+          } else {
+            // Partial result - update text field live
+            setState(() {
+              _controller.text = result.recognizedWords;
+            });
+          }
+        },
+        listenFor: const Duration(seconds: 30),
+        pauseFor: const Duration(seconds: 3),
+        partialResults: true,
+        localeId: 'en_US',
+        cancelOnError: true,
+      );
+    } catch (e) {
+      setState(() {
+        _isListening = false;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Speech recognition error: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _stopListening() async {
+    await _speechToText.stop();
+    setState(() {
+      _isListening = false;
+    });
   }
 
   Future<void> _initializeDeviceIdentity() async {
@@ -132,6 +256,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                 if (deviceId != null && deviceId.startsWith('desktop-')) {
                   // Only show desktop devices, prevent MITM with fingerprint verification
                   final deviceFingerprint = device['fingerprint'];
+                  final deviceOnline = device['online'] == true;
                   if (deviceFingerprint != null) {
                     _devices[deviceId] = device;
                     // Auto-save desktop devices for quick reconnect
@@ -145,7 +270,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
               }
               _messages.add({
                 'type': 'system',
-                'content': 'Desktop devices updated: ${_devices.length} devices',
+                'content': 'Desktop devices updated: ${_devices.length} devices (${_devices.values.where((d) => d['online'] == true).length} online)',
                 'timestamp': DateTime.now().toString(),
               });
             } else if (jsonResponse is Map && jsonResponse.containsKey('summary')) {
@@ -209,7 +334,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   }
 
   void _startHealthChecks() {
-    _healthCheckTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+    _healthCheckTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       _checkBackendHealth();
     });
     
@@ -228,13 +353,26 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
       if (response.statusCode == 200) {
         final healthData = jsonDecode(response.body);
         
-        final deviceCount = healthData['devices'] is int 
-            ? healthData['devices'] as int 
-            : (healthData['devices'] as List?)?.length ?? 0;
-        _localAgentConnected = deviceCount > 0;
+        // Use devices_online for presence (registered-but-stale not counted)
+        final devicesOnline = healthData['devices_online'] is int 
+            ? healthData['devices_online'] as int 
+            : 0;
+        
+        // Check if active device is specifically online
+        bool activeDeviceOnline = false;
+        if (healthData['online_devices'] is List) {
+          final onlineDevices = healthData['online_devices'] as List;
+          for (var device in onlineDevices) {
+            if (device['id'] == _activeDevice && device['online'] == true) {
+              activeDeviceOnline = true;
+              break;
+            }
+          }
+        }
         
         setState(() {
           _isHealthy = true;
+          _localAgentConnected = activeDeviceOnline; // Only show connected if active device is online
           _backendStatus = 'Healthy (${healthData['uptime']})';
         });
       } else {
@@ -271,6 +409,9 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
     channel.sink.close();
     _controller.dispose();
     _scrollController.dispose();
+    if (_isListening) {
+      _speechToText.stop();
+    }
     super.dispose();
   }
 
@@ -762,8 +903,10 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
             child: TextField(
               controller: _controller,
               decoration: InputDecoration(
-                hintText: 'Enter command...',
-                hintStyle: TextStyle(color: colorScheme.onSurfaceVariant),
+                hintText: _isListening ? 'Listening...' : 'Enter command...',
+                hintStyle: TextStyle(
+                  color: _isListening ? colorScheme.primary : colorScheme.onSurfaceVariant,
+                ),
                 filled: true,
                 fillColor: colorScheme.surfaceContainerLow,
                 border: OutlineInputBorder(
@@ -775,12 +918,11 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                   vertical: 12,
                 ),
                 suffixIcon: IconButton(
-                  icon: const Icon(Icons.mic),
-                  onPressed: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Speech-to-text coming soon!')),
-                    );
-                  },
+                  icon: Icon(
+                    _isListening ? Icons.mic : Icons.mic_none,
+                    color: _isListening ? colorScheme.primary : colorScheme.onSurface,
+                  ),
+                  onPressed: _toggleListening,
                 ),
               ),
               onSubmitted: (_) => _sendMessage(),

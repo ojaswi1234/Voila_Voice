@@ -14,27 +14,53 @@ function getNgrokDownloadUrl() {
     const platform = os.platform();
     const arch = os.arch();
     
+    // Use official ngrok download URLs (2025-2026 compatible)
+    const baseUrl = 'https://dl.ngrok.com/ngrok-v3-stable-';
+    
     if (platform === 'win32') {
         if (arch === 'x64') {
-            return 'https://bin.equinox.io/c/4VmDzA7WQbg/ngrok-stable-windows-amd64.zip';
+            return baseUrl + 'windows-amd64.zip';
         } else {
-            return 'https://bin.equinox.io/c/4VmDzA7WQbg/ngrok-stable-windows-386.zip';
+            return baseUrl + 'windows-386.zip';
         }
     } else if (platform === 'darwin') {
         if (arch === 'arm64') {
-            return 'https://bin.equinox.io/c/4VmDzA7WQbg/ngrok-stable-darwin-arm64.zip';
+            return baseUrl + 'darwin-arm64.zip';
         } else {
-            return 'https://bin.equinox.io/c/4VmDzA7WQbg/ngrok-stable-darwin-amd64.zip';
+            return baseUrl + 'darwin-amd64.zip';
         }
     } else if (platform === 'linux') {
         if (arch === 'arm64') {
-            return 'https://bin.equinox.io/c/4VmDzA7WQbg/ngrok-stable-linux-arm64.zip';
+            return baseUrl + 'linux-arm64.zip';
         } else {
-            return 'https://bin.equinox.io/c/4VmDzA7WQbg/ngrok-stable-linux-amd64.zip';
+            return baseUrl + 'linux-amd64.zip';
         }
     } else {
         throw new Error(`Unsupported platform: ${platform}`);
     }
+}
+
+function configureAuthtoken(ngrokPath) {
+    return new Promise((resolve) => {
+        const authtoken = process.env.NGROK_AUTHTOKEN;
+        if (!authtoken) {
+            console.log('WARNING: NGROK_AUTHTOKEN not set. ngrok may not work without authentication.');
+            console.log('Get your free authtoken from https://dashboard.ngrok.com/get-started/your-authtoken');
+            resolve(false);
+            return;
+        }
+        
+        console.log('Configuring ngrok authtoken...');
+        exec(`${ngrokPath} config add-authtoken ${authtoken}`, (error, stdout, stderr) => {
+            if (error) {
+                console.error(`ERROR: Failed to configure authtoken: ${stderr}`);
+                resolve(false);
+            } else {
+                console.log('Authtoken configured successfully.');
+                resolve(true);
+            }
+        });
+    });
 }
 
 function downloadNgrok() {
@@ -132,7 +158,21 @@ function getNgrokUrlFromAPI() {
                 try {
                     const parsed = JSON.parse(data);
                     if (parsed.tunnels && parsed.tunnels.length > 0) {
-                        resolve(parsed.tunnels[0].public_url);
+                        // Prefer HTTPS tunnel
+                        let ngrokUrl = null;
+                        for (const tunnel of parsed.tunnels) {
+                            if (tunnel.public_url && tunnel.public_url.startsWith('https://')) {
+                                ngrokUrl = tunnel.public_url;
+                                break;
+                            }
+                        }
+                        
+                        // Fallback to first tunnel if no HTTPS found
+                        if (!ngrokUrl) {
+                            ngrokUrl = parsed.tunnels[0].public_url;
+                        }
+                        
+                        resolve(ngrokUrl);
                     } else {
                         reject(new Error('No ngrok tunnels found'));
                     }
@@ -170,6 +210,9 @@ async function main() {
         } else {
             console.log(`Ngrok already installed at: ${ngrokExe}`);
         }
+        
+        // Configure authtoken
+        await configureAuthtoken(ngrokExe);
         
         const { ngrokUrl } = await startNgrok(ngrokExe, 8088);
         

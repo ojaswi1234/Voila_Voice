@@ -309,7 +309,18 @@ func (m model) testConnection() tea.Cmd {
 		// Return loading state first
 		time.Sleep(500 * time.Millisecond)
 		// Test actual connection to backend
-		resp, err := http.Get(m.connectionData.BackendURL + "/health")
+		healthURL := m.connectionData.BackendURL + "/health"
+		req, err := http.NewRequest("GET", healthURL, nil)
+		if err != nil {
+			return connectionResultMsg{success: false, message: "Failed to connect to backend: " + err.Error()}
+		}
+		
+		// Add ngrok skip browser warning header if calling through ngrok
+		if strings.Contains(m.connectionData.BackendURL, "ngrok") || strings.Contains(m.connectionData.BackendURL, "ngrok-free") {
+			req.Header.Set("ngrok-skip-browser-warning", "true")
+		}
+		
+		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			return connectionResultMsg{success: false, message: "Failed to connect to backend: " + err.Error()}
 		}
@@ -695,6 +706,11 @@ func registerWithBackend(data ConnectionData, publicAddress string) error {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Agent-Secret", secret)
+	
+	// Add ngrok skip browser warning header if calling through ngrok
+	if strings.Contains(data.BackendURL, "ngrok") || strings.Contains(data.BackendURL, "ngrok-free") {
+		req.Header.Set("ngrok-skip-browser-warning", "true")
+	}
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -722,22 +738,104 @@ func loadConnectionData() (ConnectionData, error) {
 
 // Auto-start setup
 func setupAutoStart() error {
-	// Create startup script
-	var script string
+	execDir := getExecutableDir()
+	exePath := filepath.Join(execDir, "antigravity")
 	if runtime.GOOS == "windows" {
-		script = fmt.Sprintf(`@echo off
-cd /d "%s"
-antigravity
-`, getExecutableDir())
-		os.WriteFile("start_agent.bat", []byte(script), 0644)
-	} else {
-		script = fmt.Sprintf(`#!/bin/bash
-cd "%s"
-./antigravity
-`, getExecutableDir())
-		os.WriteFile("start_agent.sh", []byte(script), 0755)
+		exePath += ".exe"
 	}
 
+	if runtime.GOOS == "windows" {
+		return setupWindowsAutoStart(exePath)
+	} else if runtime.GOOS == "darwin" {
+		return setupMacAutoStart(exePath)
+	} else {
+		return setupLinuxAutoStart(exePath)
+	}
+}
+
+func setupWindowsAutoStart(exePath string) error {
+	// Add to Windows startup folder
+	startupFolder := filepath.Join(os.Getenv("APPDATA"), "Microsoft", "Windows", "Start Menu", "Programs", "Startup")
+	
+	// Create a batch file that runs the agent in background without TUI
+	batchContent := fmt.Sprintf(`@echo off
+start "" /B "%s" --background > nul 2>&1
+`, exePath)
+	
+	batchPath := filepath.Join(startupFolder, "antigravity.bat")
+	if err := os.WriteFile(batchPath, []byte(batchContent), 0644); err != nil {
+		return fmt.Errorf("failed to create startup batch file: %w", err)
+	}
+	
+	log.Printf("Auto-start configured: %s", batchPath)
+	return nil
+}
+
+func setupMacAutoStart(exePath string) error {
+	// Create launch agent plist
+	launchAgentsDir := filepath.Join(os.Getenv("HOME"), "Library", "LaunchAgents")
+	os.MkdirAll(launchAgentsDir, 0755)
+	
+	plistContent := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.voicecli.antigravity</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>%s</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+</dict>
+</plist>
+`, exePath)
+	
+	plistPath := filepath.Join(launchAgentsDir, "com.voicecli.antigravity.plist")
+	if err := os.WriteFile(plistPath, []byte(plistContent), 0644); err != nil {
+		return fmt.Errorf("failed to create launch agent plist: %w", err)
+	}
+	
+	// Load the launch agent
+	cmd := exec.Command("launchctl", "load", plistPath)
+	cmd.Run()
+	
+	log.Printf("Auto-start configured: %s", plistPath)
+	return nil
+}
+
+func setupLinuxAutoStart(exePath string) error {
+	// Create systemd user service
+	systemdDir := filepath.Join(os.Getenv("HOME"), ".config", "systemd", "user")
+	os.MkdirAll(systemdDir, 0755)
+	
+	serviceContent := fmt.Sprintf(`[Unit]
+Description=Antigravity Voice CLI Agent
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=%s
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
+`, exePath)
+	
+	servicePath := filepath.Join(systemdDir, "antigravity.service")
+	if err := os.WriteFile(servicePath, []byte(serviceContent), 0644); err != nil {
+		return fmt.Errorf("failed to create systemd service: %w", err)
+	}
+	
+	// Enable and start the service
+	exec.Command("systemctl", "--user", "daemon-reload").Run()
+	exec.Command("systemctl", "--user", "enable", "antigravity.service").Run()
+	
+	log.Printf("Auto-start configured: %s", servicePath)
 	return nil
 }
 
@@ -790,17 +888,44 @@ func main() {
 			isLoading:      false,
 		}
 		go startHTTPServer(data.Passphrase)
-go func(data ConnectionData) {
-	for {
-		addr := getNgrokPublicURL()
-		if addr == "" {
-			log.Println("ngrok URL not available yet (is ngrok running?)")
-		} else if err := registerWithBackend(data, addr); err != nil {
-			log.Printf("register error: %v", err)
-		}
-		time.Sleep(30 * time.Second)
-	}
-}(data)
+		go func(data ConnectionData) {
+			for {
+				addr := getNgrokPublicURL()
+				if addr == "" {
+					log.Println("ngrok URL not available yet (is ngrok running?)")
+				} else if err := registerWithBackend(data, addr); err != nil {
+					log.Printf("register error: %v", err)
+				}
+				time.Sleep(30 * time.Second)
+			}
+		}(data)
+		go func() {
+			for {
+				time.Sleep(20 * time.Second)
+				healthURL := data.BackendURL + "/health"
+				req, err := http.NewRequest("GET", healthURL, nil)
+				if err == nil {
+					// Add ngrok skip browser warning header if calling through ngrok
+					if strings.Contains(data.BackendURL, "ngrok") || strings.Contains(data.BackendURL, "ngrok-free") {
+						req.Header.Set("ngrok-skip-browser-warning", "true")
+					}
+					resp, err := http.DefaultClient.Do(req)
+					if err == nil && resp.StatusCode == 200 {
+						var healthData struct {
+							Status          string `json:"status"`
+							MobileClients   int    `json:"mobile_clients"`
+						}
+						json.NewDecoder(resp.Body).Decode(&healthData)
+						resp.Body.Close()
+						log.Printf("Presence: Backend OK, Mobile clients: %d", healthData.MobileClients)
+					} else {
+						log.Printf("Presence: Backend unreachable")
+					}
+				} else {
+					log.Printf("Presence: Backend unreachable")
+				}
+			}
+		}()
 		p := tea.NewProgram(initialModel)
 		if _, err := p.Run(); err != nil {
 			log.Fatalf("Error running program: %v", err)
@@ -817,6 +942,7 @@ go func(data ConnectionData) {
 		messages:  []string{},
 		status:    "Not Running",
 		isLoading: false,
+		connectionData: ConnectionData{},
 	}
 
 	p := tea.NewProgram(initialModel)

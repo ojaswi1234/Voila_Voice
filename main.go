@@ -20,6 +20,8 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
+const deviceOnlineTTL = 60 * time.Second
+
 type Device struct {
 	ID        string
 	Name      string
@@ -48,11 +50,38 @@ type WebSocketClient struct {
 }
 
 func NewBackend() *Backend {
-	return &Backend{
+	b := &Backend{
 		devices:      make(map[string]*Device),
 		activeDevice: "",
 		tokenCounter: 0,
 		clients:      make(map[string]*WebSocketClient),
+	}
+	
+	// Start presence ticker
+	go b.startPresenceTicker()
+	
+	return b
+}
+
+func (b *Backend) markStaleDevices() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	
+	now := time.Now()
+	for _, device := range b.devices {
+		if device.Type == "desktop" || strings.HasPrefix(device.ID, "desktop-") {
+			// Desktop devices are online only if they've heartbeated within TTL
+			device.Active = now.Sub(device.LastSeen) < deviceOnlineTTL
+		}
+	}
+}
+
+func (b *Backend) startPresenceTicker() {
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+	
+	for range ticker.C {
+		b.markStaleDevices()
 	}
 }
 
@@ -380,17 +409,22 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				}
 				
 			case "get_devices":
+				// Mark stale devices before returning device list
+				b.markStaleDevices()
+				
 				devices := b.getAllDevices()
 				deviceList := make([]map[string]interface{}, 0)
 				for _, d := range devices {
 					deviceList = append(deviceList, map[string]interface{}{
-						"id":      d.ID,
-						"name":    d.Name,
-						"active":  d.ID == b.activeDevice,
-						"locked":  d.LockedBy != "",
-						"lockedBy": d.LockedBy,
-						"lastSeen": d.LastSeen,
-						"fingerprint": d.Fingerprint,
+						"id":          d.ID,
+						"name":        d.Name,
+						"active":      d.ID == b.activeDevice,
+						"online":      d.Active,
+						"locked":      d.LockedBy != "",
+						"lockedBy":    d.LockedBy,
+						"lastSeen":    d.LastSeen,
+						"fingerprint":  d.Fingerprint,
+						"type":        d.Type,
 					})
 				}
 				jsonData, _ := json.Marshal(deviceList)
@@ -438,8 +472,10 @@ func main() {
 	startTime = time.Now()
 	backend := NewBackend()
 	
-	// Auto-detect ngrok URL if NGROK_AUTO_DETECT is enabled
+	// Auto-detect ngrok URL if NGROK_AUTO_DETECT is enabled (local dev only)
+	// On Render, this localhost:4040 check won't work since ngrok runs on user's PC
 	if os.Getenv("NGROK_AUTO_DETECT") == "true" {
+		log.Println("NGROK_AUTO_DETECT enabled (local dev mode only)")
 		go autoDetectNgrokURL(backend)
 	}
 	
@@ -542,7 +578,7 @@ func main() {
 		d.AuthToken = generateAuthToken()
 	}
 
-	log.Printf("Device registered: %s (%s) @ %s", d.Name, d.ID, d.Address)
+	log.Printf("Device registered: %s (%s) @ %s (online: %v)", d.Name, d.ID, d.Address, d.Active)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
@@ -552,14 +588,38 @@ func main() {
 })
 	// Health check endpoint for Render keep-alive
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		// Mark stale devices before serving health
+		backend.markStaleDevices()
+		
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		backend.mu.RLock()
+		
+		// Count online devices
+		devicesOnline := 0
+		onlineDevices := []map[string]interface{}{}
+		for _, device := range backend.devices {
+			if device.Active {
+				devicesOnline++
+				onlineDevices = append(onlineDevices, map[string]interface{}{
+					"id":          device.ID,
+					"name":        device.Name,
+					"lastSeen":    device.LastSeen.Format(time.RFC3339),
+					"online":      device.Active,
+					"fingerprint":  device.Fingerprint,
+					"type":        device.Type,
+				})
+			}
+		}
+		
 		health := map[string]interface{}{
-			"status": "ok",
-			"timestamp": time.Now().Format(time.RFC3339),
-			"uptime": time.Since(startTime).String(),
-			"devices": len(backend.devices),
+			"status":          "ok",
+			"timestamp":       time.Now().Format(time.RFC3339),
+			"uptime":          time.Since(startTime).String(),
+			"devices_registered": len(backend.devices),
+			"devices_online":   devicesOnline,
+			"online_devices":   onlineDevices,
+			"mobile_clients":   len(backend.clients),
 		}
 		backend.mu.RUnlock()
 		json.NewEncoder(w).Encode(health)
@@ -567,14 +627,36 @@ func main() {
 	
 	// Status endpoint for monitoring
 	http.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
+		// Mark stale devices before serving status
+		backend.markStaleDevices()
+		
 		w.Header().Set("Content-Type", "application/json")
 		backend.mu.RLock()
+		
+		// Build online device list
+		onlineDevices := []map[string]interface{}{}
+		for _, device := range backend.devices {
+			if device.Active {
+				onlineDevices = append(onlineDevices, map[string]interface{}{
+					"id":          device.ID,
+					"name":        device.Name,
+					"lastSeen":    device.LastSeen.Format(time.RFC3339),
+					"online":      device.Active,
+					"fingerprint":  device.Fingerprint,
+					"type":        device.Type,
+				})
+			}
+		}
+		
 		stats := map[string]interface{}{
-			"status": "running",
-			"uptime": time.Since(startTime).String(),
-			"active_device": backend.activeDevice,
-			"device_count": len(backend.devices),
-			"token_counter": backend.tokenCounter,
+			"status":          "running",
+			"uptime":          time.Since(startTime).String(),
+			"active_device":   backend.activeDevice,
+			"device_count":    len(backend.devices),
+			"devices_online":  len(onlineDevices),
+			"online_devices":  onlineDevices,
+			"mobile_clients":  len(backend.clients),
+			"token_counter":   backend.tokenCounter,
 		}
 		backend.mu.RUnlock()
 		json.NewEncoder(w).Encode(stats)
@@ -652,6 +734,7 @@ func getNgrokURL() (string, error) {
 	var result struct {
 		Tunnels []struct {
 			PublicURL string `json:"public_url"`
+			Proto     string `json:"proto"`
 		} `json:"tunnels"`
 	}
 	
@@ -665,6 +748,13 @@ func getNgrokURL() (string, error) {
 	}
 	
 	if len(result.Tunnels) > 0 {
+		// Prefer HTTPS tunnel
+		for _, tunnel := range result.Tunnels {
+			if strings.HasPrefix(tunnel.PublicURL, "https://") {
+				return tunnel.PublicURL, nil
+			}
+		}
+		// Fallback to first tunnel if no HTTPS found
 		return result.Tunnels[0].PublicURL, nil
 	}
 	

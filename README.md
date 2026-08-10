@@ -112,16 +112,19 @@ voice-cli-system/
 - ✅ Offline task queue with JSON persistence
 - ✅ Task history tracking
 - ✅ Automatic processing of pending tasks
+- ✅ **Live presence monitoring** (backend reachable, mobile clients count)
 
 ### Mobile App
 - ✅ WebSocket client with auto-reconnection
-- ✅ **Health check monitoring** (every 30 seconds)
+- ✅ **Health check monitoring** (every 15 seconds)
 - ✅ **Connection flow visualization** (Mobile → Backend → Local Agent)
 - ✅ Device switching UI with lock status
 - ✅ **Device lock/unlock controls**
 - ✅ Connection status indicators
 - ✅ AI summary display
 - ✅ Enhanced error handling
+- ✅ **Live presence detection** using backend TTL system
+- ✅ **Speech-to-text with microphone input** (permission handling, real-time transcription)
 
 ### Automation Scripts
 - ✅ **Python ngrok setup** (no external dependencies)
@@ -129,6 +132,7 @@ voice-cli-system/
 - ✅ **Automatic ngrok download** (cross-platform)
 - ✅ **Automatic URL extraction** from ngrok API
 - ✅ **URL persistence** for backend detection
+- ✅ **Authtoken configuration** via NGROK_AUTHTOKEN environment variable
 
 ## Configuration
 
@@ -136,11 +140,17 @@ voice-cli-system/
 ```bash
 # Backend
 PORT=10000
-NGROK_AUTO_DETECT=true  # Enable automatic ngrok URL detection
+NGROK_AUTO_DETECT=true  # Enable automatic ngrok URL detection (local dev only)
 DEVICE_1_NAME=Development Laptop
 DEVICE_1_ADDRESS=http://localhost:8088  # Auto-updated when NGROK_AUTO_DETECT=true
 DEVICE_2_NAME=Production Server
 DEVICE_2_ADDRESS=http://localhost:8091
+
+# Ngrok
+NGROK_AUTHTOKEN=your_ngrok_authtoken_here  # Required for ngrok v3 (get from https://dashboard.ngrok.com/get-started/your-authtoken)
+
+# Backend Registration
+AGENT_REGISTER_SECRET=your_registration_secret  # Required for desktop agent registration with backend
 ```
 
 ### GitHub Secrets
@@ -155,8 +165,9 @@ Backend automatically optimizes commands:
 ## API Endpoints
 
 ### Backend
-- `GET /health` - Health check for keep-alive
-- `GET /status` - Detailed status monitoring
+- `GET /health` - Health check with live presence (devices_online, online_devices, mobile_clients)
+- `GET /status` - Detailed status with online device list
+- `POST /register` - Desktop agent registration with heartbeat (protected by AGENT_REGISTER_SECRET)
 - `POST /update-device` - Manual device address update
 - `WS /ws` - WebSocket connection for mobile apps
 
@@ -191,6 +202,55 @@ Backend automatically optimizes commands:
 - Preventing command conflicts
 - Managing exclusive access to devices
 - Session-based device control
+
+## Live Presence System
+
+**Architecture:** Backend is single source of truth for all live presence states.
+
+**Presence TTL:** Desktop devices marked online only if heartbeat within 60 seconds.
+
+**Connection Chain States:**
+- **Mobile ↔ Backend:** WebSocket connection + backend `/health` ok
+- **Backend ↔ Local Agent:** Selected desktop device `online == true` (LastSeen within TTL)
+- **Local Agent Process:** Separate local state shown on CLI TUI
+
+**Backend Presence Engine:**
+- Desktop agents heartbeat via `/register` every 30 seconds
+- Backend runs `markStaleDevices()` every 15 seconds
+- `Device.Active` = `time.Since(LastSeen) < 60s` for desktop devices
+- Device records persist between sessions, only online/offline flips
+
+**Health Endpoint Schema:**
+```json
+{
+  "status": "ok",
+  "timestamp": "2026-08-10T12:00:00Z",
+  "uptime": "2h30m",
+  "devices_registered": 3,
+  "devices_online": 1,
+  "online_devices": [
+    {"id": "desktop-abc", "name": "Dev Laptop", "lastSeen": "...", "online": true, "fingerprint": "..."}
+  ],
+  "mobile_clients": 1
+}
+```
+
+**Offline Detection:**
+- PC off/ngrok stopped → Mobile "Local Agent" goes offline within 60-90 seconds
+- Phone app closed → Backend `mobile_clients` drops within seconds
+- Backend down → All health checks fail
+
+**Mobile App Presence:**
+- Health checks every 15 seconds (was 30)
+- Uses `devices_online` count, not `devices_registered`
+- Checks if `_activeDevice` appears in `online_devices` with `online: true`
+- Device dropdown shows online status per device
+
+**Local Agent CLI Presence:**
+- Polls `/health` every 20 seconds via background goroutine
+- Logs presence status to console (Backend OK/FAIL, Mobile clients count)
+- `connectionData.Connected` = configured (not live presence)
+- `backendReachable` and `mobileClientsOnline` logged but not shown in TUI
 
 ## Local Agent TUI
 
