@@ -135,7 +135,7 @@ type ConnectionData struct {
 
 // Model
 type model struct {
-	state          string // "setup", "connected", "menu", "loading"
+	state          string // "setup", "connected", "menu", "loading", "security_phrase_input"
 	connectionData ConnectionData
 	inputStep      int // 0: backend, 1: device name, 2: passphrase, 3: security phrase
 	currentInput   string
@@ -164,6 +164,9 @@ type successMsg struct {
 type errorMsg struct {
 	message string
 }
+type securityPhraseMsg struct {
+	phrase string
+}
 
 // Init
 func (m model) Init() tea.Cmd {
@@ -180,6 +183,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyCtrlC, tea.KeyEsc:
 			if m.state == "menu" {
 				return m, tea.Quit
+			} else if m.state == "security_phrase_input" {
+				m.state = "menu"
+				m.currentInput = ""
+				m.messages = []string{}
 			}
 		case tea.KeyEnter:
 			return m.handleEnter()
@@ -192,12 +199,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selectedOption = (m.selectedOption + 1) % 7
 			}
 		case tea.KeyBackspace:
-			if len(m.currentInput) > 0 {
+			if len(m.currentInput) > 0 && (m.state == "setup" || m.state == "security_phrase_input") {
 				m.currentInput = m.currentInput[:len(m.currentInput)-1]
 			}
 		case tea.KeyCtrlV:
 			// Handle clipboard paste
-			if m.state == "setup" {
+			if m.state == "setup" || m.state == "security_phrase_input" {
 				// Try to get clipboard content
 				cmd := exec.Command("powershell", "-Command", "Get-Clipboard")
 				output, err := cmd.Output()
@@ -207,7 +214,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		default:
-			if m.state == "setup" && len(msg.String()) >= 1 {
+			if (m.state == "setup" || m.state == "security_phrase_input") && len(msg.String()) >= 1 {
 				m.currentInput += msg.String()
 			}
 		}
@@ -255,6 +262,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.inputStep = 0
 			m.currentInput = ""
 		}
+	case securityPhraseMsg:
+		// Security phrase received, proceed with clear
+		return m, m.clearBackendDataWithPhrase(msg.phrase)
 	}
 	return m, nil
 }
@@ -292,6 +302,12 @@ func (m model) handleEnter() (model, tea.Cmd) {
 			m.isLoading = true
 			return m, m.testConnection()
 		}
+	} else if m.state == "security_phrase_input" {
+		// User submitted security phrase
+		phrase := m.currentInput
+		m.state = "menu"
+		m.currentInput = ""
+		return m, m.clearBackendDataWithPhrase(phrase)
 	} else if m.state == "connected" {
 		m.state = "menu"
 		m.selectedOption = 0
@@ -320,7 +336,10 @@ func (m model) handleEnter() (model, tea.Cmd) {
 		case 2: // Start Ngrok
 			return m, m.startNgrok()
 		case 3: // Clear Backend Data
-			return m, m.clearBackendData()
+			m.state = "security_phrase_input"
+			m.currentInput = ""
+			m.messages = []string{warningStyle.Render("Enter security phrase to clear backend data:")}
+			return m, nil
 		case 4: // Clear Local Data
 			return m, m.clearLocalData()
 		case 5: // View Status
@@ -409,14 +428,14 @@ func (m model) stopServer() tea.Cmd {
 	}
 }
 
-func (m model) clearBackendData() tea.Cmd {
+func (m model) clearBackendDataWithPhrase(phrase string) tea.Cmd {
 	return func() tea.Msg {
-		if m.connectionData.SecurityPhrase == "" {
-			return errorMsg{"Security phrase not configured"}
+		if phrase == "" {
+			return errorMsg{"Security phrase required"}
 		}
 		
 		clearURL := strings.TrimRight(m.connectionData.BackendURL, "/") + "/clear-all-devices"
-		reqBody := map[string]string{"security_phrase": m.connectionData.SecurityPhrase}
+		reqBody := map[string]string{"security_phrase": phrase}
 		bodyBytes, _ := json.Marshal(reqBody)
 		
 		req, err := http.NewRequest(http.MethodPost, clearURL, bytes.NewReader(bodyBytes))
@@ -477,6 +496,8 @@ func (m model) View() string {
 		content = m.connectedView()
 	case "menu":
 		content = m.menuView()
+	case "security_phrase_input":
+		content = m.securityPhraseInputView()
 	}
 
 	return m.wrapContent(content)
@@ -667,6 +688,31 @@ func (m model) wrapContent(content string) string {
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("6")).
 		Render(content)
+}
+
+func (m model) securityPhraseInputView() string {
+	var content strings.Builder
+
+	content.WriteString(asciiArtStyle.Render(logoArt))
+	content.WriteString("\n\n")
+	content.WriteString(titleStyle.Render("Clear Backend Data"))
+	content.WriteString("\n\n")
+	content.WriteString(separatorStyle.Render(separatorLine))
+	content.WriteString("\n\n")
+	content.WriteString(subtitleStyle.Render("Enter security phrase:\n\n"))
+	content.WriteString("Security Phrase: ")
+	content.WriteString(inputStyle.Render(m.currentInput + "_"))
+	content.WriteString("\n\n")
+	content.WriteString(subtitleStyle.Render("Press Enter to submit, Esc to cancel"))
+
+	if len(m.messages) > 0 {
+		content.WriteString("\n\n")
+		for _, msg := range m.messages {
+			content.WriteString(msg + "\n")
+		}
+	}
+
+	return content.String()
 }
 
 // HTTP Server
