@@ -85,3 +85,6 @@ mobile-agent/flutter_sdk/*.zip
 local-agent/connection.json
 local-agent/start_agent.bat
 local-agent/start_agent.sh
+
+
+backend.exe

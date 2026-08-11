@@ -35,6 +35,7 @@ type Device struct {
 	Type        string // "desktop" | etc.
 	Reachable   bool // NEW: direct ping result
 	LastPing    time.Time // NEW: last time backend pinged this device
+	SecurityPhrase string // NEW: user's security phrase for clearing data
 }
 
 type Backend struct {
@@ -302,17 +303,25 @@ func generateAuthToken() string {
 func (b *Backend) forwardCommand(deviceID, command string) (string, error) {
 	b.mu.RLock()
 	device, exists := b.devices[deviceID]
+	active := device.Active
+	address := device.Address
 	b.mu.RUnlock()
 
-	if !exists || !device.Active {
-		return "", http.ErrNotSupported
+	if !exists {
+		log.Printf("forwardCommand failed: device not found - %s", deviceID)
+		return "", fmt.Errorf("device not found: %s", deviceID)
+	}
+
+	if !active {
+		log.Printf("forwardCommand failed: device offline - %s (last seen stale or not registered)", deviceID)
+		return "", fmt.Errorf("device offline: %s (last seen stale or not registered)", deviceID)
 	}
 
 	// Optimize command before forwarding
 	optimizedCommand := b.optimizeCommand(command)
 
 	// Forward to local agent via HTTP
-	url := device.Address + "/execute"
+	url := address + "/execute"
 	payload := map[string]string{"command": optimizedCommand}
 	jsonPayload, _ := json.Marshal(payload)
 
@@ -399,25 +408,60 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 
 			log.Printf("Received from %s: %s", clientID, message)
 
-			// Parse message
-			var msg map[string]string
-			json.Unmarshal(message, &msg)
+			// Parse message - use interface{} to handle mixed types
+			var msg map[string]interface{}
+			if err := json.Unmarshal(message, &msg); err != nil {
+				log.Printf("Parse error: %v", err)
+				conn.WriteMessage(messageType, []byte("ERROR: Invalid message format"))
+				continue
+			}
 
 			// Handle different message types
-			switch msg["type"] {
+			msgType, _ := msg["type"].(string)
+			switch msgType {
 			case "command":
-				deviceID := msg["device_id"]
-				command := msg["command"]
+				deviceID, _ := msg["device_id"].(string)
+				command, _ := msg["command"].(string)
 				
-				// If no device specified, use active device
+				// If no device specified, use active device if online
 				if deviceID == "" {
 					device := b.getActiveDevice()
-					if device != nil {
+					if device != nil && device.Active {
 						deviceID = device.ID
 					} else {
-						conn.WriteMessage(messageType, []byte("ERROR: No active device"))
+						// List online desktop devices
+						b.mu.RLock()
+						onlineDesktops := []string{}
+						for id, d := range b.devices {
+							if d.Active && d.Type == "desktop" {
+								onlineDesktops = append(onlineDesktops, id)
+							}
+						}
+						b.mu.RUnlock()
+						
+						if len(onlineDesktops) == 0 {
+							conn.WriteMessage(messageType, []byte("ERROR: No online desktop devices available"))
+						} else {
+							conn.WriteMessage(messageType, []byte("ERROR: No device specified. Online desktops: "+strings.Join(onlineDesktops, ", ")))
+						}
 						continue
 					}
+				}
+				
+				// Check if device exists and is online before locking
+				b.mu.RLock()
+				device, exists := b.devices[deviceID]
+				isOnline := exists && device.Active
+				b.mu.RUnlock()
+				
+				if !exists {
+					conn.WriteMessage(messageType, []byte("ERROR: device not found: "+deviceID))
+					continue
+				}
+				
+				if !isOnline {
+					conn.WriteMessage(messageType, []byte("ERROR: device offline: "+deviceID+" (last seen stale or not registered)"))
+					continue
 				}
 				
 				// Check if device is locked by another client
@@ -442,7 +486,7 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				conn.WriteMessage(messageType, []byte(result))
 				
 			case "switch_device":
-				deviceID := msg["device_id"]
+				deviceID, _ := msg["device_id"].(string)
 				err := b.setActiveDevice(deviceID)
 				if err != nil {
 					log.Printf("Switch device error: %v", err)
@@ -452,7 +496,7 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				}
 				
 			case "lock_device":
-				deviceID := msg["device_id"]
+				deviceID, _ := msg["device_id"].(string)
 				err := b.lockDevice(deviceID, clientID)
 				if err != nil {
 					conn.WriteMessage(messageType, []byte("ERROR: "+err.Error()))
@@ -461,7 +505,7 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				}
 				
 			case "unlock_device":
-				deviceID := msg["device_id"]
+				deviceID, _ := msg["device_id"].(string)
 				err := b.unlockDevice(deviceID, clientID)
 				if err != nil {
 					conn.WriteMessage(messageType, []byte("ERROR: "+err.Error()))
@@ -510,25 +554,42 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 					SecurityPhrase string `json:"security_phrase"`
 				}
 				if err := json.Unmarshal(message, &req); err == nil {
-					if req.SecurityPhrase != "" {
-						b.mu.RLock()
-						validPhrase := false
-						for _, device := range b.devices {
-							if device.AuthToken == req.SecurityPhrase {
-								validPhrase = true
-								break
-							}
-						}
-						b.mu.RUnlock()
-						
-						if validPhrase {
-							b.clearAllDevices()
-							conn.WriteMessage(messageType, []byte("OK: All devices cleared"))
-						} else {
-							conn.WriteMessage(messageType, []byte("ERROR: Invalid security phrase"))
-						}
-					} else {
+					phrase := strings.TrimSpace(req.SecurityPhrase)
+					
+					if phrase == "" {
 						conn.WriteMessage(messageType, []byte("ERROR: Security phrase required"))
+						break
+					}
+					
+					// Check for admin secret override
+					adminSecret := os.Getenv("CLEAR_DATA_SECRET")
+					if adminSecret != "" && phrase == adminSecret {
+						b.clearAllDevices()
+						conn.WriteMessage(messageType, []byte("OK: All devices cleared (admin)"))
+						break
+					}
+					
+					b.mu.RLock()
+					if len(b.devices) == 0 {
+						b.mu.RUnlock()
+						conn.WriteMessage(messageType, []byte("ERROR: No registered devices to verify phrase"))
+						break
+					}
+					
+					validPhrase := false
+					for _, device := range b.devices {
+						if device.SecurityPhrase == phrase {
+							validPhrase = true
+							break
+						}
+					}
+					b.mu.RUnlock()
+					
+					if validPhrase {
+						b.clearAllDevices()
+						conn.WriteMessage(messageType, []byte("OK: All devices cleared"))
+					} else {
+						conn.WriteMessage(messageType, []byte("ERROR: Invalid security phrase"))
 					}
 				} else {
 					conn.WriteMessage(messageType, []byte("ERROR: Invalid request format"))
@@ -629,17 +690,36 @@ func main() {
 			return
 		}
 		
-		if req.SecurityPhrase == "" {
+		phrase := strings.TrimSpace(req.SecurityPhrase)
+		
+		if phrase == "" {
 			log.Printf("Clear devices failed: missing security phrase")
 			http.Error(w, "Security phrase required", http.StatusBadRequest)
 			return
 		}
 		
-		// Verify security phrase matches connected devices
+		// Check for admin secret override
+		adminSecret := os.Getenv("CLEAR_DATA_SECRET")
+		if adminSecret != "" && phrase == adminSecret {
+			log.Printf("Clear data approved via admin secret")
+			backend.clearAllDevices()
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{"status": "ok", "message": "All devices cleared"})
+			return
+		}
+		
+		// Verify security phrase matches registered devices
 		backend.mu.RLock()
+		if len(backend.devices) == 0 {
+			backend.mu.RUnlock()
+			log.Printf("Clear devices denied: no registered devices to verify phrase")
+			http.Error(w, "No registered devices; cannot verify phrase", http.StatusForbidden)
+			return
+		}
+		
 		validPhrase := false
 		for _, device := range backend.devices {
-			if device.AuthToken == req.SecurityPhrase {
+			if device.SecurityPhrase == phrase {
 				validPhrase = true
 				break
 			}
@@ -723,10 +803,10 @@ func main() {
 		d.AuthToken = generateAuthToken()
 	}
 	
-	// Store security phrase as AuthToken if provided (for client authentication)
+	// Store security phrase separately for clear-backend authentication
 	if req.SecurityPhrase != "" {
-		d.AuthToken = req.SecurityPhrase
-		log.Printf("Device registered with custom security phrase")
+		d.SecurityPhrase = strings.TrimSpace(req.SecurityPhrase)
+		log.Printf("Device registered with security phrase for data clearing")
 	}
 
 	wasNew := !exists

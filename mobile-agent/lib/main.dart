@@ -81,7 +81,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final List<Map<String, dynamic>> _messages = [];
-  String _activeDevice = 'laptop-1';
+  String _activeDevice = '';
   bool _isConnected = false;
   bool _isHealthy = false;
   bool _localAgentConnected = false;
@@ -248,6 +248,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
             
             if (jsonResponse is List) {
               _devices = {};
+              String? firstOnlineDesktop;
               for (var device in jsonResponse) {
                 final deviceId = device['id'];
                 if (deviceId != null && deviceId.startsWith('desktop-')) {
@@ -257,6 +258,10 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                   final deviceReachable = device['reachable'] == true;
                   if (deviceFingerprint != null) {
                     _devices[deviceId] = device;
+                    // Track first online desktop for auto-selection
+                    if (deviceOnline && firstOnlineDesktop == null) {
+                      firstOnlineDesktop = deviceId;
+                    }
                     // Auto-save desktop devices for quick reconnect
                     DeviceIdentity.saveDevice(deviceId, device);
                     DeviceIdentity.getSavedDevices().then((devices) {
@@ -266,9 +271,16 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                   }
                 }
               }
+              // Auto-select first online desktop if no device selected or current not in list
+              if (_activeDevice.isEmpty || !_devices.containsKey(_activeDevice)) {
+                if (firstOnlineDesktop != null) {
+                  _activeDevice = firstOnlineDesktop;
+                }
+              }
               // Clear stale saved devices that aren't in current backend list
               if (_devices.isEmpty) {
                 _savedDevices = {};
+                _activeDevice = '';
                 setState(() {});
               }
               final onlineCount = _devices.values.where((d) => d['online'] == true).length;
@@ -441,6 +453,19 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
 
   void _sendMessage() async {
     if (_controller.text.isNotEmpty) {
+      if (_activeDevice.isEmpty) {
+        setState(() {
+          _messages.add({
+            'type': 'error',
+            'content': 'No online desktop device selected. Please wait for devices to load or refresh.',
+            'timestamp': DateTime.now().toString(),
+          });
+        });
+        _controller.clear();
+        _scrollToBottom();
+        return;
+      }
+      
       final deviceInfo = await DeviceIdentity.getDeviceInfo();
       final message = {
         'type': 'command',

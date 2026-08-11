@@ -418,13 +418,6 @@ func (m model) startServer() tea.Cmd {
 
 		go func(data ConnectionData) {
 			for {
-				// Skip ngrok registration if using production backend
-				if strings.Contains(data.BackendURL, "onrender.com") {
-					log.Println("Using production backend, skipping ngrok registration")
-					time.Sleep(30 * time.Second)
-					continue
-				}
-
 				addr := getNgrokPublicURL()
 				if addr == "" {
 					if !isNgrokRunning() {
@@ -434,7 +427,6 @@ func (m model) startServer() tea.Cmd {
 							time.Sleep(30 * time.Second)
 							continue
 						}
-						// Wait a bit for ngrok to be fully ready
 						time.Sleep(3 * time.Second)
 						addr = getNgrokPublicURL()
 					}
@@ -1019,16 +1011,12 @@ func saveConnectionData(data ConnectionData) error {
 func registerWithBackend(data ConnectionData, publicAddress string) error {
 	secret := os.Getenv("AGENT_REGISTER_SECRET")
 	if secret == "" {
-		// fallback: same secret you configured in agent setup / connection_data if you store it
 		return fmt.Errorf("AGENT_REGISTER_SECRET not set")
 	}
 
-	// Use backend URL directly for production, ngrok URL for development
+	// Always use ngrok public URL as the agent address
+	// This is where the backend should forward /execute requests
 	address := publicAddress
-	if strings.Contains(data.BackendURL, "onrender.com") {
-		// For production backend, register directly with backend
-		address = data.BackendURL
-	}
 
 	body, _ := json.Marshal(map[string]string{
 		"device_id":       data.DeviceID,
@@ -1240,13 +1228,6 @@ func runBackgroundMode() {
 	// Start ngrok registration loop
 	go func(data ConnectionData) {
 		for {
-			// Skip ngrok registration if using production backend
-			if strings.Contains(data.BackendURL, "onrender.com") {
-				log.Println("Using production backend, skipping ngrok registration")
-				time.Sleep(30 * time.Second)
-				continue
-			}
-
 			addr := getNgrokPublicURL()
 			if addr == "" {
 				if !isNgrokRunning() {
@@ -1388,21 +1369,26 @@ func main() {
 		go startHTTPServer(data.Passphrase)
 		go func(data ConnectionData) {
 			for {
-				// Skip ngrok registration if using production backend
-				if strings.Contains(data.BackendURL, "onrender.com") {
-					log.Println("Using production backend, skipping ngrok registration")
-					time.Sleep(30 * time.Second)
-					continue
-				}
-
 				addr := getNgrokPublicURL()
 				if addr == "" {
-					log.Println("ngrok URL not available yet (is ngrok running?) - skipping registration")
-					time.Sleep(30 * time.Second)
-					continue
+					if !isNgrokRunning() {
+						log.Println("Ngrok not running, attempting to start...")
+						if err := startNgrok(); err != nil {
+							log.Printf("Failed to start ngrok: %v (skipping registration)", err)
+							time.Sleep(30 * time.Second)
+							continue
+						}
+						time.Sleep(3 * time.Second)
+						addr = getNgrokPublicURL()
+					}
+					if addr == "" {
+						log.Println("ngrok URL not available yet (is ngrok running?) - skipping registration")
+					}
 				}
-				if err := registerWithBackend(data, addr); err != nil {
-					log.Printf("register error: %v", err)
+				if addr != "" {
+					if err := registerWithBackend(data, addr); err != nil {
+						log.Printf("register error: %v", err)
+					}
 				}
 				time.Sleep(30 * time.Second)
 			}
