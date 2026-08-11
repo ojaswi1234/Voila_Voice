@@ -7,7 +7,7 @@ start "Local Agent" cmd /k "cd local-agent && go run main.go"
 timeout /t 3
 
 echo Starting Ngrok...
-start "Ngrok" cmd /k "cd scripts && python setup_ngrok.py"
+start "Ngrok" cmd /k "cd scripts && start_ngrok.bat"
 
 timeout /t 5
 
