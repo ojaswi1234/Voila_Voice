@@ -83,8 +83,12 @@ mobile-agent/flutter_sdk/*.zip
 
 # Local agent
 local-agent/connection.json
+local-agent/connection_data.json
 local-agent/start_agent.bat
 local-agent/start_agent.sh
 
-
 backend.exe
+
+# Keep important JSON files
+!mobile-agent/pubspec.yaml
+!mobile-agent/android/app/build.gradle

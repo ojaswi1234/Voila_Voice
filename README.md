@@ -18,6 +18,36 @@ Zero Trust voice-controlled remote CLI execution system.
 
 ## Quick Start
 
+### Environment Variables Setup
+
+Create a `.env` file in the project root (copy from `.env.example`):
+
+```bash
+# Required for ngrok authentication
+NGROK_AUTHTOKEN=your_ngrok_authtoken_here
+
+# Required for device registration (must match backend's AGENT_REGISTER_SECRET)
+AGENT_REGISTER_SECRET=your_registration_secret_here
+
+# Optional: Admin override for clearing backend data
+CLEAR_DATA_SECRET=your_clear_data_secret_here
+```
+
+**For Windows users:** Set environment variables permanently:
+```cmd
+setx NGROK_AUTHTOKEN "your_token_here"
+setx AGENT_REGISTER_SECRET "your_secret_here"
+```
+
+**Important:** The `AGENT_REGISTER_SECRET` must match the environment variable set on your Render backend.
+
+**Note:** The local agent setup now only requires:
+1. Backend URL (defaults to production)
+2. Device Name
+3. Security Phrase (for clearing backend data)
+
+The previous "Passphrase" field has been removed as it was redundant.
+
 ### 1. Start All Services (Windows)
 ```bash
 start_all.bat
@@ -31,7 +61,7 @@ go run main.go
 
 # Terminal 2: Start ngrok (automated)
 cd scripts
-python setup_ngrok.py  # or: npm install && npm start
+node setup_ngrok.js
 
 # Terminal 3: Start backend with auto-detection
 NGROK_AUTO_DETECT=true go run main.go
@@ -40,8 +70,9 @@ NGROK_AUTO_DETECT=true go run main.go
 ### 3. Deploy to Render
 1. Push code to GitHub
 2. Connect repository to Render.com
-3. Update Render environment variables with ngrok URL
-4. Deploy with free tier
+3. **Required:** Set `AGENT_REGISTER_SECRET` in Render environment variables (must match your local setup)
+4. **Optional:** Set `CLEAR_DATA_SECRET` for admin override of data clearing
+5. Deploy with free tier
 
 ### 4. Setup GitHub Actions
 1. Add `RENDER_BACKEND_URL` secret to GitHub
@@ -181,7 +212,6 @@ Backend automatically optimizes commands:
 - `{"type": "get_stats"}` - Get system statistics
 
 ### Local Agent
-- `POST /auth` - Authentication with passphrase
 - `POST /execute` - Execute commands
 - `POST /queue` - Add to offline queue
 - `POST /process` - Process pending tasks

@@ -126,7 +126,6 @@ type ConnectionData struct {
 	BackendURL     string `json:"backend_url"`
 	DeviceID       string `json:"device_id"`
 	DeviceName     string `json:"device_name"`
-	Passphrase     string `json:"passphrase"`
 	SecurityPhrase string `json:"security_phrase"`
 	DeviceFingerprint string `json:"device_fingerprint"`
 	Connected      bool   `json:"connected"`
@@ -137,7 +136,7 @@ type ConnectionData struct {
 type model struct {
 	state          string // "setup", "connected", "menu", "loading", "security_phrase_input"
 	connectionData ConnectionData
-	inputStep      int // 0: backend, 1: device name, 2: passphrase, 3: security phrase
+	inputStep      int // 0: backend, 1: device name, 2: security phrase
 	currentInput   string
 	selectedOption int
 	messages       []string
@@ -300,10 +299,6 @@ func (m model) handleEnter() (model, tea.Cmd) {
 			m.inputStep = 2
 			m.currentInput = ""
 		case 2:
-			m.connectionData.Passphrase = m.currentInput
-			m.inputStep = 3
-			m.currentInput = ""
-		case 3:
 			m.connectionData.SecurityPhrase = m.currentInput
 			// Generate device fingerprint for MITM prevention
 			if m.connectionData.DeviceFingerprint == "" {
@@ -414,7 +409,7 @@ func (m model) testConnection() tea.Cmd {
 
 func (m model) startServer() tea.Cmd {
 	return func() tea.Msg {
-		go startHTTPServer(m.connectionData.Passphrase)
+		go startHTTPServer()
 
 		go func(data ConnectionData) {
 			for {
@@ -564,26 +559,12 @@ func (m model) setupView() string {
 		content.WriteString("Device Name: ")
 		content.WriteString(successStyle.Render(m.connectionData.DeviceName))
 		content.WriteString("\n\n")
-		content.WriteString("Passphrase: ")
-		content.WriteString(inputStyle.Render(strings.Repeat("*", len(m.currentInput)) + "_"))
-		content.WriteString("\n\n")
-		content.WriteString(subtitleStyle.Render("Enter your secure passphrase"))
-	case 3:
-		content.WriteString("Backend URL: ")
-		content.WriteString(successStyle.Render(m.connectionData.BackendURL))
-		content.WriteString("\n\n")
-		content.WriteString("Device Name: ")
-		content.WriteString(successStyle.Render(m.connectionData.DeviceName))
-		content.WriteString("\n\n")
-		content.WriteString("Passphrase: ")
-		content.WriteString(successStyle.Render(strings.Repeat("*", len(m.connectionData.Passphrase))))
-		content.WriteString("\n\n")
 		content.WriteString("Security Phrase: ")
-		content.WriteString(inputStyle.Render(m.currentInput + "_"))
+		content.WriteString(inputStyle.Render(strings.Repeat("*", len(m.currentInput)) + "_"))
 		content.WriteString("\n\n")
 		content.WriteString(subtitleStyle.Render("Enter phrase to verify your identity"))
 		content.WriteString("\n")
-		content.WriteString(subtitleStyle.Render("This phrase will be required for new sessions"))
+		content.WriteString(subtitleStyle.Render("This phrase will be required for clearing backend data"))
 	}
 
 	if m.isLoading {
@@ -907,30 +888,12 @@ func startNgrok() error {
 	return nil
 }
 
-func startHTTPServer(passphrase string) {
+func startHTTPServer() {
 	if serverRunning {
 		return
 	}
 
 	mux := http.NewServeMux()
-
-	mux.HandleFunc("/auth", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
-		var req map[string]string
-		json.NewDecoder(r.Body).Decode(&req)
-
-		if req["passphrase"] == passphrase {
-			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(map[string]string{"status": "authenticated"})
-		} else {
-			w.WriteHeader(http.StatusUnauthorized)
-			json.NewEncoder(w).Encode(map[string]string{"status": "unauthorized"})
-		}
-	})
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -1223,7 +1186,7 @@ func runBackgroundMode() {
 	log.Printf("Device: %s (%s)", data.DeviceName, data.DeviceID)
 	
 	// Start HTTP server
-	go startHTTPServer(data.Passphrase)
+	go startHTTPServer()
 	
 	// Start ngrok registration loop
 	go func(data ConnectionData) {
@@ -1366,7 +1329,7 @@ func main() {
 			status:         "Running",
 			isLoading:      false,
 		}
-		go startHTTPServer(data.Passphrase)
+		go startHTTPServer()
 		go func(data ConnectionData) {
 			for {
 				addr := getNgrokPublicURL()
