@@ -275,6 +275,10 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
               if (_activeDevice.isEmpty || !_devices.containsKey(_activeDevice)) {
                 if (firstOnlineDesktop != null) {
                   _activeDevice = firstOnlineDesktop;
+                  debugPrint('Auto-selected device: $_activeDevice');
+                } else {
+                  _activeDevice = '';
+                  debugPrint('No online desktop devices available');
                 }
               }
               // Clear stale saved devices that aren't in current backend list
@@ -466,6 +470,20 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
         return;
       }
       
+      // Validate that selected device is actually a desktop device
+      if (!_activeDevice.startsWith('desktop-')) {
+        setState(() {
+          _messages.add({
+            'type': 'error',
+            'content': 'Invalid device selected: $_activeDevice. Expected desktop- device.',
+            'timestamp': DateTime.now().toString(),
+          });
+        });
+        _controller.clear();
+        _scrollToBottom();
+        return;
+      }
+      
       final deviceInfo = await DeviceIdentity.getDeviceInfo();
       final message = {
         'type': 'command',
@@ -478,6 +496,9 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
         'client_timestamp': DateTime.now().millisecondsSinceEpoch,
         ...deviceInfo,
       };
+      
+      debugPrint('Sending command to device: $_activeDevice');
+      debugPrint('Message: $message');
       
       channel.sink.add(jsonEncode(message));
       setState(() {
@@ -885,8 +906,10 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                         );
                       }).toList(),
                       onChanged: (value) {
-                        if (value != null) {
+                        if (value != null && value.startsWith('desktop-')) {
                           _switchDevice(value);
+                        } else if (value != null) {
+                          debugPrint('Cannot select non-desktop device: $value');
                         }
                       },
                     ),
