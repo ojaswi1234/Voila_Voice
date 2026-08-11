@@ -192,11 +192,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleEnter()
 		case tea.KeyUp:
 			if m.state == "menu" {
-				m.selectedOption = (m.selectedOption - 1 + 7) % 7
+				// Calculate menu size based on connection state
+				menuSize := 7
+				if !m.connectionData.Connected {
+					menuSize = 3
+				}
+				m.selectedOption = (m.selectedOption - 1 + menuSize) % menuSize
 			}
 		case tea.KeyDown:
 			if m.state == "menu" {
-				m.selectedOption = (m.selectedOption + 1) % 7
+				// Calculate menu size based on connection state
+				menuSize := 7
+				if !m.connectionData.Connected {
+					menuSize = 3
+				}
+				m.selectedOption = (m.selectedOption + 1) % menuSize
 			}
 		case tea.KeyBackspace:
 			if len(m.currentInput) > 0 && (m.state == "setup" || m.state == "security_phrase_input") {
@@ -314,6 +324,23 @@ func (m model) handleEnter() (model, tea.Cmd) {
 	} else if m.state == "menu" {
 		backgroundRunning := isBackgroundServiceRunning()
 		
+		// Handle disconnected state menu (3 options)
+		if !m.connectionData.Connected {
+			switch m.selectedOption {
+			case 0: // Setup Connection
+				m.state = "setup"
+				m.inputStep = 0
+				m.currentInput = ""
+				m.messages = []string{}
+			case 1: // Start Ngrok
+				return m, m.startNgrok()
+			case 2: // Exit
+				return m, tea.Quit
+			}
+			return m, nil
+		}
+		
+		// Handle connected state menu (7 options)
 		switch m.selectedOption {
 		case 0: // Stop Service / Stop Background Service
 			if backgroundRunning {
@@ -391,6 +418,13 @@ func (m model) startServer() tea.Cmd {
 
 		go func(data ConnectionData) {
 			for {
+				// Skip ngrok registration if using production backend
+				if strings.Contains(data.BackendURL, "onrender.com") {
+					log.Println("Using production backend, skipping ngrok registration")
+					time.Sleep(30 * time.Second)
+					continue
+				}
+
 				addr := getNgrokPublicURL()
 				if addr == "" {
 					if !isNgrokRunning() {
@@ -567,10 +601,15 @@ func (m model) setupView() string {
 
 	if len(m.messages) > 0 {
 		content.WriteString("\n\n")
+		content.WriteString(separatorStyle.Render(separatorLine))
+		content.WriteString("\n\n")
 		for _, msg := range m.messages {
 			content.WriteString(msg + "\n")
 		}
 	}
+
+	content.WriteString("\n\n")
+	content.WriteString(subtitleStyle.Render(footerArt))
 
 	return content.String()
 }
@@ -609,13 +648,11 @@ func (m model) menuView() string {
 	}
 	content.WriteString("\n\n")
 	
-	// Connection progress
+	// Connection progress - only show if connected
 	if m.connectionData.Connected {
 		content.WriteString(successStyle.Render(progressBarConnected))
-	} else {
-		content.WriteString(errorStyle.Render(progressBarDisconnected))
+		content.WriteString("\n\n")
 	}
-	content.WriteString("\n\n")
 	
 	content.WriteString(statusStyle.Render(fmt.Sprintf("Status: %s", m.status)))
 	
@@ -625,29 +662,45 @@ func (m model) menuView() string {
 		content.WriteString(successStyle.Render("● Background service running"))
 	}
 	
+	// Show connection status message
+	if !m.connectionData.Connected {
+		content.WriteString("\n\n")
+		content.WriteString(warningStyle.Render("⚠ No connection configured"))
+	}
+	
 	content.WriteString("\n\n")
 	content.WriteString(separatorStyle.Render(separatorLine))
 	content.WriteString("\n\n")
 
-	options := []string{
-		"⏯  Stop/Start Service",
-		"🗑  Delete Connection",
-		"🌐 Start Ngrok",
-		"🧹 Clear Backend Data",
-		"💾 Clear Local Data",
-		"📊 View Status",
-		"🚪 Exit",
-	}
-	
-	// Add option to stop background service if running
-	if isBackgroundServiceRunning() {
+	// Dynamic menu options based on connection state
+	var options []string
+	if m.connectionData.Connected {
 		options = []string{
-			"⏯  Stop Background Service",
+			"⏯  Stop/Start Service",
 			"🗑  Delete Connection",
 			"🌐 Start Ngrok",
 			"🧹 Clear Backend Data",
 			"💾 Clear Local Data",
 			"📊 View Status",
+			"🚪 Exit",
+		}
+		
+		if isBackgroundServiceRunning() {
+			options = []string{
+				"⏯  Stop Background Service",
+				"🗑  Delete Connection",
+				"🌐 Start Ngrok",
+				"🧹 Clear Backend Data",
+				"💾 Clear Local Data",
+				"📊 View Status",
+				"🚪 Exit",
+			}
+		}
+	} else {
+		// Not connected - show setup-only options
+		options = []string{
+			"🔧 Setup Connection",
+			"🌐 Start Ngrok",
 			"🚪 Exit",
 		}
 	}
@@ -707,10 +760,15 @@ func (m model) securityPhraseInputView() string {
 
 	if len(m.messages) > 0 {
 		content.WriteString("\n\n")
+		content.WriteString(separatorStyle.Render(separatorLine))
+		content.WriteString("\n\n")
 		for _, msg := range m.messages {
 			content.WriteString(msg + "\n")
 		}
 	}
+
+	content.WriteString("\n\n")
+	content.WriteString(subtitleStyle.Render(footerArt))
 
 	return content.String()
 }
@@ -756,49 +814,105 @@ func isNgrokRunning() bool {
 	return resp.StatusCode == 200
 }
 
-func startNgrok() error {
-	// Try to start ngrok directly if it exists
-	scriptsDir := filepath.Join(getExecutableDir(), "..", "scripts")
-	ngrokPath := filepath.Join(scriptsDir, "ngrok.exe")
-	
-	if _, err := os.Stat(ngrokPath); err == nil {
-		log.Printf("Starting ngrok directly: %s", ngrokPath)
-		cmd := exec.Command(ngrokPath, "http", "8088")
-		cmd.Dir = scriptsDir
-		if err := cmd.Start(); err != nil {
-			return fmt.Errorf("failed to start ngrok: %w", err)
+func getNgrokExecutable() (string, error) {
+	// Check if ngrok is in system PATH
+	if runtime.GOOS == "windows" {
+		cmd := exec.Command("where", "ngrok")
+		if output, err := cmd.Output(); err == nil {
+			paths := strings.Split(strings.TrimSpace(string(output)), "\n")
+			if len(paths) > 0 && paths[0] != "" {
+				return strings.TrimSpace(paths[0]), nil
+			}
 		}
-		log.Println("Ngrok started in background")
-		return nil
+	} else {
+		cmd := exec.Command("which", "ngrok")
+		if output, err := cmd.Output(); err == nil {
+			return strings.TrimSpace(string(output)), nil
+		}
 	}
 	
-	// Fall back to Python script
-	scriptPath := filepath.Join(scriptsDir, "setup_ngrok.py")
-	if _, err := os.Stat(scriptPath); err == nil {
-		log.Printf("Starting ngrok using Python script: %s", scriptPath)
-		cmd := exec.Command("python", scriptPath)
-		if err := cmd.Start(); err != nil {
-			log.Printf("Failed to start ngrok with Python script: %v", err)
-			return startNgrokNode()
-		}
-		log.Println("Ngrok started in background")
-		return nil
+	// Check scripts directory with multiple path attempts
+	execDir := getExecutableDir()
+	possiblePaths := []string{
+		filepath.Join(execDir, "..", "scripts", "ngrok.exe"),
+		filepath.Join(execDir, "..", "scripts", "ngrok"),
+		filepath.Join(execDir, "scripts", "ngrok.exe"),
+		filepath.Join(execDir, "scripts", "ngrok"),
+		filepath.Join("..", "scripts", "ngrok.exe"),
+		filepath.Join("..", "scripts", "ngrok"),
 	}
-	return startNgrokNode()
+	
+	for _, ngrokPath := range possiblePaths {
+		if _, err := os.Stat(ngrokPath); err == nil {
+			absPath, err := filepath.Abs(ngrokPath)
+			if err == nil {
+				return absPath, nil
+			}
+			return ngrokPath, nil
+		}
+	}
+	
+	return "", fmt.Errorf("ngrok not found in PATH or scripts directory")
 }
 
-func startNgrokNode() error {
-	scriptPath := filepath.Join(getExecutableDir(), "..", "scripts", "setup_ngrok.js")
-	if _, err := os.Stat(scriptPath); err == nil {
-		log.Printf("Starting ngrok using Node script: %s", scriptPath)
-		cmd := exec.Command("node", scriptPath)
-		if err := cmd.Start(); err != nil {
-			return fmt.Errorf("failed to start ngrok with Node script: %w", err)
-		}
-		log.Println("Ngrok started in background")
+func configureNgrokAuthtoken(ngrokPath string) error {
+	authtoken := os.Getenv("NGROK_AUTHTOKEN")
+	if authtoken == "" {
+		return fmt.Errorf("NGROK_AUTHTOKEN environment variable not set. Get your authtoken from https://dashboard.ngrok.com/get-started/your-authtoken")
+	}
+	
+	// Check if already configured
+	cmd := exec.Command(ngrokPath, "config", "check")
+	if _, err := cmd.CombinedOutput(); err == nil {
+		// Config exists, verify authtoken matches
 		return nil
 	}
-	return fmt.Errorf("no ngrok setup script found")
+	
+	// Configure authtoken
+	cmd = exec.Command(ngrokPath, "config", "add-authtoken", authtoken)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to configure authtoken: %s, output: %s", err, string(output))
+	}
+	
+	log.Println("Ngrok authtoken configured successfully")
+	return nil
+}
+
+func startNgrok() error {
+	ngrokPath, err := getNgrokExecutable()
+	if err != nil {
+		return fmt.Errorf("ngrok not found: %w", err)
+	}
+	
+	log.Printf("Using ngrok at: %s", ngrokPath)
+	
+	// Check if ngrok is already running
+	if isNgrokRunning() {
+		log.Println("Ngrok is already running")
+		return nil
+	}
+	
+	// Configure authtoken if needed
+	if err := configureNgrokAuthtoken(ngrokPath); err != nil {
+		log.Printf("Warning: %v", err)
+		// Continue anyway - authtoken might already be configured
+	}
+	
+	// Start ngrok tunnel with environment variable
+	cmd := exec.Command(ngrokPath, "http", "8088")
+	
+	// Set NGROK_AUTHTOKEN environment variable for this process
+	authtoken := os.Getenv("NGROK_AUTHTOKEN")
+	if authtoken != "" {
+		cmd.Env = append(os.Environ(), "NGROK_AUTHTOKEN="+authtoken)
+	}
+	
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start ngrok: %w", err)
+	}
+	
+	log.Println("Ngrok started in background")
+	return nil
 }
 
 func startHTTPServer(passphrase string) {
@@ -909,13 +1023,20 @@ func registerWithBackend(data ConnectionData, publicAddress string) error {
 		return fmt.Errorf("AGENT_REGISTER_SECRET not set")
 	}
 
+	// Use backend URL directly for production, ngrok URL for development
+	address := publicAddress
+	if strings.Contains(data.BackendURL, "onrender.com") {
+		// For production backend, register directly with backend
+		address = data.BackendURL
+	}
+
 	body, _ := json.Marshal(map[string]string{
 		"device_id":       data.DeviceID,
 		"device_name":     data.DeviceName,
-		"address":         publicAddress, // ngrok https URL, no trailing path
+		"address":         address,
 		"fingerprint":     data.DeviceFingerprint,
 		"type":            "desktop",
-		"security_phrase": data.SecurityPhrase, // Send security phrase for authentication
+		"security_phrase": data.SecurityPhrase,
 	})
 
 	req, err := http.NewRequest(http.MethodPost, strings.TrimRight(data.BackendURL, "/")+"/register", bytes.NewReader(body))
@@ -938,7 +1059,7 @@ func registerWithBackend(data ConnectionData, publicAddress string) error {
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("register failed: %s", resp.Status)
 	}
-	log.Printf("Registered with backend as %s @ %s", data.DeviceID, publicAddress)
+	log.Printf("Registered with backend as %s @ %s", data.DeviceID, address)
 	return nil
 }
 
@@ -1119,6 +1240,13 @@ func runBackgroundMode() {
 	// Start ngrok registration loop
 	go func(data ConnectionData) {
 		for {
+			// Skip ngrok registration if using production backend
+			if strings.Contains(data.BackendURL, "onrender.com") {
+				log.Println("Using production backend, skipping ngrok registration")
+				time.Sleep(30 * time.Second)
+				continue
+			}
+
 			addr := getNgrokPublicURL()
 			if addr == "" {
 				if !isNgrokRunning() {
@@ -1260,6 +1388,13 @@ func main() {
 		go startHTTPServer(data.Passphrase)
 		go func(data ConnectionData) {
 			for {
+				// Skip ngrok registration if using production backend
+				if strings.Contains(data.BackendURL, "onrender.com") {
+					log.Println("Using production backend, skipping ngrok registration")
+					time.Sleep(30 * time.Second)
+					continue
+				}
+
 				addr := getNgrokPublicURL()
 				if addr == "" {
 					log.Println("ngrok URL not available yet (is ngrok running?) - skipping registration")
@@ -1305,9 +1440,11 @@ func main() {
 			log.Fatalf("Error running program: %v", err)
 		}
 		return
-	} else {
-		log.Printf("Setup required. Error: %v, Connected: %v, SecurityPhrase: %v", err, data.Connected, data.SecurityPhrase != "")
 	}
+	
+	// No connection data or incomplete setup - start fresh
+	log.Printf("Starting setup mode")
+	// No error logging
 
 	// New setup
 	initialModel := model{
