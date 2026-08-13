@@ -1,9 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Platform;
-import 'package:audioplayers/audioplayers.dart';
-import 'package:flutter_edge_tts/flutter_edge_tts.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:web_socket_channel/web_socket_channel.dart';
@@ -95,8 +92,6 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   bool _isThinking = false;
   bool _willTalk = true;
   FlutterTts flutterTts = FlutterTts();
-  final AudioPlayer _audioPlayer = AudioPlayer();
-  late FlutterEdgeTts _edgeTts;
   String _activeDevice = '';
   bool _isConnected = false;
   bool _isHealthy = false;
