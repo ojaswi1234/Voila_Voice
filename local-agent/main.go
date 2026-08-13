@@ -993,7 +993,8 @@ func executeCommand(command string, mode string) (string, error) {
 	var cmd *exec.Cmd
 
 	if strings.ToUpper(mode) == "ASK" {
-		cmd = exec.Command("agy", "--dangerously-skip-permissions", "--print", command)
+		prompt := command + "\n\n(System Note: You are running as a background agent. If the user asks you to open a GUI application like a browser or file explorer on Windows, you MUST use PowerShell \"Start-Process <app> -WindowStyle Normal\" to ensure it opens visibly, otherwise it will spawn invisibly in the background!)"
+		cmd = exec.Command("agy", "--dangerously-skip-permissions", "--print", prompt)
 	} else {
 		if runtime.GOOS == "windows" {
 			cmd = exec.Command("powershell", "-Command", command)
