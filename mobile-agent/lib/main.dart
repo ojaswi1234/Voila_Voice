@@ -91,6 +91,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   String? _currentDeviceId;
   String? _currentDeviceName;
   String _sessionId = '';
+  String _sessionToken = '';
   Map<String, dynamic> _savedDevices = {};
   
   // Speech-to-text state
@@ -246,7 +247,17 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
           try {
             final jsonResponse = jsonDecode(message);
             
-            if (jsonResponse is List) {
+            if (jsonResponse is Map && jsonResponse['type'] == 'session') {
+              setState(() {
+                _sessionToken = jsonResponse['session_token'];
+              });
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Session unlocked successfully.')),
+                );
+              }
+              return;
+            } else if (jsonResponse is List) {
               _devices = {};
               String? firstOnlineDesktop;
               for (var device in jsonResponse) {
@@ -313,6 +324,10 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
               setState(() {});
               _getDevices(); // Refresh device list
             } else if (message.contains('ERROR:')) {
+              if (message.contains('Unauthorized')) {
+                _sessionToken = ''; // Clear expired or invalid token
+              }
+
               _messages.add({
                 'type': 'error',
                 'content': message.replace('ERROR: ', ''),
@@ -485,12 +500,15 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
       }
       
       final deviceInfo = await DeviceIdentity.getDeviceInfo();
+      if (!await _ensureUnlocked()) return;
+
       final message = {
         'type': 'command',
         'device_id': _activeDevice,
         'client_device_id': _currentDeviceId,
         'client_device_name': _currentDeviceName,
         'session_id': _sessionId,
+        'session_token': _sessionToken,
         'command': _controller.text,
         'idempotency_key': const Uuid().v4(),
         'client_timestamp': DateTime.now().millisecondsSinceEpoch,
@@ -516,6 +534,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   void _switchDevice(String deviceId) async {
     final message = {
       'type': 'switch_device',
+        'session_token': _sessionToken,
       'device_id': deviceId,
       'client_device_id': _currentDeviceId,
       'client_device_name': _currentDeviceName,
@@ -544,8 +563,9 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
     channel.sink.add(jsonEncode(message));
   }
 
-  void _clearBackendData() async {
-    final securityPhrase = await showDialog<String>(
+  
+  Future<String?> _promptSecurityPhrase() async {
+    return await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Enter Security Phrase'),
@@ -570,10 +590,43 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
         ],
       ),
     );
-    
-    if (securityPhrase == null || securityPhrase!.isEmpty) {
-      return;
+  }
+
+  Future<bool> _ensureUnlocked() async {
+    if (_sessionToken.isNotEmpty) return true;
+    if (_activeDevice.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please select an active device first.')),
+        );
+      }
+      return false;
     }
+    
+    final phrase = await _promptSecurityPhrase();
+    if (phrase == null || phrase.isEmpty) return false;
+    
+    // Send unlock request
+    final message = {
+      'type': 'unlock',
+      'device_id': _activeDevice,
+      'client_device_id': _currentDeviceId,
+      'security_phrase': phrase,
+    };
+    channel.sink.add(jsonEncode(message));
+    
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Unlocking... please retry after success.')),
+      );
+    }
+    return false; // They must retry the command after token is received
+  }
+
+  void _clearBackendData() async {
+    if (!await _ensureUnlocked()) return;
+    final securityPhrase = _securityPhrase; // still using it for clear data just in case, but token is better
+
     
     final confirmed = await showDialog<bool>(
       context: context,
@@ -597,6 +650,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
     if (confirmed == true) {
       final message = {
         'type': 'clear_all_devices',
+        'session_token': _sessionToken,
         'security_phrase': securityPhrase,
       };
       

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -906,6 +907,15 @@ func startHTTPServer() {
 			return
 		}
 
+		expectedSecret := os.Getenv("AGENT_EXEC_SECRET")
+		if expectedSecret != "" {
+			providedSecret := r.Header.Get("X-Exec-Secret")
+			if subtle.ConstantTimeCompare([]byte(providedSecret), []byte(expectedSecret)) != 1 {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+		}
+
 		var req map[string]string
 		json.NewDecoder(r.Body).Decode(&req)
 
@@ -962,7 +972,7 @@ func executeCommand(command string) (string, error) {
 
 // Save/Load connection data
 func saveConnectionData(data ConnectionData) error {
-	file, err := os.Create("connection_data.json")
+	file, err := os.OpenFile("connection_data.json", os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		return err
 	}

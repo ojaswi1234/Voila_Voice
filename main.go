@@ -2,11 +2,16 @@ package main
 
 import (
 	"bytes"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -31,11 +36,13 @@ type Device struct {
 	AuthToken string
 	LockedBy  string // Mobile device ID that has exclusive access
 	LockedAt  time.Time
-	Fingerprint string // NEW
-	Type        string // "desktop" | etc.
-	Reachable   bool // NEW: direct ping result
-	LastPing    time.Time // NEW: last time backend pinged this device
-	SecurityPhrase string // NEW: user's security phrase for clearing data
+	Fingerprint string
+	Type        string
+	Reachable   bool
+	LastPing    time.Time
+	SecurityPhraseHash string // Hashed security phrase
+	UnlockFailures int
+	ClearFailures  int
 }
 
 type Backend struct {
@@ -43,7 +50,8 @@ type Backend struct {
 	activeDevice string
 	tokenCounter int
 	mu           sync.RWMutex
-	clients      map[string]*WebSocketClient // Track connected mobile clients
+	clients      map[string]*WebSocketClient
+	ipRateLimits map[string]int // IP -> failures
 }
 
 type WebSocketClient struct {
@@ -58,12 +66,128 @@ func NewBackend() *Backend {
 		activeDevice: "",
 		tokenCounter: 0,
 		clients:      make(map[string]*WebSocketClient),
+		ipRateLimits: make(map[string]int),
 	}
 	
 	// Start presence ticker
 	go b.startPresenceTicker()
 	
 	return b
+}
+
+
+func safeHTTPClient() *http.Client {
+	return &http.Client{
+		Timeout: 10 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+}
+
+func hashPhrase(phrase, deviceID string) string {
+	h := sha256.New()
+	h.Write([]byte(phrase + ":" + deviceID))
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func createSessionToken(deviceID, clientID string) string {
+	secret := os.Getenv("SESSION_SIGNING_KEY")
+	if secret == "" {
+		secret = "default_unsafe_secret"
+	}
+	payload := map[string]interface{}{
+		"sid": fmt.Sprintf("sess-%d", time.Now().UnixNano()),
+		"device_id": deviceID,
+		"client_device_id": clientID,
+		"iat": time.Now().Unix(),
+		"exp": time.Now().Add(15 * time.Minute).Unix(),
+	}
+	payloadBytes, _ := json.Marshal(payload)
+	payloadB64 := base64.URLEncoding.EncodeToString(payloadBytes)
+	
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(payloadB64))
+	sig := hex.EncodeToString(mac.Sum(nil))
+	
+	return payloadB64 + "." + sig
+}
+
+func verifySessionToken(token, expectedDeviceID string) bool {
+	if token == "" {
+		return false
+	}
+	parts := strings.Split(token, ".")
+	if len(parts) != 2 {
+		return false
+	}
+	payloadB64 := parts[0]
+	sig := parts[1]
+	
+	secret := os.Getenv("SESSION_SIGNING_KEY")
+	if secret == "" {
+		secret = "default_unsafe_secret"
+	}
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(payloadB64))
+	expectedSig := hex.EncodeToString(mac.Sum(nil))
+	
+	if !hmac.Equal([]byte(sig), []byte(expectedSig)) {
+		return false
+	}
+	
+	payloadBytes, err := base64.URLEncoding.DecodeString(payloadB64)
+	if err != nil {
+		return false
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
+		return false
+	}
+	
+	exp, ok := payload["exp"].(float64)
+	if !ok || time.Now().Unix() > int64(exp) {
+		return false // expired
+	}
+	
+	devID, ok := payload["device_id"].(string)
+	if !ok || devID != expectedDeviceID {
+		return false
+	}
+	return true
+}
+
+func isValidAddress(addr string) bool {
+	u, err := url.Parse(addr)
+	if err != nil {
+		return false
+	}
+	if u.Scheme != "https" && u.Scheme != "http" {
+		return false
+	}
+	host := u.Hostname()
+	
+	// Deny local / private
+	if host == "localhost" || host == "127.0.0.1" || strings.HasPrefix(host, "192.168.") || strings.HasPrefix(host, "10.") || strings.HasPrefix(host, "169.254.") {
+		if os.Getenv("NGROK_AUTO_DETECT") != "true" {
+			return false
+		}
+	}
+	
+	suffixes := os.Getenv("ALLOWED_AGENT_HOST_SUFFIXES")
+	if suffixes == "" {
+		suffixes = ".ngrok-free.app,.ngrok.app,.ngrok.io"
+	}
+	allowed := strings.Split(suffixes, ",")
+	for _, suffix := range allowed {
+		if strings.HasSuffix(host, strings.TrimSpace(suffix)) {
+			return true
+		}
+	}
+	if os.Getenv("NGROK_AUTO_DETECT") == "true" && (host == "localhost" || host == "127.0.0.1") {
+		return true
+	}
+	return false
 }
 
 func (b *Backend) markStaleDevices() {
@@ -119,7 +243,8 @@ func (b *Backend) pingDevice(device *Device) {
 	}
 	
 	// Ping device's HTTP endpoint
-	client := &http.Client{Timeout: 5 * time.Second}
+	client := safeHTTPClient()
+	client.Timeout = 5 * time.Second
 	resp, err := client.Get(strings.TrimRight(device.Address, "/") + "/health")
 	
 	b.mu.Lock()
@@ -300,47 +425,73 @@ func generateAuthToken() string {
 	return fmt.Sprintf("token-%d", time.Now().UnixNano())
 }
 
-func (b *Backend) forwardCommand(deviceID, command string) (string, error) {
+func (b *Backend) forwardCommand(deviceID, command, mode string) (string, error) {
 	b.mu.RLock()
 	device, exists := b.devices[deviceID]
+	if !exists {
+		b.mu.RUnlock()
+		log.Printf("forwardCommand failed: device not found - %s", deviceID)
+		return "", fmt.Errorf("device not found: %s", deviceID)
+	}
 	active := device.Active
 	address := device.Address
 	b.mu.RUnlock()
 
-	if !exists {
-		log.Printf("forwardCommand failed: device not found - %s", deviceID)
-		return "", fmt.Errorf("device not found: %s", deviceID)
-	}
-
 	if !active {
-		log.Printf("forwardCommand failed: device offline - %s (last seen stale or not registered)", deviceID)
-		return "", fmt.Errorf("device offline: %s (last seen stale or not registered)", deviceID)
+		log.Printf("forwardCommand failed: device offline - %s", deviceID)
+		return "", fmt.Errorf("device offline: %s", deviceID)
 	}
 
-	// Optimize command before forwarding
 	optimizedCommand := b.optimizeCommand(command)
 
-	// Forward to local agent via HTTP
-	url := address + "/execute"
+	urlStr := address + "/execute"
 	payload := map[string]string{"command": optimizedCommand}
 	jsonPayload, _ := json.Marshal(payload)
 
-	resp, err := http.Post(url, "application/json", bytes.NewBuffer(jsonPayload))
+	client := safeHTTPClient()
+	req, err := http.NewRequest("POST", urlStr, bytes.NewBuffer(jsonPayload))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if execSecret := os.Getenv("AGENT_EXEC_SECRET"); execSecret != "" {
+		req.Header.Set("X-Exec-Secret", execSecret)
+	}
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("agent returned status %d", resp.StatusCode)
+	}
+
 	var result map[string]string
 	json.NewDecoder(resp.Body).Decode(&result)
 	
-	// Generate AI-powered summary
-	summary := b.generateTaskSummary(command, result["output"])
+	output := result["output"]
+	status := "ok"
+	if errOutput, ok := result["error"]; ok && errOutput != "" {
+		output += "\n" + errOutput
+		status = "error"
+	}
+	if output == "" {
+		output = "Command executed with no output."
+	}
 	
-	// Return both output and summary
+	summary := b.generateTaskSummary(command, output)
+	
+	if mode == "" {
+		mode = "command"
+	}
+	
 	response := map[string]string{
-		"output": result["output"],
+		"output": output,
 		"summary": summary,
+		"status": status,
+		"mode": mode,
 	}
 	
 	jsonResponse, _ := json.Marshal(response)
@@ -385,10 +536,9 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 		}
 		defer conn.Close()
 
-		// Generate unique client ID
 		clientID := fmt.Sprintf("client-%d", time.Now().UnixNano())
+		clientIP := r.RemoteAddr
 		
-		// Register client
 		b.mu.Lock()
 		b.clients[clientID] = &WebSocketClient{
 			conn:        conn,
@@ -402,101 +552,137 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 		for {
 			messageType, message, err := conn.ReadMessage()
 			if err != nil {
-				log.Printf("Read error: %v", err)
 				break
 			}
 
-			log.Printf("Received from %s: %s", clientID, message)
-
-			// Parse message - use interface{} to handle mixed types
 			var msg map[string]interface{}
 			if err := json.Unmarshal(message, &msg); err != nil {
-				log.Printf("Parse error: %v", err)
 				conn.WriteMessage(messageType, []byte("ERROR: Invalid message format"))
 				continue
 			}
 
-			// Handle different message types
 			msgType, _ := msg["type"].(string)
-			switch msgType {
-			case "command":
-				deviceID, _ := msg["device_id"].(string)
-				command, _ := msg["command"].(string)
+			deviceID, _ := msg["device_id"].(string)
+			sessionToken, _ := msg["session_token"].(string)
+
+			// Require token for sensitive operations
+			requiresAuth := msgType == "command" || msgType == "lock_device" || msgType == "unlock_device" || msgType == "switch_device" || msgType == "clear_all_devices"
+			if requiresAuth {
+				// Special check for clear_all_devices which didn't use device_id originally
+				targetDeviceID := deviceID
+				if targetDeviceID == "" && msgType != "clear_all_devices" {
+					device := b.getActiveDevice()
+					if device != nil {
+						targetDeviceID = device.ID
+					}
+				}
 				
-				// If no device specified, use active device if online
+				// For clear_all, if token is valid for ANY device, we might let it through, or require the phrase inside the msg as before.
+				// For now, if no token, fail. If command/lock and token invalid, fail.
+				if msgType != "clear_all_devices" && !verifySessionToken(sessionToken, targetDeviceID) {
+					conn.WriteMessage(messageType, []byte("ERROR: Unauthorized (missing, invalid, or expired session_token)"))
+					continue
+				}
+			}
+
+			switch msgType {
+			case "unlock":
+				phrase, _ := msg["security_phrase"].(string)
+				cID, _ := msg["client_device_id"].(string)
+				if cID == "" {
+					cID = clientID
+				}
+				if deviceID == "" {
+					conn.WriteMessage(messageType, []byte("ERROR: device_id required"))
+					continue
+				}
+
+				b.mu.Lock()
+				failures := b.ipRateLimits[clientIP]
+				if failures > 5 {
+					b.mu.Unlock()
+					conn.WriteMessage(messageType, []byte("ERROR: Rate limited"))
+					continue
+				}
+				device, exists := b.devices[deviceID]
+				if !exists {
+					b.ipRateLimits[clientIP]++
+					b.mu.Unlock()
+					conn.WriteMessage(messageType, []byte("ERROR: Invalid device"))
+					continue
+				}
+				
+				expectedHash := device.SecurityPhraseHash
+				gotHash := hashPhrase(phrase, deviceID)
+				
+				if expectedHash != "" && gotHash == expectedHash {
+					b.ipRateLimits[clientIP] = 0 // reset
+					b.mu.Unlock()
+					
+					token := createSessionToken(deviceID, cID)
+					resp := map[string]string{
+						"type": "session",
+						"session_token": token,
+						"device_id": deviceID,
+					}
+					jResp, _ := json.Marshal(resp)
+					conn.WriteMessage(messageType, jResp)
+				} else {
+					b.ipRateLimits[clientIP]++
+					b.mu.Unlock()
+					conn.WriteMessage(messageType, []byte("ERROR: Invalid security phrase"))
+				}
+
+			case "command":
+				command, _ := msg["command"].(string)
+				mode, _ := msg["mode"].(string)
 				if deviceID == "" {
 					device := b.getActiveDevice()
 					if device != nil && device.Active {
 						deviceID = device.ID
 					} else {
-						// List online desktop devices
-						b.mu.RLock()
-						onlineDesktops := []string{}
-						for id, d := range b.devices {
-							if d.Active && d.Type == "desktop" {
-								onlineDesktops = append(onlineDesktops, id)
-							}
-						}
-						b.mu.RUnlock()
-						
-						if len(onlineDesktops) == 0 {
-							conn.WriteMessage(messageType, []byte("ERROR: No online desktop devices available"))
-						} else {
-							conn.WriteMessage(messageType, []byte("ERROR: No device specified. Online desktops: "+strings.Join(onlineDesktops, ", ")))
-						}
+						conn.WriteMessage(messageType, []byte("ERROR: No active online desktop device"))
 						continue
 					}
 				}
 				
-				// Check if device exists and is online before locking
 				b.mu.RLock()
 				device, exists := b.devices[deviceID]
 				isOnline := exists && device.Active
 				b.mu.RUnlock()
 				
 				if !exists {
-					conn.WriteMessage(messageType, []byte("ERROR: device not found: "+deviceID))
+					conn.WriteMessage(messageType, []byte("ERROR: device not found"))
 					continue
 				}
-				
 				if !isOnline {
-					conn.WriteMessage(messageType, []byte("ERROR: device offline: "+deviceID+" (last seen stale or not registered)"))
+					conn.WriteMessage(messageType, []byte("ERROR: device offline"))
 					continue
 				}
-				
-				// Check if device is locked by another client
 				if b.isDeviceLocked(deviceID, clientID) {
-					conn.WriteMessage(messageType, []byte("ERROR: Device is locked by another mobile device"))
+					conn.WriteMessage(messageType, []byte("ERROR: Device locked by another mobile device"))
 					continue
 				}
 				
-				// Lock device for this command
 				b.lockDevice(deviceID, clientID)
-				
-				result, err := b.forwardCommand(deviceID, command)
-				
-				// Unlock device after command
+				result, err := b.forwardCommand(deviceID, command, mode)
 				b.unlockDevice(deviceID, clientID)
 				
 				if err != nil {
-					log.Printf("Forward error: %v", err)
 					conn.WriteMessage(messageType, []byte("ERROR: "+err.Error()))
 					continue
 				}
 				conn.WriteMessage(messageType, []byte(result))
 				
 			case "switch_device":
-				deviceID, _ := msg["device_id"].(string)
 				err := b.setActiveDevice(deviceID)
 				if err != nil {
-					log.Printf("Switch device error: %v", err)
 					conn.WriteMessage(messageType, []byte("ERROR: "+err.Error()))
 				} else {
 					conn.WriteMessage(messageType, []byte("OK: Device switched"))
 				}
 				
 			case "lock_device":
-				deviceID, _ := msg["device_id"].(string)
 				err := b.lockDevice(deviceID, clientID)
 				if err != nil {
 					conn.WriteMessage(messageType, []byte("ERROR: "+err.Error()))
@@ -505,7 +691,6 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				}
 				
 			case "unlock_device":
-				deviceID, _ := msg["device_id"].(string)
 				err := b.unlockDevice(deviceID, clientID)
 				if err != nil {
 					conn.WriteMessage(messageType, []byte("ERROR: "+err.Error()))
@@ -514,9 +699,7 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				}
 				
 			case "get_devices":
-				// Mark stale devices before returning device list
 				b.markStaleDevices()
-				
 				devices := b.getAllDevices()
 				deviceList := make([]map[string]interface{}, 0)
 				for _, d := range devices {
@@ -530,7 +713,7 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 						"lockedBy":    d.LockedBy,
 						"lastSeen":    d.LastSeen,
 						"lastPing":    d.LastPing,
-						"fingerprint":  d.Fingerprint,
+						"fingerprint": d.Fingerprint,
 						"type":        d.Type,
 					})
 				}
@@ -545,7 +728,6 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 					"active_device": b.activeDevice,
 				}
 				b.mu.RUnlock()
-				
 				jsonData, _ := json.Marshal(stats)
 				conn.WriteMessage(messageType, jsonData)
 				
@@ -555,67 +737,63 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				}
 				if err := json.Unmarshal(message, &req); err == nil {
 					phrase := strings.TrimSpace(req.SecurityPhrase)
-					
 					if phrase == "" {
 						conn.WriteMessage(messageType, []byte("ERROR: Security phrase required"))
-						break
+						continue
 					}
 					
-					// Check for admin secret override
 					adminSecret := os.Getenv("CLEAR_DATA_SECRET")
 					if adminSecret != "" && phrase == adminSecret {
 						b.clearAllDevices()
 						conn.WriteMessage(messageType, []byte("OK: All devices cleared (admin)"))
-						break
+						continue
 					}
 					
-					b.mu.RLock()
+					b.mu.Lock()
+					failures := b.ipRateLimits[clientIP]
+					if failures > 5 {
+						b.mu.Unlock()
+						conn.WriteMessage(messageType, []byte("ERROR: Rate limited"))
+						continue
+					}
 					if len(b.devices) == 0 {
-						b.mu.RUnlock()
+						b.mu.Unlock()
 						conn.WriteMessage(messageType, []byte("ERROR: No registered devices to verify phrase"))
-						break
+						continue
 					}
 					
 					validPhrase := false
-					for _, device := range b.devices {
-						if device.SecurityPhrase == phrase {
+					for devID, device := range b.devices {
+						if device.SecurityPhraseHash == hashPhrase(phrase, devID) {
 							validPhrase = true
 							break
 						}
 					}
-					b.mu.RUnlock()
-					
 					if validPhrase {
+						b.ipRateLimits[clientIP] = 0
+						b.mu.Unlock()
 						b.clearAllDevices()
 						conn.WriteMessage(messageType, []byte("OK: All devices cleared"))
 					} else {
+						b.ipRateLimits[clientIP]++
+						b.mu.Unlock()
 						conn.WriteMessage(messageType, []byte("ERROR: Invalid security phrase"))
 					}
-				} else {
-					conn.WriteMessage(messageType, []byte("ERROR: Invalid request format"))
 				}
-				
 			default:
-				// Echo for PoC compatibility
 				conn.WriteMessage(messageType, message)
 			}
 		}
 		
-		// Client disconnected - cleanup
 		b.mu.Lock()
 		delete(b.clients, clientID)
-		
-		// Unlock all devices locked by this client
-		for deviceID, device := range b.devices {
+		for _, device := range b.devices {
 			if device.LockedBy == clientID {
 				device.LockedBy = ""
 				device.LockedAt = time.Time{}
-				log.Printf("Device %s unlocked (client %s disconnected)", deviceID, clientID)
 			}
 		}
 		b.mu.Unlock()
-		
-		log.Printf("Mobile client disconnected: %s", clientID)
 	}
 }
 
@@ -718,8 +896,8 @@ func main() {
 		}
 		
 		validPhrase := false
-		for _, device := range backend.devices {
-			if device.SecurityPhrase == phrase {
+		for devID, device := range backend.devices {
+			if device.SecurityPhraseHash == hashPhrase(phrase, devID) {
 				validPhrase = true
 				break
 			}
@@ -776,6 +954,12 @@ func main() {
 		http.Error(w, "device_id and address required", http.StatusBadRequest)
 		return
 	}
+	if !isValidAddress(req.Address) {
+		log.Printf("Registration failed: invalid or disallowed address: %s", req.Address)
+		http.Error(w, "Invalid address", http.StatusBadRequest)
+		return
+	}
+
 	if req.Type == "" {
 		req.Type = "desktop"
 	}
@@ -803,10 +987,9 @@ func main() {
 		d.AuthToken = generateAuthToken()
 	}
 	
-	// Store security phrase separately for clear-backend authentication
 	if req.SecurityPhrase != "" {
-		d.SecurityPhrase = strings.TrimSpace(req.SecurityPhrase)
-		log.Printf("Device registered with security phrase for data clearing")
+		d.SecurityPhraseHash = hashPhrase(strings.TrimSpace(req.SecurityPhrase), req.DeviceID)
+		log.Printf("Device registered with hashed security phrase")
 	}
 
 	wasNew := !exists
