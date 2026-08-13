@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:speech_to_text/speech_to_text.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'device_identity.dart';
 import 'artifacts_page.dart';
@@ -138,6 +139,13 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
     _initializeSpeech();
 
     Future.delayed(const Duration(seconds: 1), _getDevices);
+  }
+
+  Future<void> _initTts() async {
+    await flutterTts.setLanguage("en-US");
+    await flutterTts.setSpeechRate(0.55);
+    await flutterTts.setVolume(1.0);
+    await flutterTts.setPitch(1.0);
   }
 
   Future<void> _initializeSpeech() async {
@@ -332,7 +340,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                 'content': 'Desktop devices updated: ${_devices.length} devices ($onlineCount online, $reachableCount reachable)',
                 'timestamp': DateTime.now().toString(),
               });
-            if (jsonResponse is Map && jsonResponse['type'] == 'queued') {
+            } else if (jsonResponse is Map && jsonResponse['type'] == 'queued') {
               // Task queued! Keep loader spinning.
               return;
             } else if (jsonResponse is Map && jsonResponse.containsKey('summary')) {
