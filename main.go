@@ -61,6 +61,7 @@ type WebSocketClient struct {
 	conn        *websocket.Conn
 	clientID    string
 	connectedAt time.Time
+	writeMu     sync.Mutex
 }
 
 func NewBackend() *Backend {
@@ -81,7 +82,7 @@ func NewBackend() *Backend {
 
 func safeHTTPClient() *http.Client {
 	return &http.Client{
-		Timeout: 10 * time.Second,
+		Timeout: 120 * time.Second,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
@@ -538,6 +539,19 @@ func (b *Backend) generateTaskSummary(command, output string) string {
 	return summary
 }
 
+
+func (b *Backend) writeMessage(clientID string, messageType int, data []byte) error {
+	b.mu.RLock()
+	client, exists := b.clients[clientID]
+	b.mu.RUnlock()
+	if !exists {
+		return fmt.Errorf("client not found")
+	}
+	client.writeMu.Lock()
+	defer client.writeMu.Unlock()
+	return client.conn.WriteMessage(messageType, data)
+}
+
 func handleWebSocket(b *Backend) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
@@ -568,7 +582,7 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 
 			var msg map[string]interface{}
 			if err := json.Unmarshal(message, &msg); err != nil {
-				conn.WriteMessage(messageType, []byte("ERROR: Invalid message format"))
+				b.writeMessage(clientID, messageType, []byte("ERROR: Invalid message format"))
 				continue
 			}
 
@@ -591,7 +605,7 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				// For clear_all, if token is valid for ANY device, we might let it through, or require the phrase inside the msg as before.
 				// For now, if no token, fail. If command/lock and token invalid, fail.
 				if msgType != "clear_all_devices" && !verifySessionToken(sessionToken, targetDeviceID) {
-					conn.WriteMessage(messageType, []byte("ERROR: Unauthorized (missing, invalid, or expired session_token)"))
+					b.writeMessage(clientID, messageType, []byte("ERROR: Unauthorized (missing, invalid, or expired session_token)"))
 					continue
 				}
 			}
@@ -604,7 +618,7 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 					cID = clientID
 				}
 				if deviceID == "" {
-					conn.WriteMessage(messageType, []byte("ERROR: device_id required"))
+					b.writeMessage(clientID, messageType, []byte("ERROR: device_id required"))
 					continue
 				}
 
@@ -612,14 +626,14 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				failures := b.ipRateLimits[clientIP]
 				if failures > 5 {
 					b.mu.Unlock()
-					conn.WriteMessage(messageType, []byte("ERROR: Rate limited"))
+					b.writeMessage(clientID, messageType, []byte("ERROR: Rate limited"))
 					continue
 				}
 				device, exists := b.devices[deviceID]
 				if !exists {
 					b.ipRateLimits[clientIP]++
 					b.mu.Unlock()
-					conn.WriteMessage(messageType, []byte("ERROR: Invalid device"))
+					b.writeMessage(clientID, messageType, []byte("ERROR: Invalid device"))
 					continue
 				}
 				
@@ -637,11 +651,11 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 						"device_id": deviceID,
 					}
 					jResp, _ := json.Marshal(resp)
-					conn.WriteMessage(messageType, jResp)
+					b.writeMessage(clientID, messageType, jResp)
 				} else {
 					b.ipRateLimits[clientIP]++
 					b.mu.Unlock()
-					conn.WriteMessage(messageType, []byte("ERROR: Invalid security phrase"))
+					b.writeMessage(clientID, messageType, []byte("ERROR: Invalid security phrase"))
 				}
 
 			case "command":
@@ -652,7 +666,7 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 					if device != nil && device.Active {
 						deviceID = device.ID
 					} else {
-						conn.WriteMessage(messageType, []byte("ERROR: No active online desktop device"))
+						b.writeMessage(clientID, messageType, []byte("ERROR: No active online desktop device"))
 						continue
 					}
 				}
@@ -663,50 +677,53 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				b.mu.RUnlock()
 				
 				if !exists {
-					conn.WriteMessage(messageType, []byte("ERROR: device not found"))
+					b.writeMessage(clientID, messageType, []byte("ERROR: device not found"))
 					continue
 				}
 				if !isOnline {
-					conn.WriteMessage(messageType, []byte("ERROR: device offline"))
+					b.writeMessage(clientID, messageType, []byte("ERROR: device offline"))
 					continue
 				}
 				if b.isDeviceLocked(deviceID, clientID) {
-					conn.WriteMessage(messageType, []byte("ERROR: Device locked by another mobile device"))
+					b.writeMessage(clientID, messageType, []byte("ERROR: Device locked by another mobile device"))
 					continue
 				}
 				
-				b.lockDevice(deviceID, clientID)
-				result, err := b.forwardCommand(deviceID, command, mode)
-				b.unlockDevice(deviceID, clientID)
-				
-				if err != nil {
-					conn.WriteMessage(messageType, []byte("ERROR: "+err.Error()))
-					continue
-				}
-				conn.WriteMessage(messageType, []byte(result))
+				// Run in goroutine to not block websocket read loop (and pings)
+				go func(dID, cmd, m string, msgType int, cID string) {
+					b.lockDevice(dID, cID)
+					result, err := b.forwardCommand(dID, cmd, m)
+					b.unlockDevice(dID, cID)
+					
+					if err != nil {
+						b.writeMessage(cID, msgType, []byte("ERROR: "+err.Error()))
+						return
+					}
+					b.writeMessage(cID, msgType, []byte(result))
+				}(deviceID, command, mode, messageType, clientID)
 				
 			case "switch_device":
 				err := b.setActiveDevice(deviceID)
 				if err != nil {
-					conn.WriteMessage(messageType, []byte("ERROR: "+err.Error()))
+					b.writeMessage(clientID, messageType, []byte("ERROR: "+err.Error()))
 				} else {
-					conn.WriteMessage(messageType, []byte("OK: Device switched"))
+					b.writeMessage(clientID, messageType, []byte("OK: Device switched"))
 				}
 				
 			case "lock_device":
 				err := b.lockDevice(deviceID, clientID)
 				if err != nil {
-					conn.WriteMessage(messageType, []byte("ERROR: "+err.Error()))
+					b.writeMessage(clientID, messageType, []byte("ERROR: "+err.Error()))
 				} else {
-					conn.WriteMessage(messageType, []byte("OK: Device locked"))
+					b.writeMessage(clientID, messageType, []byte("OK: Device locked"))
 				}
 				
 			case "unlock_device":
 				err := b.unlockDevice(deviceID, clientID)
 				if err != nil {
-					conn.WriteMessage(messageType, []byte("ERROR: "+err.Error()))
+					b.writeMessage(clientID, messageType, []byte("ERROR: "+err.Error()))
 				} else {
-					conn.WriteMessage(messageType, []byte("OK: Device unlocked"))
+					b.writeMessage(clientID, messageType, []byte("OK: Device unlocked"))
 				}
 				
 			case "get_devices":
@@ -729,7 +746,7 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 					})
 				}
 				jsonData, _ := json.Marshal(deviceList)
-				conn.WriteMessage(messageType, jsonData)
+				b.writeMessage(clientID, messageType, jsonData)
 				
 			case "get_stats":
 				b.mu.RLock()
@@ -740,7 +757,7 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				}
 				b.mu.RUnlock()
 				jsonData, _ := json.Marshal(stats)
-				conn.WriteMessage(messageType, jsonData)
+				b.writeMessage(clientID, messageType, jsonData)
 				
 			case "clear_all_devices":
 				var req struct {
@@ -749,14 +766,14 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				if err := json.Unmarshal(message, &req); err == nil {
 					phrase := strings.TrimSpace(req.SecurityPhrase)
 					if phrase == "" {
-						conn.WriteMessage(messageType, []byte("ERROR: Security phrase required"))
+						b.writeMessage(clientID, messageType, []byte("ERROR: Security phrase required"))
 						continue
 					}
 					
 					adminSecret := os.Getenv("CLEAR_DATA_SECRET")
 					if adminSecret != "" && phrase == adminSecret {
 						b.clearAllDevices()
-						conn.WriteMessage(messageType, []byte("OK: All devices cleared (admin)"))
+						b.writeMessage(clientID, messageType, []byte("OK: All devices cleared (admin)"))
 						continue
 					}
 					
@@ -764,12 +781,12 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 					failures := b.ipRateLimits[clientIP]
 					if failures > 5 {
 						b.mu.Unlock()
-						conn.WriteMessage(messageType, []byte("ERROR: Rate limited"))
+						b.writeMessage(clientID, messageType, []byte("ERROR: Rate limited"))
 						continue
 					}
 					if len(b.devices) == 0 {
 						b.mu.Unlock()
-						conn.WriteMessage(messageType, []byte("ERROR: No registered devices to verify phrase"))
+						b.writeMessage(clientID, messageType, []byte("ERROR: No registered devices to verify phrase"))
 						continue
 					}
 					
@@ -784,15 +801,15 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 						b.ipRateLimits[clientIP] = 0
 						b.mu.Unlock()
 						b.clearAllDevices()
-						conn.WriteMessage(messageType, []byte("OK: All devices cleared"))
+						b.writeMessage(clientID, messageType, []byte("OK: All devices cleared"))
 					} else {
 						b.ipRateLimits[clientIP]++
 						b.mu.Unlock()
-						conn.WriteMessage(messageType, []byte("ERROR: Invalid security phrase"))
+						b.writeMessage(clientID, messageType, []byte("ERROR: Invalid security phrase"))
 					}
 				}
 			default:
-				conn.WriteMessage(messageType, message)
+				b.writeMessage(clientID, messageType, message)
 			}
 		}
 		
