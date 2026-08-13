@@ -986,11 +986,6 @@ func saveConnectionData(data ConnectionData) error {
 }
 
 func registerWithBackend(data ConnectionData, publicAddress string) error {
-	secret := os.Getenv("AGENT_REGISTER_SECRET")
-	if secret == "" {
-		return fmt.Errorf("AGENT_REGISTER_SECRET not set")
-	}
-
 	// Always use ngrok public URL as the agent address
 	// This is where the backend should forward /execute requests
 	address := publicAddress
@@ -1009,7 +1004,6 @@ func registerWithBackend(data ConnectionData, publicAddress string) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Agent-Secret", secret)
 	
 	// Add ngrok skip browser warning header if calling through ngrok
 	if strings.Contains(data.BackendURL, "ngrok") || strings.Contains(data.BackendURL, "ngrok-free") {
@@ -1021,9 +1015,12 @@ func registerWithBackend(data ConnectionData, publicAddress string) error {
 		return err
 	}
 	defer resp.Body.Close()
+
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("register failed: %s", resp.Status)
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("register failed: %s - %s", resp.Status, string(bodyBytes))
 	}
+	
 	log.Printf("Registered with backend as %s @ %s", data.DeviceID, address)
 	return nil
 }

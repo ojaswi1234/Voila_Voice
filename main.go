@@ -189,7 +189,7 @@ func isValidAddress(addr string) bool {
 	
 	suffixes := os.Getenv("ALLOWED_AGENT_HOST_SUFFIXES")
 	if suffixes == "" {
-		suffixes = ".ngrok-free.app,.ngrok.app,.ngrok.io"
+		suffixes = ".ngrok-free.dev,.ngrok-free.app,.ngrok.app,.ngrok.io"
 	}
 	allowed := strings.Split(suffixes, ",")
 	for _, suffix := range allowed {
