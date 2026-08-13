@@ -439,6 +439,50 @@ func generateAuthToken() string {
 	return fmt.Sprintf("token-%d", time.Now().UnixNano())
 }
 
+
+func (b *Backend) stopCommand(deviceID string) (string, error) {
+	b.mu.RLock()
+	device, exists := b.devices[deviceID]
+	if !exists {
+		b.mu.RUnlock()
+		return "", fmt.Errorf("device not found: %s", deviceID)
+	}
+	active := device.Active
+	address := device.Address
+	b.mu.RUnlock()
+
+	if !active {
+		return "", fmt.Errorf("device offline: %s", deviceID)
+	}
+
+	urlStr := address + "/stop"
+	client := safeHTTPClient()
+	req, err := http.NewRequest("POST", urlStr, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Exec-Secret", device.SecurityPhraseHash)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("agent returned status %d", resp.StatusCode)
+	}
+
+	var result map[string]string
+	json.NewDecoder(resp.Body).Decode(&result)
+	
+	if out, ok := result["output"]; ok {
+		return out, nil
+	}
+	return "Command stopped", nil
+}
+
 func (b *Backend) forwardCommand(deviceID, command, mode string) (string, error) {
 	b.mu.RLock()
 	device, exists := b.devices[deviceID]
@@ -702,6 +746,18 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 					b.writeMessage(cID, msgType, []byte(result))
 				}(deviceID, command, mode, messageType, clientID)
 				
+
+			case "stop_command":
+				b.lockDevice(deviceID, clientID)
+				result, err := b.stopCommand(deviceID)
+				b.unlockDevice(deviceID, clientID)
+				
+				if err != nil {
+					b.writeMessage(clientID, messageType, []byte("ERROR: "+err.Error()))
+				} else {
+					b.writeMessage(clientID, messageType, []byte("OK: "+result))
+				}
+
 			case "switch_device":
 				err := b.setActiveDevice(deviceID)
 				if err != nil {

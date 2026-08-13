@@ -24,6 +24,9 @@ import (
 
 // Styles
 var (
+	cmdMu      sync.Mutex
+	currentCmd *exec.Cmd
+
 	titleStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Bold(true)
 	subtitleStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("242"))
 	successStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
@@ -906,6 +909,29 @@ func startHTTPServer() {
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "mode": "background"})
 	})
 
+		mux.HandleFunc("/stop", func(w http.ResponseWriter, r *http.Request) {
+		connData, err := loadConnectionData()
+		if err != nil || connData.SecurityPhrase == "" {
+			http.Error(w, "Agent not configured", http.StatusServiceUnavailable)
+			return
+		}
+		
+		secretHeader := r.Header.Get("X-Exec-Secret")
+		if secretHeader != connData.SecurityPhraseHash {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		cmdMu.Lock()
+		if currentCmd != nil && currentCmd.Process != nil {
+			currentCmd.Process.Kill()
+		}
+		cmdMu.Unlock()
+
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]string{"output": "Command execution stopped."})
+	})
+
 	mux.HandleFunc("/execute", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -978,7 +1004,16 @@ func executeCommand(command string, mode string) (string, error) {
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
+	cmdMu.Lock()
+	currentCmd = cmd
+	cmdMu.Unlock()
+
 	err := cmd.Run()
+
+	cmdMu.Lock()
+	currentCmd = nil
+	cmdMu.Unlock()
+
 	if err != nil {
 		return stderr.String(), err
 	}
