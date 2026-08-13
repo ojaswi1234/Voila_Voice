@@ -901,10 +901,46 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
               _buildStatusChip(_isConnected ? 'CONNECTED' : 'DISCONNECTED', _isConnected ? colorScheme.secondary : colorScheme.error),
             ],
           ),
-          const SizedBox(height: 8),
-          Text(
-            'Mode: ${_currentMode.toUpperCase()}',
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border.all(color: Colors.black, width: 2),
+              boxShadow: const [BoxShadow(color: Colors.black, offset: Offset(2, 2))],
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => setState(() => _currentMode = 'ask'),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      decoration: BoxDecoration(
+                        color: _currentMode == 'ask' ? colorScheme.secondary : Colors.white,
+                        border: _currentMode == 'ask' ? Border.all(color: Colors.black, width: 2) : null,
+                      ),
+                      alignment: Alignment.center,
+                      child: Text('ASK', style: TextStyle(fontWeight: FontWeight.w900, color: Colors.black, fontSize: 14)),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => setState(() => _currentMode = 'command'),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      decoration: BoxDecoration(
+                        color: _currentMode == 'command' ? colorScheme.primary : Colors.white,
+                        border: _currentMode == 'command' ? Border.all(color: Colors.black, width: 2) : null,
+                      ),
+                      alignment: Alignment.center,
+                      child: Text('COMMAND', style: TextStyle(fontWeight: FontWeight.w900, color: Colors.black, fontSize: 14)),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -1004,6 +1040,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
             children: [
               _buildBrutalButton(Icons.refresh, 'REFRESH', _getDevices, colorScheme.secondary),
               _buildBrutalButton(Icons.delete_sweep, 'CLEAR BACKEND', _clearBackendData, const Color(0xFFFF9900)),
+              _buildBrutalButton(Icons.delete, 'CLEAR LOCAL', _clearLocalData, const Color(0xFFFF3366)),
               if (_savedDevices.isNotEmpty)
                 _buildBrutalButton(Icons.devices, 'SAVED (${_savedDevices.length})', _showSavedDevices, colorScheme.tertiary),
             ],
