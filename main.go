@@ -635,8 +635,16 @@ func handleWebhookResult(b *Backend) http.HandlerFunc {
 			if errorMsg != "" {
 				b.writeMessage(clientID, websocket.TextMessage, []byte("ERROR: "+errorMsg))
 			} else {
-				// We assume output is JSON string with summary, status, etc., or plain text
-				b.writeMessage(clientID, websocket.TextMessage, []byte(output))
+				summary := b.generateTaskSummary("Command", output)
+				
+				response := map[string]string{
+					"output": output,
+					"summary": summary,
+					"status": "ok",
+					"mode": "command", // default mode
+				}
+				jsonResponse, _ := json.Marshal(response)
+				b.writeMessage(clientID, websocket.TextMessage, jsonResponse)
 			}
 		}
 		w.WriteHeader(http.StatusOK)
