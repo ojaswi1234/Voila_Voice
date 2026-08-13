@@ -763,42 +763,394 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
         title: const Text('Saved Devices'),
         content: SizedBox(
           width: double.maxFinite,
-          child: Column(
-                children: [
-                  Expanded(
-                    child: ListView.builder(
-                      controller: _scrollController,
-                      itemCount: _messages.length,
-                      itemBuilder: (context, index) {
-                        final message = _messages[index];
-                        return _buildMessageCard(message, colorScheme);
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: _savedDevices.length,
+            itemBuilder: (context, index) {
+              final deviceId = _savedDevices.keys.elementAt(index);
+              final device = _savedDevices[deviceId] as Map<String, dynamic>;
+              return ListTile(
+                leading: const Icon(Icons.computer),
+                title: Text(device['device_name'] ?? deviceId),
+                subtitle: Text(deviceId),
+                trailing: IconButton(
+                  icon: const Icon(Icons.delete),
+                  onPressed: () {
+                    DeviceIdentity.removeSavedDevice(deviceId);
+                    setState(() {
+                      _savedDevices.remove(deviceId);
+                    });
+                    Navigator.pop(context);
+                  },
+                ),
+                onTap: () {
+                  _switchDevice(deviceId);
+                  Navigator.pop(context);
+                },
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    
+    return Scaffold(
+      backgroundColor: colorScheme.surface,
+      body: SafeArea(
+        child: Column(
+          children: [
+            _buildHeader(colorScheme),
+            _buildConnectionFlow(colorScheme),
+            _buildDeviceSelector(colorScheme),
+            Expanded(
+              child: _buildMessagesList(colorScheme),
+            ),
+            _buildInputArea(colorScheme),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader(ColorScheme colorScheme) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        boxShadow: [
+          BoxShadow(
+            color: colorScheme.shadow.withOpacity(0.1),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.graphic_eq,
+            color: colorScheme.primary,
+            size: 28,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Voice CLI',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w600,
+                    color: colorScheme.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    _buildStatusChip(
+                      'Backend: ${_isConnected ? 'Connected' : 'Disconnected'}',
+                      _isConnected ? Colors.green : Colors.red,
+                    ),
+                    const SizedBox(width: 8),
+                    _buildStatusChip(
+                      'Desktop: ${_localAgentConnected ? 'Online' : 'Offline'}',
+                      _localAgentConnected ? Colors.green : Colors.orange,
+                    ),
+                    const SizedBox(width: 8),
+                    _buildStatusChip(
+                      _backendStatus,
+                      _isHealthy ? Colors.blue : Colors.orange,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          if (_sessionToken.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.lock_outline),
+              tooltip: 'Lock Session',
+              onPressed: () async {
+                await _storage.delete(key: 'session_token');
+                setState(() {
+                  _sessionToken = '';
+                });
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Session locked. Token destroyed.')),
+                  );
+                }
+              },
+            ),
+          IconButton(
+            icon: const Icon(Icons.history),
+            color: colorScheme.primary,
+            tooltip: 'Artifacts',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const ArtifactsPage()),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatusChip(String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 12,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildConnectionFlow(ColorScheme colorScheme) {
+    return Container(
+      margin: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _buildFlowIndicator('Mobile', _isConnected, colorScheme),
+              const Icon(Icons.arrow_forward, size: 16, color: Colors.grey),
+              _buildFlowIndicator('Backend', _isConnected && _isHealthy, colorScheme),
+              const Icon(Icons.arrow_forward, size: 16, color: Colors.grey),
+              _buildFlowIndicator('Local Agent', _localAgentConnected, colorScheme),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _getConnectionFlowText(),
+            style: TextStyle(
+              fontSize: 11,
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFlowIndicator(String label, bool isActive, ColorScheme colorScheme) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: isActive ? colorScheme.primary : colorScheme.surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: isActive ? colorScheme.primary : colorScheme.outline,
+          width: 1,
+        ),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: isActive ? colorScheme.onPrimary : colorScheme.onSurfaceVariant,
+          fontSize: 12,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+    );
+  }
+
+  String _getConnectionFlowText() {
+    if (!_isConnected) {
+      return 'Mobile → Backend (disconnected)';
+    }
+    if (!_isHealthy) {
+      return 'Mobile → Backend (unhealthy) → Local Agent (unknown)';
+    }
+    if (_localAgentConnected) {
+      return 'Mobile → Backend (OK) → Local Agent (online) ✓';
+    }
+    return 'Mobile → Backend (OK) → Local Agent (offline)';
+  }
+
+  Widget _buildDeviceSelector(ColorScheme colorScheme) {
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            children: [
+              Text(
+                'Active Device:',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: colorScheme.onSurface,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: colorScheme.surfaceContainerLow,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: colorScheme.outline),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: _activeDevice,
+                      isExpanded: true,
+                      items: _devices.entries.map((entry) {
+                        final device = entry.value;
+                        final isLocked = device['locked'] == true;
+                        return DropdownMenuItem(
+                          value: entry.key,
+                          child: Row(
+                            children: [
+                              Text(device['name'] ?? entry.key),
+                              if (isLocked) ...[
+                                const SizedBox(width: 8),
+                                Icon(Icons.lock, size: 16, color: colorScheme.error),
+                              ],
+                            ],
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (value) {
+                        if (value != null && value.startsWith('desktop-')) {
+                          _switchDevice(value);
+                        } else if (value != null) {
+                          debugPrint('Cannot select non-desktop device: $value');
+                        }
                       },
                     ),
                   ),
-                  if (_isThinking && _currentMode == 'ASK')
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 12.0),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                          const SizedBox(width: 12),
-                          Text(
-                            'AI is thinking...',
-                            style: TextStyle(
-                              color: colorScheme.primary,
-                              fontStyle: FontStyle.italic,
-                            ),
-                          ),
-                        ],
-                      ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                onPressed: _getDevices,
+                icon: const Icon(Icons.refresh),
+                tooltip: 'Refresh Devices',
+              ),
+              IconButton(
+                onPressed: _clearBackendData,
+                icon: const Icon(Icons.delete_sweep),
+                tooltip: 'Clear Backend Data',
+              ),
+              IconButton(
+                onPressed: _clearLocalData,
+                icon: const Icon(Icons.delete),
+                tooltip: 'Clear Local Data',
+              ),
+            ],
+          ),
+        ),
+        if (_savedDevices.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              children: [
+                Text(
+                  'Saved Devices (${_savedDevices.length})',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const Spacer(),
+                TextButton.icon(
+                  onPressed: _showSavedDevices,
+                  icon: const Icon(Icons.devices, size: 16),
+                  label: const Text('Manage'),
+                  style: TextButton.styleFrom(
+                    textStyle: const TextStyle(fontSize: 12),
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildMessagesList(ColorScheme colorScheme) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        children: [
+          Expanded(
+            child: ListView.builder(
+              controller: _scrollController,
+              itemCount: _messages.length,
+              itemBuilder: (context, index) {
+                final message = _messages[index];
+                final type = message['type'] as String?;
+                final content = message['content'] as String?;
+                
+                if (type == null || content == null) {
+                  return const SizedBox.shrink();
+                }
+                
+                return _buildMessageCard(message, colorScheme);
+              },
+            ),
+          ),
+          if (_isThinking && _currentMode == 'ASK')
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12.0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    'AI is thinking...',
+                    style: TextStyle(
+                      color: colorScheme.primary,
+                      fontStyle: FontStyle.italic,
                     ),
+                  ),
                 ],
               ),
+            ),
+        ],
+      ),
     );
   }
 
