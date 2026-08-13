@@ -993,7 +993,7 @@ func executeCommand(command string, mode string) (string, error) {
 	var cmd *exec.Cmd
 
 	if strings.ToUpper(mode) == "ASK" {
-		prompt := command + "\n\n(CRITICAL SYSTEM NOTE: You are running inside an isolated background sandbox (exebox desktop). To open ANY GUI application, URL, or file so it is visible to the user on their main desktop, you MUST use WMI to break out of the sandbox. Use exactly this command format: Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'explorer.exe "<URL_OR_PATH>"' (for URLs/files) or Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList '<APP_EXE>' (for apps). DO NOT use Start-Process, as it will spawn invisibly in the sandbox!)"
+		prompt := command + "\n\n(CRITICAL SYSTEM NOTE: You are running inside an isolated background sandbox (`exebox` desktop). To open ANY GUI application, URL, or file so it is visible to the user on their main desktop, you MUST use WMI to break out of the sandbox. Use exactly this command format: `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'explorer.exe \"<URL_OR_PATH>\"'` (for URLs/files) or `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList '<APP_EXE>'` (for apps). DO NOT use Start-Process, as it will spawn invisibly in the sandbox!)"
 		cmd = exec.Command("agy", "--dangerously-skip-permissions", "--print", prompt)
 	} else {
 		if runtime.GOOS == "windows" {
