@@ -992,7 +992,7 @@ func stopHTTPServer() {
 func executeCommand(command string, mode string) (string, error) {
 	var cmd *exec.Cmd
 
-	if mode == "ASK" {
+	if strings.ToUpper(mode) == "ASK" {
 		cmd = exec.Command("agy", "--dangerously-skip-permissions", "--print", command)
 	} else {
 		if runtime.GOOS == "windows" {

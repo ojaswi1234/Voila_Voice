@@ -85,7 +85,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   final _storage = const FlutterSecureStorage();
   final List<Map<String, dynamic>> _messagesCommand = [];
   final List<Map<String, dynamic>> _messagesAsk = [];
-  List<Map<String, dynamic>> get _messages => _currentMode == 'ASK' ? _messagesAsk : _messagesCommand;
+  List<Map<String, dynamic>> get _messages => _currentMode.toUpperCase() == 'ASK' ? _messagesAsk : _messagesCommand;
   bool _isThinking = false;
   String _activeDevice = '';
   bool _isConnected = false;
@@ -1127,7 +1127,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
               },
             ),
           ),
-          if (_isThinking && _currentMode == 'ASK')
+          if (_isThinking && _currentMode.toUpperCase() == 'ASK')
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 12.0),
               child: Row(
