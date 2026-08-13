@@ -87,6 +87,8 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   final List<Map<String, dynamic>> _messagesAsk = [];
   List<Map<String, dynamic>> get _messages => _currentMode.toUpperCase() == 'ASK' ? _messagesAsk : _messagesCommand;
   bool _isThinking = false;
+  bool _willTalk = true;
+  FlutterTts flutterTts = FlutterTts();
   String _activeDevice = '';
   bool _isConnected = false;
   bool _isHealthy = false;
@@ -113,6 +115,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   @override
   void initState() {
     super.initState();
+    _initTts();
     _loadSession();
     _setupWebSocket();
     _initializeSpeech();
@@ -329,7 +332,17 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                 'content': 'Desktop devices updated: ${_devices.length} devices ($onlineCount online, $reachableCount reachable)',
                 'timestamp': DateTime.now().toString(),
               });
+            if (jsonResponse is Map && jsonResponse['type'] == 'queued') {
+              // Task queued! Keep loader spinning.
+              return;
             } else if (jsonResponse is Map && jsonResponse.containsKey('summary')) {
+              setState(() {
+                _isThinking = false;
+              });
+              if (_willTalk) {
+                flutterTts.speak(jsonResponse['summary']);
+              }
+
               _messages.add({
                 'type': 'response',
                 'content': jsonResponse['output'] ?? message,
@@ -365,6 +378,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
               setState(() {});
               _getDevices(); // Refresh device list
             } else if (message.contains('ERROR:')) {
+              setState(() { _isThinking = false; });
               if (message.contains('Unauthorized')) {
                 _sessionToken = ''; // Clear expired or invalid token
                 _storage.delete(key: 'session_token');
@@ -376,6 +390,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                 'timestamp': DateTime.now().toString(),
               });
             } else {
+              setState(() { _isThinking = false; });
               _messages.add({
                 'type': 'response',
                 'content': message,
@@ -383,6 +398,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
               });
             }
           } catch (e) {
+            setState(() { _isThinking = false; });
             _messages.add({
               'type': 'response',
               'content': message,
@@ -395,6 +411,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
         });
       }, onError: (error) {
         setState(() {
+          _isThinking = false;
           _isConnected = false;
           _messages.add({
             'type': 'error',
@@ -1127,7 +1144,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
               },
             ),
           ),
-          if (_isThinking && _currentMode.toUpperCase() == 'ASK')
+          if (_isThinking)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 12.0),
               child: Row(
@@ -1145,6 +1162,15 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                       color: colorScheme.primary,
                       fontStyle: FontStyle.italic,
                     ),
+                  ),
+                  const SizedBox(width: 12),
+                  IconButton(
+                    icon: Icon(Icons.stop_circle, color: colorScheme.error),
+                    onPressed: () {
+                       channel.sink.add(jsonEncode({'type': 'stop_command'}));
+                       setState(() { _isThinking = false; });
+                    },
+                    tooltip: 'Stop AI Task',
                   ),
                 ],
               ),

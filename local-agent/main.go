@@ -953,22 +953,42 @@ func startHTTPServer() {
 			return
 		}
 
-		var req map[string]string
+				var req map[string]string
 		json.NewDecoder(r.Body).Decode(&req)
 
 		command := req["command"]
 		mode := req["mode"]
+		clientID := req["client_id"]
 		
-		output, err := executeCommand(command, mode)
-		if err != nil {
-			// Do not return 500. Return 200 so the backend forwards the error message to the user!
-			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(map[string]string{"output": "Command failed:\n" + err.Error()})
-			return
-		}
-
-		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]string{"output": output})
+		w.WriteHeader(http.StatusAccepted)
+		
+		go func() {
+			output, err := executeCommand(command, mode)
+			
+			// Post the result back to backend
+			backendURL := strings.TrimRight(connData.BackendURL, "/") + "/webhook/result"
+			
+			resultPayload := map[string]string{
+				"client_id": clientID,
+				"device_id": connData.DeviceID,
+			}
+			
+			if err != nil {
+				resultPayload["error"] = "Command failed:\n" + err.Error()
+			} else {
+				resultPayload["output"] = output
+			}
+			
+			payloadBytes, _ := json.Marshal(resultPayload)
+			
+			req, _ := http.NewRequest(http.MethodPost, backendURL, bytes.NewBuffer(payloadBytes))
+			req.Header.Set("Content-Type", "application/json")
+			if strings.Contains(connData.BackendURL, "ngrok") || strings.Contains(connData.BackendURL, "ngrok-free") {
+				req.Header.Set("ngrok-skip-browser-warning", "true")
+			}
+			
+			http.DefaultClient.Do(req)
+		}()
 	})
 
 	server = &http.Server{    
@@ -993,7 +1013,7 @@ func executeCommand(command string, mode string) (string, error) {
 	var cmd *exec.Cmd
 
 	if strings.ToUpper(mode) == "ASK" {
-		prompt := command + "\n\n(CRITICAL SYSTEM NOTE: You are running inside an isolated background sandbox (`exebox` desktop). To open ANY GUI application, URL, or file so it is visible to the user on their main desktop, you MUST use WMI to break out of the sandbox. Use exactly this command format: `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'explorer.exe \"<URL_OR_PATH>\"'` (for URLs/files) or `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList '<APP_EXE>'` (for apps). DO NOT use Start-Process, as it will spawn invisibly in the sandbox!)"
+		prompt := command + "\n\n(CRITICAL SYSTEM NOTE: Keep your responses casual, brief, and conversational as if you are a friendly voice assistant. Do not use overly formal language.\n\nCRITICAL SYSTEM NOTE: You are running inside an isolated background sandbox (`exebox` desktop). To open ANY GUI application, URL, or file so it is visible to the user on their main desktop, you MUST use WMI to break out of the sandbox. Use exactly this command format: `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'explorer.exe \"<URL_OR_PATH>\"'` (for URLs/files) or `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList '<APP_EXE>'` (for apps). DO NOT use Start-Process, as it will spawn invisibly in the sandbox!)"
 		cmd = exec.Command("agy", "--dangerously-skip-permissions", "--print", prompt)
 	} else {
 		if runtime.GOOS == "windows" {

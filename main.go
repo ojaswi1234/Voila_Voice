@@ -483,7 +483,7 @@ func (b *Backend) stopCommand(deviceID string) (string, error) {
 	return "Command stopped", nil
 }
 
-func (b *Backend) forwardCommand(deviceID, command, mode string) (string, error) {
+func (b *Backend) forwardCommand(deviceID, command, mode, clientID string) (string, error) {
 	b.mu.RLock()
 	device, exists := b.devices[deviceID]
 	if !exists {
@@ -503,7 +503,7 @@ func (b *Backend) forwardCommand(deviceID, command, mode string) (string, error)
 	optimizedCommand := b.optimizeCommand(command)
 
 	urlStr := address + "/execute"
-	payload := map[string]string{"command": optimizedCommand, "mode": mode}
+	payload := map[string]string{"command": optimizedCommand, "mode": mode, "client_id": clientID}
 	jsonPayload, _ := json.Marshal(payload)
 
 	client := safeHTTPClient()
@@ -594,6 +594,39 @@ func (b *Backend) writeMessage(clientID string, messageType int, data []byte) er
 	client.writeMu.Lock()
 	defer client.writeMu.Unlock()
 	return client.conn.WriteMessage(messageType, data)
+}
+
+
+func handleWebhookResult(b *Backend) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var req map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Bad request", http.StatusBadRequest)
+			return
+		}
+
+		clientID, _ := req["client_id"].(string)
+		deviceID, _ := req["device_id"].(string)
+		output, _ := req["output"].(string)
+		errorMsg, _ := req["error"].(string)
+
+		b.unlockDevice(deviceID, clientID)
+
+		if clientID != "" {
+			if errorMsg != "" {
+				b.writeMessage(clientID, websocket.TextMessage, []byte("ERROR: "+errorMsg))
+			} else {
+				// We assume output is JSON string with summary, status, etc., or plain text
+				b.writeMessage(clientID, websocket.TextMessage, []byte(output))
+			}
+		}
+		w.WriteHeader(http.StatusOK)
+	}
 }
 
 func handleWebSocket(b *Backend) http.HandlerFunc {
@@ -736,13 +769,21 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				// Run in goroutine to not block websocket read loop (and pings)
 				go func(dID, cmd, m string, msgType int, cID string) {
 					b.lockDevice(dID, cID)
-					result, err := b.forwardCommand(dID, cmd, m)
-					b.unlockDevice(dID, cID)
+					result, err := b.forwardCommand(dID, cmd, m, cID)
 					
 					if err != nil {
+						b.unlockDevice(dID, cID)
 						b.writeMessage(cID, msgType, []byte("ERROR: "+err.Error()))
 						return
 					}
+					
+					if result == "TASK_QUEUED" {
+						// Don't unlock device yet, webhook will unlock it
+						// Don't write result to websocket, webhook will write it
+						return
+					}
+					
+					b.unlockDevice(dID, cID)
 					b.writeMessage(cID, msgType, []byte(result))
 				}(deviceID, command, mode, messageType, clientID)
 				
@@ -918,6 +959,7 @@ func main() {
 	log.Printf("Registered devices: %s (%s), %s (%s)", device1Name, device1Addr, device2Name, device2Addr)
 
 	http.HandleFunc("/ws", handleWebSocket(backend))
+	http.HandleFunc("/webhook/result", handleWebhookResult(backend))
 	http.HandleFunc("/test_optimize", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
