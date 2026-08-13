@@ -959,11 +959,12 @@ func startHTTPServer() {
 		command := req["command"]
 		mode := req["mode"]
 		clientID := req["client_id"]
+		conversationID := req["conversation_id"]
 		
 		w.WriteHeader(http.StatusAccepted)
 		
 		go func() {
-			output, err := executeCommand(command, mode)
+			output, err := executeCommand(command, mode, conversationID)
 			
 			// Post the result back to backend
 			backendURL := strings.TrimRight(connData.BackendURL, "/") + "/webhook/result"
@@ -1022,7 +1023,7 @@ func init() {
 	currentWorkingDir, _ = os.Getwd()
 }
 
-func executeCommand(command string, mode string) (string, error) {
+func executeCommand(command string, mode string, conversationID string) (string, error) {
 	var cmd *exec.Cmd
 
 	if strings.ToUpper(mode) == "ASK" {
