@@ -520,6 +520,10 @@ func (b *Backend) forwardCommand(deviceID, command, mode, clientID string) (stri
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == http.StatusAccepted {
+		return "TASK_QUEUED", nil
+	}
+	
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("agent returned status %d", resp.StatusCode)
 	}
