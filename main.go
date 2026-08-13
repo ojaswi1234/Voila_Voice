@@ -293,7 +293,7 @@ func (b *Backend) optimizeCommand(command string) string {
 	
 	// Check for exact matches
 	if optimized, exists := optimizations[command]; exists {
-		log.Printf("Command optimized: '%s' -> '%s'", command, optimized)
+		// log.Printf("Command optimized: '%s' -> '%s'", command, optimized)
 		return optimized
 	}
 	
@@ -303,7 +303,7 @@ func (b *Backend) optimizeCommand(command string) string {
 			// Check if pattern is contained in command
 			for i := 0; i <= len(command)-len(pattern); i++ {
 				if command[i:i+len(pattern)] == pattern {
-					log.Printf("Command partially optimized: '%s' -> '%s'", command, replacement)
+					// log.Printf("Command partially optimized: '%s' -> '%s'", command, replacement)
 					return replacement
 				}
 			}
