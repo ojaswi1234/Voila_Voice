@@ -1318,10 +1318,27 @@ class _CollapsibleOutputState extends State<CollapsibleOutput> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SelectableText(
-          displayText,
-          style: widget.style,
-        ),
+        widget.style.fontFamily == 'Courier'
+            ? Container(
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.white.withOpacity(0.05)),
+                ),
+                padding: const EdgeInsets.all(12),
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: SelectableText(
+                    displayText,
+                    style: widget.style,
+                  ),
+                ),
+              )
+            : SelectableText(
+                displayText,
+                style: widget.style,
+              ),
         if (isLong)
           GestureDetector(
             onTap: () {
