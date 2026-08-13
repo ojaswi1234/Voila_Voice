@@ -1016,17 +1016,31 @@ func stopHTTPServer() {
 	}
 }
 
+var currentWorkingDir string
+
+func init() {
+	currentWorkingDir, _ = os.Getwd()
+}
+
 func executeCommand(command string, mode string) (string, error) {
 	var cmd *exec.Cmd
 
 	if strings.ToUpper(mode) == "ASK" {
 		prompt := command + "\n\n(CRITICAL SYSTEM NOTE: Keep your responses casual, brief, and conversational as if you are a friendly voice assistant. Do not use overly formal language.\n\nCRITICAL SYSTEM NOTE: You are running inside an isolated background sandbox (`exebox` desktop). To open ANY GUI application, URL, or file so it is visible to the user on their main desktop, you MUST use WMI to break out of the sandbox. Use exactly this command format: `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'explorer.exe \"<URL_OR_PATH>\"'` (for URLs/files) or `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList '<APP_EXE>'` (for apps). DO NOT use Start-Process, as it will spawn invisibly in the sandbox! To perform browser automation, you MUST first launch a visible browser using Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe --remote-debugging-port=9222 --user-data-dir=C:\\tmp\\ai_browser_profile \"about:blank\"'. Then, control it by running python C:\\Users\\ojasw\\Desktop\\voice-cli-system\\local-agent\\browser_tools.py with args --action [goto|click|type|scrape|extract_links|snapshot] --url <url> --selector <css> --value <text>.)"
 		cmd = exec.Command("agy", "--dangerously-skip-permissions", "--print", prompt)
+		if currentWorkingDir != "" {
+			cmd.Dir = currentWorkingDir
+		}
 	} else {
 		if runtime.GOOS == "windows" {
-			cmd = exec.Command("powershell", "-Command", command)
+			fullCommand := command + "; Write-Output \"`n___PWD___$((Get-Location).Path)\""
+			cmd = exec.Command("powershell", "-Command", fullCommand)
 		} else {
-			cmd = exec.Command("sh", "-c", command)
+			fullCommand := command + "; echo \"\n___PWD___$(pwd)\""
+			cmd = exec.Command("sh", "-c", fullCommand)
+		}
+		if currentWorkingDir != "" {
+			cmd.Dir = currentWorkingDir
 		}
 	}
 
@@ -1044,11 +1058,33 @@ func executeCommand(command string, mode string) (string, error) {
 	currentCmd = nil
 	cmdMu.Unlock()
 
-	if err != nil {
-		return stderr.String(), err
+	outStr := stdout.String()
+	errStr := stderr.String()
+
+	if strings.ToUpper(mode) != "ASK" {
+		lines := strings.Split(outStr, "\n")
+		var newOut []string
+		for _, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if strings.HasPrefix(trimmed, "___PWD___") {
+				currentWorkingDir = strings.TrimPrefix(trimmed, "___PWD___")
+			} else {
+				newOut = append(newOut, line)
+			}
+		}
+		outStr = strings.Join(newOut, "\n")
 	}
 
-	return stdout.String(), nil
+	outStr = strings.TrimSpace(outStr)
+
+	if err != nil {
+		if outStr != "" {
+			return outStr + "\n" + errStr, err
+		}
+		return errStr, err
+	}
+
+	return outStr, nil
 }
 
 // Save/Load connection data
