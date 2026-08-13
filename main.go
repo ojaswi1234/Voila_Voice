@@ -577,7 +577,7 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 			sessionToken, _ := msg["session_token"].(string)
 
 			// Require token for sensitive operations
-			requiresAuth := msgType == "command" || msgType == "lock_device" || msgType == "unlock_device" || msgType == "switch_device" || msgType == "clear_all_devices"
+			requiresAuth := msgType == "command" || msgType == "lock_device" || msgType == "unlock_device" || msgType == "clear_all_devices"
 			if requiresAuth {
 				// Special check for clear_all_devices which didn't use device_id originally
 				targetDeviceID := deviceID

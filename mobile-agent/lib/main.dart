@@ -9,6 +9,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'device_identity.dart';
 import 'artifacts_page.dart';
 import 'package:uuid/uuid.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 // Backend URL from build-time configuration (safe default + scheme fix)
 const String _rawBackendUrl = String.fromEnvironment(
@@ -81,6 +82,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   late WebSocketChannel channel;
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final _storage = const FlutterSecureStorage();
   final List<Map<String, dynamic>> _messages = [];
   String _activeDevice = '';
   bool _isConnected = false;
@@ -108,6 +110,22 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   @override
   void initState() {
     super.initState();
+    _loadSession();
+    _setupWebSocket();
+    _initializeSpeech();
+  }
+
+  void _loadSession() async {
+    final savedToken = await _storage.read(key: 'session_token');
+    if (savedToken != null && savedToken.isNotEmpty) {
+      setState(() {
+        _sessionToken = savedToken;
+      });
+      debugPrint('Loaded session token from secure storage');
+    }
+  }
+
+  void _setupWebSocket() {
     _initializeDeviceIdentity();
     _connectToBackend();
     _startHealthChecks();
@@ -252,6 +270,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
             if (jsonResponse is Map && jsonResponse['type'] == 'session') {
               setState(() {
                 _sessionToken = jsonResponse['session_token'];
+                _storage.write(key: 'session_token', value: _sessionToken);
               });
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -345,6 +364,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
             } else if (message.contains('ERROR:')) {
               if (message.contains('Unauthorized')) {
                 _sessionToken = ''; // Clear expired or invalid token
+                _storage.delete(key: 'session_token');
               }
 
               _messages.add({
@@ -856,8 +876,24 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
               ],
             ),
           ),
+          if (_sessionToken.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.lock_outline),
+              tooltip: 'Lock Session',
+              onPressed: () async {
+                await _storage.delete(key: 'session_token');
+                setState(() {
+                  _sessionToken = '';
+                });
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Session locked. Token destroyed.')),
+                  );
+                }
+              },
+            ),
           IconButton(
-            icon: const Icon(Icons.inventory_2),
+            icon: const Icon(Icons.history),
             color: colorScheme.primary,
             tooltip: 'Artifacts',
             onPressed: () {

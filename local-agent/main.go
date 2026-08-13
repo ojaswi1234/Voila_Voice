@@ -487,7 +487,8 @@ func (m model) clearBackendDataWithPhrase(phrase string) tea.Cmd {
 
 func (m model) clearLocalData() tea.Cmd {
 	return func() tea.Msg {
-		err := os.Remove("connection_data.json")
+		path := filepath.Join(getExecutableDir(), "connection_data.json")
+		err := os.Remove(path)
 		if err != nil && !os.IsNotExist(err) {
 			return errorMsg{fmt.Sprintf("Failed to clear local data: %v", err)}
 		}
@@ -976,7 +977,8 @@ func executeCommand(command string) (string, error) {
 
 // Save/Load connection data
 func saveConnectionData(data ConnectionData) error {
-	file, err := os.OpenFile("connection_data.json", os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
+	path := filepath.Join(getExecutableDir(), "connection_data.json")
+	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		return err
 	}
@@ -1026,7 +1028,8 @@ func registerWithBackend(data ConnectionData, publicAddress string) error {
 }
 
 func loadConnectionData() (ConnectionData, error) {
-	file, err := os.Open("connection_data.json")
+	path := filepath.Join(getExecutableDir(), "connection_data.json")
+	file, err := os.Open(path)
 	if err != nil {
 		return ConnectionData{}, err
 	}
