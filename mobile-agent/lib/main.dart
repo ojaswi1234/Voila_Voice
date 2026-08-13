@@ -51,19 +51,19 @@ class VoiceCliApp extends StatelessWidget {
       title: 'Voice CLI',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        scaffoldBackgroundColor: const Color(0xFFF0F0F0),
+        scaffoldBackgroundColor: const Color(0xFF1E1E2E), // Deep dark brutalist
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFFFF3366),
-          primary: const Color(0xFFFF3366),
-          secondary: const Color(0xFF00E5FF),
-          tertiary: const Color(0xFFFFDE59),
-          surface: Colors.white,
-          brightness: Brightness.light,
+          primary: const Color(0xFFFF3366), // Hot pink
+          secondary: const Color(0xFF00E5FF), // Cyan
+          tertiary: const Color(0xFFFFDE59), // Yellow
+          surface: const Color(0xFF282A36), // Slightly lighter dark
+          brightness: Brightness.dark,
         ),
         useMaterial3: true,
         textTheme: GoogleFonts.spaceGroteskTextTheme().apply(
-          bodyColor: Colors.black,
-          displayColor: Colors.black,
+          bodyColor: Colors.white,
+          displayColor: Colors.white,
         ),
       ),
 darkTheme: ThemeData(
@@ -710,10 +710,18 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
     
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Unlocking... please retry after success.')),
+        const SnackBar(content: Text('Verifying security phrase...')),
       );
     }
-    return false; // They must retry the command after token is received
+    
+    // Wait for session token
+    for (int i = 0; i < 50; i++) {
+      await Future.delayed(const Duration(milliseconds: 100));
+      if (_sessionToken.isNotEmpty) {
+        return true;
+      }
+    }
+    return false;
   }
 
   void _clearBackendData() async {
@@ -847,7 +855,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
     final colorScheme = theme.colorScheme;
     
     return Scaffold(
-      backgroundColor: const Color(0xFFE0E5EC), // Brutalist grayish background
+      backgroundColor: const Color(0xFF1E1E2E), // Brutalist dark background
       body: SafeArea(
         child: Column(
           children: [
@@ -873,7 +881,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
       decoration: BoxDecoration(
         color: colorScheme.tertiary, // Yellow
         border: Border.all(color: Colors.black, width: 3),
-        boxShadow: const [BoxShadow(color: Colors.black, offset: Offset(4, 4))],
+        boxShadow: const [BoxShadow(color: const Color(0xFF00E5FF), offset: Offset(4, 4))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -909,7 +917,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
       decoration: BoxDecoration(
         color: color,
         border: Border.all(color: Colors.black, width: 2),
-        boxShadow: const [BoxShadow(color: Colors.black, offset: Offset(2, 2))],
+        boxShadow: const [BoxShadow(color: Colors.white, offset: Offset(2, 2))],
       ),
       child: Text(
         label,
@@ -935,13 +943,13 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
       margin: const EdgeInsets.symmetric(horizontal: 16),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border.all(color: Colors.black, width: 3),
-        boxShadow: const [BoxShadow(color: Colors.black, offset: Offset(4, 4))],
+        color: const Color(0xFF282A36),
+        border: Border.all(color: colorScheme.secondary, width: 3),
+        boxShadow: [BoxShadow(color: colorScheme.secondary, offset: const Offset(4, 4))],
       ),
       child: Text(
         _getConnectionFlowText().toUpperCase(),
-        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: Colors.white),
       ),
     );
   }
@@ -953,7 +961,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
       decoration: BoxDecoration(
         color: const Color(0xFFC7A2FF), // Brutal purple
         border: Border.all(color: Colors.black, width: 3),
-        boxShadow: const [BoxShadow(color: Colors.black, offset: Offset(4, 4))],
+        boxShadow: const [BoxShadow(color: Colors.white, offset: Offset(4, 4))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -963,23 +971,23 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12),
             decoration: BoxDecoration(
-              color: Colors.white,
-              border: Border.all(color: Colors.black, width: 2),
-              boxShadow: const [BoxShadow(color: Colors.black, offset: Offset(2, 2))],
+              color: const Color(0xFF282A36),
+              border: Border.all(color: colorScheme.secondary, width: 2),
+              boxShadow: [BoxShadow(color: colorScheme.secondary, offset: const Offset(2, 2))],
             ),
             child: DropdownButtonHideUnderline(
               child: DropdownButton<String>(
                 value: _activeDevice,
                 isExpanded: true,
-                icon: const Icon(Icons.arrow_drop_down, color: Colors.black),
-                dropdownColor: Colors.white,
+                icon: const Icon(Icons.arrow_drop_down, color: Colors.white),
+                dropdownColor: const Color(0xFF282A36),
                 items: _devices.entries.map((entry) {
                   final device = entry.value;
                   return DropdownMenuItem(
                     value: entry.key,
                     child: Text(
                       device['name'] ?? entry.key,
-                      style: const TextStyle(fontWeight: FontWeight.bold),
+                      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
                     ),
                   );
                 }).toList(),
@@ -1003,15 +1011,15 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
           const SizedBox(height: 12),
           Container(
             decoration: BoxDecoration(
-              color: Colors.white,
-              border: Border.all(color: Colors.black, width: 2),
-              boxShadow: const [BoxShadow(color: Colors.black, offset: Offset(2, 2))],
+              color: const Color(0xFF282A36),
+              border: Border.all(color: colorScheme.secondary, width: 2),
+              boxShadow: [BoxShadow(color: colorScheme.secondary, offset: const Offset(2, 2))],
             ),
             child: SwitchListTile(
-              title: const Text('AUTO-READ VOICE', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+              title: const Text('AUTO-READ VOICE', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.white)),
               value: _willTalk,
               activeColor: colorScheme.primary,
-              activeTrackColor: Colors.black,
+              activeTrackColor: Colors.white,
               inactiveTrackColor: Colors.grey,
               onChanged: (bool value) {
                 setState(() {
@@ -1110,18 +1118,19 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
     final type = message['type'] as String? ?? 'unknown';
     final content = message['content'] as String? ?? '';
     
-    Color bgColor = Colors.white;
-    if (type == 'user') bgColor = const Color(0xFF00E5FF); // Neon Blue
-    else if (type == 'error') bgColor = const Color(0xFFFF3366); // Red
-    else if (type == 'system') bgColor = const Color(0xFFEEEEEE);
+    Color bgColor = const Color(0xFF282A36);
+    Color borderColor = const Color(0xFF00E5FF);
+    if (type == 'user') { bgColor = const Color(0xFF00E5FF); borderColor = Colors.white; }
+    else if (type == 'error') { bgColor = const Color(0xFFFF3366); borderColor = Colors.white; }
+    else if (type == 'system') { bgColor = const Color(0xFF44475A); borderColor = colorScheme.tertiary; }
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: bgColor,
-        border: Border.all(color: Colors.black, width: 3),
-        boxShadow: const [BoxShadow(color: Colors.black, offset: Offset(4, 4))],
+        border: Border.all(color: borderColor, width: 3),
+        boxShadow: [BoxShadow(color: borderColor, offset: const Offset(4, 4))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1130,13 +1139,13 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
             children: [
               Text(
                 type.toUpperCase(),
-                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 10, color: type == 'error' ? Colors.white : Colors.black),
+                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 10, color: (type == 'user' || type == 'error') ? Colors.black : Colors.white),
               ),
               const Spacer(),
               if (message['timestamp'] != null)
                 Text(
                   message['timestamp'].toString().split(' ')[1].substring(0, 5),
-                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: type == 'error' ? Colors.white : Colors.black54),
+                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: (type == 'user' || type == 'error') ? Colors.black87 : Colors.white70),
                 ),
             ],
           ),
@@ -1146,7 +1155,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
             style: TextStyle(
               fontSize: 14, 
               fontWeight: FontWeight.w600, 
-              color: type == 'error' ? Colors.white : Colors.black,
+              color: (type == 'user' || type == 'error') ? Colors.black : Colors.white,
             ),
           ),
         ],
@@ -1157,9 +1166,9 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   Widget _buildInputArea(ColorScheme colorScheme) {
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: Colors.black, width: 4)),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E1E2E),
+        border: Border(top: BorderSide(color: colorScheme.tertiary, width: 4)),
       ),
       child: SafeArea(
         child: Column(
@@ -1169,20 +1178,37 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                 Expanded(
                   child: Container(
                     decoration: BoxDecoration(
-                      color: Colors.white,
-                      border: Border.all(color: Colors.black, width: 3),
-                      boxShadow: const [BoxShadow(color: Colors.black, offset: Offset(4, 4))],
+                      color: const Color(0xFF282A36),
+                      border: Border.all(color: colorScheme.secondary, width: 3),
+                      boxShadow: [BoxShadow(color: colorScheme.secondary, offset: const Offset(4, 4))],
                     ),
-                    child: TextField(
-                      controller: _controller,
-                      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black),
-                      decoration: const InputDecoration(
-                        hintText: 'ENTER COMMAND...',
-                        hintStyle: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey),
-                        contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                        border: InputBorder.none,
-                      ),
-                      onSubmitted: (_) => _sendMessage(),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _controller,
+                            style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+                            decoration: InputDecoration(
+                              hintText: _isListening ? 'LISTENING...' : (_currentMode == 'ask' ? 'ASK AGENT...' : 'ENTER COMMAND...'),
+                              hintStyle: const TextStyle(fontWeight: FontWeight.w700, color: Colors.grey),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                              border: InputBorder.none,
+                            ),
+                            onSubmitted: (_) => _sendMessage(),
+                          ),
+                        ),
+                        GestureDetector(
+                          onTap: _toggleListening,
+                          child: Padding(
+                            padding: const EdgeInsets.only(right: 12.0),
+                            child: Icon(
+                              _isListening ? Icons.mic : Icons.mic_none,
+                              color: _isListening ? colorScheme.primary : Colors.white,
+                              size: 24,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -1193,10 +1219,10 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
                       color: colorScheme.primary,
-                      border: Border.all(color: Colors.black, width: 3),
-                      boxShadow: const [BoxShadow(color: Colors.black, offset: Offset(4, 4))],
+                      border: Border.all(color: Colors.white, width: 3),
+                      boxShadow: const [BoxShadow(color: Colors.white, offset: Offset(4, 4))],
                     ),
-                    child: const Icon(Icons.send, color: Colors.white),
+                    child: const Icon(Icons.send, color: Colors.black),
                   ),
                 ),
               ],
