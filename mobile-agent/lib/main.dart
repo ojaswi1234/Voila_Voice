@@ -51,30 +51,23 @@ class VoiceCliApp extends StatelessWidget {
       title: 'Voice CLI',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        scaffoldBackgroundColor: const Color(0xFF1E1E2E), // Deep dark brutalist
+        scaffoldBackgroundColor: const Color(0xFF0F0F12),
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFFFF3366),
-          primary: const Color(0xFFFF3366), // Hot pink
-          secondary: const Color(0xFF00E5FF), // Cyan
-          tertiary: const Color(0xFFFFDE59), // Yellow
-          surface: const Color(0xFF282A36), // Slightly lighter dark
-          brightness: Brightness.dark,
-        ),
-        useMaterial3: true,
-        textTheme: GoogleFonts.spaceGroteskTextTheme().apply(
-          bodyColor: Colors.white,
-          displayColor: Colors.white,
-        ),
-      ),
-darkTheme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF6750A4),
+          seedColor: const Color(0xFF7C6CFF),
+          primary: const Color(0xFF7C6CFF),
+          secondary: const Color(0xFF3DDC97),
+          surface: const Color(0xFF1A1A1F),
           brightness: Brightness.dark,
         ),
         useMaterial3: true,
         textTheme: GoogleFonts.interTextTheme(ThemeData.dark().textTheme),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Color(0xFF0F0F12),
+          elevation: 0,
+          scrolledUnderElevation: 0,
+        ),
       ),
-      themeMode: ThemeMode.system,
+      themeMode: ThemeMode.dark,
       home: const VoiceHomePage(),
     );
   }
@@ -850,221 +843,130 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   @override
 
   @override
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     
     return Scaffold(
-      backgroundColor: const Color(0xFF1E1E2E), // Brutalist dark background
-      body: SafeArea(
-        child: Column(
-          children: [
-            _buildHeader(colorScheme),
-            const SizedBox(height: 8),
-            _buildConnectionFlow(colorScheme),
-            const SizedBox(height: 8),
-            _buildDeviceSelector(colorScheme),
-            const SizedBox(height: 12),
-            Expanded(child: _buildMessagesList(colorScheme)),
-            _buildInputArea(colorScheme),
-          ],
+      backgroundColor: const Color(0xFF0F0F12),
+      appBar: AppBar(
+        title: const Text(
+          'Voila Voice',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, letterSpacing: -0.3),
         ),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.folder_copy_outlined, size: 20, color: colorScheme.onSurface.withOpacity(0.7)),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const ArtifactsPage(),
+                ),
+              );
+            },
+          ),
+          IconButton(
+            icon: Icon(Icons.settings_outlined, size: 20, color: colorScheme.onSurface.withOpacity(0.7)),
+            onPressed: () => _showSettingsSheet(context),
+          ),
+        ],
       ),
-    );
-  }
-
-  Widget _buildHeader(ColorScheme colorScheme) {
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: colorScheme.tertiary, // Yellow
-        border: Border.all(color: Colors.black, width: 3),
-        boxShadow: const [BoxShadow(color: const Color(0xFF00E5FF), offset: Offset(4, 4))],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      body: Column(
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'VOICE CLI',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: -0.5,
-                  color: Colors.black,
-                ),
-              ),
-              _buildStatusChip(_isConnected ? 'CONNECTED' : 'DISCONNECTED', _isConnected ? colorScheme.secondary : colorScheme.error),
-            ],
-          ),
+          _buildStatusRow(colorScheme),
           const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              border: Border.all(color: Colors.black, width: 2),
-              boxShadow: const [BoxShadow(color: Colors.black, offset: Offset(2, 2))],
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () => setState(() => _currentMode = 'ask'),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      decoration: BoxDecoration(
-                        color: _currentMode == 'ask' ? colorScheme.secondary : Colors.white,
-                        border: _currentMode == 'ask' ? Border.all(color: Colors.black, width: 2) : null,
-                      ),
-                      alignment: Alignment.center,
-                      child: Text('ASK', style: TextStyle(fontWeight: FontWeight.w900, color: Colors.black, fontSize: 14)),
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () => setState(() => _currentMode = 'command'),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      decoration: BoxDecoration(
-                        color: _currentMode == 'command' ? colorScheme.primary : Colors.white,
-                        border: _currentMode == 'command' ? Border.all(color: Colors.black, width: 2) : null,
-                      ),
-                      alignment: Alignment.center,
-                      child: Text('COMMAND', style: TextStyle(fontWeight: FontWeight.w900, color: Colors.black, fontSize: 14)),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
+          _buildModeToggle(colorScheme),
+          const SizedBox(height: 16),
+          Expanded(child: _buildMessagesList(colorScheme)),
+          _buildInputArea(colorScheme),
         ],
       ),
     );
   }
 
-  Widget _buildStatusChip(String label, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: color,
-        border: Border.all(color: Colors.black, width: 2),
-        boxShadow: const [BoxShadow(color: Colors.white, offset: Offset(2, 2))],
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(
-          color: Colors.black,
-          fontSize: 12,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-    );
-  }
-
-  String _getConnectionFlowText() {
-    if (!_isConnected) return 'Backend (disconnected)';
-    if (!_isHealthy) return 'Backend (unhealthy)';
-    if (_localAgentConnected) return 'Backend (OK) -> Agent (online)';
-    return 'Backend (OK) -> Agent (offline)';
-  }
-
-  Widget _buildConnectionFlow(ColorScheme colorScheme) {
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFF282A36),
-        border: Border.all(color: colorScheme.secondary, width: 3),
-        boxShadow: [BoxShadow(color: colorScheme.secondary, offset: const Offset(4, 4))],
-      ),
-      child: Text(
-        _getConnectionFlowText().toUpperCase(),
-        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: Colors.white),
-      ),
-    );
-  }
-
-  Widget _buildDeviceSelector(ColorScheme colorScheme) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFC7A2FF), // Brutal purple
-        border: Border.all(color: Colors.black, width: 3),
-        boxShadow: const [BoxShadow(color: Colors.white, offset: Offset(4, 4))],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const Text('ACTIVE DEVICE', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14)),
-          const SizedBox(height: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            decoration: BoxDecoration(
-              color: const Color(0xFF282A36),
-              border: Border.all(color: colorScheme.secondary, width: 2),
-              boxShadow: [BoxShadow(color: colorScheme.secondary, offset: const Offset(2, 2))],
-            ),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<String>(
-                value: _activeDevice,
-                isExpanded: true,
-                icon: const Icon(Icons.arrow_drop_down, color: Colors.white),
-                dropdownColor: const Color(0xFF282A36),
-                items: _devices.entries.map((entry) {
-                  final device = entry.value;
-                  return DropdownMenuItem(
-                    value: entry.key,
-                    child: Text(
-                      device['name'] ?? entry.key,
-                      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
-                    ),
-                  );
-                }).toList(),
-                onChanged: (value) {
-                  if (value != null && value.startsWith('desktop-')) _switchDevice(value);
+  void _showSettingsSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1A1A1F),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Settings', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 20),
+              SwitchListTile(
+                title: const Text('Auto-read Voice Responses', style: TextStyle(fontSize: 14)),
+                value: _willTalk,
+                activeColor: const Color(0xFF7C6CFF),
+                contentPadding: EdgeInsets.zero,
+                onChanged: (bool value) {
+                  setState(() => _willTalk = value);
+                  Navigator.pop(context);
                 },
               ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _buildBrutalButton(Icons.refresh, 'REFRESH', _getDevices, colorScheme.secondary),
-              _buildBrutalButton(Icons.delete_sweep, 'CLEAR BACKEND', _clearBackendData, const Color(0xFFFF9900)),
-              _buildBrutalButton(Icons.delete, 'CLEAR LOCAL', _clearLocalData, const Color(0xFFFF3366)),
-              if (_savedDevices.isNotEmpty)
-                _buildBrutalButton(Icons.devices, 'SAVED (${_savedDevices.length})', _showSavedDevices, colorScheme.tertiary),
+              const Divider(color: Colors.white10),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Clear Local Data', style: TextStyle(fontSize: 14, color: Colors.redAccent)),
+                leading: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
+                onTap: () {
+                  Navigator.pop(context);
+                  _clearLocalData();
+                },
+              ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Clear Backend Devices', style: TextStyle(fontSize: 14, color: Colors.redAccent)),
+                leading: const Icon(Icons.delete_sweep_outlined, color: Colors.redAccent, size: 20),
+                onTap: () {
+                  Navigator.pop(context);
+                  _clearBackendData();
+                },
+              ),
             ],
           ),
-          const SizedBox(height: 12),
-          Container(
-            decoration: BoxDecoration(
-              color: const Color(0xFF282A36),
-              border: Border.all(color: colorScheme.secondary, width: 2),
-              boxShadow: [BoxShadow(color: colorScheme.secondary, offset: const Offset(2, 2))],
-            ),
-            child: SwitchListTile(
-              title: const Text('AUTO-READ VOICE', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.white)),
-              value: _willTalk,
-              activeColor: colorScheme.primary,
-              activeTrackColor: Colors.white,
-              inactiveTrackColor: Colors.grey,
-              onChanged: (bool value) {
-                setState(() {
-                  _willTalk = value;
-                  if (!value) flutterTts.stop();
-                });
-              },
-              dense: true,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatusRow(ColorScheme colorScheme) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Row(
+        children: [
+          _buildStatusDot(_isConnected, _isConnected ? colorScheme.secondary : Colors.redAccent),
+          const SizedBox(width: 6),
+          Text(_isConnected ? 'Connected' : 'Offline', style: TextStyle(fontSize: 12, color: Colors.white54)),
+          const Spacer(),
+          GestureDetector(
+            onTap: () => _showDeviceSelector(context),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1A1A1F),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.white.withOpacity(0.08)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.computer, size: 14, color: colorScheme.secondary),
+                  const SizedBox(width: 6),
+                  Text(
+                    _activeDevice.isEmpty ? 'Select Device' : (_devices[_activeDevice]?['name'] ?? 'Desktop'),
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                  ),
+                  const SizedBox(width: 4),
+                  const Icon(Icons.keyboard_arrow_down, size: 14, color: Colors.white54),
+                ],
+              ),
             ),
           ),
         ],
@@ -1072,80 +974,159 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
     );
   }
 
-  Widget _buildBrutalButton(IconData icon, String label, VoidCallback onPressed, Color color) {
-    return GestureDetector(
-      onTap: onPressed,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        decoration: BoxDecoration(
-          color: color,
-          border: Border.all(color: Colors.black, width: 2),
-          boxShadow: const [BoxShadow(color: Colors.black, offset: Offset(2, 2))],
+  Widget _buildStatusDot(bool active, Color color) {
+    return Container(
+      width: 8, height: 8,
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle, boxShadow: [BoxShadow(color: color.withOpacity(0.4), blurRadius: 4)]),
+    );
+  }
+
+  void _showDeviceSelector(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1A1A1F),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Active Devices', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+                  IconButton(
+                    icon: const Icon(Icons.refresh, size: 20),
+                    onPressed: () {
+                      _getDevices();
+                      Navigator.pop(context);
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              if (_devices.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 20),
+                  child: Center(child: Text('No devices online', style: TextStyle(color: Colors.white54))),
+                )
+              else
+                ..._devices.entries.map((entry) {
+                  final isSelected = entry.key == _activeDevice;
+                  return ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: _buildStatusDot(true, const Color(0xFF3DDC97)),
+                    title: Text(entry.value['name'] ?? entry.key, style: TextStyle(fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal)),
+                    trailing: isSelected ? const Icon(Icons.check, color: Color(0xFF7C6CFF), size: 20) : null,
+                    onTap: () {
+                      _switchDevice(entry.key);
+                      Navigator.pop(context);
+                    },
+                  );
+                }),
+            ],
+          ),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 16, color: Colors.black),
-            const SizedBox(width: 4),
-            Text(label, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.black)),
-          ],
-        ),
+      ),
+    );
+  }
+
+  Widget _buildModeToggle(ColorScheme colorScheme) {
+    final isAsk = _currentMode == 'ask';
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1A1F),
+        borderRadius: BorderRadius.circular(100),
+        border: Border.all(color: Colors.white.withOpacity(0.04)),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final width = constraints.maxWidth / 2;
+          return Stack(
+            children: [
+              AnimatedPositioned(
+                duration: const Duration(milliseconds: 250),
+                curve: Curves.easeOutCubic,
+                left: isAsk ? 0 : width,
+                top: 0,
+                bottom: 0,
+                width: width,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF222228),
+                    borderRadius: BorderRadius.circular(100),
+                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 4, offset: const Offset(0, 2))],
+                  ),
+                ),
+              ),
+              Row(
+                children: [
+                  Expanded(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => setState(() => _currentMode = 'ask'),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        alignment: Alignment.center,
+                        child: Text('Ask', style: TextStyle(fontSize: 13, fontWeight: isAsk ? FontWeight.w600 : FontWeight.w500, color: isAsk ? Colors.white : Colors.white54)),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => setState(() => _currentMode = 'command'),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        alignment: Alignment.center,
+                        child: Text('Command', style: TextStyle(fontSize: 13, fontWeight: !isAsk ? FontWeight.w600 : FontWeight.w500, color: !isAsk ? Colors.white : Colors.white54)),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          );
+        },
       ),
     );
   }
 
   Widget _buildMessagesList(ColorScheme colorScheme) {
+    return ListView.builder(
+      controller: _scrollController,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      itemCount: _messages.length + (_isThinking ? 1 : 0),
+      itemBuilder: (context, index) {
+        if (index == _messages.length && _isThinking) {
+          return _buildSkeletonLoader();
+        }
+        return _buildMessageCard(_messages[index], colorScheme);
+      },
+    );
+  }
+
+  Widget _buildSkeletonLoader() {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      child: Column(
+      margin: const EdgeInsets.only(bottom: 16, right: 40),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1A1F),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withOpacity(0.04)),
+      ),
+      child: Row(
         children: [
-          Expanded(
-            child: ListView.builder(
-              controller: _scrollController,
-              itemCount: _messages.length,
-              itemBuilder: (context, index) {
-                final message = _messages[index];
-                if (message['type'] == null) return const SizedBox.shrink();
-                return _buildMessageCard(message, colorScheme);
-              },
-            ),
+          const SizedBox(
+            width: 14, height: 14,
+            child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF7C6CFF)),
           ),
-          if (_isThinking)
-            Container(
-              margin: const EdgeInsets.symmetric(vertical: 8),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: colorScheme.tertiary,
-                border: Border.all(color: Colors.black, width: 3),
-                boxShadow: const [BoxShadow(color: Colors.black, offset: Offset(4, 4))],
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const SizedBox(
-                    width: 20, height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 3, color: Colors.black),
-                  ),
-                  const SizedBox(width: 12),
-                  const Text('AI IS THINKING...', style: TextStyle(fontWeight: FontWeight.w900)),
-                  const SizedBox(width: 12),
-                  GestureDetector(
-                    onTap: () {
-                      channel.sink.add(jsonEncode({'type': 'stop_command'}));
-                      setState(() { _isThinking = false; });
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: BoxDecoration(
-                        color: colorScheme.primary,
-                        border: Border.all(color: Colors.black, width: 2),
-                      ),
-                      child: const Icon(Icons.stop, color: Colors.white, size: 20),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+          const SizedBox(width: 12),
+          Text('Processing...', style: TextStyle(fontSize: 13, color: Colors.white.withOpacity(0.6))),
         ],
       ),
     );
@@ -1154,147 +1135,159 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   Widget _buildMessageCard(Map<String, dynamic> message, ColorScheme colorScheme) {
     final type = message['type'] as String? ?? 'unknown';
     final content = message['content'] as String? ?? '';
+    final isUser = type == 'user';
+    final isError = type == 'error';
+    final isSystem = type == 'system';
+
+    Color bgColor = const Color(0xFF1A1A1F);
+    Color borderColor = Colors.white.withOpacity(0.04);
     
-    Color bgColor = const Color(0xFF282A36);
-    Color borderColor = const Color(0xFF00E5FF);
-    if (type == 'user') { bgColor = const Color(0xFF00E5FF); borderColor = Colors.white; }
-    else if (type == 'error') { bgColor = const Color(0xFFFF3366); borderColor = Colors.white; }
-    else if (type == 'system') { bgColor = const Color(0xFF44475A); borderColor = colorScheme.tertiary; }
+    if (isUser) {
+      bgColor = const Color(0xFF222228);
+    } else if (isError) {
+      bgColor = Colors.redAccent.withOpacity(0.05);
+      borderColor = Colors.redAccent.withOpacity(0.2);
+    }
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(12),
+      margin: EdgeInsets.only(
+        bottom: 16,
+        left: isUser ? 32 : 0,
+        right: isUser ? 0 : 32,
+      ),
       decoration: BoxDecoration(
         color: bgColor,
-        border: Border.all(color: borderColor, width: 3),
-        boxShadow: [BoxShadow(color: borderColor, offset: const Offset(4, 4))],
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: borderColor),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Text(
-                type.toUpperCase(),
-                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 10, color: (type == 'user' || type == 'error') ? Colors.black : Colors.white),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        isUser ? 'You' : (isSystem ? 'System' : 'Agent'),
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: isUser ? Colors.white70 : (isError ? Colors.redAccent : colorScheme.primary),
+                        ),
+                      ),
+                      if (message['timestamp'] != null)
+                        Text(
+                          message['timestamp'].toString().split(' ')[1].substring(0, 5),
+                          style: const TextStyle(fontSize: 10, color: Colors.white30),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  CollapsibleOutput(
+                    text: content,
+                    style: TextStyle(
+                      fontSize: 14,
+                      height: 1.5,
+                      fontFamily: isUser || isSystem ? null : 'Courier',
+                      color: isError ? Colors.red.shade200 : Colors.white.withOpacity(0.9),
+                    ),
+                  ),
+                ],
               ),
-              const Spacer(),
-              if (message['timestamp'] != null)
-                Text(
-                  message['timestamp'].toString().split(' ')[1].substring(0, 5),
-                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: (type == 'user' || type == 'error') ? Colors.black87 : Colors.white70),
-                ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          CollapsibleOutput(
-            text: content,
-            style: TextStyle(
-              fontSize: 14, 
-              fontWeight: FontWeight.w600, 
-              color: (type == 'user' || type == 'error') ? Colors.black : Colors.white,
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildInputArea(ColorScheme colorScheme) {
-    bool isAsk = _currentMode == 'ask';
-    
-    // Dynamic values for animation
-    double borderRadius = isAsk ? 24.0 : 0.0;
-    Color boxColor = isAsk ? colorScheme.secondary.withOpacity(0.1) : const Color(0xFF282A36);
-    Color borderColor = _isListening ? colorScheme.primary : (isAsk ? colorScheme.secondary : Colors.white);
-    double borderWidth = _isListening ? 4.0 : (isAsk ? 2.0 : 3.0);
-    double offsetX = _isListening ? 6.0 : (isAsk ? 0.0 : 4.0);
-    double offsetY = _isListening ? 6.0 : (isAsk ? 0.0 : 4.0);
+    final isAsk = _currentMode == 'ask';
 
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF1E1E2E),
-        border: Border(top: BorderSide(color: colorScheme.tertiary, width: 4)),
+        color: const Color(0xFF0F0F12),
+        border: Border(top: BorderSide(color: Colors.white.withOpacity(0.05))),
       ),
       child: SafeArea(
-        child: Column(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeInOutBack,
-                    decoration: BoxDecoration(
-                      color: boxColor,
-                      borderRadius: BorderRadius.circular(borderRadius),
-                      border: Border.all(color: borderColor, width: borderWidth),
-                      boxShadow: [
-                        BoxShadow(
-                          color: borderColor, 
-                          offset: Offset(offsetX, offsetY)
-                        )
-                      ],
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: _controller,
-                            style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
-                            decoration: InputDecoration(
-                              hintText: _isListening ? 'LISTENING...' : (isAsk ? 'ASK AGENT...' : 'ENTER COMMAND...'),
-                              hintStyle: const TextStyle(fontWeight: FontWeight.w700, color: Colors.grey),
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                              border: InputBorder.none,
-                            ),
-                            onSubmitted: (_) => _sendMessage(),
+            Expanded(
+              child: Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1A1A1F),
+                  borderRadius: BorderRadius.circular(isAsk ? 24 : 12),
+                  border: Border.all(color: _isListening ? colorScheme.primary.withOpacity(0.5) : Colors.white.withOpacity(0.08)),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _controller,
+                        minLines: 1,
+                        maxLines: 5,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.white,
+                          fontFamily: isAsk ? null : 'Courier',
+                        ),
+                        decoration: InputDecoration(
+                          hintText: _isListening ? 'Listening...' : (isAsk ? 'Ask anything...' : 'Enter command...'),
+                          hintStyle: TextStyle(
+                            color: Colors.white30,
+                            fontFamily: isAsk ? null : 'Courier',
                           ),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                          border: InputBorder.none,
                         ),
-                        AnimatedSize(
-                          duration: const Duration(milliseconds: 300),
-                          curve: Curves.easeInOutBack,
-                          child: isAsk ? GestureDetector(
-                            onTap: _toggleListening,
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 300),
-                              curve: Curves.easeInOut,
-                              padding: const EdgeInsets.all(8.0),
-                              margin: const EdgeInsets.only(right: 8.0),
-                              decoration: BoxDecoration(
-                                color: _isListening ? colorScheme.primary.withOpacity(0.2) : Colors.transparent,
-                                shape: BoxShape.circle,
-                              ),
-                              child: Icon(
-                                _isListening ? Icons.mic : Icons.mic_none,
-                                color: _isListening ? colorScheme.primary : Colors.white,
-                                size: _isListening ? 28 : 24,
-                              ),
-                            ),
-                          ) : const SizedBox(width: 0),
-                        ),
-                      ],
+                      ),
                     ),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                GestureDetector(
-                  onTap: _sendMessage,
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    curve: Curves.easeOut,
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: colorScheme.primary,
-                      borderRadius: BorderRadius.circular(isAsk ? 20.0 : 0.0),
-                      border: Border.all(color: Colors.white, width: 3),
-                      boxShadow: [BoxShadow(color: Colors.white, offset: Offset(isAsk ? 2.0 : 4.0, isAsk ? 2.0 : 4.0))],
+                    AnimatedSize(
+                      duration: const Duration(milliseconds: 200),
+                      child: isAsk
+                          ? GestureDetector(
+                              onTap: _toggleListening,
+                              child: Container(
+                                padding: const EdgeInsets.all(12),
+                                margin: const EdgeInsets.only(right: 4, bottom: 4),
+                                decoration: BoxDecoration(
+                                  color: _isListening ? colorScheme.primary.withOpacity(0.15) : Colors.transparent,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(
+                                  _isListening ? Icons.mic : Icons.mic_none,
+                                  color: _isListening ? colorScheme.primary : Colors.white54,
+                                  size: 20,
+                                ),
+                              ),
+                            )
+                          : const SizedBox(width: 0),
                     ),
-                    child: const Icon(Icons.send, color: Colors.black),
-                  ),
+                  ],
                 ),
-              ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            GestureDetector(
+              onTap: _sendMessage,
+              child: Container(
+                padding: const EdgeInsets.all(14),
+                margin: const EdgeInsets.only(bottom: 2),
+                decoration: BoxDecoration(
+                  color: colorScheme.primary,
+                  borderRadius: BorderRadius.circular(isAsk ? 24 : 12),
+                ),
+                child: const Icon(Icons.send_rounded, color: Colors.white, size: 20),
+              ),
             ),
           ],
         ),
@@ -1336,14 +1329,14 @@ class _CollapsibleOutputState extends State<CollapsibleOutput> {
             },
             child: Container(
               margin: const EdgeInsets.only(top: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
-                color: Colors.black,
-                border: Border.all(color: Colors.black, width: 2),
+                color: Colors.white.withOpacity(0.05),
+                borderRadius: BorderRadius.circular(6),
               ),
               child: Text(
-                _isExpanded ? 'SHOW LESS' : 'SHOW MORE',
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 10),
+                _isExpanded ? 'Show less' : 'Show more',
+                style: const TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w500),
               ),
             ),
           ),

@@ -59,26 +59,33 @@ class ArtifactsPage extends StatefulWidget {
 class _ArtifactsPageState extends State<ArtifactsPage> {
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final artifacts = ArtifactsManager.artifacts;
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
 
     return Scaffold(
+      backgroundColor: const Color(0xFF0F0F12),
       appBar: AppBar(
-        title: const Text('Artifacts'),
-        backgroundColor: colorScheme.surface,
+        title: const Text('Artifacts', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, letterSpacing: -0.3)),
+        backgroundColor: const Color(0xFF0F0F12),
+        elevation: 0,
+        scrolledUnderElevation: 0,
       ),
-      body: artifacts.isEmpty
+      body: ArtifactsManager.artifacts.isEmpty
           ? Center(
-              child: Text(
-                'No artifacts found.',
-                style: TextStyle(color: colorScheme.onSurfaceVariant),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.folder_open, size: 48, color: Colors.white.withOpacity(0.2)),
+                  const SizedBox(height: 16),
+                  Text('No artifacts yet', style: TextStyle(color: Colors.white.withOpacity(0.5))),
+                ],
               ),
             )
           : ListView.builder(
               padding: const EdgeInsets.all(16),
-              itemCount: artifacts.length,
+              itemCount: ArtifactsManager.artifacts.length,
               itemBuilder: (context, index) {
-                final artifact = artifacts[index];
+                final artifact = ArtifactsManager.artifacts[index];
                 return _buildArtifactCard(artifact, colorScheme);
               },
             ),
@@ -88,99 +95,114 @@ class _ArtifactsPageState extends State<ArtifactsPage> {
   Widget _buildArtifactCard(Artifact artifact, ColorScheme colorScheme) {
     Color statusColor;
     IconData statusIcon;
+    Color statusBgColor;
 
     switch (artifact.status) {
       case 'approved':
-        statusColor = Colors.green;
-        statusIcon = Icons.check_circle;
+        statusColor = const Color(0xFF3DDC97);
+        statusBgColor = const Color(0xFF3DDC97).withOpacity(0.1);
+        statusIcon = Icons.check_circle_outline;
         break;
       case 'rejected':
-        statusColor = Colors.red;
-        statusIcon = Icons.cancel;
+        statusColor = Colors.redAccent;
+        statusBgColor = Colors.redAccent.withOpacity(0.1);
+        statusIcon = Icons.cancel_outlined;
         break;
       default:
-        statusColor = Colors.orange;
+        statusColor = const Color(0xFFFFB86C);
+        statusBgColor = const Color(0xFFFFB86C).withOpacity(0.1);
         statusIcon = Icons.hourglass_empty;
     }
 
-    return Card(
+    return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      child: InkWell(
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => ArtifactDetailPage(
-                artifact: artifact,
-                onStatusChanged: () => setState(() {}),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1A1F),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withOpacity(0.04)),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => ArtifactDetailPage(
+                  artifact: artifact,
+                  onStatusChanged: () => setState(() {}),
+                ),
               ),
-            ),
-          );
-        },
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    artifact.source == 'antigravity' ? Icons.terminal : Icons.auto_awesome,
-                    size: 16,
-                    color: colorScheme.primary,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    artifact.source.toUpperCase(),
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
+            );
+          },
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      artifact.source == 'antigravity' ? Icons.terminal : Icons.auto_awesome,
+                      size: 14,
                       color: colorScheme.primary,
                     ),
-                  ),
-                  const Spacer(),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: statusColor.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
+                    const SizedBox(width: 6),
+                    Text(
+                      artifact.source.toUpperCase(),
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: colorScheme.primary,
+                        letterSpacing: 0.5,
+                      ),
                     ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(statusIcon, size: 12, color: statusColor),
-                        const SizedBox(width: 4),
-                        Text(
-                          artifact.status.toUpperCase(),
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            color: statusColor,
+                    const Spacer(),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: statusBgColor,
+                        borderRadius: BorderRadius.circular(100),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(statusIcon, size: 10, color: statusColor),
+                          const SizedBox(width: 4),
+                          Text(
+                            artifact.status.toUpperCase(),
+                            style: TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w700,
+                              color: statusColor,
+                              letterSpacing: 0.5,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  artifact.title,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
                   ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Text(
-                artifact.title,
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: colorScheme.onSurface,
                 ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                '${artifact.createdAt.toLocal()}'.split('.')[0],
-                style: TextStyle(
-                  fontSize: 12,
-                  color: colorScheme.onSurfaceVariant,
+                const SizedBox(height: 6),
+                Text(
+                  ''.split('.')[0],
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.white.withOpacity(0.5),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -203,9 +225,12 @@ class ArtifactDetailPage extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
+      backgroundColor: const Color(0xFF0F0F12),
       appBar: AppBar(
-        title: const Text('Artifact Details'),
-        backgroundColor: colorScheme.surface,
+        title: const Text('Details', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, letterSpacing: -0.3)),
+        backgroundColor: const Color(0xFF0F0F12),
+        elevation: 0,
+        scrolledUnderElevation: 0,
       ),
       body: Column(
         children: [
@@ -217,18 +242,19 @@ class ArtifactDetailPage extends StatelessWidget {
                 children: [
                   Text(
                     artifact.title,
-                    style: TextStyle(
-                      fontSize: 20,
+                    style: const TextStyle(
+                      fontSize: 18,
                       fontWeight: FontWeight.w600,
-                      color: colorScheme.onSurface,
+                      color: Colors.white,
+                      height: 1.3,
                     ),
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Source: ${artifact.source} | Date: ${artifact.createdAt.toLocal().toString().split('.')[0]}',
+                    'Source:  • ',
                     style: TextStyle(
                       fontSize: 12,
-                      color: colorScheme.onSurfaceVariant,
+                      color: Colors.white.withOpacity(0.5),
                     ),
                   ),
                   const SizedBox(height: 24),
@@ -237,17 +263,17 @@ class ArtifactDetailPage extends StatelessWidget {
                       width: double.infinity,
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: Theme.of(context).brightness == Brightness.dark
-                            ? Colors.black54
-                            : Colors.black.withOpacity(0.05),
+                        color: const Color(0xFF1A1A1F),
                         borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.white.withOpacity(0.04)),
                       ),
                       child: SelectableText(
                         artifact.content!,
                         style: TextStyle(
-                          fontFamily: 'monospace',
-                          fontSize: 14,
-                          color: colorScheme.onSurface,
+                          fontFamily: 'Courier',
+                          fontSize: 13,
+                          height: 1.5,
+                          color: Colors.white.withOpacity(0.9),
                         ),
                       ),
                     ),
@@ -259,50 +285,52 @@ class ArtifactDetailPage extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: colorScheme.surface,
-                boxShadow: [
-                  BoxShadow(
-                    color: colorScheme.shadow.withOpacity(0.1),
-                    blurRadius: 4,
-                    offset: const Offset(0, -2),
-                  ),
-                ],
+                color: const Color(0xFF1A1A1F),
+                border: Border(top: BorderSide(color: Colors.white.withOpacity(0.04))),
               ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () {
-                        ArtifactsManager.updateStatus(artifact.id, 'rejected');
-                        onStatusChanged();
-                        Navigator.pop(context);
-                      },
-                      icon: const Icon(Icons.close, color: Colors.red),
-                      label: const Text('Reject', style: TextStyle(color: Colors.red)),
-                      style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: Colors.red),
-                        padding: const EdgeInsets.symmetric(vertical: 16),
+              child: SafeArea(
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () {
+                          ArtifactsManager.updateStatus(artifact.id, 'rejected');
+                          onStatusChanged();
+                          Navigator.pop(context);
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          decoration: BoxDecoration(
+                            color: Colors.transparent,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.redAccent.withOpacity(0.5)),
+                          ),
+                          alignment: Alignment.center,
+                          child: const Text('Reject', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.w600, fontSize: 14)),
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      onPressed: () {
-                        ArtifactsManager.updateStatus(artifact.id, 'approved');
-                        onStatusChanged();
-                        Navigator.pop(context);
-                      },
-                      icon: const Icon(Icons.check),
-                      label: const Text('Approve'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () {
+                          ArtifactsManager.updateStatus(artifact.id, 'approved');
+                          onStatusChanged();
+                          Navigator.pop(context);
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF3DDC97),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          alignment: Alignment.center,
+                          child: const Text('Approve', style: TextStyle(color: Colors.black, fontWeight: FontWeight.w700, fontSize: 14)),
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
         ],
