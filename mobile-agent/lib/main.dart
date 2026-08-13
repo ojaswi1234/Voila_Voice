@@ -891,7 +891,54 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
 
   @override
 
-  @override
+  Widget _buildDrawer() {
+    return Drawer(
+      backgroundColor: const Color(0xFF191919),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.only(top: 60, bottom: 20, left: 20, right: 20),
+            color: const Color(0xFF1E1E1E),
+            child: Row(
+              children: [
+                const Icon(Icons.chat_bubble_outline, color: Colors.white70),
+                const SizedBox(width: 12),
+                const Text('Conversations', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.refresh, color: Colors.white54),
+                  onPressed: _fetchConversations,
+                )
+              ],
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.add, color: Colors.white),
+            title: const Text('New Chat', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            onTap: _startNewConversation,
+          ),
+          const Divider(color: Colors.white24),
+          Expanded(
+            child: ListView.builder(
+              padding: EdgeInsets.zero,
+              itemCount: _conversations.length,
+              itemBuilder: (context, index) {
+                final conv = _conversations[index];
+                final isSelected = _currentConversationId == conv['id'];
+                return ListTile(
+                  tileColor: isSelected ? Colors.white.withOpacity(0.1) : null,
+                  leading: const Icon(Icons.history, color: Colors.white54),
+                  title: Text(conv['title'] ?? 'Unknown', style: const TextStyle(color: Colors.white70)),
+                  onTap: () => _resumeConversation(conv['id']!, conv['title']!),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
