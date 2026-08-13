@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show Platform;
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter_edge_tts/flutter_edge_tts.dart';
 import 'package:path_provider/path_provider.dart';
@@ -122,11 +123,6 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   @override
   void initState() {
     super.initState();
-    _edgeTts = FlutterEdgeTts(
-      voice: 'en-US-JennyNeural',
-      voiceLocale: 'en-US',
-      outputFormat: EdgeTtsOutputFormat.audio24Khz48KbitrateMonoMp3,
-    );
     _initTts();
     _loadSession();
     _setupWebSocket();
@@ -153,10 +149,31 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   }
 
   Future<void> _initTts() async {
+    // 100% Legal, Native, Free OS-Level Neural Voices
+    if (Platform.isAndroid) {
+      await flutterTts.setEngine("com.google.android.tts");
+    }
     await flutterTts.setLanguage("en-US");
-    await flutterTts.setSpeechRate(0.55);
+    
+    // Attempt to select a high-quality network voice (Neural/Wavenet)
+    try {
+      final voices = await flutterTts.getVoices;
+      if (voices != null) {
+        for (var voice in voices) {
+          // Look for premium Google network voices (typically female, highly natural)
+          if (voice['name'] != null && voice['name'].toString().contains('network') && voice['name'].toString().contains('en-us-x-sfg')) {
+            await flutterTts.setVoice({"name": voice["name"], "locale": voice["locale"]});
+            break;
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint("Voice selection error: ");
+    }
+
+    await flutterTts.setSpeechRate(0.5);
     await flutterTts.setVolume(1.0);
-    await flutterTts.setPitch(1.0);
+    await flutterTts.setPitch(1.05); // Slightly elevated pitch for friendly casual tone
   }
 
   Future<void> _initializeSpeech() async {
@@ -899,25 +916,6 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
 
   Future<void> _speak(String text) async {
     if (!_willTalk || text.isEmpty) return;
-    
-    try {
-      final directory = await getTemporaryDirectory();
-      final audioPath = '/edge_tts_temp.mp3';
-      
-      final result = await _edgeTts.synthesizeToFile(
-        text,
-        audioFilePath: audioPath,
-      );
-      
-      if (result.isSuccess) {
-        await _audioPlayer.play(DeviceFileSource(audioPath));
-        return;
-      }
-    } catch (e) {
-      debugPrint('EdgeTTS error: ');
-    }
-    
-    // Fallback to basic Flutter TTS if Edge fails
     await flutterTts.speak(text);
   }
 
