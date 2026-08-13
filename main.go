@@ -1130,22 +1130,11 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		backend.mu.RLock()
 		
-		// Count online devices
+		// Count online devices securely (no PII or IDs leaked)
 		devicesOnline := 0
-		onlineDevices := []map[string]interface{}{}
 		for _, device := range backend.devices {
 			if device.Active {
 				devicesOnline++
-				onlineDevices = append(onlineDevices, map[string]interface{}{
-					"id":          device.ID,
-					"name":        device.Name,
-					"lastSeen":    device.LastSeen.Format(time.RFC3339),
-					"online":      device.Active,
-					"reachable":   device.Reachable,
-					"lastPing":    device.LastPing.Format(time.RFC3339),
-					"fingerprint":  device.Fingerprint,
-					"type":        device.Type,
-				})
 			}
 		}
 		
@@ -1155,7 +1144,6 @@ func main() {
 			"uptime":          time.Since(startTime).String(),
 			"devices_registered": len(backend.devices),
 			"devices_online":   devicesOnline,
-			"online_devices":   onlineDevices,
 			"mobile_clients":   len(backend.clients),
 		}
 		backend.mu.RUnlock()
@@ -1170,28 +1158,19 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		backend.mu.RLock()
 		
-		// Build online device list
-		onlineDevices := []map[string]interface{}{}
+		// Count online devices securely
+		devicesOnline := 0
 		for _, device := range backend.devices {
 			if device.Active {
-				onlineDevices = append(onlineDevices, map[string]interface{}{
-					"id":          device.ID,
-					"name":        device.Name,
-					"lastSeen":    device.LastSeen.Format(time.RFC3339),
-					"online":      device.Active,
-					"fingerprint":  device.Fingerprint,
-					"type":        device.Type,
-				})
+				devicesOnline++
 			}
 		}
 		
 		stats := map[string]interface{}{
 			"status":          "running",
 			"uptime":          time.Since(startTime).String(),
-			"active_device":   backend.activeDevice,
 			"device_count":    len(backend.devices),
-			"devices_online":  len(onlineDevices),
-			"online_devices":  onlineDevices,
+			"devices_online":  devicesOnline,
 			"mobile_clients":  len(backend.clients),
 			"token_counter":   backend.tokenCounter,
 		}

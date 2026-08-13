@@ -302,6 +302,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
               return;
             } else if (jsonResponse is List) {
               _devices = {};
+              _localAgentConnected = false;
               String? firstOnlineDesktop;
               for (var device in jsonResponse) {
                 final deviceId = device['id'];
@@ -312,6 +313,9 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                   final deviceReachable = device['reachable'] == true;
                   if (deviceFingerprint != null) {
                     _devices[deviceId] = device;
+                    if (deviceId == _activeDevice && deviceOnline && deviceReachable) {
+                      _localAgentConnected = true;
+                    }
                     // Track first online desktop for auto-selection
                     if (deviceOnline && firstOnlineDesktop == null) {
                       firstOnlineDesktop = deviceId;
