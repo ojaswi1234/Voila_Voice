@@ -618,6 +618,16 @@ func handleWebhookResult(b *Backend) http.HandlerFunc {
 		deviceID, _ := req["device_id"].(string)
 		output, _ := req["output"].(string)
 		errorMsg, _ := req["error"].(string)
+		secretHash, _ := req["secret_hash"].(string)
+
+		b.mu.RLock()
+		device, exists := b.devices[deviceID]
+		b.mu.RUnlock()
+
+		if !exists || device.SecurityPhraseHash != secretHash {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
 
 		b.unlockDevice(deviceID, clientID)
 
@@ -1177,30 +1187,6 @@ func main() {
 		backend.mu.RUnlock()
 		json.NewEncoder(w).Encode(stats)
 	})
-	
-	// Update device address endpoint
-	http.HandleFunc("/update-device", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		
-		var req struct {
-			DeviceID string `json:"device_id"`
-			Address  string `json:"address"`
-		}
-		json.NewDecoder(r.Body).Decode(&req)
-		
-		backend.mu.Lock()
-		if device, exists := backend.devices[req.DeviceID]; exists {
-			device.Address = req.Address
-			device.LastSeen = time.Now()
-			log.Printf("Updated device %s address to %s", req.DeviceID, req.Address)
-		}
-		backend.mu.Unlock()
-		
-		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]string{"status": "updated"})
 	})
 	
 	port := os.Getenv("PORT")

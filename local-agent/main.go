@@ -968,9 +968,15 @@ func startHTTPServer() {
 			// Post the result back to backend
 			backendURL := strings.TrimRight(connData.BackendURL, "/") + "/webhook/result"
 			
+			// Calculate security hash to authenticate webhook
+			h := sha256.New()
+			h.Write([]byte(connData.SecurityPhrase + ":" + connData.DeviceID))
+			secretHash := hex.EncodeToString(h.Sum(nil))
+
 			resultPayload := map[string]string{
 				"client_id": clientID,
 				"device_id": connData.DeviceID,
+				"secret_hash": secretHash,
 			}
 			
 			if err != nil {
