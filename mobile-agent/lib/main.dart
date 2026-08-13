@@ -7,6 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'device_identity.dart';
+import 'artifacts_page.dart';
 import 'package:uuid/uuid.dart';
 
 // Backend URL from build-time configuration (safe default + scheme fix)
@@ -310,8 +311,25 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                 'type': 'response',
                 'content': jsonResponse['output'] ?? message,
                 'summary': jsonResponse['summary'],
+                'status': jsonResponse['status'],
+                'mode': jsonResponse['mode'],
                 'timestamp': DateTime.now().toString(),
               });
+              
+              if (jsonResponse.containsKey('artifacts') && jsonResponse['artifacts'] is List) {
+                for (var artifact in (jsonResponse['artifacts'] as List)) {
+                  ArtifactsManager.addArtifact(
+                    title: artifact['title'] ?? 'Artifact',
+                    content: artifact['content'],
+                    source: 'ai',
+                  );
+                }
+                if (mounted && (jsonResponse['artifacts'] as List).isNotEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('${(jsonResponse['artifacts'] as List).length} artifacts saved!')),
+                  );
+                }
+              }
             } else if (message.contains('OK: All devices cleared')) {
               _messages.add({
                 'type': 'system',
@@ -472,6 +490,18 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
 
   void _sendMessage() async {
     if (_controller.text.isNotEmpty) {
+      if (!_isConnected) {
+        setState(() {
+          _messages.add({
+            'type': 'error',
+            'content': 'Not connected to backend. Please wait for reconnection.',
+            'timestamp': DateTime.now().toString(),
+          });
+        });
+        _scrollToBottom();
+        return;
+      }
+      
       if (_activeDevice.isEmpty) {
         setState(() {
           _messages.add({
@@ -503,6 +533,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
       if (!await _ensureUnlocked()) return;
 
       final message = {
+        ...deviceInfo,
         'type': 'command',
         'device_id': _activeDevice,
         'client_device_id': _currentDeviceId,
@@ -510,9 +541,9 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
         'session_id': _sessionId,
         'session_token': _sessionToken,
         'command': _controller.text,
+        'mode': _currentMode,
         'idempotency_key': const Uuid().v4(),
         'client_timestamp': DateTime.now().millisecondsSinceEpoch,
-        ...deviceInfo,
       };
       
       debugPrint('Sending command to device: $_activeDevice');
@@ -824,6 +855,17 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
               ],
             ),
           ),
+          IconButton(
+            icon: const Icon(Icons.inventory_2),
+            color: colorScheme.primary,
+            tooltip: 'Artifacts',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const ArtifactsPage()),
+              );
+            },
+          ),
         ],
       ),
     );
@@ -1047,35 +1089,29 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   Widget _buildMessageCard(Map<String, dynamic> message, ColorScheme colorScheme) {
     final type = message['type'] as String;
     final content = message['content'] as String;
+    final mode = message['mode'] as String?;
+    final status = message['status'] as String?;
+    final summary = message['summary'] as String?;
     
     Color? bgColor;
     IconData? icon;
     
-    switch (type) {
-      case 'user':
-        bgColor = colorScheme.primaryContainer;
-        icon = Icons.person;
-        break;
-      case 'response':
-        bgColor = colorScheme.tertiaryContainer;
-        icon = Icons.check_circle;
-        break;
-      case 'error':
-        bgColor = colorScheme.errorContainer;
-        icon = Icons.error;
-        break;
-      case 'system':
-        bgColor = colorScheme.surfaceContainer;
-        icon = Icons.info;
-        break;
-      default:
-        bgColor = colorScheme.surface;
-        icon = Icons.message;
+    if (type == 'user') {
+      bgColor = colorScheme.primaryContainer;
+      icon = Icons.person;
+    } else if (type == 'response' || type == 'error') {
+      bgColor = (status == 'error' || type == 'error') ? colorScheme.errorContainer : colorScheme.tertiaryContainer;
+      icon = (status == 'error' || type == 'error') ? Icons.error : Icons.check_circle;
+    } else {
+      bgColor = colorScheme.surfaceContainer;
+      icon = Icons.info;
     }
     
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       color: bgColor,
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
@@ -1085,61 +1121,133 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
               children: [
                 Icon(icon, size: 18, color: colorScheme.onSurfaceVariant),
                 const SizedBox(width: 8),
+                if (mode != null)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    margin: const EdgeInsets.only(right: 8),
+                    decoration: BoxDecoration(
+                      color: colorScheme.surface.withOpacity(0.5),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      mode.toUpperCase(),
+                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: colorScheme.onSurfaceVariant),
+                    ),
+                  ),
                 Expanded(
                   child: Text(
-                    content,
+                    type == 'user' ? content : 'Output',
                     style: TextStyle(
-                      fontSize: 14,
-                      color: colorScheme.onSurface,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: colorScheme.onSurfaceVariant,
                     ),
                   ),
                 ),
               ],
             ),
-            if (message.containsKey('summary') && message['summary'] != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: colorScheme.secondaryContainer,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.auto_awesome,
-                        size: 16,
-                        color: colorScheme.onSecondaryContainer,
-                      ),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Text(
-                          message['summary']?.toString() ?? '',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: colorScheme.onSecondaryContainer,
-                          ),
+            const SizedBox(height: 8),
+            if (summary != null && summary.isNotEmpty)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                margin: const EdgeInsets.only(bottom: 8),
+                decoration: BoxDecoration(
+                  color: colorScheme.secondaryContainer,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: colorScheme.secondary.withOpacity(0.3)),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.auto_awesome,
+                      size: 16,
+                      color: colorScheme.onSecondaryContainer,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        summary,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: colorScheme.onSecondaryContainer,
                         ),
                       ),
-                    ],
+                    ),
+                  ],
+                ),
+              ),
+            if (type != 'user' && content.isNotEmpty)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).brightness == Brightness.dark 
+                      ? Colors.black54 
+                      : Colors.black.withOpacity(0.05),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: CollapsibleOutput(
+                  text: content,
+                  style: GoogleFonts.firaCode(
+                    fontSize: 12,
+                    color: colorScheme.onSurface,
                   ),
                 ),
               ),
-            const SizedBox(height: 4),
-            Text(
-              message['timestamp']?.toString() ?? '',
-              style: TextStyle(
-                fontSize: 10,
-                color: colorScheme.onSurfaceVariant,
+            if (type == 'user')
+              Text(
+                content,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: colorScheme.onSurface,
+                ),
               ),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  message['timestamp']?.toString() ?? '',
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                if (type == 'response' && summary != null && summary.isNotEmpty)
+                  TextButton.icon(
+                    icon: const Icon(Icons.save, size: 14),
+                    label: const Text('Save as Artifact', style: TextStyle(fontSize: 10)),
+                    onPressed: () {
+                      _saveArtifact(summary, content);
+                    },
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ),
+              ],
             ),
           ],
         ),
       ),
     );
   }
+
+  void _saveArtifact(String title, String content) {
+    ArtifactsManager.addArtifact(
+      title: title,
+      content: content,
+      source: 'antigravity',
+    );
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Saved to Artifacts')),
+    );
+  }
+
 
   Widget _buildInputArea(ColorScheme colorScheme) {
     return Container(
@@ -1154,45 +1262,123 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
           ),
         ],
       ),
-      child: Row(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Expanded(
-            child: TextField(
-              controller: _controller,
-              decoration: InputDecoration(
-                hintText: _isListening ? 'Listening...' : 'Enter command...',
-                hintStyle: TextStyle(
-                  color: _isListening ? colorScheme.primary : colorScheme.onSurfaceVariant,
-                ),
-                filled: true,
-                fillColor: colorScheme.surfaceContainerLow,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(24),
-                  borderSide: BorderSide.none,
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 12,
-                ),
-                suffixIcon: IconButton(
-                  icon: Icon(
-                    _isListening ? Icons.mic : Icons.mic_none,
-                    color: _isListening ? colorScheme.primary : colorScheme.onSurface,
+          SegmentedButton<String>(
+            segments: const [
+              ButtonSegment<String>(
+                value: 'ask',
+                label: Text('Ask'),
+                icon: Icon(Icons.auto_awesome),
+                tooltip: 'Send to Antigravity',
+              ),
+              ButtonSegment<String>(
+                value: 'command',
+                label: Text('Command'),
+                icon: Icon(Icons.terminal),
+                tooltip: 'Run directly on device',
+              ),
+            ],
+            selected: <String>{_currentMode},
+            onSelectionChanged: (Set<String> newSelection) {
+              setState(() {
+                _currentMode = newSelection.first;
+              });
+            },
+            showSelectedIcon: false,
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _controller,
+                  decoration: InputDecoration(
+                    hintText: _isListening ? 'Listening...' : (_currentMode == 'ask' ? 'Ask agent...' : 'Enter shell command...'),
+                    hintStyle: TextStyle(
+                      color: _isListening ? colorScheme.primary : colorScheme.onSurfaceVariant,
+                    ),
+                    filled: true,
+                    fillColor: colorScheme.surfaceContainerLow,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(24),
+                      borderSide: BorderSide.none,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 12,
+                    ),
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _isListening ? Icons.mic : Icons.mic_none,
+                        color: _isListening ? colorScheme.primary : colorScheme.onSurface,
+                      ),
+                      onPressed: _toggleListening,
+                    ),
                   ),
-                  onPressed: _toggleListening,
+                  onSubmitted: (_) => _sendMessage(),
                 ),
               ),
-              onSubmitted: (_) => _sendMessage(),
-            ),
-          ),
-          const SizedBox(width: 12),
-          FloatingActionButton(
-            onPressed: _sendMessage,
-            backgroundColor: colorScheme.primary,
-            child: Icon(Icons.send, color: colorScheme.onPrimary),
+              const SizedBox(width: 12),
+              FloatingActionButton(
+                onPressed: _sendMessage,
+                backgroundColor: colorScheme.primary,
+                child: Icon(Icons.send, color: colorScheme.onPrimary),
+              ),
+            ],
           ),
         ],
       ),
+    );
+  }
+}
+
+
+class CollapsibleOutput extends StatefulWidget {
+  final String text;
+  final TextStyle style;
+
+  const CollapsibleOutput({super.key, required this.text, required this.style});
+
+  @override
+  State<CollapsibleOutput> createState() => _CollapsibleOutputState();
+}
+
+class _CollapsibleOutputState extends State<CollapsibleOutput> {
+  bool _isExpanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final lines = widget.text.split('\n');
+    final isLong = lines.length > 15;
+    final displayText = (!_isExpanded && isLong) ? lines.take(15).join('\n') + '\n...' : widget.text;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SelectableText(
+          displayText,
+          style: widget.style,
+        ),
+        if (isLong)
+          TextButton(
+            onPressed: () {
+              setState(() {
+                _isExpanded = !_isExpanded;
+              });
+            },
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 8),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: Text(
+              _isExpanded ? 'Collapse' : 'Expand',
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+            ),
+          ),
+      ],
     );
   }
 }
