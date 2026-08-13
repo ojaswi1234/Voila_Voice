@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/charmbracelet/bubbletea"
@@ -916,8 +917,9 @@ func startHTTPServer() {
 			return
 		}
 		
-		secretHeader := r.Header.Get("X-Exec-Secret")
-		if secretHeader != connData.SecurityPhraseHash {
+		expectedSecret := hashPhrase(connData.SecurityPhrase, connData.DeviceID)
+		providedSecret := r.Header.Get("X-Exec-Secret")
+		if subtle.ConstantTimeCompare([]byte(providedSecret), []byte(expectedSecret)) != 1 {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
