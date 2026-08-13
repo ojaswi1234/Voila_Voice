@@ -600,6 +600,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
       
       channel.sink.add(jsonEncode(message));
       setState(() {
+        _isThinking = true;
         _messages.add({
           'type': 'user',
           'content': _controller.text,
@@ -1121,6 +1122,19 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
               ],
             ),
           ),
+        const Divider(),
+        SwitchListTile(
+          title: const Text('Will Talk (Auto-read responses)', style: TextStyle(fontSize: 14)),
+          value: _willTalk,
+          onChanged: (bool value) {
+            setState(() {
+              _willTalk = value;
+              if (!value) flutterTts.stop();
+            });
+          },
+          secondary: const Icon(Icons.record_voice_over),
+          dense: true,
+        ),
       ],
     );
   }
