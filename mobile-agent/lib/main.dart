@@ -105,6 +105,8 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   String _sessionToken = '';
   String _currentMode = 'ask';
   Map<String, dynamic> _savedDevices = {};
+  String _currentConversationId = '';
+  List<Map<String, String>> _conversations = [];
   
   // Speech-to-text state
   final SpeechToText _speechToText = SpeechToText();
@@ -124,6 +126,31 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
     _initializeSpeech();
   }
 
+
+  void _fetchConversations() {
+    if (channel != null && _isConnected) {
+      final msg = jsonEncode({"type": "get_conversations"});
+      channel.sink.add(msg);
+    }
+  }
+  
+  void _startNewConversation() {
+    setState(() {
+      _currentConversationId = '';
+      _messagesAsk.clear();
+      _messagesAsk.insert(0, {'text': 'Started a new conversation.', 'isUser': false});
+    });
+    Navigator.pop(context); // close drawer
+  }
+  
+  void _resumeConversation(String id, String title) {
+    setState(() {
+      _currentConversationId = id;
+      _messagesAsk.clear();
+      _messagesAsk.insert(0, {'text': 'Resumed conversation: ', 'isUser': false});
+    });
+    Navigator.pop(context); // close drawer
+  }
   void _loadSession() async {
     final savedToken = await _storage.read(key: 'session_token');
     if (savedToken != null && savedToken.isNotEmpty) {
@@ -871,6 +898,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
     final colorScheme = theme.colorScheme;
     
     return Scaffold(
+      drawer: _currentMode.toUpperCase() == 'ASK' ? _buildDrawer() : null,
       backgroundColor: const Color(0xFF0F0F12),
       appBar: AppBar(
         title: const Text(

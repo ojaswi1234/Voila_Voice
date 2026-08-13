@@ -483,7 +483,7 @@ func (b *Backend) stopCommand(deviceID string) (string, error) {
 	return "Command stopped", nil
 }
 
-func (b *Backend) forwardCommand(deviceID, command, mode, clientID string) (string, error) {
+func (b *Backend) forwardCommand(deviceID, command, mode, clientID, conversationID string) (string, error) {
 	b.mu.RLock()
 	device, exists := b.devices[deviceID]
 	if !exists {
@@ -503,7 +503,7 @@ func (b *Backend) forwardCommand(deviceID, command, mode, clientID string) (stri
 	optimizedCommand := b.optimizeCommand(command)
 
 	urlStr := address + "/execute"
-	payload := map[string]string{"command": optimizedCommand, "mode": mode, "client_id": clientID}
+	payload := map[string]string{"command": optimizedCommand, "mode": mode, "client_id": clientID, "conversation_id": conversationID}
 	jsonPayload, _ := json.Marshal(payload)
 
 	client := safeHTTPClient()
@@ -767,9 +767,53 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 					b.writeMessage(clientID, messageType, []byte("ERROR: Invalid security phrase"))
 				}
 
+			case "get_conversations":
+				if deviceID == "" {
+					device := b.getActiveDevice()
+					if device != nil && device.Active {
+						deviceID = device.ID
+					} else {
+						b.writeMessage(clientID, messageType, []byte("ERROR: No active online desktop device"))
+						continue
+					}
+				}
+				
+				b.mu.RLock()
+				device, exists := b.devices[deviceID]
+				b.mu.RUnlock()
+				
+				if !exists || !device.Active {
+					b.writeMessage(clientID, messageType, []byte("ERROR: device not found or offline"))
+					continue
+				}
+				
+				go func(dID string, cID string, addr string, hash string, msgType int) {
+					client := safeHTTPClient()
+					req, err := http.NewRequest("GET", addr+"/conversations", nil)
+					if err == nil {
+						req.Header.Set("X-Exec-Secret", hash)
+						resp, err := client.Do(req)
+						if err == nil {
+							defer resp.Body.Close()
+							body, _ := io.ReadAll(resp.Body)
+							
+							// Wrap in a response object
+							respObj := map[string]interface{}{
+								"type": "conversations_list",
+								"data": json.RawMessage(body),
+							}
+							respJson, _ := json.Marshal(respObj)
+							b.writeMessage(cID, msgType, respJson)
+							return
+						}
+					}
+					b.writeMessage(cID, msgType, []byte("ERROR: failed to fetch conversations"))
+				}(deviceID, clientID, device.Address, device.SecurityPhraseHash, messageType)
+				
 			case "command":
 				command, _ := msg["command"].(string)
 				mode, _ := msg["mode"].(string)
+				conversationID, _ := msg["conversation_id"].(string)
 				if deviceID == "" {
 					device := b.getActiveDevice()
 					if device != nil && device.Active {
@@ -799,9 +843,9 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				}
 				
 				// Run in goroutine to not block websocket read loop (and pings)
-				go func(dID, cmd, m string, msgType int, cID string) {
+				go func(dID, cmd, m string, msgType int, cID string, convID string) {
 					b.lockDevice(dID, cID)
-					result, err := b.forwardCommand(dID, cmd, m, cID)
+					result, err := b.forwardCommand(dID, cmd, m, cID, convID)
 					
 					if err != nil {
 						b.unlockDevice(dID, cID)
@@ -817,7 +861,7 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 					
 					b.unlockDevice(dID, cID)
 					b.writeMessage(cID, msgType, []byte(result))
-				}(deviceID, command, mode, messageType, clientID)
+				}(deviceID, command, mode, messageType, clientID, conversationID)
 				
 
 			case "stop_command":
