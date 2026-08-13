@@ -458,7 +458,7 @@ func (b *Backend) forwardCommand(deviceID, command, mode string) (string, error)
 	optimizedCommand := b.optimizeCommand(command)
 
 	urlStr := address + "/execute"
-	payload := map[string]string{"command": optimizedCommand}
+	payload := map[string]string{"command": optimizedCommand, "mode": mode}
 	jsonPayload, _ := json.Marshal(payload)
 
 	client := safeHTTPClient()

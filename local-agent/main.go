@@ -234,6 +234,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.state = "connected"
 			m.connectionData.Connected = true
 			m.connectionData.LastConnected = time.Now().Format(time.RFC3339)
+			
+			// Save data immediately so /execute can read it!
+			saveConnectionData(m.connectionData)
+			
 			m.messages = append(m.messages, successStyle.Render(successCheckArt))
 			m.messages = append(m.messages, statusStyle.Render("Server will auto-start on device boot"))
 			m.isRunning = true
@@ -925,10 +929,13 @@ func startHTTPServer() {
 		json.NewDecoder(r.Body).Decode(&req)
 
 		command := req["command"]
-		output, err := executeCommand(command)
+		mode := req["mode"]
+		
+		output, err := executeCommand(command, mode)
 		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			// Do not return 500. Return 200 so the backend forwards the error message to the user!
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(map[string]string{"output": "Command failed:\n" + err.Error()})
 			return
 		}
 
@@ -954,13 +961,17 @@ func stopHTTPServer() {
 	}
 }
 
-func executeCommand(command string) (string, error) {
+func executeCommand(command string, mode string) (string, error) {
 	var cmd *exec.Cmd
 
-	if runtime.GOOS == "windows" {
-		cmd = exec.Command("powershell", "-Command", command)
+	if mode == "ASK" {
+		cmd = exec.Command("agy", "--dangerously-skip-permissions", "--print", command)
 	} else {
-		cmd = exec.Command("sh", "-c", command)
+		if runtime.GOOS == "windows" {
+			cmd = exec.Command("powershell", "-Command", command)
+		} else {
+			cmd = exec.Command("sh", "-c", command)
+		}
 	}
 
 	var stdout, stderr bytes.Buffer
