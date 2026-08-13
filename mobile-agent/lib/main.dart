@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:flutter_edge_tts/flutter_edge_tts.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:web_socket_channel/web_socket_channel.dart';
@@ -93,7 +95,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   bool _willTalk = true;
   FlutterTts flutterTts = FlutterTts();
   final AudioPlayer _audioPlayer = AudioPlayer();
-  String _elevenLabsKey = '';
+  late FlutterEdgeTts _edgeTts;
   String _activeDevice = '';
   bool _isConnected = false;
   bool _isHealthy = false;
@@ -120,6 +122,11 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   @override
   void initState() {
     super.initState();
+    _edgeTts = FlutterEdgeTts(
+      voice: 'en-US-JennyNeural',
+      voiceLocale: 'en-US',
+      outputFormat: EdgeTtsOutputFormat.audio24Khz48KbitrateMonoMp3,
+    );
     _initTts();
     _loadSession();
     _setupWebSocket();
@@ -128,10 +135,6 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
 
   void _loadSession() async {
     final savedToken = await _storage.read(key: 'session_token');
-    final elKey = await _storage.read(key: 'eleven_labs_key');
-    if (elKey != null) {
-      setState(() { _elevenLabsKey = elKey; });
-    }
     if (savedToken != null && savedToken.isNotEmpty) {
       setState(() {
         _sessionToken = savedToken;
@@ -897,32 +900,24 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   Future<void> _speak(String text) async {
     if (!_willTalk || text.isEmpty) return;
     
-    // Use ElevenLabs if key is provided (Rachel/Bella highly natural female voices)
-    if (_elevenLabsKey.isNotEmpty) {
-      try {
-        final response = await http.post(
-          Uri.parse('https://api.elevenlabs.io/v1/text-to-speech/EXAVITQu4vr4xnSDxMaL'),
-          headers: {
-            'xi-api-key': _elevenLabsKey,
-            'Content-Type': 'application/json',
-          },
-          body: jsonEncode({
-            'text': text,
-            'model_id': 'eleven_monolingual_v1',
-            'voice_settings': {'stability': 0.5, 'similarity_boost': 0.75}
-          }),
-        );
-        
-        if (response.statusCode == 200) {
-          await _audioPlayer.play(BytesSource(response.bodyBytes));
-          return;
-        }
-      } catch (e) {
-        debugPrint('ElevenLabs error: ');
+    try {
+      final directory = await getTemporaryDirectory();
+      final audioPath = '/edge_tts_temp.mp3';
+      
+      final result = await _edgeTts.synthesizeToFile(
+        text,
+        audioFilePath: audioPath,
+      );
+      
+      if (result.isSuccess) {
+        await _audioPlayer.play(DeviceFileSource(audioPath));
+        return;
       }
+    } catch (e) {
+      debugPrint('EdgeTTS error: ');
     }
     
-    // Fallback to Flutter TTS
+    // Fallback to basic Flutter TTS if Edge fails
     await flutterTts.speak(text);
   }
 
@@ -940,26 +935,6 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
             children: [
               const Text('Settings', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
               const SizedBox(height: 20),
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: TextField(
-                  controller: TextEditingController(text: _elevenLabsKey),
-                  obscureText: true,
-                  style: const TextStyle(fontSize: 14, color: Colors.white),
-                  decoration: InputDecoration(
-                    labelText: 'ElevenLabs API Key (For Natural Voice)',
-                    labelStyle: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 12),
-                    filled: true,
-                    fillColor: Colors.black26,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  ),
-                  onChanged: (val) {
-                    _elevenLabsKey = val;
-                    _storage.write(key: 'eleven_labs_key', value: val);
-                  },
-                ),
-              ),
               SwitchListTile(
                 title: const Text('Auto-read Voice Responses', style: TextStyle(fontSize: 14)),
                 value: _willTalk,
