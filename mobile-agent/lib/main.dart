@@ -1164,6 +1164,16 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   }
 
   Widget _buildInputArea(ColorScheme colorScheme) {
+    bool isAsk = _currentMode == 'ask';
+    
+    // Dynamic values for animation
+    double borderRadius = isAsk ? 24.0 : 0.0;
+    Color boxColor = isAsk ? colorScheme.secondary.withOpacity(0.1) : const Color(0xFF282A36);
+    Color borderColor = _isListening ? colorScheme.primary : (isAsk ? colorScheme.secondary : Colors.white);
+    double borderWidth = _isListening ? 4.0 : (isAsk ? 2.0 : 3.0);
+    double offsetX = _isListening ? 6.0 : (isAsk ? 0.0 : 4.0);
+    double offsetY = _isListening ? 6.0 : (isAsk ? 0.0 : 4.0);
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1176,11 +1186,19 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
             Row(
               children: [
                 Expanded(
-                  child: Container(
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeInOutBack,
                     decoration: BoxDecoration(
-                      color: const Color(0xFF282A36),
-                      border: Border.all(color: colorScheme.secondary, width: 3),
-                      boxShadow: [BoxShadow(color: colorScheme.secondary, offset: const Offset(4, 4))],
+                      color: boxColor,
+                      borderRadius: BorderRadius.circular(borderRadius),
+                      border: Border.all(color: borderColor, width: borderWidth),
+                      boxShadow: [
+                        BoxShadow(
+                          color: borderColor, 
+                          offset: Offset(offsetX, offsetY)
+                        )
+                      ],
                     ),
                     child: Row(
                       children: [
@@ -1189,7 +1207,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                             controller: _controller,
                             style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
                             decoration: InputDecoration(
-                              hintText: _isListening ? 'LISTENING...' : (_currentMode == 'ask' ? 'ASK AGENT...' : 'ENTER COMMAND...'),
+                              hintText: _isListening ? 'LISTENING...' : (isAsk ? 'ASK AGENT...' : 'ENTER COMMAND...'),
                               hintStyle: const TextStyle(fontWeight: FontWeight.w700, color: Colors.grey),
                               contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                               border: InputBorder.none,
@@ -1199,12 +1217,19 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                         ),
                         GestureDetector(
                           onTap: _toggleListening,
-                          child: Padding(
-                            padding: const EdgeInsets.only(right: 12.0),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 300),
+                            curve: Curves.easeInOut,
+                            padding: const EdgeInsets.all(8.0),
+                            margin: const EdgeInsets.only(right: 8.0),
+                            decoration: BoxDecoration(
+                              color: _isListening ? colorScheme.primary.withOpacity(0.2) : Colors.transparent,
+                              shape: BoxShape.circle,
+                            ),
                             child: Icon(
                               _isListening ? Icons.mic : Icons.mic_none,
                               color: _isListening ? colorScheme.primary : Colors.white,
-                              size: 24,
+                              size: _isListening ? 28 : 24,
                             ),
                           ),
                         ),
@@ -1215,12 +1240,15 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                 const SizedBox(width: 16),
                 GestureDetector(
                   onTap: _sendMessage,
-                  child: Container(
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    curve: Curves.easeOut,
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
                       color: colorScheme.primary,
+                      borderRadius: BorderRadius.circular(isAsk ? 20.0 : 0.0),
                       border: Border.all(color: Colors.white, width: 3),
-                      boxShadow: const [BoxShadow(color: Colors.white, offset: Offset(4, 4))],
+                      boxShadow: [BoxShadow(color: Colors.white, offset: Offset(isAsk ? 2.0 : 4.0, isAsk ? 2.0 : 4.0))],
                     ),
                     child: const Icon(Icons.send, color: Colors.black),
                   ),
