@@ -913,6 +913,23 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
               const Divider(color: Colors.white10),
               ListTile(
                 contentPadding: EdgeInsets.zero,
+                title: const Text('Lock Session', style: TextStyle(fontSize: 14, color: Colors.orangeAccent)),
+                leading: const Icon(Icons.lock_outline, color: Colors.orangeAccent, size: 20),
+                onTap: () async {
+                  Navigator.pop(context);
+                  await _storage.delete(key: 'session_token');
+                  setState(() {
+                    _sessionToken = '';
+                  });
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Session locked. Token destroyed.')),
+                    );
+                  }
+                },
+              ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
                 title: const Text('Clear Local Data', style: TextStyle(fontSize: 14, color: Colors.redAccent)),
                 leading: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
                 onTap: () {
