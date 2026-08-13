@@ -977,6 +977,7 @@ func startHTTPServer() {
 				"client_id": clientID,
 				"device_id": connData.DeviceID,
 				"secret_hash": secretHash,
+				"mode": mode,
 			}
 			
 			if err != nil {

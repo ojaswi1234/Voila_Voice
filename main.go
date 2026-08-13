@@ -619,6 +619,7 @@ func handleWebhookResult(b *Backend) http.HandlerFunc {
 		output, _ := req["output"].(string)
 		errorMsg, _ := req["error"].(string)
 		secretHash, _ := req["secret_hash"].(string)
+		mode, _ := req["mode"].(string)
 
 		b.mu.RLock()
 		device, exists := b.devices[deviceID]
@@ -635,13 +636,22 @@ func handleWebhookResult(b *Backend) http.HandlerFunc {
 			if errorMsg != "" {
 				b.writeMessage(clientID, websocket.TextMessage, []byte("ERROR: "+errorMsg))
 			} else {
-				summary := b.generateTaskSummary("Command", output)
+				summary := ""
+				if strings.ToLower(mode) == "ask" {
+					summary = output
+				} else {
+					summary = b.generateTaskSummary("Command", output)
+				}
+				
+				if mode == "" {
+					mode = "command"
+				}
 				
 				response := map[string]string{
 					"output": output,
 					"summary": summary,
 					"status": "ok",
-					"mode": "command", // default mode
+					"mode": mode,
 				}
 				jsonResponse, _ := json.Marshal(response)
 				b.writeMessage(clientID, websocket.TextMessage, jsonResponse)
