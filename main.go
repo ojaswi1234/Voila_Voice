@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -18,6 +19,8 @@ import (
 	"time"
 	"github.com/gorilla/websocket"
 )
+
+var sessionSigningKey []byte
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
@@ -91,11 +94,24 @@ func hashPhrase(phrase, deviceID string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-func createSessionToken(deviceID, clientID string) string {
-	secret := os.Getenv("SESSION_SIGNING_KEY")
-	if secret == "" {
-		secret = "default_unsafe_secret"
+
+func getSessionSigningKey() []byte {
+	if len(sessionSigningKey) > 0 {
+		return sessionSigningKey
 	}
+	key := os.Getenv("SESSION_SIGNING_KEY")
+	if key != "" {
+		sessionSigningKey = []byte(key)
+		return sessionSigningKey
+	}
+	// Generate random 32-byte key
+	sessionSigningKey = make([]byte, 32)
+	rand.Read(sessionSigningKey)
+	return sessionSigningKey
+}
+
+func createSessionToken(deviceID, clientID string) string {
+	secret := getSessionSigningKey()
 	payload := map[string]interface{}{
 		"sid": fmt.Sprintf("sess-%d", time.Now().UnixNano()),
 		"device_id": deviceID,
@@ -106,7 +122,7 @@ func createSessionToken(deviceID, clientID string) string {
 	payloadBytes, _ := json.Marshal(payload)
 	payloadB64 := base64.URLEncoding.EncodeToString(payloadBytes)
 	
-	mac := hmac.New(sha256.New, []byte(secret))
+	mac := hmac.New(sha256.New, secret)
 	mac.Write([]byte(payloadB64))
 	sig := hex.EncodeToString(mac.Sum(nil))
 	
@@ -124,11 +140,8 @@ func verifySessionToken(token, expectedDeviceID string) bool {
 	payloadB64 := parts[0]
 	sig := parts[1]
 	
-	secret := os.Getenv("SESSION_SIGNING_KEY")
-	if secret == "" {
-		secret = "default_unsafe_secret"
-	}
-	mac := hmac.New(sha256.New, []byte(secret))
+	secret := getSessionSigningKey()
+	mac := hmac.New(sha256.New, secret)
 	mac.Write([]byte(payloadB64))
 	expectedSig := hex.EncodeToString(mac.Sum(nil))
 	
@@ -454,9 +467,7 @@ func (b *Backend) forwardCommand(deviceID, command, mode string) (string, error)
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if execSecret := os.Getenv("AGENT_EXEC_SECRET"); execSecret != "" {
-		req.Header.Set("X-Exec-Secret", execSecret)
-	}
+	req.Header.Set("X-Exec-Secret", device.SecurityPhraseHash)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -924,17 +935,7 @@ func main() {
 		return
 	}
 
-	// Shared secret so random internet clients can't register devices
-	expected := os.Getenv("AGENT_REGISTER_SECRET")
-	if expected == "" {
-		http.Error(w, "Registration disabled", http.StatusServiceUnavailable)
-		return
-	}
-	if r.Header.Get("X-Agent-Secret") != expected {
-		log.Printf("Registration denied: invalid or missing X-Agent-Secret header")
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
+	// AGENT_REGISTER_SECRET removed for zero-friction mode. Open registration.
 
 	var req struct {
 		DeviceID    string `json:"device_id"`

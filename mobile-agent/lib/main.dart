@@ -93,6 +93,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   String? _currentDeviceName;
   String _sessionId = '';
   String _sessionToken = '';
+  String _currentMode = 'ask';
   Map<String, dynamic> _savedDevices = {};
   
   // Speech-to-text state

@@ -907,13 +907,17 @@ func startHTTPServer() {
 			return
 		}
 
-		expectedSecret := os.Getenv("AGENT_EXEC_SECRET")
-		if expectedSecret != "" {
-			providedSecret := r.Header.Get("X-Exec-Secret")
-			if subtle.ConstantTimeCompare([]byte(providedSecret), []byte(expectedSecret)) != 1 {
-				http.Error(w, "Unauthorized", http.StatusUnauthorized)
-				return
-			}
+		// Zero-friction mode: Authenticate using SecurityPhraseHash
+		connData, err := loadConnectionData()
+		if err != nil || connData.SecurityPhrase == "" {
+			http.Error(w, "Agent not configured", http.StatusServiceUnavailable)
+			return
+		}
+		expectedSecret := hashPhrase(connData.SecurityPhrase, connData.DeviceID)
+		providedSecret := r.Header.Get("X-Exec-Secret")
+		if subtle.ConstantTimeCompare([]byte(providedSecret), []byte(expectedSecret)) != 1 {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
 		}
 
 		var req map[string]string
@@ -1281,6 +1285,13 @@ func isBackgroundServiceRunning() bool {
 }
 
 // Main
+
+func hashPhrase(phrase, deviceID string) string {
+	h := sha256.New()
+	h.Write([]byte(phrase + ":" + deviceID))
+	return hex.EncodeToString(h.Sum(nil))
+}
+
 func main() {
 	// Check for background mode flag
 	backgroundMode := false
