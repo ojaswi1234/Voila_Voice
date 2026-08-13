@@ -1215,23 +1215,27 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                             onSubmitted: (_) => _sendMessage(),
                           ),
                         ),
-                        GestureDetector(
-                          onTap: _toggleListening,
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 300),
-                            curve: Curves.easeInOut,
-                            padding: const EdgeInsets.all(8.0),
-                            margin: const EdgeInsets.only(right: 8.0),
-                            decoration: BoxDecoration(
-                              color: _isListening ? colorScheme.primary.withOpacity(0.2) : Colors.transparent,
-                              shape: BoxShape.circle,
+                        AnimatedSize(
+                          duration: const Duration(milliseconds: 300),
+                          curve: Curves.easeInOutBack,
+                          child: isAsk ? GestureDetector(
+                            onTap: _toggleListening,
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 300),
+                              curve: Curves.easeInOut,
+                              padding: const EdgeInsets.all(8.0),
+                              margin: const EdgeInsets.only(right: 8.0),
+                              decoration: BoxDecoration(
+                                color: _isListening ? colorScheme.primary.withOpacity(0.2) : Colors.transparent,
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                _isListening ? Icons.mic : Icons.mic_none,
+                                color: _isListening ? colorScheme.primary : Colors.white,
+                                size: _isListening ? 28 : 24,
+                              ),
                             ),
-                            child: Icon(
-                              _isListening ? Icons.mic : Icons.mic_none,
-                              color: _isListening ? colorScheme.primary : Colors.white,
-                              size: _isListening ? 28 : 24,
-                            ),
-                          ),
+                          ) : const SizedBox(width: 0),
                         ),
                       ],
                     ),
