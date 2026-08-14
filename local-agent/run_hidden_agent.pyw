@@ -44,7 +44,7 @@ btn_text = canvas.create_text(100, 20, text='X', fill='white', font=('Arial', 10
 # Start Go agent hidden
 CREATE_NO_WINDOW = 0x08000000
 agent_process = subprocess.Popen(
-    ["antigravity.exe"],
+    ["antigravity.exe", "--background"],
     stdout=subprocess.PIPE,
     stderr=subprocess.STDOUT,
     text=True,
@@ -107,9 +107,12 @@ def animation_loop():
 
 def read_output():
     global is_running
-    for line in agent_process.stdout:
+    while True:
+        line = agent_process.stdout.readline()
+        if not line:
+            break
         line = line.strip()
-        print("AGENT:", line) # for debug
+        
         if "STATUS: RUNNING" in line:
             is_running = True
             root.after(0, update_ui_state) # Update immediately

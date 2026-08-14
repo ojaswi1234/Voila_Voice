@@ -1011,7 +1011,9 @@ func startHTTPServer() {
 
 	serverRunning = true
 	log.Println("Local agent server starting on :8088")
-	server.ListenAndServe()
+	if err := server.ListenAndServe(); err != nil {
+		log.Printf("HTTP Server error: %v", err)
+	}
 }
 
 func stopHTTPServer() {
