@@ -90,6 +90,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   List<String> _modelsList = [];
   String _selectedModel = '';
   bool _isFetchingModels = false;
+  String _cachedSecurityPhrase = '';
   final List<Map<String, dynamic>> _messagesCommand = [];
   final List<Map<String, dynamic>> _messagesAsk = [];
   List<Map<String, dynamic>> get _messages => _currentMode.toUpperCase() == 'ASK' ? _messagesAsk : _messagesCommand;
@@ -126,6 +127,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
     super.initState();
     _initTts();
     _loadSession();
+    _storage.read(key: 'security_phrase').then((val) => _cachedSecurityPhrase = val ?? '');
     _setupWebSocket();
     _initializeSpeech();
   }
@@ -397,6 +399,40 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                 'type': 'system',
                 'content': 'Desktop devices updated: ${_devices.length} devices ($onlineCount online, $reachableCount reachable)',
                 'timestamp': DateTime.now().toString(),
+              });
+            } else if (jsonResponse is Map && jsonResponse['type'] == 'conversations_list') {
+              List<dynamic> parsedData = [];
+              if (jsonResponse['data'] is Map && jsonResponse['data']['encrypted'] != null) {
+                 final String phrase = _cachedSecurityPhrase;
+                 String dec = CryptoUtils.decrypt(jsonResponse['data']['encrypted'], phrase);
+                 try {
+                   parsedData = jsonDecode(dec);
+                 } catch(e) {}
+              } else if (jsonResponse['data'] is List) {
+                 parsedData = jsonResponse['data'];
+              }
+              setState(() {
+                _conversations = List<Map<String, String>>.from(
+                  parsedData.map((x) => Map<String, String>.from(x))
+                );
+              });
+            } else if (jsonResponse is Map && jsonResponse['type'] == 'models_list') {
+              List<dynamic> parsedData = [];
+              if (jsonResponse['data'] is Map && jsonResponse['data']['encrypted'] != null) {
+                 final String phrase = _cachedSecurityPhrase;
+                 String dec = CryptoUtils.decrypt(jsonResponse['data']['encrypted'], phrase);
+                 try {
+                   parsedData = jsonDecode(dec);
+                 } catch(e) {}
+              } else if (jsonResponse['data'] is List) {
+                 parsedData = jsonResponse['data'];
+              }
+              setState(() {
+                _isFetchingModels = false;
+                _modelsList = parsedData.map((e) => e.toString()).toList();
+                if (_modelsList.isNotEmpty && _selectedModel.isEmpty) {
+                  _selectedModel = _modelsList[0];
+                }
               });
             } else if (jsonResponse is Map && jsonResponse['type'] == 'queued') {
               // Task queued! Keep loader spinning.
@@ -1506,6 +1542,7 @@ class _CollapsibleOutputState extends State<CollapsibleOutput> {
   bool _isExpanded = false;
   String _selectedModel = 'flash';
   bool _isFetchingModels = false;
+  String _cachedSecurityPhrase = '';
 
   @override
   Widget build(BuildContext context) {
