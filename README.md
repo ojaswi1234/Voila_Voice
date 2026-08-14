@@ -11,6 +11,10 @@ Say goodbye to boring, static terminal windows. **Voila** is an interactive, ani
 
 Whenever Voila is thinking, executing commands, or waiting for instructions, her facial expressions and dynamic thought-bubble react in real-time, giving you an unparalleled interactive experience.
 
+### 💡 In Simple Terms (For Beginners)
+Imagine you are sitting on the couch or away from your computer. You pick up your phone, open the Voila app, and say: *"Hey, start my web server and run the tests."* 
+Voila hears this, automatically translates it into the exact code commands needed (`npm run dev` and `npm test`), and runs them on your laptop for you. It's like having a magical, floating assistant living on your computer who does exactly what you ask her to do, no matter where you are!
+
 ## 🚀 How It Works
 
 This system is built on a highly secure, distributed architecture ensuring your laptop can be controlled remotely with **Zero Trust**.
@@ -81,8 +85,14 @@ Install the APK on your phone, enter your backend URL and secure phrase, and sta
 - `/mobile-agent` - The Flutter application for voice control and remote system monitoring.
 - `/scripts` - Utilities for auto-provisioning `ngrok` environments.
 
-## 🤝 Contributing
-Built with ❤️ for modern developers. Pull requests are welcome!
+## 🤝 Contributing & Help Wanted!
+**Voila is still a work-in-progress.** It is by no means perfect, and I am trying my absolute best to make it better day by day. However, I can't do it alone! 
+
+I am actively looking for passionate contributors to help take this project to the next level. **I especially need help from experts in:**
+- **Agentic AI & Machine Learning (ML)**: To make Voila's command parsing, contextual understanding, and memory smarter and more resilient.
+- **Cybersecurity & Pentesting**: To rigorously audit the zero-trust architecture, probe the ngrok tunnel implementation, and ensure the execution sandbox is completely bulletproof against remote attacks.
+
+If you love hacking on cool AI tools or breaking things to make them safer, please open an issue or submit a pull request! Let's build the ultimate AI desktop assistant together.
 
 ## 📜 License
 MIT License - Free to use and modify.
