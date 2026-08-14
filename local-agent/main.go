@@ -934,6 +934,7 @@ func startHTTPServer() {
 		json.NewEncoder(w).Encode(map[string]string{"output": "Command execution stopped."})
 	})
 
+	mux.HandleFunc("/conversations", listConversationsHandler)
 	mux.HandleFunc("/execute", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -1023,15 +1024,80 @@ func init() {
 	currentWorkingDir, _ = os.Getwd()
 }
 
+type Conversation struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+}
+
+func listConversationsHandler(w http.ResponseWriter, r *http.Request) {
+	// Zero-friction mode: Authenticate using SecurityPhraseHash
+	connData, err := loadConnectionData()
+	if err != nil || connData.SecurityPhrase == "" {
+		http.Error(w, "Agent not configured", http.StatusServiceUnavailable)
+		return
+	}
+	expectedSecret := hashPhrase(connData.SecurityPhrase, connData.DeviceID)
+	providedSecret := r.Header.Get("X-Exec-Secret")
+	if subtle.ConstantTimeCompare([]byte(providedSecret), []byte(expectedSecret)) != 1 {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	
+	homeDir, _ := os.UserHomeDir()
+	brainDir := filepath.Join(homeDir, ".gemini", "antigravity-cli", "brain")
+	
+	entries, err := os.ReadDir(brainDir)
+	var conversations []Conversation
+	
+	if err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() {
+				id := entry.Name()
+				transcriptPath := filepath.Join(brainDir, id, ".system_generated", "logs", "transcript.jsonl")
+				content, err := os.ReadFile(transcriptPath)
+				title := "Unknown Task"
+				
+				if err == nil {
+					lines := strings.Split(string(content), "\n")
+					for _, line := range lines {
+						if strings.Contains(line, "\"type\":\"USER_INPUT\"") {
+							var step map[string]interface{}
+							if json.Unmarshal([]byte(line), &step) == nil {
+								if c, ok := step["content"].(string); ok {
+									title = c
+									if len(title) > 40 {
+										title = title[:37] + "..."
+									}
+									title = strings.ReplaceAll(title, "\n", " ")
+									break
+								}
+							}
+						}
+					}
+				}
+				conversations = append(conversations, Conversation{ID: id, Title: title})
+			}
+		}
+	}
+	
+	// reverse to show newest first
+	for i, j := 0, len(conversations)-1; i < j; i, j = i+1, j-1 {
+		conversations[i], conversations[j] = conversations[j], conversations[i]
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(conversations)
+}
+
 func executeCommand(command string, mode string, conversationID string) (string, error) {
 	var cmd *exec.Cmd
 
 	if strings.ToUpper(mode) == "ASK" {
 		prompt := command + "\n\n(CRITICAL SYSTEM NOTE: Keep your responses casual, brief, and conversational as if you are a friendly voice assistant. Address the user as 'boss'. Do not use overly formal language.\n\nCRITICAL SYSTEM NOTE: You are running inside an isolated background sandbox (`exebox` desktop). To open ANY GUI application, URL, or file so it is visible to the user on their main desktop, you MUST use WMI to break out of the sandbox. Use exactly this command format: `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'explorer.exe \"<URL_OR_PATH>\"'` (for URLs/files) or `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList '<APP_EXE>'` (for apps). DO NOT use Start-Process, as it will spawn invisibly in the sandbox! To perform browser automation, you MUST first launch a visible browser using Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe --remote-debugging-port=9222 --user-data-dir=C:\\tmp\\ai_browser_profile \"about:blank\"'. Then, control it by running python C:\\Users\\ojasw\\Desktop\\voice-cli-system\\local-agent\\browser_tools.py with args --action [goto|click|type|scrape|extract_links|snapshot] --url <url> --selector <css> --value <text>.)"
 		if conversationID != "" {
-			cmd = exec.Command("agy", "--conversation", conversationID, "--dangerously-skip-permissions", "--print", prompt)
+			cmd = exec.Command("agy", "--model", "flash", "--conversation", conversationID, "--dangerously-skip-permissions", "--print", prompt)
 		} else {
-			cmd = exec.Command("agy", "--dangerously-skip-permissions", "--print", prompt)
+			cmd = exec.Command("agy", "--model", "flash", "--dangerously-skip-permissions", "--print", prompt)
 		}
 		if currentWorkingDir != "" {
 			cmd.Dir = currentWorkingDir

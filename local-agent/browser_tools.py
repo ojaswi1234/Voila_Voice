@@ -95,10 +95,11 @@ def main():
                         let selector = '';
                         if (el.id) { selector = `#${el.id}`; }
                         else if (el.name) { selector = `${el.tagName.toLowerCase()}[name="${el.name}"]`; }
+                        else if (el.getAttribute('href')) { selector = `${el.tagName.toLowerCase()}[href="${el.getAttribute('href')}"]`; }
                         else { selector = el.tagName.toLowerCase(); }
                         
-                        return {type: type, text: text.trim().substring(0, 30), selector: selector};
-                    }).filter(e => e.text.length > 2).slice(0, 30);
+                        return {type: type, text: text.trim().substring(0, 150), selector: selector};
+                    }).filter(e => e.text.length > 5 && !e.selector.startsWith('a') || e.selector.includes('href')).slice(0, 100);
                 }''')
                 result["elements"] = links
 

@@ -591,7 +591,21 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
     super.dispose();
   }
 
-  void _sendMessage() async {
+
+  void _stopCommand() {
+    if (channel != null && _isConnected) {
+      channel.sink.add(jsonEncode({"type": "stop_command"}));
+      setState(() {
+        _isThinking = false;
+        _messages.add({
+          'type': 'response',
+          'content': 'Execution stopped by user.',
+          'timestamp': DateTime.now().toString(),
+        });
+      });
+    }
+  }
+\n  void _sendMessage() async {
     if (_controller.text.isNotEmpty) {
       if (!_isConnected) {
         setState(() {
