@@ -18,28 +18,28 @@ x = screen_width - 150
 y = screen_height - 180
 root.geometry(f"+{x}+{y}")
 
-canvas = tk.Canvas(root, width=120, height=120, bg='magenta', highlightthickness=0)
+canvas = tk.Canvas(root, width=180, height=180, bg='magenta', highlightthickness=0)
 canvas.pack()
 
 # UI Elements
-circle = canvas.create_oval(10, 10, 110, 110, fill='#1A1A24', outline='#79c0ff', width=2)
+circle = canvas.create_oval(10, 10, 170, 170, fill='#1A1A24', outline='#79c0ff', width=2)
 
 # Copilot Face (4 lines)
 # Colors from image: Cyan/Blue top, Pink/Purple bottom
 color_top = '#79c0ff'
 color_bottom = '#d2a8ff'
-font_style = ('Consolas', 11, 'bold')
+font_style = ('Consolas', 16, 'bold')
 
-line1 = canvas.create_text(60, 36, text='╭─╮╭─╮', fill=color_top, font=font_style)
-line2 = canvas.create_text(60, 48, text='╰─╯╰─╯', fill=color_top, font=font_style)
-line3 = canvas.create_text(60, 60, text='█ ▘▝ █', fill=color_bottom, font=font_style)
-line4 = canvas.create_text(60, 72, text=' ▔▔▔▔ ', fill=color_bottom, font=font_style)
+line1 = canvas.create_text(90, 54, text='╭─╮╭─╮', fill=color_top, font=font_style)
+line2 = canvas.create_text(90, 74, text='╰─╯╰─╯', fill=color_top, font=font_style)
+line3 = canvas.create_text(90, 94, text='█ ▘▝ █', fill=color_bottom, font=font_style)
+line4 = canvas.create_text(90, 114, text=' ▔▔▔▔ ', fill=color_bottom, font=font_style)
 
-status_text = canvas.create_text(60, 95, text='IDLE', fill='#79c0ff', font=('Consolas', 9, 'bold'))
+status_text = canvas.create_text(90, 140, text='IDLE', fill='#79c0ff', font=('Consolas', 11, 'bold'))
 
 # Close button at top right (45 degrees)
-btn_bg = canvas.create_oval(90, 10, 110, 30, fill='#FF5555', outline='white', width=1)
-btn_text = canvas.create_text(100, 20, text='X', fill='white', font=('Arial', 10, 'bold'))
+btn_bg = canvas.create_oval(135, 15, 165, 45, fill='#FF5555', outline='white', width=1)
+btn_text = canvas.create_text(150, 30, text='X', fill='white', font=('Arial', 13, 'bold'))
 
 # Start Go agent hidden
 CREATE_NO_WINDOW = 0x08000000
