@@ -3,6 +3,7 @@ import subprocess
 import threading
 import sys
 import time
+import os
 
 CREATE_NO_WINDOW = 0x08000000
 
@@ -42,15 +43,11 @@ border_running = '#00ffcc'
 
 pill = create_round_rect(canvas, 10, 10, 290, 70, r=20, fill=bg_idle, outline=border_idle, width=2)
 
-color_top = '#79c0ff'
-color_bottom = '#d2a8ff'
-
-# Copilot Vector Face
-glass_l = canvas.create_oval(25, 22, 42, 32, outline=color_top, width=2)
-glass_r = canvas.create_oval(48, 22, 65, 32, outline=color_top, width=2)
-jaw = canvas.create_line(28, 42, 28, 58, 62, 58, 62, 42, fill=color_bottom, width=6, joinstyle=tk.MITER)
-eye_l = canvas.create_rectangle(36, 45, 40, 49, fill=color_bottom, outline='')
-eye_r = canvas.create_rectangle(50, 45, 54, 49, fill=color_bottom, outline='')
+# Load the exact user-provided image
+script_dir = os.path.dirname(os.path.abspath(__file__))
+image_path = os.path.join(script_dir, "agent_face.png")
+face_img = tk.PhotoImage(file=image_path)
+avatar = canvas.create_image(45, 40, image=face_img)
 
 title_text = canvas.create_text(85, 28, text="Voila Voice Agent", fill="#ffffff", font=("Segoe UI", 12, "bold"), anchor="w")
 status_text = canvas.create_text(85, 48, text="Standing by...", fill="#888888", font=("Segoe UI", 10), anchor="w")
@@ -91,7 +88,7 @@ def do_move(event):
     new_y = root.winfo_y() + (event.y - root.y)
     root.geometry(f"+{new_x}+{new_y}")
 
-for item in (pill, glass_l, glass_r, jaw, eye_l, eye_r, title_text, status_text):
+for item in (pill, avatar, title_text, status_text):
     canvas.tag_bind(item, "<ButtonPress-1>", start_move)
     canvas.tag_bind(item, "<ButtonRelease-1>", stop_move)
     canvas.tag_bind(item, "<B1-Motion>", do_move)
@@ -105,23 +102,12 @@ def update_visuals():
     global anim_frame
     if is_visually_running:
         canvas.itemconfig(pill, outline=border_running, fill=bg_running)
-        canvas.itemconfig(glass_l, outline=border_running)
-        canvas.itemconfig(glass_r, outline=border_running)
-        canvas.itemconfig(jaw, fill=border_running)
-        canvas.itemconfig(eye_l, fill=border_running)
-        canvas.itemconfig(eye_r, fill=border_running)
         canvas.itemconfig(status_text, fill=border_running)
     else:
         canvas.itemconfig(pill, outline=border_idle, fill=bg_idle)
-        canvas.itemconfig(glass_l, outline=color_top)
-        canvas.itemconfig(glass_r, outline=color_top)
-        canvas.itemconfig(jaw, fill=color_bottom)
-        canvas.itemconfig(eye_l, fill=color_bottom)
-        canvas.itemconfig(eye_r, fill=color_bottom)
         canvas.itemconfig(status_text, text="Standing by...", fill="#888888")
-        # Reset eye position
-        canvas.coords(eye_l, 36, 45, 40, 49)
-        canvas.coords(eye_r, 50, 45, 54, 49)
+        # Reset image position
+        canvas.coords(avatar, 45, 40)
 
 def set_running(event=None):
     global is_visually_running, glow_timer
@@ -153,15 +139,13 @@ def animation_loop():
         dots = "." * (anim_frame % 4)
         canvas.itemconfig(status_text, text=f"Executing Task{dots}")
         
-        # Copilot Vector Face Eye Animation (shifting dots left and right)
+        # Vibrate the beautiful image slightly while processing
         if anim_frame % 2 == 0:
-            canvas.coords(eye_l, 34, 45, 38, 49)
-            canvas.coords(eye_r, 48, 45, 52, 49)
+            canvas.coords(avatar, 44, 40)
         else:
-            canvas.coords(eye_l, 38, 45, 42, 49)
-            canvas.coords(eye_r, 52, 45, 56, 49)
+            canvas.coords(avatar, 46, 40)
             
-    root.after(300, animation_loop)
+    root.after(100, animation_loop) # faster animation for vibrating image
 
 def read_output():
     global is_running
