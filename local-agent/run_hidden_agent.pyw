@@ -18,11 +18,11 @@ root.config(bg='magenta')
 
 screen_width = root.winfo_screenwidth()
 screen_height = root.winfo_screenheight()
-x = screen_width - 300
-y = screen_height - 120
+x = screen_width - 360
+y = screen_height - 130
 root.geometry(f"+{x}+{y}")
 
-canvas = tk.Canvas(root, width=280, height=80, bg='magenta', highlightthickness=0)
+canvas = tk.Canvas(root, width=340, height=100, bg='magenta', highlightthickness=0)
 canvas.pack()
 
 def create_round_rect(canvas, x1, y1, x2, y2, r, **kwargs):
@@ -40,17 +40,21 @@ bg_running = '#22222a'
 border_idle = '#3a3a40'
 border_running = '#00ffcc'
 
-pill = create_round_rect(canvas, 10, 10, 270, 70, r=20, fill=bg_idle, outline=border_idle, width=2)
+pill = create_round_rect(canvas, 10, 10, 330, 90, r=20, fill=bg_idle, outline=border_idle, width=2)
 
-avatar_bg = canvas.create_oval(25, 22, 60, 57, fill='#2a2a30', outline='#4a4a55', width=1)
-eye_l = canvas.create_oval(34, 34, 40, 40, fill='#888888', outline='')
-eye_r = canvas.create_oval(45, 34, 51, 40, fill='#888888', outline='')
-mouth = canvas.create_line(36, 47, 49, 47, fill='#888888', width=2, capstyle=tk.ROUND)
+color_top = '#79c0ff'
+color_bottom = '#d2a8ff'
+font_style = ('Segoe UI Symbol', 14, 'bold')
 
-title_text = canvas.create_text(75, 28, text="Voila Voice Agent", fill="#ffffff", font=("Segoe UI", 12, "bold"), anchor="w")
-status_text = canvas.create_text(75, 48, text="Standing by...", fill="#888888", font=("Segoe UI", 10), anchor="w")
+line1 = canvas.create_text(55, 20, text='╭─╮╭─╮', fill=color_top, font=font_style, anchor='n')
+line2 = canvas.create_text(55, 31, text='╰─╯╰─╯', fill=color_top, font=font_style, anchor='n')
+line3 = canvas.create_text(55, 50, text='█ ▘▝ █', fill=color_bottom, font=font_style, anchor='n')
+line4 = canvas.create_text(55, 63, text=' ▔▔▔▔ ', fill=color_bottom, font=font_style, anchor='n')
 
-close_btn = canvas.create_text(245, 40, text="✕", fill="#888888", font=("Segoe UI", 14, "bold"), anchor="center")
+title_text = canvas.create_text(110, 35, text="Voila Voice Agent", fill="#ffffff", font=("Segoe UI", 13, "bold"), anchor="w")
+status_text = canvas.create_text(110, 60, text="Standing by...", fill="#888888", font=("Segoe UI", 11), anchor="w")
+
+close_btn = canvas.create_text(305, 50, text="✕", fill="#888888", font=("Segoe UI", 16, "bold"), anchor="center")
 
 agent_process = subprocess.Popen(
     ["antigravity.exe", "--background"],
@@ -86,7 +90,7 @@ def do_move(event):
     new_y = root.winfo_y() + (event.y - root.y)
     root.geometry(f"+{new_x}+{new_y}")
 
-for item in (pill, avatar_bg, eye_l, eye_r, mouth, title_text, status_text):
+for item in (pill, line1, line2, line3, line4, title_text, status_text):
     canvas.tag_bind(item, "<ButtonPress-1>", start_move)
     canvas.tag_bind(item, "<ButtonRelease-1>", stop_move)
     canvas.tag_bind(item, "<B1-Motion>", do_move)
@@ -100,21 +104,18 @@ def update_visuals():
     global anim_frame
     if is_visually_running:
         canvas.itemconfig(pill, outline=border_running, fill=bg_running)
-        canvas.itemconfig(eye_l, fill=border_running)
-        canvas.itemconfig(eye_r, fill=border_running)
-        canvas.itemconfig(mouth, fill=border_running)
-        canvas.itemconfig(avatar_bg, outline=border_running)
+        canvas.itemconfig(line1, fill=border_running)
+        canvas.itemconfig(line2, fill=border_running)
+        canvas.itemconfig(line3, fill=border_running)
+        canvas.itemconfig(line4, fill=border_running)
         canvas.itemconfig(status_text, fill=border_running)
     else:
         canvas.itemconfig(pill, outline=border_idle, fill=bg_idle)
-        canvas.itemconfig(eye_l, fill='#888888')
-        canvas.itemconfig(eye_r, fill='#888888')
-        canvas.itemconfig(mouth, fill='#888888')
-        canvas.itemconfig(avatar_bg, outline='#4a4a55')
+        canvas.itemconfig(line1, fill=color_top)
+        canvas.itemconfig(line2, fill=color_top)
+        canvas.itemconfig(line3, text='█ ▘▝ █', fill=color_bottom)
+        canvas.itemconfig(line4, fill=color_bottom)
         canvas.itemconfig(status_text, text="Standing by...", fill="#888888")
-        canvas.coords(eye_l, 34, 34, 40, 40)
-        canvas.coords(eye_r, 45, 34, 51, 40)
-        canvas.itemconfig(mouth, state="normal")
 
 def set_running(event=None):
     global is_visually_running, glow_timer
@@ -146,20 +147,11 @@ def animation_loop():
         dots = "." * (anim_frame % 4)
         canvas.itemconfig(status_text, text=f"Executing Task{dots}")
         
-        if anim_frame % 4 == 0:
-            canvas.coords(eye_l, 32, 34, 38, 40)
-            canvas.coords(eye_r, 43, 34, 49, 40)
-        elif anim_frame % 4 == 2:
-            canvas.coords(eye_l, 36, 34, 42, 40)
-            canvas.coords(eye_r, 47, 34, 53, 40)
+        # ASCII Face Eye Animation
+        if anim_frame % 2 == 0:
+            canvas.itemconfig(line3, text='█ ▝▘ █')
         else:
-            canvas.coords(eye_l, 34, 34, 40, 40)
-            canvas.coords(eye_r, 45, 34, 51, 40)
-            
-        if anim_frame % 3 == 0:
-            canvas.itemconfig(mouth, state="hidden")
-        else:
-            canvas.itemconfig(mouth, state="normal")
+            canvas.itemconfig(line3, text='█ ▘▝ █')
             
     root.after(300, animation_loop)
 
