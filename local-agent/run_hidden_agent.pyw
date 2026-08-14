@@ -2,6 +2,13 @@
 import subprocess
 import threading
 import sys
+import time
+
+CREATE_NO_WINDOW = 0x08000000
+
+# Kill any existing orphan agents to ensure we own the active agent
+subprocess.run(['taskkill', '/F', '/IM', 'antigravity.exe'], creationflags=CREATE_NO_WINDOW, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+time.sleep(1)
 
 root = tk.Tk()
 root.overrideredirect(True)
@@ -21,27 +28,21 @@ canvas.pack()
 # UI Elements
 color_top = '#79c0ff'
 color_bottom = '#d2a8ff'
+font_style = ('Consolas', 18, 'normal')
 
 circle = canvas.create_oval(10, 10, 170, 170, fill='#1A1A24', outline=color_top, width=3)
 
-# Glasses (Cyan)
-left_glass = canvas.create_oval(45, 45, 80, 75, outline=color_top, width=5)
-right_glass = canvas.create_oval(100, 45, 135, 75, outline=color_top, width=5)
-
-# Jaw (Pink/Purple)
-jaw = canvas.create_line(45, 85, 45, 120, 135, 120, 135, 85, fill=color_bottom, width=10, joinstyle=tk.ROUND)
-
-# Nostrils / Eyes
-nostril_L = canvas.create_rectangle(65, 95, 75, 105, fill=color_bottom, outline='')
-nostril_R = canvas.create_rectangle(105, 95, 115, 105, fill=color_bottom, outline='')
+# EXACT ASCII ART layered to touch vertically
+line1 = canvas.create_text(90, 50, text='╭─╮╭─╮', fill=color_top, font=font_style, anchor='n')
+line2 = canvas.create_text(90, 62, text='╰─╯╰─╯', fill=color_top, font=font_style, anchor='n')
+line3 = canvas.create_text(90, 75, text='█ ▘▝ █', fill=color_bottom, font=font_style, anchor='n')
+line4 = canvas.create_text(90, 89, text=' ▔▔▔▔ ', fill=color_bottom, font=font_style, anchor='n')
 
 status_text = canvas.create_text(90, 145, text='IDLE', fill=color_top, font=('Consolas', 12, 'bold'))
 
-# Close button
 btn_bg = canvas.create_oval(140, 15, 165, 40, fill='#FF5555', outline='white', width=1)
 btn_text = canvas.create_text(152, 27, text='X', fill='white', font=('Arial', 12, 'bold'))
 
-CREATE_NO_WINDOW = 0x08000000
 agent_process = subprocess.Popen(
     ["antigravity.exe", "--background"],
     stdout=subprocess.PIPE,
@@ -70,42 +71,59 @@ def do_move(event):
     new_y = root.winfo_y() + (event.y - root.y)
     root.geometry(f"+{new_x}+{new_y}")
 
-for item in (circle, left_glass, right_glass, jaw, nostril_L, nostril_R, status_text):
+for item in (circle, line1, line2, line3, line4, status_text):
     canvas.tag_bind(item, "<ButtonPress-1>", start_move)
     canvas.tag_bind(item, "<ButtonRelease-1>", stop_move)
     canvas.tag_bind(item, "<B1-Motion>", do_move)
 
 is_running = False
+is_visually_running = False
+glow_timer = None
 blink_state = False
 
-def update_ui_state():
-    global blink_state
-    if is_running:
+def update_visuals():
+    if is_visually_running:
         canvas.itemconfig(circle, outline='#ff7b72', width=4)
         canvas.itemconfig(status_text, text='RUNNING', fill='#ff7b72')
-        # Blink nostrils (they move up and turn red when running)
-        blink_state = not blink_state
-        if blink_state:
-            canvas.coords(nostril_L, 65, 90, 75, 100)
-            canvas.coords(nostril_R, 105, 90, 115, 100)
-            canvas.itemconfig(nostril_L, fill='#ff7b72')
-            canvas.itemconfig(nostril_R, fill='#ff7b72')
-        else:
-            canvas.coords(nostril_L, 65, 95, 75, 105)
-            canvas.coords(nostril_R, 105, 95, 115, 105)
-            canvas.itemconfig(nostril_L, fill=color_bottom)
-            canvas.itemconfig(nostril_R, fill=color_bottom)
+        # Animation loop will handle line3
     else:
         canvas.itemconfig(circle, outline=color_top, width=3)
         canvas.itemconfig(status_text, text='IDLE', fill=color_top)
-        canvas.coords(nostril_L, 65, 95, 75, 105)
-        canvas.coords(nostril_R, 105, 95, 115, 105)
-        canvas.itemconfig(nostril_L, fill=color_bottom)
-        canvas.itemconfig(nostril_R, fill=color_bottom)
+        canvas.itemconfig(line3, text='█ ▘▝ █')
+
+def set_running(event=None):
+    global is_visually_running, glow_timer
+    is_visually_running = True
+    if glow_timer:
+        root.after_cancel(glow_timer)
+    glow_timer = None
+    update_visuals()
+
+def turn_off_glow():
+    global is_visually_running
+    if not is_running:
+        is_visually_running = False
+        update_visuals()
+
+def set_idle(event=None):
+    global glow_timer
+    if glow_timer:
+        root.after_cancel(glow_timer)
+    glow_timer = root.after(1500, turn_off_glow) # Glow stays for at least 1.5 seconds
+
+root.bind("<<Running>>", set_running)
+root.bind("<<Idle>>", set_idle)
 
 def animation_loop():
-    if is_running:
-        update_ui_state()
+    global blink_state
+    if is_visually_running:
+        blink_state = not blink_state
+        if blink_state:
+            canvas.itemconfig(line3, text='█ ▀▀ █', fill='#ff7b72')
+        else:
+            canvas.itemconfig(line3, text='█ ▗▖ █', fill='#ff7b72')
+    else:
+        canvas.itemconfig(line3, fill=color_bottom)
     root.after(300, animation_loop)
 
 def read_output():
@@ -117,13 +135,12 @@ def read_output():
         line = line.strip()
         if "STATUS: RUNNING" in line:
             is_running = True
-            root.after(0, update_ui_state)
+            root.event_generate("<<Running>>", when="tail")
         elif "STATUS: IDLE" in line:
             is_running = False
-            root.after(0, update_ui_state)
+            root.event_generate("<<Idle>>", when="tail")
 
 t = threading.Thread(target=read_output, daemon=True)
 t.start()
-
 animation_loop()
 root.mainloop()
