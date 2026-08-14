@@ -934,6 +934,7 @@ func startHTTPServer() {
 		json.NewEncoder(w).Encode(map[string]string{"output": "Command execution stopped."})
 	})
 
+	mux.HandleFunc("/models", listModelsHandler)
 	mux.HandleFunc("/conversations", listConversationsHandler)
 	mux.HandleFunc("/execute", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -961,11 +962,12 @@ func startHTTPServer() {
 		mode := req["mode"]
 		clientID := req["client_id"]
 		conversationID := req["conversation_id"]
+		modelName := req["model"]
 		
 		w.WriteHeader(http.StatusAccepted)
 		
 		go func() {
-			output, err := executeCommand(command, mode, conversationID)
+			output, err := executeCommand(command, mode, conversationID, modelName)
 			
 			// Post the result back to backend
 			backendURL := strings.TrimRight(connData.BackendURL, "/") + "/webhook/result"
@@ -1022,6 +1024,44 @@ var currentWorkingDir string
 
 func init() {
 	currentWorkingDir, _ = os.Getwd()
+}
+
+var (
+	cachedModels []string
+	modelsMutex  sync.Mutex
+)
+
+func listModelsHandler(w http.ResponseWriter, r *http.Request) {
+	connData, err := loadConnectionData()
+	if err != nil || connData.SecurityPhrase == "" {
+		http.Error(w, "Agent not configured", http.StatusServiceUnavailable)
+		return
+	}
+	expectedSecret := hashPhrase(connData.SecurityPhrase, connData.DeviceID)
+	providedSecret := r.Header.Get("X-Exec-Secret")
+	if subtle.ConstantTimeCompare([]byte(providedSecret), []byte(expectedSecret)) != 1 {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	
+	modelsMutex.Lock()
+	defer modelsMutex.Unlock()
+	
+	if len(cachedModels) == 0 {
+		out, err := exec.Command("agy", "models").CombinedOutput()
+		if err == nil {
+			lines := strings.Split(string(out), "\n")
+			for _, line := range lines {
+				line = strings.TrimSpace(line)
+				if line != "" && !strings.Contains(strings.ToLower(line), "available") && !strings.Contains(line, " ") {
+					cachedModels = append(cachedModels, line)
+				}
+			}
+		}
+	}
+	
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(cachedModels)
 }
 
 type Conversation struct {
@@ -1089,15 +1129,18 @@ func listConversationsHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(conversations)
 }
 
-func executeCommand(command string, mode string, conversationID string) (string, error) {
+func executeCommand(command string, mode string, conversationID string, modelName string) (string, error) {
 	var cmd *exec.Cmd
 
 	if strings.ToUpper(mode) == "ASK" {
 		prompt := command + "\n\n(CRITICAL SYSTEM NOTE: Keep your responses casual, brief, and conversational as if you are a friendly voice assistant. Address the user as 'boss'. Do not use overly formal language.\n\nCRITICAL SYSTEM NOTE: You are running inside an isolated background sandbox (`exebox` desktop). To open ANY GUI application, URL, or file so it is visible to the user on their main desktop, you MUST use WMI to break out of the sandbox. Use exactly this command format: `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'explorer.exe \"<URL_OR_PATH>\"'` (for URLs/files) or `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList '<APP_EXE>'` (for apps). DO NOT use Start-Process, as it will spawn invisibly in the sandbox! To perform browser automation, you MUST first launch a visible browser using Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe --remote-debugging-port=9222 --user-data-dir=C:\\tmp\\ai_browser_profile \"about:blank\"'. Then, control it by running python C:\\Users\\ojasw\\Desktop\\voice-cli-system\\local-agent\\browser_tools.py with args --action [goto|click|type|scrape|extract_links|snapshot] --url <url> --selector <css> --value <text>.)"
+		if modelName == "" {
+			modelName = "flash" // default if not provided
+		}
 		if conversationID != "" {
-			cmd = exec.Command("agy", "--model", "flash", "--conversation", conversationID, "--dangerously-skip-permissions", "--print", prompt)
+			cmd = exec.Command("agy", "--model", modelName, "--conversation", conversationID, "--dangerously-skip-permissions", "--print", prompt)
 		} else {
-			cmd = exec.Command("agy", "--model", "flash", "--dangerously-skip-permissions", "--print", prompt)
+			cmd = exec.Command("agy", "--model", modelName, "--dangerously-skip-permissions", "--print", prompt)
 		}
 		if currentWorkingDir != "" {
 			cmd.Dir = currentWorkingDir

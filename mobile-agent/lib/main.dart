@@ -605,6 +605,59 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
       });
     }
   }
+\n
+  void _fetchModels() {
+    if (channel != null && _isConnected) {
+      setState(() => _isFetchingModels = true);
+      channel.sink.add(jsonEncode({"type": "get_models"}));
+    }
+  }
+
+  void _showModelSelector() {
+    if (_modelsList.isEmpty) {
+      _fetchModels();
+    }
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1E1E1E),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Container(
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Select AI Model', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
+                  const SizedBox(height: 10),
+                  if (_modelsList.isEmpty) 
+                    const Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator())
+                  else
+                    Expanded(
+                      child: ListView.builder(
+                        itemCount: _modelsList.length,
+                        itemBuilder: (context, index) {
+                          final model = _modelsList[index];
+                          return ListTile(
+                            title: Text(model, style: const TextStyle(color: Colors.white70)),
+                            trailing: _selectedModel == model ? const Icon(Icons.check, color: Colors.greenAccent) : null,
+                            onTap: () {
+                              setState(() => _selectedModel = model);
+                              Navigator.pop(context);
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
 \n  void _sendMessage() async {
     if (_controller.text.isNotEmpty) {
       if (!_isConnected) {
@@ -1441,7 +1494,9 @@ class CollapsibleOutput extends StatefulWidget {
 }
 
 class _CollapsibleOutputState extends State<CollapsibleOutput> {
-  bool _isExpanded = false;
+  bool _isExpanded = false;\n  List<String> _modelsList = [];
+  String _selectedModel = 'flash';
+  bool _isFetchingModels = false;
 
   @override
   Widget build(BuildContext context) {

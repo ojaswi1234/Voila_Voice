@@ -767,7 +767,57 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 					b.writeMessage(clientID, messageType, []byte("ERROR: Invalid security phrase"))
 				}
 
-			case "get_conversations":
+			case "get_models":
+				if deviceID == "" {
+					device := b.getActiveDevice()
+					if device != nil && device.Active {
+						deviceID = device.ID
+					} else {
+						b.writeMessage(clientID, messageType, []byte("ERROR: No active online desktop device"))
+						continue
+					}
+				}
+				
+				b.mu.RLock()
+				device, exists := b.devices[deviceID]
+				b.mu.RUnlock()
+				
+				if !exists || !device.Active {
+					b.writeMessage(clientID, messageType, []byte("ERROR: device not found or offline"))
+					continue
+				}
+				
+				go func(dID string, cID string, addr string, hash string, msgType int) {
+					client := safeHTTPClient()
+					req, err := http.NewRequest("GET", addr+"/models", nil)
+					if err != nil {
+						b.writeMessage(cID, msgType, []byte("ERROR: Failed to create models request"))
+						return
+					}
+					req.Header.Set("X-Exec-Secret", hash)
+					
+					resp, err := client.Do(req)
+					if err != nil {
+						b.writeMessage(cID, msgType, []byte("ERROR: Failed to fetch models"))
+						return
+					}
+					defer resp.Body.Close()
+					
+					if resp.StatusCode == http.StatusOK {
+						var models []string
+						if err := json.NewDecoder(resp.Body).Decode(&models); err == nil {
+							response := map[string]interface{}{
+								"type": "models_list",
+								"models": models,
+							}
+							responseBytes, _ := json.Marshal(response)
+							b.writeMessage(cID, msgType, responseBytes)
+						} else {
+							b.writeMessage(cID, msgType, []byte("ERROR: Failed to parse models"))
+						}
+					}
+				}(deviceID, clientID, device.Address, device.SecurityPhraseHash, messageType)
+\n			case "get_conversations":
 				if deviceID == "" {
 					device := b.getActiveDevice()
 					if device != nil && device.Active {
