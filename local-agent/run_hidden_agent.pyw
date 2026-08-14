@@ -1,4 +1,4 @@
-import tkinter as tk
+﻿import tkinter as tk
 import subprocess
 import threading
 import sys
@@ -33,16 +33,16 @@ brown = '#b87353'
 black = '#000000'
 sx, sy = 15, 10
 
-# Thought Cloud Base
+# Thought Cloud Base (Smaller and shifted right)
 cloud_color = '#2a2a32'
-c_dot1 = canvas.create_oval(sx+55, sy+15, sx+65, sy+25, fill=cloud_color, outline='')
-c_dot2 = canvas.create_oval(sx+65, sy+5, sx+75, sy+15, fill=cloud_color, outline='')
+c_dot1 = canvas.create_oval(sx+55, sy+20, sx+63, sy+28, fill=cloud_color, outline='')
+c_dot2 = canvas.create_oval(sx+70, sy+10, sx+80, sy+20, fill=cloud_color, outline='')
 
-cx, cy = 90, 10
-c_oval1 = canvas.create_oval(cx, cy+15, cx+50, cy+65, fill=cloud_color, outline='')
-c_oval2 = canvas.create_oval(cx+30, cy, cx+110, cy+75, fill=cloud_color, outline='')
-c_oval3 = canvas.create_oval(cx+90, cy+15, cx+150, cy+65, fill=cloud_color, outline='')
-c_oval4 = canvas.create_oval(cx+60, cy-10, cx+130, cy+60, fill=cloud_color, outline='')
+cx, cy = 115, 15
+c_oval1 = canvas.create_oval(cx, cy+10, cx+40, cy+50, fill=cloud_color, outline='')
+c_oval2 = canvas.create_oval(cx+20, cy, cx+80, cy+60, fill=cloud_color, outline='')
+c_oval3 = canvas.create_oval(cx+60, cy+10, cx+110, cy+50, fill=cloud_color, outline='')
+c_oval4 = canvas.create_oval(cx+40, cy-5, cx+100, cy+45, fill=cloud_color, outline='')
 cloud_parts = (c_dot1, c_dot2, c_oval1, c_oval2, c_oval3, c_oval4)
 
 # Face Base
@@ -59,8 +59,8 @@ eye_r = canvas.create_line(sx+58, sy+32, sx+50, sy+32, sx+50, sy+32, fill=black,
 
 face_parts = (body, arm_l, arm_r, leg1, leg2, leg3, leg4, eye_l, eye_r)
 
-# Removed static title_text and placed status_text inside the thought cloud!
-status_text = canvas.create_text(cx+75, cy+32, text="Standing by...", fill="#888888", font=("Segoe UI", 10, "italic"), anchor="center")
+title_text = canvas.create_text(90, 45, text="Voila", fill="#ffffff", font=("Segoe UI", 12, "bold"), anchor="w")
+status_text = canvas.create_text(cx+55, cy+25, text="Standing by...", fill="#888888", font=("Segoe UI", 9, "italic"), anchor="center")
 
 close_btn = canvas.create_text(265, 45, text="✕", fill="#888888", font=("Segoe UI", 14, "bold"), anchor="center")
 
@@ -80,11 +80,18 @@ def on_close(e=None):
 
 canvas.tag_bind(close_btn, '<Button-1>', on_close)
 
+def on_enter_close(e): canvas.itemconfig(close_btn, fill="#ff5555")
+def on_leave_close(e): canvas.itemconfig(close_btn, fill="#888888")
+canvas.tag_bind(close_btn, '<Enter>', on_enter_close)
+canvas.tag_bind(close_btn, '<Leave>', on_leave_close)
+
+
 def start_move(e): root.x, root.y = e.x, e.y
 def stop_move(e): root.x, root.y = None, None
 def do_move(e): root.geometry(f"+{root.winfo_x() + (e.x - root.x)}+{root.winfo_y() + (e.y - root.y)}")
 
-for item in [pill, status_text, close_btn] + list(face_parts) + list(cloud_parts):
+# DO NOT include close_btn in the drag bindings!
+for item in [pill, title_text, status_text] + list(face_parts) + list(cloud_parts):
     canvas.tag_bind(item, "<ButtonPress-1>", start_move)
     canvas.tag_bind(item, "<ButtonRelease-1>", stop_move)
     canvas.tag_bind(item, "<B1-Motion>", do_move)
@@ -100,7 +107,7 @@ def update_expression():
         # SAD / DISCONNECTED
         canvas.itemconfig(pill, outline='#ff4444', fill='#2a1a1a')
         for cp in cloud_parts: canvas.itemconfig(cp, fill='#4a1a1a')
-        canvas.itemconfig(status_text, text="Offline (0 Devices)", fill='#ff8888')
+        canvas.itemconfig(status_text, text="Offline", fill='#ff8888')
         canvas.coords(eye_l, sx+22, sy+28, sx+30, sy+36, sx+30, sy+36) # \
         canvas.coords(eye_r, sx+58, sy+28, sx+50, sy+36, sx+50, sy+36) # /
         canvas.itemconfig(eye_l, fill='#ff4444')
@@ -135,7 +142,7 @@ def animation_loop():
             canvas.itemconfig(eye_r, fill='#ffff55')
             
         elif ai_state == "SEARCH":
-            canvas.itemconfig(status_text, text=f"Web Search{dots}", fill='#aaffff')
+            canvas.itemconfig(status_text, text=f"Search{dots}", fill='#aaffff')
             canvas.itemconfig(pill, outline='#00aaff')
             # Scan left and right
             offset = (anim_frame % 3) * 3
@@ -145,7 +152,7 @@ def animation_loop():
             canvas.itemconfig(eye_r, fill='#00aaff')
             
         elif ai_state == "BASH":
-            canvas.itemconfig(status_text, text=f"Executing Bash{dots}", fill='#aaffaa')
+            canvas.itemconfig(status_text, text=f"Bash{dots}", fill='#aaffaa')
             canvas.itemconfig(pill, outline='#00ff44')
             # >_ shape, pulsing
             if anim_frame % 2 == 0:
@@ -158,7 +165,7 @@ def animation_loop():
             canvas.itemconfig(eye_r, fill='#00ff44')
             
         elif ai_state == "FILE":
-            canvas.itemconfig(status_text, text=f"Read/Write{dots}", fill='#ffddaa')
+            canvas.itemconfig(status_text, text=f"I/O{dots}", fill='#ffddaa')
             canvas.itemconfig(pill, outline='#ffaa00')
             # Reading motion (eyes darting)
             dart = (anim_frame % 4) * 2 - 2
