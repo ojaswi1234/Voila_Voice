@@ -1507,7 +1507,7 @@ func runBackgroundMode() {
 
 func stopBackgroundService() {
 	if runtime.GOOS == "windows" {
-		exec.Command("taskkill", "/F", "/IM", "antigravity.exe").Run()
+		exec.Command("taskkill", "/F", "/T", "/IM", "antigravity.exe").Run()
 	} else if runtime.GOOS == "darwin" {
 		exec.Command("launchctl", "unload", filepath.Join(os.Getenv("HOME"), "Library", "LaunchAgents", "com.voicecli.antigravity.plist")).Run()
 	} else {

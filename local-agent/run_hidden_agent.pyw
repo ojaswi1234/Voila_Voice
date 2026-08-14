@@ -1,11 +1,11 @@
-﻿import tkinter as tk
+import tkinter as tk
 import subprocess
 import threading
 import sys
 import time
 
 CREATE_NO_WINDOW = 0x08000000
-subprocess.run(['taskkill', '/F', '/IM', 'antigravity.exe'], creationflags=CREATE_NO_WINDOW, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+subprocess.run(['taskkill', '/F', '/T', '/IM', 'antigravity.exe'], creationflags=CREATE_NO_WINDOW, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 time.sleep(1)
 
 root = tk.Tk()
