@@ -1,4 +1,4 @@
-﻿import tkinter as tk
+import tkinter as tk
 import subprocess
 import threading
 import sys
@@ -190,30 +190,30 @@ def reset_to_idle():
 def parse_line(line):
     global ai_state, mobile_clients, glow_timer
     
-    if \"STATUS: MOBILE_CLIENTS:\" in line:
-        count_str = line.split(\"STATUS: MOBILE_CLIENTS:\")[1].strip()
+    if "STATUS: MOBILE_CLIENTS:" in line:
+        count_str = line.split("STATUS: MOBILE_CLIENTS:")[1].strip()
         try:
             mobile_clients = int(count_str)
             update_expression()
         except: pass
         return
         
-    if \"STATUS: IDLE\" in line:
+    if "STATUS: IDLE" in line:
         if glow_timer: root.after_cancel(glow_timer)
         glow_timer = root.after(1500, reset_to_idle)
         return
         
-    if \"STATUS: RUNNING\" in line:
+    if "STATUS: RUNNING" in line:
         if glow_timer: root.after_cancel(glow_timer)
-        ai_state = \"RUNNING\"
+        ai_state = "RUNNING"
         return
         
     # Real-time parsed stages
     l = line.lower()
-    if \"thinking\" in l: ai_state = \"THINKING\"
-    elif \"search\" in l: ai_state = \"SEARCH\"
-    elif \"command\" in l or \"powershell\" in l: ai_state = \"BASH\"
-    elif \"read\" in l or \"write\" in l or \"edit\" in l: ai_state = \"FILE\"
+    if "thinking" in l: ai_state = "THINKING"
+    elif "search" in l: ai_state = "SEARCH"
+    elif "command" in l or "powershell" in l: ai_state = "BASH"
+    elif "read" in l or "write" in l or "edit" in l: ai_state = "FILE"
 
 def read_output():
     while True:
