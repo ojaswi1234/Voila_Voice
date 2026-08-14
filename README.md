@@ -1,363 +1,88 @@
-# Voice-to-CLI Remote Execution Service
+<div align="center">
+  <h1>🎙️ Voila: Your Floating AI CLI Assistant</h1>
+  <p><i>A Zero-Trust, Voice-Controlled Remote Execution System that brings an interactive AI companion to your desktop.</i></p>
+</div>
 
-Zero Trust voice-controlled remote CLI execution system.
+---
 
-## Architecture
+## 🌟 Meet Voila
 
-- **Mobile Agent**: Flutter app for voice capture and WebSocket communication
-- **Backend**: Go server at root level for routing, device registry, and token optimization  
-- **Local Agent**: Go CLI (Antigravity) for secure local execution with offline queue
+Say goodbye to boring, static terminal windows. **Voila** is an interactive, animated AI agent that floats elegantly on your desktop. She listens to your voice via your mobile device, instantly parses your natural language into powerful CLI commands (powered by Antigravity), and executes them securely on your machine from anywhere in the world. 
 
-## Deployment Strategy
+Whenever Voila is thinking, executing commands, or waiting for instructions, her facial expressions and dynamic thought-bubble react in real-time, giving you an unparalleled interactive experience.
 
-**100% Free Solution:**
-- **Render**: Free tier backend hosting
-- **GitHub Actions**: Keep-alive pings every 10 minutes (prevents sleep)
-- **ngrok**: Free tunneling for local agent (automated)
-- **Total Cost**: $0/month
+## 🚀 How It Works
 
-## Quick Start
+This system is built on a highly secure, distributed architecture ensuring your laptop can be controlled remotely with **Zero Trust**.
 
-### Environment Variables Setup
+1. **📱 Mobile Agent (Flutter)**: A beautiful mobile app that captures your voice commands, displays execution results, and allows you to switch between multiple connected desktop devices.
+2. **☁️ Cloud Relay (Go)**: A lightweight Go server deployed to the cloud (e.g., Render) that proxies WebSocket connections and maintains device registries and live presence—without ever knowing your security credentials.
+3. **💻 Local Agent (Go + Python UI)**: The brains of the operation. Running directly on your Windows/Mac/Linux machine, it uses `ngrok` for secure tunneling. It features the **Voila Floating Widget** (built in Python/Tkinter) wrapped around the robust `antigravity` Go binary.
 
-Create a `.env` file in the project root (copy from `.env.example`):
+## ✨ Features
 
-```bash
-# Required for ngrok authentication
+### 🎭 The Voila Desktop Widget
+- **Interactive Personality**: Dynamic, vector-based facial expressions based on real-time execution states (Idle, Thinking, Executing, Offline).
+- **Live Thought Cloud**: Watch exactly what Voila is doing or executing directly in her floating thought bubble.
+- **Pixel-Perfect UI**: Carefully designed so she looks right at home on a modern desktop.
+- **Zero-Zombie Guarantee**: Robust process management ensures no orphaned background tasks remain when she goes to sleep.
+
+### 🔒 Zero-Trust Security
+- **No Shared Secrets**: Your security phrase never leaves your devices. The cloud relay only routes traffic and verifies cryptographic hashes.
+- **Device Locking**: (1 Laptop = 1 Mobile Device). Prevents conflicting commands if multiple people try to access a shared machine.
+- **End-to-End Tunneling**: Free automated HTTPS `ngrok` tunneling ensures completely secure execution pipelines.
+
+### ⚡ AI-Powered Execution
+- Select between multiple LLMs (Gemini Flash/Pro, Claude Sonnet, etc.) on the fly from the mobile app.
+- "Start the local development server" seamlessly becomes `npm run dev` or `go run main.go`.
+- Chat history, conversational memory, and task summaries are built right in.
+
+---
+
+## 🛠️ Quick Start Guide
+
+### 1. Configure Environment
+Create a `.env` file in the project root:
+```env
 NGROK_AUTHTOKEN=your_ngrok_authtoken_here
-
-# Required for device registration (must match backend's AGENT_REGISTER_SECRET)
 AGENT_REGISTER_SECRET=your_registration_secret_here
-
-# Optional: Admin override for clearing backend data
 CLEAR_DATA_SECRET=your_clear_data_secret_here
 ```
 
-**For Windows users:** Set environment variables permanently:
-```cmd
-setx NGROK_AUTHTOKEN "your_token_here"
-setx AGENT_REGISTER_SECRET "your_secret_here"
-```
+*(Windows users: You can permanently set these via `setx NGROK_AUTHTOKEN "token"`)*
 
-**Important:** The `AGENT_REGISTER_SECRET` must match the environment variable set on your Render backend.
-
-**Note:** The local agent setup now only requires:
-1. Backend URL (defaults to production)
-2. Device Name
-3. Security Phrase (for clearing backend data)
-
-The previous "Passphrase" field has been removed as it was redundant.
-
-### 1. Start All Services (Windows)
+### 2. Fire Up The Relay Server (Cloud/Local)
+To run the Go cloud relay locally for testing:
 ```bash
-start_all.bat
-```
-
-### 2. Manual Setup (All Platforms)
-```bash
-# Terminal 1: Start local agent (TUI)
-cd local-agent
-go run main.go
-
-# Terminal 2: Start ngrok (automated)
-cd scripts
-node setup_ngrok.js
-
-# Terminal 3: Start backend with auto-detection
 NGROK_AUTO_DETECT=true go run main.go
 ```
+*(For production, deploy this root directory to Render.com and set your `AGENT_REGISTER_SECRET` in their dashboard.)*
 
-### 3. Deploy to Render
-1. Push code to GitHub
-2. Connect repository to Render.com
-3. **Required:** Set `AGENT_REGISTER_SECRET` in Render environment variables (must match your local setup)
-4. **Optional:** Set `CLEAR_DATA_SECRET` for admin override of data clearing
-5. Deploy with free tier
+### 3. Awaken Voila (Local Agent)
+```bash
+cd local-agent
+start_agent.bat
+```
+Watch Voila spring to life on your desktop! She will automatically manage the ngrok tunneling and connect to your cloud relay.
 
-### 4. Setup GitHub Actions
-1. Add `RENDER_BACKEND_URL` secret to GitHub
-2. Workflow auto-runs every 10 minutes
-3. Keeps backend awake 24/7
-
-### 5. Build Mobile APK
+### 4. Connect the Mobile App
 ```bash
 cd mobile-agent
 flutter build apk --dart-define=BACKEND_URL=wss://your-backend.onrender.com/ws
 ```
+Install the APK on your phone, enter your backend URL and secure phrase, and start talking to your desktop!
 
-## Project Structure
+---
 
-```
-voice-cli-system/
-├── backend/              # Go backend server
-│   ├── main.go          # Main server with health endpoints & ngrok auto-detect
-│   ├── go.mod           # Go dependencies
-│   └── .gitkeep
-├── local-agent/         # Go CLI (Antigravity)
-│   ├── main.go           # Local execution agent
-│   ├── go.mod           # Go dependencies
-│   └── .gitkeep
-├── mobile-agent/        # Flutter mobile app
-│   ├── lib/
-│   │   ├── main.dart    # Flutter app with health checks & connection flow
-│   │   └── .gitkeep
-│   └── pubspec.yaml     # Flutter dependencies
-├── scripts/              # Automation scripts
-│   ├── setup_ngrok.py   # Python ngrok automation (no dependencies)
-│   ├── setup_ngrok.js   # Node.js ngrok automation
-│   ├── package.json     # Node.js dependencies
-│   └── .gitkeep
-├── .github/
-│   └── workflows/
-│       └── keep-alive.yml  # GitHub Actions workflow
-├── render.yaml          # Render deployment config
-├── start_all.bat         # Windows startup script
-├── .gitignore           # Git ignore rules
-└── README.md            # This file
-```
+## 📂 Project Structure
 
-## Features
+- `/backend` - *(Deprecated)* Merged into the root `main.go`.
+- `/local-agent` - The secure Go CLI combined with the Python-based Voila floating widget.
+- `/mobile-agent` - The Flutter application for voice control and remote system monitoring.
+- `/scripts` - Utilities for auto-provisioning `ngrok` environments.
 
-### Backend
-- ✅ WebSocket server for mobile connections
-- ✅ Device registry with multi-device support
-- ✅ **Device locking** (1 laptop = 1 mobile device at a time)
-- ✅ Multi-client support (1 mobile app = multiple laptops)
-- ✅ Token optimization for command efficiency
-- ✅ Health check endpoint (`/health`)
-- ✅ Status monitoring endpoint (`/status`)
-- ✅ AI-powered task summaries
-- ✅ **Automatic ngrok URL detection** (when enabled)
-- ✅ Manual device address update endpoint
-- ✅ Environment variable configuration
+## 🤝 Contributing
+Built with ❤️ for modern developers. Pull requests are welcome!
 
-### Local Agent
-- ✅ **TUI interface** with bubbletea for setup and management
-- ✅ **One-time connection setup** with interactive wizard
-- ✅ **Auto-start on device boot** after initial setup
-- ✅ **Background mode** (`--background` flag) for system service
-- ✅ **Device management** with delete connection option
-- ✅ **Stop/start controls** for service management
-- ✅ **Security disconnect** handling for auth/anomaly issues
-- ✅ HTTP API with Zero Trust authentication
-- ✅ PowerShell command execution
-- ✅ Offline task queue with JSON persistence
-- ✅ Task history tracking
-- ✅ Automatic processing of pending tasks
-- ✅ **Live presence monitoring** (backend reachable, mobile clients count)
-
-### Mobile App
-- ✅ WebSocket client with auto-reconnection
-- ✅ **Health check monitoring** (every 15 seconds)
-- ✅ **Connection flow visualization** (Mobile → Backend → Local Agent)
-- ✅ Device switching UI with lock status
-- ✅ **Device lock/unlock controls**
-- ✅ Connection status indicators
-- ✅ AI summary display
-- ✅ Enhanced error handling
-- ✅ **Live presence detection** using backend TTL system
-- ✅ **Speech-to-text with microphone input** (permission handling, real-time transcription)
-
-### Automation Scripts
-- ✅ **Python ngrok setup** (no external dependencies)
-- ✅ **Node.js ngrok setup** (npm install required)
-- ✅ **Automatic ngrok download** (cross-platform)
-- ✅ **Automatic URL extraction** from ngrok API
-- ✅ **URL persistence** for backend detection
-- ✅ **Authtoken configuration** via NGROK_AUTHTOKEN environment variable
-
-## Configuration
-
-### Environment Variables
-```bash
-# Backend
-PORT=10000
-NGROK_AUTO_DETECT=true  # Enable automatic ngrok URL detection (local dev only)
-DEVICE_1_NAME=Development Laptop
-DEVICE_1_ADDRESS=http://localhost:8088  # Auto-updated when NGROK_AUTO_DETECT=true
-DEVICE_2_NAME=Production Server
-DEVICE_2_ADDRESS=http://localhost:8091
-
-# Ngrok
-NGROK_AUTHTOKEN=your_ngrok_authtoken_here  # Required for ngrok v3 (get from https://dashboard.ngrok.com/get-started/your-authtoken)
-
-# Backend Registration
-AGENT_REGISTER_SECRET=your_registration_secret  # Required for desktop agent registration with backend
-```
-
-### GitHub Secrets
-- `RENDER_BACKEND_URL`: Your Render backend URL
-
-### Command Optimization
-Backend automatically optimizes commands:
-- "start the local development server" → "npm run dev"
-- "run tests" → "npm test"
-- "git status" → "git status"
-
-## API Endpoints
-
-### Backend
-- `GET /health` - Health check with live presence (devices_online, online_devices, mobile_clients)
-- `GET /status` - Detailed status with online device list
-- `POST /register` - Desktop agent registration with heartbeat (protected by AGENT_REGISTER_SECRET)
-- `POST /update-device` - Manual device address update
-- `WS /ws` - WebSocket connection for mobile apps
-
-### WebSocket Messages
-- `{"type": "command", "device_id": "laptop-1", "command": "npm run dev"}` - Execute command
-- `{"type": "switch_device", "device_id": "laptop-2"}` - Switch active device
-- `{"type": "lock_device", "device_id": "laptop-1"}` - Lock device for exclusive access
-- `{"type": "unlock_device", "device_id": "laptop-1"}` - Unlock device
-- `{"type": "get_devices"}` - Get device list with lock status
-- `{"type": "get_stats"}` - Get system statistics
-
-### Local Agent
-- `POST /execute` - Execute commands
-- `POST /queue` - Add to offline queue
-- `POST /process` - Process pending tasks
-- `GET /history` - Task history
-
-## Device Locking System
-
-**Constraint:** 1 laptop = 1 mobile device at a time (1 mobile app = multiple laptops)
-
-**How it works:**
-- Mobile devices get unique client IDs on connection
-- Locking prevents conflicts between multiple mobile users
-- Commands automatically lock/unlock during execution
-- Manual lock/unlock available for extended sessions
-- Auto-unlock on client disconnection
-
-**Use cases:**
-- Team collaboration with shared laptops
-- Preventing command conflicts
-- Managing exclusive access to devices
-- Session-based device control
-
-## Live Presence System
-
-**Architecture:** Backend is single source of truth for all live presence states.
-
-**Presence TTL:** Desktop devices marked online only if heartbeat within 60 seconds.
-
-**Connection Chain States:**
-- **Mobile ↔ Backend:** WebSocket connection + backend `/health` ok
-- **Backend ↔ Local Agent:** Selected desktop device `online == true` (LastSeen within TTL)
-- **Local Agent Process:** Separate local state shown on CLI TUI
-
-**Backend Presence Engine:**
-- Desktop agents heartbeat via `/register` every 30 seconds
-- Backend runs `markStaleDevices()` every 15 seconds
-- `Device.Active` = `time.Since(LastSeen) < 60s` for desktop devices
-- Device records persist between sessions, only online/offline flips
-
-**Health Endpoint Schema:**
-```json
-{
-  "status": "ok",
-  "timestamp": "2026-08-10T12:00:00Z",
-  "uptime": "2h30m",
-  "devices_registered": 3,
-  "devices_online": 1,
-  "online_devices": [
-    {"id": "desktop-abc", "name": "Dev Laptop", "lastSeen": "...", "online": true, "fingerprint": "..."}
-  ],
-  "mobile_clients": 1
-}
-```
-
-**Offline Detection:**
-- PC off/ngrok stopped → Mobile "Local Agent" goes offline within 60-90 seconds
-- Phone app closed → Backend `mobile_clients` drops within seconds
-- Backend down → All health checks fail
-
-**Mobile App Presence:**
-- Health checks every 15 seconds (was 30)
-- Uses `devices_online` count, not `devices_registered`
-- Checks if `_activeDevice` appears in `online_devices` with `online: true`
-- Device dropdown shows online status per device
-
-**Local Agent CLI Presence:**
-- Polls `/health` every 20 seconds via background goroutine
-- Logs presence status to console (Backend OK/FAIL, Mobile clients count)
-- `connectionData.Connected` = configured (not live presence)
-- `backendReachable` and `mobileClientsOnline` logged but not shown in TUI
-
-## Local Agent TUI
-
-**Interactive Terminal Interface:**
-- One-time setup wizard for connection configuration
-- Enter backend URL, device name, and passphrase
-- Visual feedback with styled UI elements
-- Auto-saves connection data for future use
-
-**Menu Options:**
-- **Stop/Start Service** - Control local agent HTTP server
-- **Delete Connection** - Remove saved connection data
-- **View Status** - Check connection and server status
-- **Exit** - Clean shutdown
-
-**Auto-Start:**
-- After initial setup, creates startup script
-- Automatically starts on device boot
-- Runs in background with saved connection
-- No manual intervention needed
-
-**Security Features:**
-- Security disconnect handling for auth anomalies
-- Immediate service stop on security events
-- Connection deletion option for compromised credentials
-- Passphrase stored locally only (Zero Trust)
-
-## Ngrok Automation
-
-### Python Script (Recommended)
-```bash
-cd scripts
-python setup_ngrok.py
-```
-- No external dependencies
-- Cross-platform support
-- Automatic download and setup
-
-### Node.js Script
-```bash
-cd scripts
-npm install
-npm start
-```
-- Requires npm install
-- Uses unzipper package
-- Graceful shutdown
-
-### Backend Auto-Detection
-```bash
-NGROK_AUTO_DETECT=true go run main.go
-```
-- Checks ngrok API every 30 seconds
-- Auto-updates device address
-- No manual URL configuration needed
-
-## Security
-
-- ✅ Zero Trust authentication model
-- ✅ Passphrase stored locally only
-- ✅ Backend has zero knowledge of credentials
-- ✅ ngrok provides HTTPS tunneling
-- ✅ Environment variables for sensitive data
-
-## Deployment Guide
-
-See `RENDER_DEPLOYMENT.md` for detailed deployment instructions.
-
-## Prerequisites
-
-- Go 1.26+ (for local development)
-- Flutter SDK (for mobile app building)
-- Python 3.x (for ngrok automation) OR Node.js 14+ (alternative)
-- Render account (for backend hosting)
-- GitHub account (for Actions workflow)
-
-## License
-
-MIT License - Feel free to use and modify.
+## 📜 License
+MIT License - Free to use and modify.
