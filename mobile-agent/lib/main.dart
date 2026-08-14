@@ -1,7 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Platform;
-import 'package:flutter/material.dart';\nimport 'crypto.dart';
+import 'package:flutter/material.dart';
+import 'crypto.dart';
 import 'package:http/http.dart' as http;
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -658,7 +659,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
       },
     );
   }
-\n  void _sendMessage() async {
+  void _sendMessage() async {
     if (_controller.text.isNotEmpty) {
       if (!_isConnected) {
         setState(() {
@@ -1494,7 +1495,7 @@ class CollapsibleOutput extends StatefulWidget {
 }
 
 class _CollapsibleOutputState extends State<CollapsibleOutput> {
-  bool _isExpanded = false;\n  List<String> _modelsList = [];
+  bool _isExpanded = false;
   String _selectedModel = 'flash';
   bool _isFetchingModels = false;
 
