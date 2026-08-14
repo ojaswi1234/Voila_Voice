@@ -135,7 +135,11 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
 
   void _fetchConversations() {
     if (channel != null && _isConnected) {
-      final msg = jsonEncode({"type": "get_conversations"});
+      final msg = jsonEncode({
+        "type": "get_conversations",
+        "device_id": _activeDevice,
+        "session_token": _sessionToken
+      });
       channel.sink.add(msg);
     }
   }
@@ -444,6 +448,14 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
               if (_willTalk) {
                 _speak(jsonResponse['summary']);
               }
+              
+              if (jsonResponse.containsKey('new_conversation_id') && jsonResponse['new_conversation_id'] != null) {
+                final newId = jsonResponse['new_conversation_id'].toString();
+                if (newId.isNotEmpty && newId != _currentConversationId) {
+                  _currentConversationId = newId;
+                  _fetchConversations();
+                }
+              }
 
               _messages.add({
                 'type': 'response',
@@ -649,7 +661,11 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   void _fetchModels() {
     if (channel != null && _isConnected) {
       setState(() => _isFetchingModels = true);
-      channel.sink.add(jsonEncode({"type": "get_models"}));
+      channel.sink.add(jsonEncode({
+        "type": "get_models",
+        "device_id": _activeDevice,
+        "session_token": _sessionToken
+      }));
     }
   }
 
