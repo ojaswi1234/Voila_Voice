@@ -1169,8 +1169,8 @@ func executeCommand(command string, mode string, conversationID string, modelNam
 	}
 
 	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	cmd.Stdout = io.MultiWriter(&stdout, os.Stdout)
+	cmd.Stderr = io.MultiWriter(&stderr, os.Stderr)
 	
 	fmt.Println("STATUS: RUNNING")
 
@@ -1490,8 +1490,10 @@ func runBackgroundMode() {
 					resp.Body.Close()
 					
 					log.Printf("Presence: Backend OK, Mobile clients: %d", healthData.MobileClients)
+					fmt.Printf("STATUS: MOBILE_CLIENTS:%d\n", healthData.MobileClients)
 				} else {
 					log.Printf("Presence: Backend unreachable")
+					fmt.Printf("STATUS: MOBILE_CLIENTS:0\n")
 				}
 			} else {
 				log.Printf("Presence: Backend unreachable")
@@ -1637,8 +1639,10 @@ func main() {
 						resp.Body.Close()
 						
 						log.Printf("Presence: Backend OK, Mobile clients: %d", healthData.MobileClients)
+						fmt.Printf("STATUS: MOBILE_CLIENTS:%d\n", healthData.MobileClients)
 					} else {
 						log.Printf("Presence: Backend unreachable")
+						fmt.Printf("STATUS: MOBILE_CLIENTS:0\n")
 					}
 				} else {
 					log.Printf("Presence: Backend unreachable")
