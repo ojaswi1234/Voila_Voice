@@ -1,4 +1,4 @@
-import tkinter as tk
+﻿import tkinter as tk
 import subprocess
 import threading
 import sys
@@ -6,7 +6,6 @@ import time
 
 CREATE_NO_WINDOW = 0x08000000
 
-# Kill existing orphan agents
 subprocess.run(['taskkill', '/F', '/IM', 'antigravity.exe'], creationflags=CREATE_NO_WINDOW, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 time.sleep(1)
 
@@ -42,27 +41,28 @@ border_running = '#00ffcc'
 
 pill = create_round_rect(canvas, 10, 10, 290, 80, r=20, fill=bg_idle, outline=border_idle, width=2)
 
-pink = '#c973d0'
-cyan = '#5cb8d6'
-green = '#72b892'
-black = '#171f1a'
-green_glow = '#aaffcc'
+brown = '#b87353'
+black = '#000000'
+cyan = '#00ffcc'
+white = '#ffffff'
 
 sx = 15
 sy = 10
-# 8-bit Vector Face
-hair = canvas.create_rectangle(sx+30, sy+5, sx+50, sy+15, fill=pink, outline='')
-gog = canvas.create_rectangle(sx+15, sy+15, sx+65, sy+35, fill=cyan, outline='')
-hole_l = canvas.create_rectangle(sx+20, sy+20, sx+35, sy+30, fill=black, outline='')
-hole_r = canvas.create_rectangle(sx+45, sy+20, sx+60, sy+30, fill=black, outline='')
-jaw_l = canvas.create_rectangle(sx+5, sy+35, sx+15, sy+60, fill=pink, outline='')
-jaw_r = canvas.create_rectangle(sx+65, sy+35, sx+75, sy+60, fill=pink, outline='')
-jaw_b = canvas.create_rectangle(sx+10, sy+60, sx+70, sy+70, fill=pink, outline='')
-mouth = canvas.create_rectangle(sx+15, sy+35, sx+65, sy+60, fill=black, outline='')
-tooth_l = canvas.create_rectangle(sx+28, sy+42, sx+33, sy+53, fill=green, outline='')
-tooth_r = canvas.create_rectangle(sx+47, sy+42, sx+52, sy+53, fill=green, outline='')
 
-face_parts = (hair, gog, hole_l, hole_r, jaw_l, jaw_r, jaw_b, mouth, tooth_l, tooth_r)
+# cld.webp Vector Face
+body = canvas.create_rectangle(sx+15, sy+15, sx+65, sy+55, fill=brown, outline='')
+arm_l = canvas.create_rectangle(sx+8, sy+30, sx+15, sy+45, fill=brown, outline='')
+arm_r = canvas.create_rectangle(sx+65, sy+30, sx+72, sy+45, fill=brown, outline='')
+leg1 = canvas.create_rectangle(sx+15, sy+55, sx+23, sy+70, fill=brown, outline='')
+leg2 = canvas.create_rectangle(sx+28, sy+55, sx+36, sy+70, fill=brown, outline='')
+leg3 = canvas.create_rectangle(sx+44, sy+55, sx+52, sy+70, fill=brown, outline='')
+leg4 = canvas.create_rectangle(sx+57, sy+55, sx+65, sy+70, fill=brown, outline='')
+
+# Dynamic Eyes (start as horizontal sleeping lines)
+eye_l = canvas.create_line(sx+22, sy+32, sx+30, sy+32, sx+30, sy+32, fill=black, width=3, joinstyle=tk.MITER)
+eye_r = canvas.create_line(sx+58, sy+32, sx+50, sy+32, sx+50, sy+32, fill=black, width=3, joinstyle=tk.MITER)
+
+face_parts = (body, arm_l, arm_r, leg1, leg2, leg3, leg4, eye_l, eye_r)
 
 title_text = canvas.create_text(95, 33, text="Voila", fill="#ffffff", font=("Segoe UI", 12, "bold"), anchor="w")
 status_text = canvas.create_text(95, 53, text="Standing by...", fill="#888888", font=("Segoe UI", 10), anchor="w")
@@ -118,16 +118,14 @@ def update_visuals():
     if is_visually_running:
         canvas.itemconfig(pill, outline=border_running, fill=bg_running)
         canvas.itemconfig(status_text, fill=border_running)
-        canvas.itemconfig(gog, fill=border_running)
     else:
         canvas.itemconfig(pill, outline=border_idle, fill=bg_idle)
         canvas.itemconfig(status_text, text="Standing by...", fill="#888888")
-        canvas.itemconfig(gog, fill=cyan)
-        # Reset dynamic animation positions
-        canvas.coords(tooth_l, sx+28, sy+42, sx+33, sy+53)
-        canvas.coords(tooth_r, sx+47, sy+42, sx+52, sy+53)
-        canvas.itemconfig(tooth_l, fill=green)
-        canvas.itemconfig(tooth_r, fill=green)
+        # Reset dynamic eyes to asleep
+        canvas.coords(eye_l, sx+22, sy+32, sx+30, sy+32, sx+30, sy+32)
+        canvas.coords(eye_r, sx+58, sy+32, sx+50, sy+32, sx+50, sy+32)
+        canvas.itemconfig(eye_l, fill=black)
+        canvas.itemconfig(eye_r, fill=black)
 
 def set_running(event=None):
     global is_visually_running, glow_timer
@@ -159,19 +157,21 @@ def animation_loop():
         dots = "." * (anim_frame % 4)
         canvas.itemconfig(status_text, text=f"Executing Task{dots}")
         
-        # Dynamic 8-bit reaction: The teeth bounce like a voice visualizer and glow!
+        # Dynamic Eyes Pattern for cld.webp!
         if anim_frame % 2 == 0:
-            canvas.coords(tooth_l, sx+28, sy+40, sx+33, sy+55)
-            canvas.coords(tooth_r, sx+47, sy+45, sx+52, sy+50)
-            canvas.itemconfig(tooth_l, fill=green_glow)
-            canvas.itemconfig(tooth_r, fill=green_glow)
+            # Eyes wide open and glowing cyan
+            canvas.coords(eye_l, sx+22, sy+26, sx+32, sy+32, sx+22, sy+38)
+            canvas.coords(eye_r, sx+58, sy+26, sx+48, sy+32, sx+58, sy+38)
+            canvas.itemconfig(eye_l, fill=cyan)
+            canvas.itemconfig(eye_r, fill=cyan)
         else:
-            canvas.coords(tooth_l, sx+28, sy+45, sx+33, sy+50)
-            canvas.coords(tooth_r, sx+47, sy+40, sx+52, sy+55)
-            canvas.itemconfig(tooth_l, fill=green)
-            canvas.itemconfig(tooth_r, fill=green)
+            # Eyes slightly squinted and glowing white
+            canvas.coords(eye_l, sx+24, sy+28, sx+30, sy+32, sx+24, sy+36)
+            canvas.coords(eye_r, sx+56, sy+28, sx+50, sy+32, sx+56, sy+36)
+            canvas.itemconfig(eye_l, fill=white)
+            canvas.itemconfig(eye_r, fill=white)
             
-    root.after(200, animation_loop)
+    root.after(150, animation_loop)
 
 def read_output():
     global is_running
