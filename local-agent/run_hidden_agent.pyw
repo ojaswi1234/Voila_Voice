@@ -33,17 +33,18 @@ brown = '#b87353'
 black = '#000000'
 sx, sy = 15, 10
 
-# Thought Cloud Base (Smaller and shifted right)
+# Thought Cloud Base (Shifted right to avoid name collision)
 cloud_color = '#2a2a32'
 c_dot1 = canvas.create_oval(sx+55, sy+20, sx+63, sy+28, fill=cloud_color, outline='')
-c_dot2 = canvas.create_oval(sx+70, sy+10, sx+80, sy+20, fill=cloud_color, outline='')
+c_dot2 = canvas.create_oval(sx+75, sy+10, sx+85, sy+20, fill=cloud_color, outline='')
+c_dot3 = canvas.create_oval(sx+95, sy+5, sx+108, sy+18, fill=cloud_color, outline='')
 
-cx, cy = 115, 15
+cx, cy = 135, 15
 c_oval1 = canvas.create_oval(cx, cy+10, cx+40, cy+50, fill=cloud_color, outline='')
 c_oval2 = canvas.create_oval(cx+20, cy, cx+80, cy+60, fill=cloud_color, outline='')
 c_oval3 = canvas.create_oval(cx+60, cy+10, cx+110, cy+50, fill=cloud_color, outline='')
 c_oval4 = canvas.create_oval(cx+40, cy-5, cx+100, cy+45, fill=cloud_color, outline='')
-cloud_parts = (c_dot1, c_dot2, c_oval1, c_oval2, c_oval3, c_oval4)
+cloud_parts = (c_dot1, c_dot2, c_dot3, c_oval1, c_oval2, c_oval3, c_oval4)
 
 # Face Base
 body = canvas.create_rectangle(sx+15, sy+15, sx+65, sy+55, fill=brown, outline='')
@@ -59,7 +60,7 @@ eye_r = canvas.create_line(sx+58, sy+32, sx+50, sy+32, sx+50, sy+32, fill=black,
 
 face_parts = (body, arm_l, arm_r, leg1, leg2, leg3, leg4, eye_l, eye_r)
 
-title_text = canvas.create_text(90, 45, text="Voila", fill="#ffffff", font=("Segoe UI", 12, "bold"), anchor="w")
+title_text = canvas.create_text(85, 50, text="Voila", fill="#ffffff", font=("Segoe UI", 12, "bold"), anchor="w")
 status_text = canvas.create_text(cx+55, cy+25, text="Standing by...", fill="#888888", font=("Segoe UI", 9, "italic"), anchor="center")
 
 close_btn = canvas.create_text(265, 45, text="✕", fill="#888888", font=("Segoe UI", 14, "bold"), anchor="center")
