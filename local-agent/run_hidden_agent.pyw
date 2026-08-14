@@ -1,4 +1,4 @@
-﻿import tkinter as tk
+import tkinter as tk
 import subprocess
 import threading
 import sys
@@ -64,7 +64,7 @@ tooth_r = canvas.create_rectangle(sx+47, sy+42, sx+52, sy+53, fill=green, outlin
 
 face_parts = (hair, gog, hole_l, hole_r, jaw_l, jaw_r, jaw_b, mouth, tooth_l, tooth_r)
 
-title_text = canvas.create_text(95, 33, text="Voila Voice Agent", fill="#ffffff", font=("Segoe UI", 12, "bold"), anchor="w")
+title_text = canvas.create_text(95, 33, text="Voila", fill="#ffffff", font=("Segoe UI", 12, "bold"), anchor="w")
 status_text = canvas.create_text(95, 53, text="Standing by...", fill="#888888", font=("Segoe UI", 10), anchor="w")
 
 close_btn = canvas.create_text(265, 45, text="✕", fill="#888888", font=("Segoe UI", 14, "bold"), anchor="center")
