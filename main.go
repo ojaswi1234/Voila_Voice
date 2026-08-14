@@ -634,6 +634,7 @@ func handleWebhookResult(b *Backend) http.HandlerFunc {
 
 		outputEnc, _ := req["output_enc"].(string)
 		errorEnc, _ := req["error_enc"].(string)
+		newConvID, _ := req["new_conversation_id"].(string)
 
 		if clientID != "" {
 			if outputEnc != "" || errorEnc != "" {
@@ -642,6 +643,7 @@ func handleWebhookResult(b *Backend) http.HandlerFunc {
 					"error_enc":  errorEnc,
 					"status":     "encrypted",
 					"mode":       mode,
+					"new_conversation_id": newConvID,
 				}
 				jsonResponse, _ := json.Marshal(response)
 				b.writeMessage(clientID, websocket.TextMessage, jsonResponse)
@@ -664,6 +666,7 @@ func handleWebhookResult(b *Backend) http.HandlerFunc {
 					"summary": summary,
 					"status": "ok",
 					"mode": mode,
+					"new_conversation_id": newConvID,
 				}
 				jsonResponse, _ := json.Marshal(response)
 				b.writeMessage(clientID, websocket.TextMessage, jsonResponse)

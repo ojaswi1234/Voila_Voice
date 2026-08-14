@@ -12,8 +12,8 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"os/exec"
 	"runtime"
 	"strings"
 	"sync"
@@ -967,7 +967,7 @@ func startHTTPServer() {
 		w.WriteHeader(http.StatusAccepted)
 		
 		go func() {
-			output, err := executeCommand(command, mode, conversationID, modelName)
+			output, newConvID, err := executeCommand(command, mode, conversationID, modelName)
 			
 			// Post the result back to backend
 			backendURL := strings.TrimRight(connData.BackendURL, "/") + "/webhook/result"
@@ -977,11 +977,13 @@ func startHTTPServer() {
 			h.Write([]byte(connData.SecurityPhrase + ":" + connData.DeviceID))
 			secretHash := hex.EncodeToString(h.Sum(nil))
 
+
 			resultPayload := map[string]string{
 				"client_id": clientID,
 				"device_id": connData.DeviceID,
 				"secret_hash": secretHash,
 				"mode": mode,
+				"new_conversation_id": newConvID,
 			}
 			
 			if err != nil {
@@ -1053,7 +1055,7 @@ func listModelsHandler(w http.ResponseWriter, r *http.Request) {
 			lines := strings.Split(string(out), "\n")
 			for _, line := range lines {
 				line = strings.TrimSpace(line)
-				if line != "" && !strings.Contains(strings.ToLower(line), "available") && !strings.Contains(line, " ") {
+				if line != "" && !strings.Contains(strings.ToLower(line), "available") {
 					cachedModels = append(cachedModels, line)
 				}
 			}
@@ -1135,13 +1137,13 @@ func listConversationsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func executeCommand(command string, mode string, conversationID string, modelName string) (string, error) {
+func executeCommand(command string, mode string, conversationID string, modelName string) (string, string, error) {
 	var cmd *exec.Cmd
 
 	if strings.ToUpper(mode) == "ASK" {
 		prompt := command + "\n\n(CRITICAL SYSTEM NOTE: Keep your responses casual, brief, and conversational as if you are a friendly voice assistant. Address the user as 'boss'. Do not use overly formal language.\n\nCRITICAL SYSTEM NOTE: You are running inside an isolated background sandbox (`exebox` desktop). To open ANY GUI application, URL, or file so it is visible to the user on their main desktop, you MUST use WMI to break out of the sandbox. Use exactly this command format: `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'explorer.exe \"<URL_OR_PATH>\"'` (for URLs/files) or `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList '<APP_EXE>'` (for apps). DO NOT use Start-Process, as it will spawn invisibly in the sandbox! To perform browser automation, you MUST first launch a visible browser using Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe --remote-debugging-port=9222 --user-data-dir=C:\\tmp\\ai_browser_profile \"about:blank\"'. Then, control it by running python C:\\Users\\ojasw\\Desktop\\voice-cli-system\\local-agent\\browser_tools.py with args --action [goto|click|type|scrape|extract_links|snapshot] --url <url> --selector <css> --value <text>.)"
-		if modelName == "" {
-			modelName = "flash" // default if not provided
+		if modelName == "" || modelName == "flash" {
+			modelName = "Gemini 3.7 Flash (High)" // default if not provided
 		}
 		if conversationID != "" {
 			cmd = exec.Command("agy", "--model", modelName, "--conversation", conversationID, "--dangerously-skip-permissions", "--print", prompt)
@@ -1199,12 +1201,12 @@ func executeCommand(command string, mode string, conversationID string, modelNam
 
 	if err != nil {
 		if outStr != "" {
-			return outStr + "\n" + errStr, err
+			return outStr + "\n" + errStr, conversationID, err
 		}
-		return errStr, err
+		return errStr, conversationID, err
 	}
 
-	return outStr, nil
+	return outStr, conversationID, nil
 }
 
 // Save/Load connection data

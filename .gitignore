@@ -91,4 +91,4 @@ backend.exe
 
 # Keep important JSON files
 !mobile-agent/pubspec.yaml
-!mobile-agent/android/app/build.gradle
+!mobile-agent/android/app/build.gradle\n*.py\n*.cs\nconv*.txt\nout*.txt\n
