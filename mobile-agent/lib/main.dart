@@ -87,6 +87,9 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final _storage = const FlutterSecureStorage();
+  List<String> _modelsList = [];
+  String _selectedModel = '';
+  bool _isFetchingModels = false;
   final List<Map<String, dynamic>> _messagesCommand = [];
   final List<Map<String, dynamic>> _messagesAsk = [];
   List<Map<String, dynamic>> get _messages => _currentMode.toUpperCase() == 'ASK' ? _messagesAsk : _messagesCommand;
@@ -606,7 +609,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
       });
     }
   }
-\n
+
   void _fetchModels() {
     if (channel != null && _isConnected) {
       setState(() => _isFetchingModels = true);
