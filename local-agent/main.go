@@ -1125,8 +1125,14 @@ func listConversationsHandler(w http.ResponseWriter, r *http.Request) {
 		conversations[i], conversations[j] = conversations[j], conversations[i]
 	}
 
+	jsonData, _ := json.Marshal(conversations)
+	encrypted, err := EncryptData(jsonData, connData.SecurityPhrase)
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(conversations)
+	if err == nil {
+		json.NewEncoder(w).Encode(map[string]string{"encrypted": encrypted})
+	} else {
+		json.NewEncoder(w).Encode(conversations)
+	}
 }
 
 func executeCommand(command string, mode string, conversationID string, modelName string) (string, error) {

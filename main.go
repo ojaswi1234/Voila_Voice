@@ -632,8 +632,20 @@ func handleWebhookResult(b *Backend) http.HandlerFunc {
 
 		b.unlockDevice(deviceID, clientID)
 
+		outputEnc, _ := req["output_enc"].(string)
+		errorEnc, _ := req["error_enc"].(string)
+
 		if clientID != "" {
-			if errorMsg != "" {
+			if outputEnc != "" || errorEnc != "" {
+				response := map[string]string{
+					"output_enc": outputEnc,
+					"error_enc":  errorEnc,
+					"status":     "encrypted",
+					"mode":       mode,
+				}
+				jsonResponse, _ := json.Marshal(response)
+				b.writeMessage(clientID, websocket.TextMessage, jsonResponse)
+			} else if errorMsg != "" {
 				b.writeMessage(clientID, websocket.TextMessage, []byte("ERROR: "+errorMsg))
 			} else {
 				summary := ""
