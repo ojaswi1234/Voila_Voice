@@ -1024,6 +1024,11 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
           style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, letterSpacing: -0.3),
         ),
         actions: [
+          if (_currentMode.toUpperCase() == 'ASK')
+            IconButton(
+              icon: Icon(Icons.auto_awesome, size: 20, color: _selectedModel.isNotEmpty ? colorScheme.secondary : colorScheme.onSurface.withOpacity(0.7)),
+              onPressed: _showModelSelector,
+            ),
           IconButton(
             icon: Icon(Icons.folder_copy_outlined, size: 20, color: colorScheme.onSurface.withOpacity(0.7)),
             onPressed: () {
