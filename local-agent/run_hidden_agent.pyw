@@ -23,7 +23,7 @@ canvas.pack()
 
 # UI Elements
 circle = canvas.create_oval(10, 10, 110, 110, fill='#1A1A24', outline='#3DDC97', width=2)
-face_text = canvas.create_text(60, 60, text='( •_• )', fill='white', font=('Consolas', 14, 'bold'))
+face_text = canvas.create_text(60, 52, text='╭─╮╭─╮\n╰─╯╰─╯\n█ ▘▝ █\n ▔▔▔▔', fill='white', font=('Consolas', 11, 'bold'), justify='center')
 status_text = canvas.create_text(60, 90, text='IDLE', fill='#3DDC97', font=('Consolas', 9))
 
 # Close button at top right (45 degrees)
@@ -76,7 +76,12 @@ canvas.tag_bind(face_text, "<B1-Motion>", do_move)
 # Animation state
 is_running = False
 anim_frame = 0
-frames = ['( ^_^ )', '( >_< )', '( 0_0 )', '( -_- )']
+frames = [
+    "╭─╮╭─╮\n╰─╯╰─╯\n█ ▘▝ █\n ▔▔▔▔",
+    "╭─╮╭─╮\n╰─╯╰─╯\n█ ▀▀ █\n ▔▔▔▔",
+    "╭─╮╭─╮\n╰─╯╰─╯\n█ ▗▖ █\n ▔▔▔▔",
+    "╭─╮╭─╮\n╰─╯╰─╯\n█ >< █\n ▔▔▔▔",
+]
 
 def update_ui():
     global anim_frame
@@ -88,7 +93,7 @@ def update_ui():
     else:
         canvas.itemconfig(circle, outline='#3DDC97', width=2)
         canvas.itemconfig(status_text, text='IDLE', fill='#3DDC97')
-        canvas.itemconfig(face_text, text='( •_• )')
+        canvas.itemconfig(face_text, text='╭─╮╭─╮\n╰─╯╰─╯\n█ ▘▝ █\n ▔▔▔▔')
     root.after(400, update_ui)
 
 def read_output():
