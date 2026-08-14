@@ -832,7 +832,7 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 						}
 					}
 				}(deviceID, clientID, device.Address, device.SecurityPhraseHash, messageType)
-\n			case "get_conversations":
+			case "get_conversations":
 				if deviceID == "" {
 					device := b.getActiveDevice()
 					if device != nil && device.Active {
@@ -1313,7 +1313,6 @@ func main() {
 		}
 		backend.mu.RUnlock()
 		json.NewEncoder(w).Encode(stats)
-	})
 	})
 	
 	port := os.Getenv("PORT")
