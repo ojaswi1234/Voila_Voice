@@ -1,4 +1,4 @@
-import tkinter as tk
+﻿import tkinter as tk
 import subprocess
 import threading
 import sys
@@ -33,20 +33,20 @@ brown = '#b87353'
 black = '#000000'
 sx, sy = 15, 10
 
-# Thought Cloud Base (Shifted right to avoid name collision)
+# Thought Cloud Base (Perfected layout: cx=150)
 cloud_color = '#2a2a32'
-c_dot1 = canvas.create_oval(sx+55, sy+20, sx+63, sy+28, fill=cloud_color, outline='')
-c_dot2 = canvas.create_oval(sx+75, sy+10, sx+85, sy+20, fill=cloud_color, outline='')
-c_dot3 = canvas.create_oval(sx+95, sy+5, sx+108, sy+18, fill=cloud_color, outline='')
+c_dot1 = canvas.create_oval(90, 40, 95, 45, fill=cloud_color, outline='')
+c_dot2 = canvas.create_oval(110, 30, 120, 40, fill=cloud_color, outline='')
+c_dot3 = canvas.create_oval(130, 20, 145, 35, fill=cloud_color, outline='')
 
-cx, cy = 135, 15
+cx, cy = 150, 15
 c_oval1 = canvas.create_oval(cx, cy+10, cx+40, cy+50, fill=cloud_color, outline='')
 c_oval2 = canvas.create_oval(cx+20, cy, cx+80, cy+60, fill=cloud_color, outline='')
 c_oval3 = canvas.create_oval(cx+60, cy+10, cx+110, cy+50, fill=cloud_color, outline='')
 c_oval4 = canvas.create_oval(cx+40, cy-5, cx+100, cy+45, fill=cloud_color, outline='')
 cloud_parts = (c_dot1, c_dot2, c_dot3, c_oval1, c_oval2, c_oval3, c_oval4)
 
-# Face Base
+# Face Base (x ends around 87)
 body = canvas.create_rectangle(sx+15, sy+15, sx+65, sy+55, fill=brown, outline='')
 arm_l = canvas.create_rectangle(sx+8, sy+30, sx+15, sy+45, fill=brown, outline='')
 arm_r = canvas.create_rectangle(sx+65, sy+30, sx+72, sy+45, fill=brown, outline='')
@@ -60,10 +60,14 @@ eye_r = canvas.create_line(sx+58, sy+32, sx+50, sy+32, sx+50, sy+32, fill=black,
 
 face_parts = (body, arm_l, arm_r, leg1, leg2, leg3, leg4, eye_l, eye_r)
 
-title_text = canvas.create_text(85, 50, text="Voila", fill="#ffffff", font=("Segoe UI", 12, "bold"), anchor="w")
+# Perfectly positioned Title (x=90)
+title_text = canvas.create_text(90, 45, text="Voila", fill="#ffffff", font=("Segoe UI", 12, "bold"), anchor="w")
+
+# Perfectly centered status in the cloud (x=150+55=205)
 status_text = canvas.create_text(cx+55, cy+25, text="Standing by...", fill="#888888", font=("Segoe UI", 9, "italic"), anchor="center")
 
-close_btn = canvas.create_text(265, 45, text="✕", fill="#888888", font=("Segoe UI", 14, "bold"), anchor="center")
+# Close Button shifted right slightly to x=275
+close_btn = canvas.create_text(275, 45, text="✕", fill="#888888", font=("Segoe UI", 14, "bold"), anchor="center")
 
 agent_process = subprocess.Popen(
     ["antigravity.exe", "--background"],
@@ -86,12 +90,11 @@ def on_leave_close(e): canvas.itemconfig(close_btn, fill="#888888")
 canvas.tag_bind(close_btn, '<Enter>', on_enter_close)
 canvas.tag_bind(close_btn, '<Leave>', on_leave_close)
 
-
 def start_move(e): root.x, root.y = e.x, e.y
 def stop_move(e): root.x, root.y = None, None
 def do_move(e): root.geometry(f"+{root.winfo_x() + (e.x - root.x)}+{root.winfo_y() + (e.y - root.y)}")
 
-# DO NOT include close_btn in the drag bindings!
+# DO NOT bind close_btn to dragging!
 for item in [pill, title_text, status_text] + list(face_parts) + list(cloud_parts):
     canvas.tag_bind(item, "<ButtonPress-1>", start_move)
     canvas.tag_bind(item, "<ButtonRelease-1>", stop_move)
@@ -135,7 +138,6 @@ def animation_loop():
         if ai_state == "THINKING":
             canvas.itemconfig(status_text, text=f"Thinking{dots}", fill='#ffffaa')
             canvas.itemconfig(pill, outline='#ffff55')
-            # Look up!
             up = -4 if anim_frame % 2 == 0 else -6
             canvas.coords(eye_l, sx+24, sy+32+up, sx+30, sy+32+up, sx+30, sy+32+up)
             canvas.coords(eye_r, sx+56, sy+32+up, sx+50, sy+32+up, sx+50, sy+32+up)
@@ -145,7 +147,6 @@ def animation_loop():
         elif ai_state == "SEARCH":
             canvas.itemconfig(status_text, text=f"Search{dots}", fill='#aaffff')
             canvas.itemconfig(pill, outline='#00aaff')
-            # Scan left and right
             offset = (anim_frame % 3) * 3
             canvas.coords(eye_l, sx+20+offset, sy+32, sx+28+offset, sy+32, sx+28+offset, sy+32)
             canvas.coords(eye_r, sx+52-offset, sy+32, sx+60-offset, sy+32, sx+60-offset, sy+32)
@@ -155,10 +156,9 @@ def animation_loop():
         elif ai_state == "BASH":
             canvas.itemconfig(status_text, text=f"Bash{dots}", fill='#aaffaa')
             canvas.itemconfig(pill, outline='#00ff44')
-            # >_ shape, pulsing
             if anim_frame % 2 == 0:
-                canvas.coords(eye_l, sx+22, sy+28, sx+30, sy+32, sx+22, sy+36) # >
-                canvas.coords(eye_r, sx+50, sy+36, sx+58, sy+36, sx+58, sy+36) # _
+                canvas.coords(eye_l, sx+22, sy+28, sx+30, sy+32, sx+22, sy+36)
+                canvas.coords(eye_r, sx+50, sy+36, sx+58, sy+36, sx+58, sy+36)
             else:
                 canvas.coords(eye_l, sx+24, sy+30, sx+30, sy+32, sx+24, sy+34)
                 canvas.coords(eye_r, sx+52, sy+36, sx+56, sy+36, sx+56, sy+36)
@@ -168,14 +168,13 @@ def animation_loop():
         elif ai_state == "FILE":
             canvas.itemconfig(status_text, text=f"I/O{dots}", fill='#ffddaa')
             canvas.itemconfig(pill, outline='#ffaa00')
-            # Reading motion (eyes darting)
             dart = (anim_frame % 4) * 2 - 2
             canvas.coords(eye_l, sx+24+dart, sy+30, sx+28+dart, sy+34, sx+24+dart, sy+30)
             canvas.coords(eye_r, sx+56+dart, sy+30, sx+52+dart, sy+34, sx+56+dart, sy+30)
             canvas.itemconfig(eye_l, fill='#ffaa00')
             canvas.itemconfig(eye_r, fill='#ffaa00')
             
-        else: # Generic RUNNING
+        else:
             canvas.itemconfig(status_text, text=f"Processing{dots}", fill='#aaffff')
             canvas.itemconfig(pill, outline='#00ffcc')
             if anim_frame % 2 == 0:
@@ -216,7 +215,6 @@ def parse_line(line):
         ai_state = "RUNNING"
         return
         
-    # Real-time parsed stages
     l = line.lower()
     if "thinking" in l: ai_state = "THINKING"
     elif "search" in l: ai_state = "SEARCH"
@@ -228,8 +226,7 @@ def read_output():
         line = agent_process.stdout.readline()
         if not line: break
         line = line.strip()
-        if line:
-            root.after(0, parse_line, line)
+        if line: root.after(0, parse_line, line)
 
 t = threading.Thread(target=read_output, daemon=True)
 t.start()
