@@ -406,14 +406,15 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
               });
             } else if (jsonResponse is Map && jsonResponse['type'] == 'conversations_list') {
               List<dynamic> parsedData = [];
-              if (jsonResponse['data'] is Map && jsonResponse['data']['encrypted'] != null) {
+              var payload = jsonResponse['data'] ?? jsonResponse['conversations'];
+              if (payload is Map && payload['encrypted'] != null) {
                  final String phrase = _cachedSecurityPhrase;
-                 String dec = CryptoUtils.decrypt(jsonResponse['data']['encrypted'], phrase);
+                 String dec = CryptoUtils.decrypt(payload['encrypted'], phrase);
                  try {
                    parsedData = jsonDecode(dec);
                  } catch(e) {}
-              } else if (jsonResponse['data'] is List) {
-                 parsedData = jsonResponse['data'];
+              } else if (payload is List) {
+                 parsedData = payload;
               }
               setState(() {
                 _conversations = List<Map<String, String>>.from(
@@ -422,14 +423,15 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
               });
             } else if (jsonResponse is Map && jsonResponse['type'] == 'models_list') {
               List<dynamic> parsedData = [];
-              if (jsonResponse['data'] is Map && jsonResponse['data']['encrypted'] != null) {
+              var payload = jsonResponse['data'] ?? jsonResponse['models'];
+              if (payload is Map && payload['encrypted'] != null) {
                  final String phrase = _cachedSecurityPhrase;
-                 String dec = CryptoUtils.decrypt(jsonResponse['data']['encrypted'], phrase);
+                 String dec = CryptoUtils.decrypt(payload['encrypted'], phrase);
                  try {
                    parsedData = jsonDecode(dec);
                  } catch(e) {}
-              } else if (jsonResponse['data'] is List) {
-                 parsedData = jsonResponse['data'];
+              } else if (payload is List) {
+                 parsedData = payload;
               }
               setState(() {
                 _isFetchingModels = false;
@@ -492,7 +494,10 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
               setState(() {});
               _getDevices(); // Refresh device list
             } else if (message.contains('ERROR:')) {
-              setState(() { _isThinking = false; });
+              setState(() { 
+                _isThinking = false; 
+                _isFetchingModels = false;
+              });
               if (message.contains('Unauthorized')) {
                 _sessionToken = ''; // Clear expired or invalid token
                 _storage.delete(key: 'session_token');
@@ -512,7 +517,10 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
               });
             }
           } catch (e) {
-            setState(() { _isThinking = false; });
+            setState(() { 
+              _isThinking = false; 
+              _isFetchingModels = false;
+            });
             _messages.add({
               'type': 'response',
               'content': message,
