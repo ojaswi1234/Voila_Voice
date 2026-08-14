@@ -18,30 +18,28 @@ root.config(bg='magenta')
 
 screen_width = root.winfo_screenwidth()
 screen_height = root.winfo_screenheight()
-x = screen_width - 200
-y = screen_height - 220
+x = screen_width - 240
+y = screen_height - 260
 root.geometry(f"+{x}+{y}")
 
-canvas = tk.Canvas(root, width=180, height=180, bg='magenta', highlightthickness=0)
+canvas = tk.Canvas(root, width=220, height=220, bg='magenta', highlightthickness=0)
 canvas.pack()
 
-# UI Elements
 color_top = '#79c0ff'
 color_bottom = '#d2a8ff'
-font_style = ('Consolas', 18, 'normal')
+font_style = ('Segoe UI Symbol', 28, 'bold')
 
-circle = canvas.create_oval(10, 10, 170, 170, fill='#1A1A24', outline=color_top, width=3)
+circle = canvas.create_oval(10, 10, 210, 210, fill='#1A1A24', outline=color_top, width=3)
 
-# EXACT ASCII ART layered to touch vertically
-line1 = canvas.create_text(90, 50, text='╭─╮╭─╮', fill=color_top, font=font_style, anchor='n')
-line2 = canvas.create_text(90, 62, text='╰─╯╰─╯', fill=color_top, font=font_style, anchor='n')
-line3 = canvas.create_text(90, 75, text='█ ▘▝ █', fill=color_bottom, font=font_style, anchor='n')
-line4 = canvas.create_text(90, 89, text=' ▔▔▔▔ ', fill=color_bottom, font=font_style, anchor='n')
+line1 = canvas.create_text(110, 50, text='╭─╮╭─╮', fill=color_top, font=font_style, anchor='n')
+line2 = canvas.create_text(110, 72, text='╰─╯╰─╯', fill=color_top, font=font_style, anchor='n')
+line3 = canvas.create_text(110, 105, text='█ ▘▝ █', fill=color_bottom, font=font_style, anchor='n')
+line4 = canvas.create_text(110, 131, text=' ▔▔▔▔ ', fill=color_bottom, font=font_style, anchor='n')
 
-status_text = canvas.create_text(90, 145, text='IDLE', fill=color_top, font=('Consolas', 12, 'bold'))
+status_text = canvas.create_text(110, 175, text='IDLE', fill=color_top, font=('Consolas', 14, 'bold'))
 
-btn_bg = canvas.create_oval(140, 15, 165, 40, fill='#FF5555', outline='white', width=1)
-btn_text = canvas.create_text(152, 27, text='X', fill='white', font=('Arial', 12, 'bold'))
+btn_bg = canvas.create_oval(175, 15, 200, 40, fill='#FF5555', outline='white', width=1)
+btn_text = canvas.create_text(187, 27, text='X', fill='white', font=('Arial', 14, 'bold'))
 
 agent_process = subprocess.Popen(
     ["antigravity.exe", "--background"],
@@ -85,11 +83,10 @@ def update_visuals():
     if is_visually_running:
         canvas.itemconfig(circle, outline='#ff7b72', width=4)
         canvas.itemconfig(status_text, text='RUNNING', fill='#ff7b72')
-        # Animation loop will handle line3
     else:
         canvas.itemconfig(circle, outline=color_top, width=3)
         canvas.itemconfig(status_text, text='IDLE', fill=color_top)
-        canvas.itemconfig(line3, text='█ ▘▝ █')
+        canvas.itemconfig(line3, text='█ ▘▝ █', fill=color_bottom)
 
 def set_running(event=None):
     global is_visually_running, glow_timer
@@ -109,7 +106,7 @@ def set_idle(event=None):
     global glow_timer
     if glow_timer:
         root.after_cancel(glow_timer)
-    glow_timer = root.after(1500, turn_off_glow) # Glow stays for at least 1.5 seconds
+    glow_timer = root.after(1500, turn_off_glow)
 
 root.bind("<<Running>>", set_running)
 root.bind("<<Idle>>", set_idle)
@@ -122,8 +119,6 @@ def animation_loop():
             canvas.itemconfig(line3, text='█ ▀▀ █', fill='#ff7b72')
         else:
             canvas.itemconfig(line3, text='█ ▗▖ █', fill='#ff7b72')
-    else:
-        canvas.itemconfig(line3, fill=color_bottom)
     root.after(300, animation_loop)
 
 def read_output():
