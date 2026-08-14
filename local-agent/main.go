@@ -1169,6 +1169,8 @@ func executeCommand(command string, mode string, conversationID string, modelNam
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
+	
+	fmt.Println("STATUS: RUNNING")
 
 	cmdMu.Lock()
 	currentCmd = cmd
@@ -1179,6 +1181,8 @@ func executeCommand(command string, mode string, conversationID string, modelNam
 	cmdMu.Lock()
 	currentCmd = nil
 	cmdMu.Unlock()
+	
+	fmt.Println("STATUS: IDLE")
 
 	outStr := stdout.String()
 	errStr := stderr.String()
