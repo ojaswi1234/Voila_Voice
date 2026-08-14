@@ -3,7 +3,6 @@ import subprocess
 import threading
 import sys
 import time
-import os
 
 CREATE_NO_WINDOW = 0x08000000
 
@@ -23,7 +22,7 @@ x = screen_width - 320
 y = screen_height - 120
 root.geometry(f"+{x}+{y}")
 
-canvas = tk.Canvas(root, width=300, height=80, bg='magenta', highlightthickness=0)
+canvas = tk.Canvas(root, width=300, height=90, bg='magenta', highlightthickness=0)
 canvas.pack()
 
 def create_round_rect(canvas, x1, y1, x2, y2, r, **kwargs):
@@ -41,18 +40,34 @@ bg_running = '#22222a'
 border_idle = '#3a3a40'
 border_running = '#00ffcc'
 
-pill = create_round_rect(canvas, 10, 10, 290, 70, r=20, fill=bg_idle, outline=border_idle, width=2)
+pill = create_round_rect(canvas, 10, 10, 290, 80, r=20, fill=bg_idle, outline=border_idle, width=2)
 
-# Load the exact user-provided image
-script_dir = os.path.dirname(os.path.abspath(__file__))
-image_path = os.path.join(script_dir, "agent_face.png")
-face_img = tk.PhotoImage(file=image_path)
-avatar = canvas.create_image(45, 40, image=face_img)
+pink = '#c973d0'
+cyan = '#5cb8d6'
+green = '#72b892'
+black = '#171f1a'
+green_glow = '#aaffcc'
 
-title_text = canvas.create_text(85, 28, text="Voila Voice Agent", fill="#ffffff", font=("Segoe UI", 12, "bold"), anchor="w")
-status_text = canvas.create_text(85, 48, text="Standing by...", fill="#888888", font=("Segoe UI", 10), anchor="w")
+sx = 15
+sy = 10
+# 8-bit Vector Face
+hair = canvas.create_rectangle(sx+30, sy+5, sx+50, sy+15, fill=pink, outline='')
+gog = canvas.create_rectangle(sx+15, sy+15, sx+65, sy+35, fill=cyan, outline='')
+hole_l = canvas.create_rectangle(sx+20, sy+20, sx+35, sy+30, fill=black, outline='')
+hole_r = canvas.create_rectangle(sx+45, sy+20, sx+60, sy+30, fill=black, outline='')
+jaw_l = canvas.create_rectangle(sx+5, sy+35, sx+15, sy+60, fill=pink, outline='')
+jaw_r = canvas.create_rectangle(sx+65, sy+35, sx+75, sy+60, fill=pink, outline='')
+jaw_b = canvas.create_rectangle(sx+10, sy+60, sx+70, sy+70, fill=pink, outline='')
+mouth = canvas.create_rectangle(sx+15, sy+35, sx+65, sy+60, fill=black, outline='')
+tooth_l = canvas.create_rectangle(sx+28, sy+42, sx+33, sy+53, fill=green, outline='')
+tooth_r = canvas.create_rectangle(sx+47, sy+42, sx+52, sy+53, fill=green, outline='')
 
-close_btn = canvas.create_text(265, 40, text="✕", fill="#888888", font=("Segoe UI", 14, "bold"), anchor="center")
+face_parts = (hair, gog, hole_l, hole_r, jaw_l, jaw_r, jaw_b, mouth, tooth_l, tooth_r)
+
+title_text = canvas.create_text(95, 33, text="Voila Voice Agent", fill="#ffffff", font=("Segoe UI", 12, "bold"), anchor="w")
+status_text = canvas.create_text(95, 53, text="Standing by...", fill="#888888", font=("Segoe UI", 10), anchor="w")
+
+close_btn = canvas.create_text(265, 45, text="✕", fill="#888888", font=("Segoe UI", 14, "bold"), anchor="center")
 
 agent_process = subprocess.Popen(
     ["antigravity.exe", "--background"],
@@ -88,7 +103,7 @@ def do_move(event):
     new_y = root.winfo_y() + (event.y - root.y)
     root.geometry(f"+{new_x}+{new_y}")
 
-for item in (pill, avatar, title_text, status_text):
+for item in [pill, title_text, status_text] + list(face_parts):
     canvas.tag_bind(item, "<ButtonPress-1>", start_move)
     canvas.tag_bind(item, "<ButtonRelease-1>", stop_move)
     canvas.tag_bind(item, "<B1-Motion>", do_move)
@@ -103,11 +118,16 @@ def update_visuals():
     if is_visually_running:
         canvas.itemconfig(pill, outline=border_running, fill=bg_running)
         canvas.itemconfig(status_text, fill=border_running)
+        canvas.itemconfig(gog, fill=border_running)
     else:
         canvas.itemconfig(pill, outline=border_idle, fill=bg_idle)
         canvas.itemconfig(status_text, text="Standing by...", fill="#888888")
-        # Reset image position
-        canvas.coords(avatar, 45, 40)
+        canvas.itemconfig(gog, fill=cyan)
+        # Reset dynamic animation positions
+        canvas.coords(tooth_l, sx+28, sy+42, sx+33, sy+53)
+        canvas.coords(tooth_r, sx+47, sy+42, sx+52, sy+53)
+        canvas.itemconfig(tooth_l, fill=green)
+        canvas.itemconfig(tooth_r, fill=green)
 
 def set_running(event=None):
     global is_visually_running, glow_timer
@@ -139,13 +159,19 @@ def animation_loop():
         dots = "." * (anim_frame % 4)
         canvas.itemconfig(status_text, text=f"Executing Task{dots}")
         
-        # Vibrate the beautiful image slightly while processing
+        # Dynamic 8-bit reaction: The teeth bounce like a voice visualizer and glow!
         if anim_frame % 2 == 0:
-            canvas.coords(avatar, 44, 40)
+            canvas.coords(tooth_l, sx+28, sy+40, sx+33, sy+55)
+            canvas.coords(tooth_r, sx+47, sy+45, sx+52, sy+50)
+            canvas.itemconfig(tooth_l, fill=green_glow)
+            canvas.itemconfig(tooth_r, fill=green_glow)
         else:
-            canvas.coords(avatar, 46, 40)
+            canvas.coords(tooth_l, sx+28, sy+45, sx+33, sy+50)
+            canvas.coords(tooth_r, sx+47, sy+40, sx+52, sy+55)
+            canvas.itemconfig(tooth_l, fill=green)
+            canvas.itemconfig(tooth_r, fill=green)
             
-    root.after(100, animation_loop) # faster animation for vibrating image
+    root.after(200, animation_loop)
 
 def read_output():
     global is_running
