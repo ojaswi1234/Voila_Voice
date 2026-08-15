@@ -1176,9 +1176,51 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   }
 
 
+  String _normalizeForSpeech(String text) {
+    String normalized = text;
+    
+    // Remove Markdown formatting
+    normalized = normalized.replaceAll('**', '');
+    normalized = normalized.replaceAll('*', '');
+    normalized = normalized.replaceAll('__', '');
+    normalized = normalized.replaceAll('_', ' ');
+    normalized = normalized.replaceAll('`', '');
+    normalized = normalized.replaceAll('#', '');
+    
+    // Replace programming operators
+    normalized = normalized.replaceAll('&&', ' and ');
+    normalized = normalized.replaceAll('||', ' or ');
+    normalized = normalized.replaceAll('!=', ' not equal to ');
+    normalized = normalized.replaceAll('==', ' equals ');
+    normalized = normalized.replaceAll('>=', ' greater than or equal to ');
+    normalized = normalized.replaceAll('<=', ' less than or equal to ');
+    
+    // Replace standalone symbols
+    normalized = normalized.replaceAll(' | ', ' or ');
+    normalized = normalized.replaceAll(' + ', ' plus ');
+    normalized = normalized.replaceAll(' - ', ' minus ');
+    normalized = normalized.replaceAll(' = ', ' equals ');
+    normalized = normalized.replaceAll(' < ', ' less than ');
+    normalized = normalized.replaceAll(' > ', ' greater than ');
+    normalized = normalized.replaceAll('/', ' slash ');
+    normalized = normalized.replaceAll('\\', ' backslash ');
+    
+    // Ensure proper pauses for full stops (add a space if missing to trigger natural sentence break)
+    normalized = normalized.replaceAllMapped(RegExp(r'\.([A-Za-z])'), (match) => '. ${match.group(1)}');
+    
+    // Replace newlines with ellipses to force TTS engines to pause between lines
+    normalized = normalized.replaceAll('\n', ' ... ');
+    
+    // Clean up extra spaces
+    normalized = normalized.replaceAll(RegExp(r'\s+'), ' ').trim();
+    
+    return normalized;
+  }
+
   Future<void> _speak(String text) async {
     if (!_willTalk || text.isEmpty) return;
-    await flutterTts.speak(text);
+    String cleanText = _normalizeForSpeech(text);
+    await flutterTts.speak(cleanText);
   }
 
   void _showSettingsSheet(BuildContext context) {
