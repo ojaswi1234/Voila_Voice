@@ -323,8 +323,8 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
             _currentSoundLevel = level;
           });
         },
-        listenFor: const Duration(seconds: 30),
-        pauseFor: const Duration(seconds: 3),
+        listenFor: const Duration(seconds: 60),
+        pauseFor: const Duration(seconds: 10),
         partialResults: true,
         localeId: 'en_US',
         cancelOnError: true,
@@ -349,6 +349,26 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
       _isLiveSession = false;
       _currentSoundLevel = 0.0;
     });
+  }
+
+  void _cancelBackendTask() {
+    if (_isConnected && _activeDevice.isNotEmpty && _activeDevice.startsWith('desktop-')) {
+      final message = {
+        'type': 'stop_command',
+        'device_id': _activeDevice,
+      };
+      channel.sink.add(jsonEncode(message));
+      
+      setState(() {
+        _isThinking = false;
+        _messages.add({
+          'type': 'system',
+          'content': 'Cancellation signal sent to local agent (ESC pressed).',
+          'timestamp': DateTime.now().toString(),
+        });
+      });
+      _scrollToBottom();
+    }
   }
 
   Future<void> _initializeDeviceIdentity() async {
@@ -1528,6 +1548,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                      _stopListening();
                      flutterTts.stop();
                      setState(() => _isAiSpeaking = false);
+                     _cancelBackendTask();
                    } else {
                      setState(() => _isLiveSession = true);
                      _startListening();
@@ -1554,7 +1575,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                Text(
                  _isLiveSession 
                     ? (_isAiSpeaking ? 'AI is speaking...' : (_isListening ? 'Listening...' : 'Processing...')) 
-                    : 'Tap to start Gemini Live',
+                    : 'Tap to start Voila Live',
                  style: const TextStyle(color: Colors.white54, fontSize: 13, fontWeight: FontWeight.w500),
                ),
             ],
