@@ -398,6 +398,12 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
               setState(() {
                 _sessionToken = jsonResponse['session_token'];
                 _storage.write(key: 'session_token', value: _sessionToken);
+                
+                // Save the security phrase used to unlock this session
+                if (_securityPhrase.isNotEmpty) {
+                  _cachedSecurityPhrase = _securityPhrase;
+                  _storage.write(key: 'security_phrase', value: _securityPhrase);
+                }
               });
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
