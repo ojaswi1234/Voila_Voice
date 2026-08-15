@@ -14,6 +14,7 @@ import 'artifacts_page.dart';
 import 'visualizer.dart';
 import 'package:uuid/uuid.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:flutter_background/flutter_background.dart';
 
 // Backend URL from build-time configuration (safe default + scheme fix)
 const String _rawBackendUrl = String.fromEnvironment(
@@ -129,11 +130,27 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   @override
   void initState() {
     super.initState();
+    _initBackground();
     _initTts();
     _loadSession();
     _storage.read(key: 'security_phrase').then((val) => _cachedSecurityPhrase = val ?? '');
     _setupWebSocket();
     _initializeSpeech();
+  }
+
+  Future<void> _initBackground() async {
+    try {
+      const androidConfig = FlutterBackgroundAndroidConfig(
+        notificationTitle: "Voila Live Active",
+        notificationText: "Maintaining connection in the background...",
+        notificationImportance: AndroidNotificationImportance.normal,
+        notificationIcon: AndroidResource(name: 'ic_launcher', defType: 'mipmap'),
+      );
+      await FlutterBackground.initialize(androidConfig: androidConfig);
+      await FlutterBackground.enableBackgroundExecution();
+    } catch (e) {
+      debugPrint('Background execution error: $e');
+    }
   }
 
 
