@@ -1145,7 +1145,10 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
           const SizedBox(height: 12),
           _buildModeToggle(colorScheme),
           const SizedBox(height: 16),
-          Expanded(child: _buildMessagesList(colorScheme)),
+          if (_currentMode != 'ask')
+            Expanded(child: _buildMessagesList(colorScheme))
+          else
+            const Spacer(),
           _buildInputArea(colorScheme),
         ],
       ),
