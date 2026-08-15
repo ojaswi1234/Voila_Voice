@@ -11,6 +11,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'device_identity.dart';
 import 'artifacts_page.dart';
+import 'visualizer.dart';
 import 'package:uuid/uuid.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
@@ -116,6 +117,9 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   // Speech-to-text state
   final SpeechToText _speechToText = SpeechToText();
   bool _isListening = false;
+  bool _isLiveSession = false;
+  bool _isAiSpeaking = false;
+  double _currentSoundLevel = 0.0;
   bool _speechAvailable = false;
   bool _speechInitialized = false;
   
@@ -206,6 +210,22 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
     await flutterTts.setSpeechRate(0.5);
     await flutterTts.setVolume(1.0);
     await flutterTts.setPitch(1.05); // Slightly elevated pitch for friendly casual tone
+
+    flutterTts.setStartHandler(() {
+      setState(() {
+        _isAiSpeaking = true;
+      });
+    });
+
+    flutterTts.setCompletionHandler(() {
+      setState(() {
+        _isAiSpeaking = false;
+      });
+      if (_isLiveSession && mounted) {
+        // Automatically start listening again after AI finishes speaking
+        _startListening();
+      }
+    });
   }
 
   Future<void> _initializeSpeech() async {
@@ -286,12 +306,22 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
               _controller.text = result.recognizedWords;
               _isListening = false;
             });
+            
+            // Automatically submit command if in live session
+            if (_isLiveSession && _controller.text.isNotEmpty) {
+              _sendMessage();
+            }
           } else {
             // Partial result - update text field live
             setState(() {
               _controller.text = result.recognizedWords;
             });
           }
+        },
+        onSoundLevelChange: (level) {
+          setState(() {
+            _currentSoundLevel = level;
+          });
         },
         listenFor: const Duration(seconds: 30),
         pauseFor: const Duration(seconds: 3),
@@ -302,6 +332,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
     } catch (e) {
       setState(() {
         _isListening = false;
+        _isLiveSession = false;
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -315,6 +346,8 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
     await _speechToText.stop();
     setState(() {
       _isListening = false;
+      _isLiveSession = false;
+      _currentSoundLevel = 0.0;
     });
   }
 
@@ -1466,6 +1499,68 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   Widget _buildInputArea(ColorScheme colorScheme) {
     final isAsk = _currentMode == 'ask';
 
+    if (isAsk) {
+      return Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: const Color(0xFF0F0F12),
+          border: Border(top: BorderSide(color: Colors.white.withOpacity(0.05))),
+        ),
+        child: SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+               if (_isLiveSession || _isAiSpeaking) 
+                 AudioVisualizer(
+                   isListening: _isListening,
+                   isSpeaking: _isAiSpeaking,
+                   soundLevel: _currentSoundLevel,
+                 ),
+               if (_isLiveSession || _isAiSpeaking) 
+                 const SizedBox(height: 16),
+               
+               GestureDetector(
+                 onTap: () {
+                   if (_isLiveSession) {
+                     _stopListening();
+                     flutterTts.stop();
+                     setState(() => _isAiSpeaking = false);
+                   } else {
+                     setState(() => _isLiveSession = true);
+                     _startListening();
+                   }
+                 },
+                 child: Container(
+                   padding: const EdgeInsets.all(20),
+                   decoration: BoxDecoration(
+                     color: _isLiveSession ? Colors.redAccent.withOpacity(0.15) : colorScheme.primary.withOpacity(0.15),
+                     shape: BoxShape.circle,
+                     border: Border.all(
+                       color: _isLiveSession ? Colors.redAccent : colorScheme.primary,
+                       width: 2,
+                     ),
+                   ),
+                   child: Icon(
+                     _isLiveSession ? Icons.stop_rounded : Icons.mic_rounded,
+                     color: _isLiveSession ? Colors.redAccent : colorScheme.primary,
+                     size: 36,
+                   ),
+                 ),
+               ),
+               const SizedBox(height: 12),
+               Text(
+                 _isLiveSession 
+                    ? (_isAiSpeaking ? 'AI is speaking...' : (_isListening ? 'Listening...' : 'Processing...')) 
+                    : 'Tap to start Gemini Live',
+                 style: const TextStyle(color: Colors.white54, fontSize: 13, fontWeight: FontWeight.w500),
+               ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // COMMAND mode - standard text input
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1480,7 +1575,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
               child: Container(
                 decoration: BoxDecoration(
                   color: const Color(0xFF1A1A1F),
-                  borderRadius: BorderRadius.circular(isAsk ? 24 : 12),
+                  borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: _isListening ? colorScheme.primary.withOpacity(0.5) : Colors.white.withOpacity(0.08)),
                 ),
                 child: Row(
@@ -1491,16 +1586,16 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                         controller: _controller,
                         minLines: 1,
                         maxLines: 5,
-                        style: TextStyle(
+                        style: const TextStyle(
                           fontSize: 14,
                           color: Colors.white,
-                          fontFamily: isAsk ? null : 'Courier',
+                          fontFamily: 'Courier',
                         ),
                         decoration: InputDecoration(
-                          hintText: _isListening ? 'Listening...' : (isAsk ? 'Ask anything...' : 'Enter command...'),
-                          hintStyle: TextStyle(
+                          hintText: _isListening ? 'Listening...' : 'Enter command...',
+                          hintStyle: const TextStyle(
                             color: Colors.white30,
-                            fontFamily: isAsk ? null : 'Courier',
+                            fontFamily: 'Courier',
                           ),
                           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                           border: InputBorder.none,
@@ -1509,24 +1604,22 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                     ),
                     AnimatedSize(
                       duration: const Duration(milliseconds: 200),
-                      child: isAsk
-                          ? GestureDetector(
-                              onTap: _toggleListening,
-                              child: Container(
-                                padding: const EdgeInsets.all(12),
-                                margin: const EdgeInsets.only(right: 4, bottom: 4),
-                                decoration: BoxDecoration(
-                                  color: _isListening ? colorScheme.primary.withOpacity(0.15) : Colors.transparent,
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Icon(
-                                  _isListening ? Icons.mic : Icons.mic_none,
-                                  color: _isListening ? colorScheme.primary : Colors.white54,
-                                  size: 20,
-                                ),
-                              ),
-                            )
-                          : const SizedBox(width: 0),
+                      child: GestureDetector(
+                        onTap: _toggleListening,
+                        child: Container(
+                          padding: const EdgeInsets.all(12),
+                          margin: const EdgeInsets.only(right: 4, bottom: 4),
+                          decoration: BoxDecoration(
+                            color: _isListening ? colorScheme.primary.withOpacity(0.15) : Colors.transparent,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            _isListening ? Icons.mic : Icons.mic_none,
+                            color: _isListening ? colorScheme.primary : Colors.white54,
+                            size: 20,
+                          ),
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -1540,7 +1633,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                 margin: const EdgeInsets.only(bottom: 2),
                 decoration: BoxDecoration(
                   color: colorScheme.primary,
-                  borderRadius: BorderRadius.circular(isAsk ? 24 : 12),
+                  borderRadius: BorderRadius.circular(12),
                 ),
                 child: const Icon(Icons.send_rounded, color: Colors.white, size: 20),
               ),
