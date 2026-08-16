@@ -1,4 +1,4 @@
-module antigravity
+module voila
 
 go 1.26
 

@@ -21,7 +21,7 @@ This system is built on a highly secure, distributed architecture ensuring your 
 
 1. **📱 Mobile Agent (Flutter)**: A beautiful mobile app that captures your voice commands, displays execution results, and allows you to switch between multiple connected desktop devices.
 2. **☁️ Cloud Relay (Go)**: A lightweight Go server deployed to the cloud (e.g., Render) that proxies WebSocket connections and maintains device registries and live presence—without ever knowing your security credentials.
-3. **💻 Local Agent (Go + Python UI)**: The brains of the operation. Running directly on your Windows/Mac/Linux machine, it uses `ngrok` for secure tunneling. It features the **Voila Floating Widget** (built in Python/Tkinter) wrapped around the robust `antigravity` Go binary.
+3. **💻 Local Agent (Go + Python UI)**: The brains of the operation. Running directly on your Windows/Mac/Linux machine, it uses `ngrok` for secure tunneling. It features the **Voila Floating Widget** (built in Python/Tkinter) wrapped around the robust `voila` Go binary.
 
 ## ✨ Features
 

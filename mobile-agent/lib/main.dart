@@ -93,9 +93,9 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   String _selectedModel = '';
   bool _isFetchingModels = false;
   String _cachedSecurityPhrase = '';
-  final List<Map<String, dynamic>> _messagesCommand = [];
-  final List<Map<String, dynamic>> _messagesAsk = [];
-  List<Map<String, dynamic>> get _messages => _currentMode.toUpperCase() == 'ASK' ? _messagesAsk : _messagesCommand;
+  final List<Map<String, dynamic>> _messagesShell = [];
+  final List<Map<String, dynamic>> _messagesAgent = [];
+  List<Map<String, dynamic>> get _messages => _currentMode.toUpperCase() == 'AGENT' ? _messagesAgent : _messagesShell;
   bool _isThinking = false;
   bool _willTalk = true;
   FlutterTts flutterTts = FlutterTts();
@@ -110,10 +110,12 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   String? _currentDeviceName;
   String _sessionId = '';
   String _sessionToken = '';
-  String _currentMode = 'ask';
+  int? _sessionExpiresAt; // Unix timestamp
+  String _currentMode = 'agent';
   Map<String, dynamic> _savedDevices = {};
   String _currentConversationId = '';
   List<Map<String, String>> _conversations = [];
+  List<Map<String, dynamic>> _securityAlerts = [];
   
   // Speech-to-text state
   final SpeechToText _speechToText = SpeechToText();
@@ -168,8 +170,8 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   void _startNewConversation() {
     setState(() {
       _currentConversationId = '';
-      _messagesAsk.clear();
-      _messagesAsk.insert(0, {'text': 'Started a new conversation.', 'isUser': false});
+      _messagesAgent.clear();
+      _messagesAgent.insert(0, {'text': 'Started a new conversation.', 'isUser': false});
     });
     Navigator.pop(context); // close drawer
   }
@@ -177,16 +179,20 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   void _resumeConversation(String id, String title) {
     setState(() {
       _currentConversationId = id;
-      _messagesAsk.clear();
-      _messagesAsk.insert(0, {'text': 'Resumed conversation: ', 'isUser': false});
+      _messagesAgent.clear();
+      _messagesAgent.insert(0, {'text': 'Resumed conversation: ', 'isUser': false});
     });
     Navigator.pop(context); // close drawer
   }
   void _loadSession() async {
     final savedToken = await _storage.read(key: 'session_token');
+    final savedExpiresAt = await _storage.read(key: 'session_expires_at');
     if (savedToken != null && savedToken.isNotEmpty) {
       setState(() {
         _sessionToken = savedToken;
+        if (savedExpiresAt != null) {
+          _sessionExpiresAt = int.tryParse(savedExpiresAt);
+        }
       });
       debugPrint('Loaded session token from secure storage');
     }
@@ -414,7 +420,11 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
             if (jsonResponse is Map && jsonResponse['type'] == 'session') {
               setState(() {
                 _sessionToken = jsonResponse['session_token'];
+                _sessionExpiresAt = jsonResponse['expires_at'];
                 _storage.write(key: 'session_token', value: _sessionToken);
+                if (_sessionExpiresAt != null) {
+                  _storage.write(key: 'session_expires_at', value: _sessionExpiresAt.toString());
+                }
                 
                 // Save the security phrase used to unlock this session
                 if (_securityPhrase.isNotEmpty) {
@@ -497,6 +507,30 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                   parsedData.map((x) => Map<String, String>.from(x))
                 );
               });
+            } else if (jsonResponse is Map && jsonResponse['type'] == 'security_alert') {
+              final alert = jsonResponse['alert'];
+              if (alert != null) {
+                setState(() {
+                  _securityAlerts.add(alert);
+                });
+                // Show snackbar for high severity alerts
+                final severity = alert['severity']?.toString() ?? 'low';
+                if (severity == 'high' && mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Security alert: ${alert['type']}'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              }
+            } else if (jsonResponse is Map && jsonResponse['type'] == 'security_alerts_list') {
+              final alerts = jsonResponse['alerts'];
+              if (alerts is List) {
+                setState(() {
+                  _securityAlerts = List<Map<String, dynamic>>.from(alerts);
+                });
+              }
             } else if (jsonResponse is Map && jsonResponse['type'] == 'models_list') {
               List<dynamic> parsedData = [];
               var payload = jsonResponse['data'] ?? jsonResponse['models'];
@@ -576,7 +610,9 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
               });
               if (message.contains('Unauthorized')) {
                 _sessionToken = ''; // Clear expired or invalid token
+                _sessionExpiresAt = null;
                 _storage.delete(key: 'session_token');
+                _storage.delete(key: 'session_expires_at');
               }
 
               _messages.add({
@@ -840,6 +876,45 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
       }
       
       final deviceInfo = await DeviceIdentity.getDeviceInfo();
+      
+      // Check session validity before sending
+      if (!_isSessionValid()) {
+        setState(() {
+          _messages.add({
+            'type': 'error',
+            'content': 'Session expired — unlock to continue',
+            'timestamp': DateTime.now().toString(),
+          });
+        });
+        _controller.clear();
+        _scrollToBottom();
+        
+        // Show unlock dialog
+        if (mounted) {
+          showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('Session Expired'),
+              content: const Text('Your session has expired. Please unlock to continue sending commands.'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    _ensureUnlocked();
+                  },
+                  child: const Text('Unlock'),
+                ),
+              ],
+            ),
+          );
+        }
+        return;
+      }
+      
       if (!await _ensureUnlocked()) return;
 
       final message = {
@@ -934,8 +1009,53 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
     );
   }
 
+  bool _isSessionValid({Duration skew = const Duration(seconds: 30)}) {
+    if (_sessionToken.isEmpty || _sessionExpiresAt == null) {
+      return false;
+    }
+    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final expiresAt = _sessionExpiresAt!;
+    final nowWithSkew = now - skew.inSeconds;
+    return nowWithSkew < expiresAt;
+  }
+
+  String _getSessionStatusText() {
+    if (!_isSessionValid()) {
+      return 'Session expired';
+    }
+    if (_sessionExpiresAt == null) {
+      return 'Locked';
+    }
+    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final remaining = _sessionExpiresAt! - now;
+    if (remaining <= 0) {
+      return 'Session expired';
+    }
+    if (remaining < 60) {
+      return 'Unlocked · ${remaining}s left';
+    }
+    final minutes = remaining ~/ 60;
+    return 'Unlocked · ${minutes}m left';
+  }
+
+  bool _isSessionExpiringSoon() {
+    if (_sessionExpiresAt == null) return false;
+    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final remaining = _sessionExpiresAt! - now;
+    return remaining > 0 && remaining < 60;
+  }
+
   Future<bool> _ensureUnlocked() async {
-    if (_sessionToken.isNotEmpty) return true;
+    if (_isSessionValid()) {
+      // Check if expiring soon and show warning
+      if (_isSessionExpiringSoon() && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Session expiring soon – consider unlocking again')),
+        );
+      }
+      return true;
+    }
+    
     if (_activeDevice.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -966,7 +1086,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
     // Wait for session token
     for (int i = 0; i < 50; i++) {
       await Future.delayed(const Duration(milliseconds: 100));
-      if (_sessionToken.isNotEmpty) {
+      if (_isSessionValid()) {
         return true;
       }
     }
@@ -1015,6 +1135,158 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
     }
     
     _securityPhrase = '';
+  }
+
+  void _showSecurityAlerts() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1E1E1E),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius(20))),
+      isScrollControlled: true,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Container(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Security Alerts', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
+                      Row(
+                        children: [
+                          if (_securityAlerts.isNotEmpty)
+                            IconButton(
+                              icon: const Icon(Icons.delete_sweep, size: 18),
+                              onPressed: () {
+                                setState(() {
+                                  _securityAlerts.clear();
+                                });
+                                setModalState(() {});
+                              },
+                            ),
+                          IconButton(
+                            icon: const Icon(Icons.refresh, size: 18),
+                            onPressed: () {
+                              final message = {
+                                'type': 'get_security_alerts',
+                                'device_id': _activeDevice,
+                                'session_token': _sessionToken,
+                              };
+                              channel.sink.add(jsonEncode(message));
+                            },
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 20),
+                  // Circuit breaker reset button
+                  ElevatedButton.icon(
+                    onPressed: _resetCircuitBreaker,
+                    icon: const Icon(Icons.power_settings_new, size: 16),
+                    label: const Text('Reset Circuit Breaker'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange.withOpacity(0.2),
+                      foregroundColor: Colors.orange,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  if (_securityAlerts.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.all(20),
+                      child: Text('No security alerts', style: TextStyle(color: Colors.white70)),
+                    )
+                  else
+                    Expanded(
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: _securityAlerts.length,
+                        itemBuilder: (context, index) {
+                          final alert = _securityAlerts[index];
+                          final timestamp = alert['timestamp']?.toString() ?? 'Unknown';
+                          final type = alert['type']?.toString() ?? 'Unknown';
+                          final severity = alert['severity']?.toString() ?? 'low';
+                          final ip = alert['ip']?.toString() ?? 'Unknown';
+                          final device = alert['device_id']?.toString() ?? 'Unknown';
+                          final detail = alert['detail']?.toString() ?? '';
+                          
+                          return Card(
+                            color: _getSeverityColor(severity).withOpacity(0.1),
+                            margin: const EdgeInsets.only(bottom: 8),
+                            child: ListTile(
+                              leading: Icon(
+                                _getSeverityIcon(severity),
+                                color: _getSeverityColor(severity),
+                                size: 20,
+                              ),
+                              title: Text(
+                                type,
+                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
+                              ),
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(timestamp, style: const TextStyle(color: Colors.white60, fontSize: 12)),
+                                  Text('IP: $ip', style: const TextStyle(color: Colors.white60, fontSize: 12)),
+                                  if (device != 'Unknown') Text('Device: $device', style: const TextStyle(color: Colors.white60, fontSize: 12)),
+                                  if (detail.isNotEmpty) Text(detail, style: const TextStyle(color: Colors.white60, fontSize: 12), maxLines: 2, overflow: TextOverflow.ellipsis),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Color _getSeverityColor(String severity) {
+    switch (severity.toLowerCase()) {
+      case 'high': return Colors.red;
+      case 'medium': return Colors.orange;
+      case 'low': return Colors.yellow;
+      default: return Colors.grey;
+    }
+  }
+
+  IconData _getSeverityIcon(String severity) {
+    switch (severity.toLowerCase()) {
+      case 'high': return Icons.warning;
+      case 'medium': return Icons.info;
+      case 'low': return Icons.info_outline;
+      default: return Icons.notifications_none;
+    }
+  }
+
+  void _resetCircuitBreaker() async {
+    if (!await _ensureUnlocked()) return;
+    
+    final phrase = await _promptSecurityPhrase();
+    if (phrase == null || phrase.isEmpty) return;
+    
+    final message = {
+      'type': 'circuit_reset',
+      'device_id': _activeDevice,
+      'session_token': _sessionToken,
+      'security_phrase': phrase,
+    };
+    
+    channel.sink.add(jsonEncode(message));
+    
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Resetting circuit breaker...')),
+      );
+    }
   }
 
   void _clearLocalData() async {
@@ -1152,7 +1424,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
     final colorScheme = theme.colorScheme;
     
     return Scaffold(
-      drawer: _currentMode.toUpperCase() == 'ASK' ? _buildDrawer() : null,
+      drawer: _currentMode.toUpperCase() == 'AGENT' ? _buildDrawer() : null,
       backgroundColor: const Color(0xFF0F0F12),
       appBar: AppBar(
         title: const Text(
@@ -1160,7 +1432,45 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
           style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, letterSpacing: -0.3),
         ),
         actions: [
-          if (_currentMode.toUpperCase() == 'ASK')
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: _isSessionValid() 
+                ? (_isSessionExpiringSoon() ? Colors.orange.withOpacity(0.2) : Colors.green.withOpacity(0.2))
+                : Colors.red.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: _isSessionValid() 
+                  ? (_isSessionExpiringSoon() ? Colors.orange : Colors.green)
+                  : Colors.red,
+                width: 1,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  _isSessionValid() ? Icons.lock_open : Icons.lock,
+                  size: 14,
+                  color: _isSessionValid() 
+                    ? (_isSessionExpiringSoon() ? Colors.orange : Colors.green)
+                    : Colors.red,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  _getSessionStatusText(),
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: _isSessionValid() 
+                      ? (_isSessionExpiringSoon() ? Colors.orange : Colors.green)
+                      : Colors.red,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (_currentMode.toUpperCase() == 'AGENT')
             IconButton(
               icon: Icon(Icons.auto_awesome, size: 20, color: _selectedModel.isNotEmpty ? colorScheme.secondary : colorScheme.onSurface.withOpacity(0.7)),
               onPressed: _showModelSelector,
@@ -1177,6 +1487,10 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
             },
           ),
           IconButton(
+            icon: Icon(Icons.security_outlined, size: 20, color: colorScheme.onSurface.withOpacity(0.7)),
+            onPressed: _showSecurityAlerts,
+          ),
+          IconButton(
             icon: Icon(Icons.settings_outlined, size: 20, color: colorScheme.onSurface.withOpacity(0.7)),
             onPressed: () => _showSettingsSheet(context),
           ),
@@ -1188,7 +1502,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
           const SizedBox(height: 12),
           _buildModeToggle(colorScheme),
           const SizedBox(height: 16),
-          if (_currentMode != 'ask')
+          if (_currentMode != 'agent')
             Expanded(child: _buildMessagesList(colorScheme))
           else
             const Spacer(),
@@ -1411,7 +1725,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   }
 
   Widget _buildModeToggle(ColorScheme colorScheme) {
-    final isAsk = _currentMode == 'ask';
+    final isAgent = _currentMode == 'agent';
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
       padding: const EdgeInsets.all(4),
@@ -1428,7 +1742,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
               AnimatedPositioned(
                 duration: const Duration(milliseconds: 250),
                 curve: Curves.easeOutCubic,
-                left: isAsk ? 0 : width,
+                left: isAgent ? 0 : width,
                 top: 0,
                 bottom: 0,
                 width: width,
@@ -1445,22 +1759,22 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                   Expanded(
                     child: GestureDetector(
                       behavior: HitTestBehavior.opaque,
-                      onTap: () => setState(() => _currentMode = 'ask'),
+                      onTap: () => setState(() => _currentMode = 'agent'),
                       child: Container(
                         padding: const EdgeInsets.symmetric(vertical: 8),
                         alignment: Alignment.center,
-                        child: Text('Ask', style: TextStyle(fontSize: 13, fontWeight: isAsk ? FontWeight.w600 : FontWeight.w500, color: isAsk ? Colors.white : Colors.white54)),
+                        child: Text('Agent', style: TextStyle(fontSize: 13, fontWeight: isAgent ? FontWeight.w600 : FontWeight.w500, color: isAgent ? Colors.white : Colors.white54)),
                       ),
                     ),
                   ),
                   Expanded(
                     child: GestureDetector(
                       behavior: HitTestBehavior.opaque,
-                      onTap: () => setState(() => _currentMode = 'command'),
+                      onTap: () => setState(() => _currentMode = 'shell'),
                       child: Container(
                         padding: const EdgeInsets.symmetric(vertical: 8),
                         alignment: Alignment.center,
-                        child: Text('Command', style: TextStyle(fontSize: 13, fontWeight: !isAsk ? FontWeight.w600 : FontWeight.w500, color: !isAsk ? Colors.white : Colors.white54)),
+                        child: Text('Shell', style: TextStyle(fontSize: 13, fontWeight: !isAgent ? FontWeight.w600 : FontWeight.w500, color: !isAgent ? Colors.white : Colors.white54)),
                       ),
                     ),
                   ),
@@ -1585,9 +1899,9 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   }
 
   Widget _buildInputArea(ColorScheme colorScheme) {
-    final isAsk = _currentMode == 'ask';
+    final isAgent = _currentMode == 'agent';
 
-    if (isAsk) {
+    if (isAgent) {
       return Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
@@ -1649,7 +1963,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
       );
     }
 
-    // COMMAND mode - standard text input
+    // SHELL mode - standard text input
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1681,7 +1995,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                           fontFamily: 'Courier',
                         ),
                         decoration: InputDecoration(
-                          hintText: _isListening ? 'Listening...' : 'Enter command...',
+                          hintText: _isListening ? 'Listening...' : 'Enter shell command...',
                           hintStyle: const TextStyle(
                             color: Colors.white30,
                             fontFamily: 'Courier',

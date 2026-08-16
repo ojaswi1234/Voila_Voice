@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -29,6 +30,20 @@ var upgrader = websocket.Upgrader{
 }
 
 const deviceOnlineTTL = 60 * time.Second
+const mockCommandThreshold = 3 // Trip breaker after N mock commands
+const maxAlerts = 100 // Ring buffer size
+
+type SecurityAlert struct {
+	ID        string
+	Type      string // mock_command | auth_fail | rate_limit | breaker_open | breaker_close
+	Timestamp time.Time
+	IP        string
+	Geo       string // optional
+	DeviceID  string
+	ClientID  string
+	Detail    string
+	Severity  string // low|medium|high
+}
 
 type Device struct {
 	ID        string
@@ -46,6 +61,7 @@ type Device struct {
 	SecurityPhraseHash string // Hashed security phrase
 	UnlockFailures int
 	ClearFailures  int
+	CircuitOpen bool // Circuit breaker state
 }
 
 type Backend struct {
@@ -55,6 +71,8 @@ type Backend struct {
 	mu           sync.RWMutex
 	clients      map[string]*WebSocketClient
 	ipRateLimits map[string]int // IP -> failures
+	securityAlerts []SecurityAlert // Ring buffer
+	mockCommandCounts map[string]int // deviceID -> count
 }
 
 type WebSocketClient struct {
@@ -71,6 +89,8 @@ func NewBackend() *Backend {
 		tokenCounter: 0,
 		clients:      make(map[string]*WebSocketClient),
 		ipRateLimits: make(map[string]int),
+		securityAlerts: make([]SecurityAlert, 0, maxAlerts),
+		mockCommandCounts: make(map[string]int),
 	}
 	
 	// Start presence ticker
@@ -95,6 +115,135 @@ func hashPhrase(phrase, deviceID string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
+func stripPort(ip string) string {
+	host, _, err := net.SplitHostPort(ip)
+	if err != nil {
+		return ip
+	}
+	return host
+}
+
+func (b *Backend) addSecurityAlert(alertType, ip, deviceID, clientID, detail, severity string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	
+	alert := SecurityAlert{
+		ID:        fmt.Sprintf("alert-%d", time.Now().UnixNano()),
+		Type:      alertType,
+		Timestamp: time.Now(),
+		IP:        stripPort(ip),
+		Geo:       "", // Empty unless geo service added
+		DeviceID:  deviceID,
+		ClientID:  clientID,
+		Detail:    detail,
+		Severity:  severity,
+	}
+	
+	// Ring buffer: add new, remove old if at capacity
+	b.securityAlerts = append(b.securityAlerts, alert)
+	if len(b.securityAlerts) > maxAlerts {
+		b.securityAlerts = b.securityAlerts[1:]
+	}
+	
+	// Push to all connected mobile clients
+	b.broadcastSecurityAlert(alert)
+}
+
+func (b *Backend) broadcastSecurityAlert(alert SecurityAlert) {
+	alertBytes, _ := json.Marshal(map[string]interface{}{
+		"type": "security_alert",
+		"alert": alert,
+	})
+	
+	for clientID := range b.clients {
+		b.writeMessage(clientID, websocket.TextMessage, alertBytes)
+	}
+}
+
+func (b *Backend) tripCircuitBreaker(deviceID string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	
+	if device, exists := b.devices[deviceID]; exists {
+		if !device.CircuitOpen {
+			device.CircuitOpen = true
+			b.addSecurityAlert("breaker_open", "", deviceID, "", fmt.Sprintf("Circuit breaker tripped for device %s", deviceID), "high")
+			
+			// Notify agent via HTTP POST
+			go b.notifyAgentCircuit(device.Address, "open")
+		}
+	}
+}
+
+func (b *Backend) notifyAgentCircuit(agentAddress, state string) {
+	client := safeHTTPClient()
+	reqBody := map[string]string{"state": state}
+	bodyBytes, _ := json.Marshal(reqBody)
+	
+	req, _ := http.NewRequest(http.MethodPost, agentAddress+"/circuit", bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	
+	// Find device by address to get secret hash
+	b.mu.RLock()
+	var secret string
+	for _, device := range b.devices {
+		if device.Address == agentAddress {
+			secret = device.SecurityPhraseHash
+			break
+		}
+	}
+	b.mu.RUnlock()
+	
+	if secret != "" {
+		req.Header.Set("X-Exec-Secret", secret)
+	}
+	
+	client.Do(req)
+}
+
+func (b *Backend) resetCircuitBreaker(deviceID string) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	
+	if device, exists := b.devices[deviceID]; exists {
+		if device.CircuitOpen {
+			device.CircuitOpen = false
+			b.mockCommandCounts[deviceID] = 0 // Reset mock count
+			b.addSecurityAlert("breaker_close", "", deviceID, "", fmt.Sprintf("Circuit breaker reset for device %s", deviceID), "medium")
+			return true
+		}
+	}
+	return false
+}
+
+func (b *Backend) generateMockResponse(command string) string {
+	// Plausible fake shell responses
+	cmdLower := strings.ToLower(strings.TrimSpace(command))
+	
+	if strings.Contains(cmdLower, "whoami") {
+		return "user\\voila-desktop"
+	}
+	if strings.Contains(cmdLower, "dir") || strings.Contains(cmdLower, "ls") {
+		return "Documents  Downloads  Desktop  Pictures  Music  Videos"
+	}
+	if strings.Contains(cmdLower, "pwd") {
+		return "C:\\Users\\voila"
+	}
+	if strings.Contains(cmdLower, "echo") {
+		parts := strings.SplitN(command, " ", 2)
+		if len(parts) > 1 {
+			return parts[1]
+		}
+		return ""
+	}
+	if strings.Contains(cmdLower, "help") {
+		return "Available commands: dir, ls, whoami, pwd, echo, help"
+	}
+	
+	// Generic response
+	return "Command executed successfully"
+}
+
 
 func getSessionSigningKey() []byte {
 	if len(sessionSigningKey) > 0 {
@@ -111,14 +260,15 @@ func getSessionSigningKey() []byte {
 	return sessionSigningKey
 }
 
-func createSessionToken(deviceID, clientID string) string {
+func createSessionToken(deviceID, clientID string) (string, int64) {
 	secret := getSessionSigningKey()
+	expiryTime := time.Now().Add(15 * time.Minute)
 	payload := map[string]interface{}{
 		"sid": fmt.Sprintf("sess-%d", time.Now().UnixNano()),
 		"device_id": deviceID,
 		"client_device_id": clientID,
 		"iat": time.Now().Unix(),
-		"exp": time.Now().Add(15 * time.Minute).Unix(),
+		"exp": expiryTime.Unix(),
 	}
 	payloadBytes, _ := json.Marshal(payload)
 	payloadB64 := base64.URLEncoding.EncodeToString(payloadBytes)
@@ -127,7 +277,7 @@ func createSessionToken(deviceID, clientID string) string {
 	mac.Write([]byte(payloadB64))
 	sig := hex.EncodeToString(mac.Sum(nil))
 	
-	return payloadB64 + "." + sig
+	return payloadB64 + "." + sig, expiryTime.Unix()
 }
 
 func verifySessionToken(token, expectedDeviceID string) bool {
@@ -544,7 +694,7 @@ func (b *Backend) forwardCommand(deviceID, command, mode, clientID, conversation
 	summary := b.generateTaskSummary(command, output)
 	
 	if mode == "" {
-		mode = "command"
+		mode = "shell"
 	}
 	
 	response := map[string]string{
@@ -651,7 +801,7 @@ func handleWebhookResult(b *Backend) http.HandlerFunc {
 				b.writeMessage(clientID, websocket.TextMessage, []byte("ERROR: "+errorMsg))
 			} else {
 				summary := ""
-				if strings.ToLower(mode) == "ask" {
+				if strings.ToLower(mode) == "agent" {
 					summary = output
 				} else {
 					summary = b.generateTaskSummary("Command", output)
@@ -750,6 +900,7 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				failures := b.ipRateLimits[clientIP]
 				if failures > 5 {
 					b.mu.Unlock()
+					b.addSecurityAlert("rate_limit", clientIP, deviceID, cID, "Unlock rate limit exceeded", "medium")
 					b.writeMessage(clientID, messageType, []byte("ERROR: Rate limited"))
 					continue
 				}
@@ -757,6 +908,7 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				if !exists {
 					b.ipRateLimits[clientIP]++
 					b.mu.Unlock()
+					b.addSecurityAlert("auth_fail", clientIP, deviceID, cID, "Unlock attempt on non-existent device", "medium")
 					b.writeMessage(clientID, messageType, []byte("ERROR: Invalid device"))
 					continue
 				}
@@ -768,17 +920,21 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 					b.ipRateLimits[clientIP] = 0 // reset
 					b.mu.Unlock()
 					
-					token := createSessionToken(deviceID, cID)
-					resp := map[string]string{
+					token, expiresAt := createSessionToken(deviceID, cID)
+					ttlSec := int64(15 * 60 / time.Second) // 15 minutes in seconds
+					resp := map[string]interface{}{
 						"type": "session",
 						"session_token": token,
 						"device_id": deviceID,
+						"expires_at": expiresAt,
+						"ttl_sec": ttlSec,
 					}
 					jResp, _ := json.Marshal(resp)
 					b.writeMessage(clientID, messageType, jResp)
 				} else {
 					b.ipRateLimits[clientIP]++
 					b.mu.Unlock()
+					b.addSecurityAlert("auth_fail", clientIP, deviceID, cID, "Invalid security phrase", "high")
 					b.writeMessage(clientID, messageType, []byte("ERROR: Invalid security phrase"))
 				}
 
@@ -892,6 +1048,7 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				b.mu.RLock()
 				device, exists := b.devices[deviceID]
 				isOnline := exists && device.Active
+				circuitOpen := exists && device.CircuitOpen
 				b.mu.RUnlock()
 				
 				if !exists {
@@ -902,11 +1059,41 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 					b.writeMessage(clientID, messageType, []byte("ERROR: device offline"))
 					continue
 				}
+				if circuitOpen {
+					b.writeMessage(clientID, messageType, []byte("ERROR: Circuit breaker open - device locked"))
+					continue
+				}
 				if b.isDeviceLocked(deviceID, clientID) {
 					b.writeMessage(clientID, messageType, []byte("ERROR: Device locked by another mobile device"))
 					continue
 				}
 				
+				// Verify session token - strict REAL vs MOCK split
+				tokenValid := verifySessionToken(sessionToken, deviceID)
+				if !tokenValid {
+					// MOCK path for unauthorized commands
+					b.mu.Lock()
+					b.mockCommandCounts[deviceID]++
+					mockCount := b.mockCommandCounts[deviceID]
+					b.mu.Unlock()
+					
+					b.addSecurityAlert("mock_command", clientIP, deviceID, clientID, fmt.Sprintf("Unauthorized command attempt (mock count: %d)", mockCount), "medium")
+					
+					// Trip breaker after threshold
+					if mockCount >= mockCommandThreshold {
+						b.tripCircuitBreaker(deviceID)
+					}
+					
+					// Return fake response with small delay
+					go func(cmd string, mt int, cid string) {
+						time.Sleep(time.Duration(50 + time.Now().UnixNano()%250) * time.Millisecond) // 50-300ms delay
+						mockResp := b.generateMockResponse(cmd)
+						b.writeMessage(cid, mt, []byte(mockResp))
+					}(command, messageType, clientID)
+					continue
+				}
+				
+				// REAL path - valid token
 				// Run in goroutine to not block websocket read loop (and pings)
 				go func(dID, cmd, m string, msgType int, cID string, convID string) {
 					b.lockDevice(dID, cID)
@@ -996,6 +1183,54 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				b.mu.RUnlock()
 				jsonData, _ := json.Marshal(stats)
 				b.writeMessage(clientID, messageType, jsonData)
+				
+			case "get_security_alerts":
+				// Require valid session token
+				if !verifySessionToken(sessionToken, deviceID) {
+					b.writeMessage(clientID, messageType, []byte("ERROR: Unauthorized"))
+					continue
+				}
+				
+				b.mu.RLock()
+				alertsCopy := make([]SecurityAlert, len(b.securityAlerts))
+				copy(alertsCopy, b.securityAlerts)
+				b.mu.RUnlock()
+				
+				jsonData, _ := json.Marshal(map[string]interface{}{
+					"type": "security_alerts_list",
+					"alerts": alertsCopy,
+				})
+				b.writeMessage(clientID, messageType, jsonData)
+				
+			case "circuit_reset":
+				// Require valid session token + security phrase re-check
+				if !verifySessionToken(sessionToken, deviceID) {
+					b.writeMessage(clientID, messageType, []byte("ERROR: Unauthorized"))
+					continue
+				}
+				
+				phrase, _ := msg["security_phrase"].(string)
+				b.mu.RLock()
+				device, exists := b.devices[deviceID]
+				b.mu.RUnlock()
+				
+				if !exists {
+					b.writeMessage(clientID, messageType, []byte("ERROR: Device not found"))
+					continue
+				}
+				
+				expectedHash := device.SecurityPhraseHash
+				gotHash := hashPhrase(phrase, deviceID)
+				
+				if expectedHash != "" && gotHash == expectedHash {
+					if b.resetCircuitBreaker(deviceID) {
+						b.writeMessage(clientID, messageType, []byte("OK: Circuit breaker reset"))
+					} else {
+						b.writeMessage(clientID, messageType, []byte("OK: Circuit breaker already closed"))
+					}
+				} else {
+					b.writeMessage(clientID, messageType, []byte("ERROR: Invalid security phrase"))
+				}
 				
 			case "clear_all_devices":
 				var req struct {

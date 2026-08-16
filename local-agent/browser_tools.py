@@ -111,7 +111,10 @@ def main():
             print(json.dumps(result))
             
             # Disconnect safely to keep browser open
-            browser.disconnect()
+            try:
+                browser.close()
+            except Exception:
+                pass
             sys.exit(0)
 
     except Exception as e:

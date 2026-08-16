@@ -27,7 +27,13 @@ import (
 var (
 	cmdMu      sync.Mutex
 	currentCmd *exec.Cmd
+	circuitMu  sync.Mutex
+	circuitOpen bool
+)
 
+const circuitFlagFile = "circuit_open.flag"
+
+var (
 	titleStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Bold(true)
 	subtitleStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("242"))
 	successStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
@@ -63,7 +69,7 @@ const (
 
 	menuArt = `
 ╔════════════════════════════════════════════════╗
-║         ANTIGRAVITY - LOCAL AGENT MENU         ║
+║              VOILA - LOCAL AGENT MENU             ║
 ╚════════════════════════════════════════════════╝
 `
 
@@ -197,7 +203,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyUp:
 			if m.state == "menu" {
 				// Calculate menu size based on connection state
-				menuSize := 7
+				menuSize := 8
 				if !m.connectionData.Connected {
 					menuSize = 3
 				}
@@ -206,19 +212,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyDown:
 			if m.state == "menu" {
 				// Calculate menu size based on connection state
-				menuSize := 7
+				menuSize := 8
 				if !m.connectionData.Connected {
 					menuSize = 3
 				}
 				m.selectedOption = (m.selectedOption + 1) % menuSize
 			}
 		case tea.KeyBackspace:
-			if len(m.currentInput) > 0 && (m.state == "setup" || m.state == "security_phrase_input") {
+			if len(m.currentInput) > 0 && (m.state == "setup" || m.state == "security_phrase_input" || m.state == "circuit_reset_input") {
 				m.currentInput = m.currentInput[:len(m.currentInput)-1]
 			}
 		case tea.KeyCtrlV:
 			// Handle clipboard paste
-			if m.state == "setup" || m.state == "security_phrase_input" {
+			if m.state == "setup" || m.state == "security_phrase_input" || m.state == "circuit_reset_input" {
 				// Try to get clipboard content
 				cmd := exec.Command("powershell", "-Command", "Get-Clipboard")
 				output, err := cmd.Output()
@@ -228,7 +234,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		default:
-			if (m.state == "setup" || m.state == "security_phrase_input") && len(msg.String()) >= 1 {
+			if (m.state == "setup" || m.state == "security_phrase_input" || m.state == "circuit_reset_input") && len(msg.String()) >= 1 {
 				m.currentInput += msg.String()
 			}
 		}
@@ -322,6 +328,12 @@ func (m model) handleEnter() (model, tea.Cmd) {
 		m.state = "menu"
 		m.currentInput = ""
 		return m, m.clearBackendDataWithPhrase(phrase)
+	} else if m.state == "circuit_reset_input" {
+		// User submitted security phrase for circuit reset
+		phrase := m.currentInput
+		m.state = "menu"
+		m.currentInput = ""
+		return m, m.resetCircuitBreakerWithPhrase(phrase)
 	} else if m.state == "connected" {
 		m.state = "menu"
 		m.selectedOption = 0
@@ -344,7 +356,7 @@ func (m model) handleEnter() (model, tea.Cmd) {
 			return m, nil
 		}
 		
-		// Handle connected state menu (7 options)
+		// Handle connected state menu (8 options)
 		switch m.selectedOption {
 		case 0: // Stop Service / Stop Background Service
 			if backgroundRunning {
@@ -371,11 +383,16 @@ func (m model) handleEnter() (model, tea.Cmd) {
 			m.currentInput = ""
 			m.messages = []string{warningStyle.Render("Enter security phrase to clear backend data:")}
 			return m, nil
-		case 4: // Clear Local Data
+		case 4: // Reset Circuit Breaker
+			m.state = "circuit_reset_input"
+			m.currentInput = ""
+			m.messages = []string{warningStyle.Render("Enter security phrase to reset circuit breaker:")}
+			return m, nil
+		case 5: // Clear Local Data
 			return m, m.clearLocalData()
-		case 5: // View Status
-			m.status = fmt.Sprintf("Status: %s | Connected: %v", m.status, m.connectionData.Connected)
-		case 6: // Exit
+		case 6: // View Status
+			m.status = fmt.Sprintf("Status: %s | Connected: %v | Circuit: %v", m.status, m.connectionData.Connected, isCircuitOpen())
+		case 7: // Exit
 			if m.serverRunning {
 				return m, m.stopServer()
 			}
@@ -529,6 +546,8 @@ func (m model) View() string {
 		content = m.menuView()
 	case "security_phrase_input":
 		content = m.securityPhraseInputView()
+	case "circuit_reset_input":
+		content = m.circuitResetInputView()
 	}
 
 	return m.wrapContent(content)
@@ -539,7 +558,7 @@ func (m model) setupView() string {
 
 	content.WriteString(asciiArtStyle.Render(logoArt))
 	content.WriteString("\n\n")
-	content.WriteString(titleStyle.Render("Antigravity - Local Agent Setup"))
+	content.WriteString(titleStyle.Render("Voila - Local Agent Setup"))
 	content.WriteString("\n\n")
 	content.WriteString(separatorStyle.Render(separatorLine))
 	content.WriteString("\n\n")
@@ -663,6 +682,7 @@ func (m model) menuView() string {
 			"🗑  Delete Connection",
 			"🌐 Start Ngrok",
 			"🧹 Clear Backend Data",
+			"⚡ Reset Circuit Breaker",
 			"💾 Clear Local Data",
 			"📊 View Status",
 			"🚪 Exit",
@@ -674,6 +694,7 @@ func (m model) menuView() string {
 				"🗑  Delete Connection",
 				"🌐 Start Ngrok",
 				"🧹 Clear Backend Data",
+				"⚡ Reset Circuit Breaker",
 				"💾 Clear Local Data",
 				"📊 View Status",
 				"🚪 Exit",
@@ -732,6 +753,36 @@ func (m model) securityPhraseInputView() string {
 	content.WriteString(asciiArtStyle.Render(logoArt))
 	content.WriteString("\n\n")
 	content.WriteString(titleStyle.Render("Clear Backend Data"))
+	content.WriteString("\n\n")
+	content.WriteString(separatorStyle.Render(separatorLine))
+	content.WriteString("\n\n")
+	content.WriteString(subtitleStyle.Render("Enter security phrase:\n\n"))
+	content.WriteString("Security Phrase: ")
+	content.WriteString(inputStyle.Render(m.currentInput + "_"))
+	content.WriteString("\n\n")
+	content.WriteString(subtitleStyle.Render("Press Enter to submit, Esc to cancel"))
+
+	if len(m.messages) > 0 {
+		content.WriteString("\n\n")
+		content.WriteString(separatorStyle.Render(separatorLine))
+		content.WriteString("\n\n")
+		for _, msg := range m.messages {
+			content.WriteString(msg + "\n")
+		}
+	}
+
+	content.WriteString("\n\n")
+	content.WriteString(subtitleStyle.Render(footerArt))
+
+	return content.String()
+}
+
+func (m model) circuitResetInputView() string {
+	var content strings.Builder
+
+	content.WriteString(asciiArtStyle.Render(logoArt))
+	content.WriteString("\n\n")
+	content.WriteString(titleStyle.Render("Reset Circuit Breaker"))
 	content.WriteString("\n\n")
 	content.WriteString(separatorStyle.Render(separatorLine))
 	content.WriteString("\n\n")
@@ -936,6 +987,40 @@ func startHTTPServer() {
 
 	mux.HandleFunc("/models", listModelsHandler)
 	mux.HandleFunc("/conversations", listConversationsHandler)
+	mux.HandleFunc("/circuit", func(w http.ResponseWriter, r *http.Request) {
+		// Authenticate using SecurityPhraseHash
+		connData, err := loadConnectionData()
+		if err != nil || connData.SecurityPhrase == "" {
+			http.Error(w, "Agent not configured", http.StatusServiceUnavailable)
+			return
+		}
+		expectedSecret := hashPhrase(connData.SecurityPhrase, connData.DeviceID)
+		providedSecret := r.Header.Get("X-Exec-Secret")
+		if subtle.ConstantTimeCompare([]byte(providedSecret), []byte(expectedSecret)) != 1 {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		
+		var req struct {
+			State string `json:"state"` // "open" or "closed"
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Bad request", http.StatusBadRequest)
+			return
+		}
+		
+		if req.State == "open" {
+			setCircuitState(true)
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(map[string]string{"status": "circuit_open"})
+		} else if req.State == "closed" {
+			setCircuitState(false)
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(map[string]string{"status": "circuit_closed"})
+		} else {
+			http.Error(w, "Invalid state", http.StatusBadRequest)
+		}
+	})
 	mux.HandleFunc("/execute", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -963,6 +1048,13 @@ func startHTTPServer() {
 		clientID := req["client_id"]
 		conversationID := req["conversation_id"]
 		modelName := req["model"]
+		
+		// Check circuit breaker before executing
+		if isCircuitOpen() {
+			w.WriteHeader(http.StatusForbidden)
+			json.NewEncoder(w).Encode(map[string]string{"error": "circuit_open", "message": "Circuit breaker is open - refusing new commands"})
+			return
+		}
 		
 		w.WriteHeader(http.StatusAccepted)
 		
@@ -1088,7 +1180,7 @@ func listConversationsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	
 	homeDir, _ := os.UserHomeDir()
-	brainDir := filepath.Join(homeDir, ".gemini", "antigravity-cli", "brain")
+	brainDir := filepath.Join(homeDir, ".gemini", "voila-cli", "brain")
 	
 	entries, err := os.ReadDir(brainDir)
 	var conversations []Conversation
@@ -1142,7 +1234,7 @@ func listConversationsHandler(w http.ResponseWriter, r *http.Request) {
 func executeCommand(command string, mode string, conversationID string, modelName string) (string, string, error) {
 	var cmd *exec.Cmd
 
-	if strings.ToUpper(mode) == "ASK" {
+	if strings.ToUpper(mode) == "AGENT" {
 		prompt := command + "\n\n(CRITICAL SYSTEM NOTE: Keep your responses casual, brief, and conversational as if you are a friendly voice assistant. Address the user as 'boss'. Do not use overly formal language.\n\nCRITICAL SYSTEM NOTE: You are running inside an isolated background sandbox (`exebox` desktop). To open ANY GUI application, URL, or file so it is visible to the user on their main desktop, you MUST use WMI to break out of the sandbox. Use exactly this command format: `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'explorer.exe \"<URL_OR_PATH>\"'` (for URLs/files) or `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList '<APP_EXE>'` (for apps). DO NOT use Start-Process, as it will spawn invisibly in the sandbox! To perform browser automation, you MUST first launch a visible browser using Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe --remote-debugging-port=9222 --user-data-dir=C:\\tmp\\ai_browser_profile \"about:blank\"'. Then, control it by running python C:\\Users\\ojasw\\Desktop\\voice-cli-system\\local-agent\\browser_tools.py with args --action [goto|click|type|scrape|extract_links|snapshot] --url <url> --selector <css> --value <text>.)"
 		if modelName == "" || modelName == "flash" {
 			modelName = "Gemini 3.7 Flash (High)" // default if not provided
@@ -1189,7 +1281,7 @@ func executeCommand(command string, mode string, conversationID string, modelNam
 	outStr := stdout.String()
 	errStr := stderr.String()
 
-	if strings.ToUpper(mode) != "ASK" {
+	if strings.ToUpper(mode) != "AGENT" {
 		lines := strings.Split(outStr, "\n")
 		var newOut []string
 		for _, line := range lines {
@@ -1283,7 +1375,7 @@ func loadConnectionData() (ConnectionData, error) {
 // Auto-start setup
 func setupAutoStart() error {
 	execDir := getExecutableDir()
-	exePath := filepath.Join(execDir, "antigravity")
+	exePath := filepath.Join(execDir, "voila")
 	if runtime.GOOS == "windows" {
 		exePath += ".exe"
 	}
@@ -1299,7 +1391,7 @@ func setupAutoStart() error {
 
 func setupWindowsAutoStart(exePath string) error {
 	// Create a scheduled task instead of startup folder for better background behavior
-	taskName := "AntigravityVoiceCLI"
+	taskName := "VoilaVoiceCLI"
 	
 	// Delete existing task if it exists
 	exec.Command("schtasks", "/delete", "/tn", taskName, "/f").Run()
@@ -1333,7 +1425,7 @@ func setupMacAutoStart(exePath string) error {
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.voicecli.antigravity</string>
+    <string>com.voicecli.voila</string>
     <key>ProgramArguments</key>
     <array>
         <string>%s</string>
@@ -1347,7 +1439,7 @@ func setupMacAutoStart(exePath string) error {
 </plist>
 `, exePath)
 	
-	plistPath := filepath.Join(launchAgentsDir, "com.voicecli.antigravity.plist")
+	plistPath := filepath.Join(launchAgentsDir, "com.voicecli.voila.plist")
 	if err := os.WriteFile(plistPath, []byte(plistContent), 0644); err != nil {
 		return fmt.Errorf("failed to create launch agent plist: %w", err)
 	}
@@ -1366,7 +1458,7 @@ func setupLinuxAutoStart(exePath string) error {
 	os.MkdirAll(systemdDir, 0755)
 	
 	serviceContent := fmt.Sprintf(`[Unit]
-Description=Antigravity Voice CLI Agent
+Description=Voila Voice CLI Agent
 After=network.target
 
 [Service]
@@ -1379,7 +1471,7 @@ RestartSec=10
 WantedBy=default.target
 `, exePath)
 	
-	servicePath := filepath.Join(systemdDir, "antigravity.service")
+	servicePath := filepath.Join(systemdDir, "voila.service")
 	if err := os.WriteFile(servicePath, []byte(serviceContent), 0644); err != nil {
 		return fmt.Errorf("failed to create systemd service: %w", err)
 	}
@@ -1435,7 +1527,7 @@ func runBackgroundMode() {
 		log.Fatalf("Background mode requires completed setup")
 	}
 	
-	log.Printf("Starting Antigravity in background mode...")
+	log.Printf("Starting Voila in background mode...")
 	log.Printf("Backend: %s", data.BackendURL)
 	log.Printf("Device: %s (%s)", data.DeviceName, data.DeviceID)
 	
@@ -1507,11 +1599,11 @@ func runBackgroundMode() {
 
 func stopBackgroundService() {
 	if runtime.GOOS == "windows" {
-		exec.Command("taskkill", "/F", "/T", "/IM", "antigravity.exe").Run()
+		exec.Command("taskkill", "/F", "/T", "/IM", "voila.exe").Run()
 	} else if runtime.GOOS == "darwin" {
-		exec.Command("launchctl", "unload", filepath.Join(os.Getenv("HOME"), "Library", "LaunchAgents", "com.voicecli.antigravity.plist")).Run()
+		exec.Command("launchctl", "unload", filepath.Join(os.Getenv("HOME"), "Library", "LaunchAgents", "com.voicecli.voila.plist")).Run()
 	} else {
-		exec.Command("systemctl", "--user", "stop", "antigravity.service").Run()
+		exec.Command("systemctl", "--user", "stop", "voila.service").Run()
 	}
 	log.Println("Background service stop command executed")
 }
@@ -1534,7 +1626,76 @@ func hashPhrase(phrase, deviceID string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
+// Circuit breaker functions
+func loadCircuitState() {
+	circuitMu.Lock()
+	defer circuitMu.Unlock()
+	
+	path := filepath.Join(getExecutableDir(), circuitFlagFile)
+	if _, err := os.Stat(path); err == nil {
+		circuitOpen = true
+		log.Println("Circuit breaker loaded as OPEN from disk")
+	}
+}
+
+func saveCircuitState() {
+	circuitMu.Lock()
+	defer circuitMu.Unlock()
+	
+	path := filepath.Join(getExecutableDir(), circuitFlagFile)
+	if circuitOpen {
+		os.WriteFile(path, []byte("1"), 0644)
+	} else {
+		os.Remove(path)
+	}
+}
+
+func setCircuitState(open bool) {
+	circuitMu.Lock()
+	circuitOpen = open
+	circuitMu.Unlock()
+	saveCircuitState()
+	
+	if open {
+		log.Println("Circuit breaker set to OPEN - refusing new commands")
+	} else {
+		log.Println("Circuit breaker set to CLOSED - accepting commands")
+	}
+}
+
+func isCircuitOpen() bool {
+	circuitMu.Lock()
+	defer circuitMu.Unlock()
+	return circuitOpen
+}
+
+func (m model) resetCircuitBreakerWithPhrase(phrase string) tea.Cmd {
+	return func() tea.Msg {
+		if phrase == "" {
+			return errorMsg{"Security phrase required"}
+		}
+		
+		connData, err := loadConnectionData()
+		if err != nil {
+			return errorMsg{"Connection data not found"}
+		}
+		
+		expectedHash := hashPhrase(connData.SecurityPhrase, connData.DeviceID)
+		gotHash := hashPhrase(phrase, connData.DeviceID)
+		
+		if expectedHash != "" && expectedHash == gotHash {
+			setCircuitState(false)
+			return successMsg{"Circuit breaker reset successfully"}
+		}
+		
+		return errorMsg{"Invalid security phrase"}
+	}
+}
+
 func main() {
+	// Load circuit state on startup
+	loadCircuitState()
+	
 	// Check for background mode flag
 	backgroundMode := false
 	for _, arg := range os.Args {

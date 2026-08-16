@@ -5,7 +5,7 @@ import sys
 import time
 
 CREATE_NO_WINDOW = 0x08000000
-subprocess.run(['taskkill', '/F', '/T', '/IM', 'antigravity.exe'], creationflags=CREATE_NO_WINDOW, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+subprocess.run(['taskkill', '/F', '/T', '/IM', 'voila.exe'], creationflags=CREATE_NO_WINDOW, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 time.sleep(1)
 
 root = tk.Tk()
@@ -70,7 +70,7 @@ status_text = canvas.create_text(cx+55, cy+25, text="Standing by...", fill="#888
 close_btn = canvas.create_text(275, 45, text="✕", fill="#888888", font=("Segoe UI", 14, "bold"), anchor="center")
 
 agent_process = subprocess.Popen(
-    ["antigravity.exe", "--background"],
+    ["voila.exe", "--background"],
     stdout=subprocess.PIPE,
     stderr=subprocess.STDOUT,
     text=True,
