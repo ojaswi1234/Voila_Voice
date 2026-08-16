@@ -449,7 +449,7 @@ func (m model) startServer() tea.Cmd {
 						log.Println("Ngrok not running, attempting to start...")
 						if err := startNgrok(); err != nil {
 							log.Printf("Failed to start ngrok: %v (skipping registration)", err)
-							time.Sleep(30 * time.Second)
+							time.Sleep(5 * time.Second)
 							continue
 						}
 						time.Sleep(3 * time.Second)
@@ -464,7 +464,7 @@ func (m model) startServer() tea.Cmd {
 						log.Printf("register error: %v", err)
 					}
 				}
-				time.Sleep(30 * time.Second)
+				time.Sleep(5 * time.Second)
 			}
 		}(m.connectionData)
 
@@ -1547,7 +1547,7 @@ func runBackgroundMode() {
 					log.Println("Ngrok not running, attempting to start...")
 					if err := startNgrok(); err != nil {
 						log.Printf("Failed to start ngrok: %v (skipping registration)", err)
-						time.Sleep(30 * time.Second)
+						time.Sleep(5 * time.Second)
 						continue
 					}
 					time.Sleep(3 * time.Second)
@@ -1562,14 +1562,14 @@ func runBackgroundMode() {
 					log.Printf("register error: %v", err)
 				}
 			}
-			time.Sleep(30 * time.Second)
+			time.Sleep(5 * time.Second)
 		}
 	}(data)
 	
 	// Start presence polling
 	go func() {
 		for {
-			time.Sleep(20 * time.Second)
+			time.Sleep(2 * time.Second)
 			healthURL := data.BackendURL + "/health"
 			req, err := http.NewRequest("GET", healthURL, nil)
 			if err == nil {
@@ -1766,7 +1766,7 @@ func main() {
 						log.Println("Ngrok not running, attempting to start...")
 						if err := startNgrok(); err != nil {
 							log.Printf("Failed to start ngrok: %v (skipping registration)", err)
-							time.Sleep(30 * time.Second)
+							time.Sleep(5 * time.Second)
 							continue
 						}
 						time.Sleep(3 * time.Second)
@@ -1781,12 +1781,12 @@ func main() {
 						log.Printf("register error: %v", err)
 					}
 				}
-				time.Sleep(30 * time.Second)
+				time.Sleep(5 * time.Second)
 			}
 		}(data)
 		go func() {
 			for {
-				time.Sleep(20 * time.Second)
+				time.Sleep(2 * time.Second)
 				healthURL := data.BackendURL + "/health"
 				req, err := http.NewRequest("GET", healthURL, nil)
 				if err == nil {

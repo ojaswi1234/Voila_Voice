@@ -160,6 +160,43 @@ func (b *Backend) broadcastSecurityAlert(alert SecurityAlert) {
 	}
 }
 
+func (b *Backend) broadcastDevices() {
+	b.mu.RLock()
+	devices := make([]*Device, 0, len(b.devices))
+	for _, d := range b.devices {
+		devices = append(devices, d)
+	}
+	
+	// Safely collect client IDs while locked
+	var clientIDs []string
+	for cid := range b.clients {
+		clientIDs = append(clientIDs, cid)
+	}
+	b.mu.RUnlock()
+
+	deviceList := make([]map[string]interface{}, 0)
+	for _, d := range devices {
+		deviceList = append(deviceList, map[string]interface{}{
+			"id":          d.ID,
+			"name":        d.Name,
+			"active":      d.ID == b.activeDevice,
+			"online":      d.Active,
+			"reachable":   d.Reachable,
+			"locked":      d.LockedBy != "",
+			"lockedBy":    d.LockedBy,
+			"lastSeen":    d.LastSeen,
+			"lastPing":    d.LastPing,
+			"fingerprint": d.Fingerprint,
+			"type":        d.Type,
+		})
+	}
+	jsonData, _ := json.Marshal(deviceList)
+
+	for _, clientID := range clientIDs {
+		b.writeMessage(clientID, websocket.TextMessage, jsonData)
+	}
+}
+
 func (b *Backend) tripCircuitBreaker(deviceID string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -359,6 +396,7 @@ func (b *Backend) markStaleDevices() {
 	defer b.mu.Unlock()
 	
 	now := time.Now()
+	changed := false
 	for _, device := range b.devices {
 		if device.Type == "desktop" || strings.HasPrefix(device.ID, "desktop-") {
 			// Desktop devices are online only if they've heartbeated within TTL
@@ -366,8 +404,13 @@ func (b *Backend) markStaleDevices() {
 			device.Active = now.Sub(device.LastSeen) < deviceOnlineTTL
 			if wasActive && !device.Active {
 				log.Printf("Device marked offline: %s (%s) - last seen %v ago", device.Name, device.ID, now.Sub(device.LastSeen))
+				changed = true
 			}
 		}
+	}
+	
+	if changed {
+		go b.broadcastDevices()
 	}
 }
 
@@ -416,11 +459,15 @@ func (b *Backend) pingDevice(device *Device) {
 	
 	if d, exists := b.devices[device.ID]; exists {
 		d.LastPing = time.Now()
+		wasReachable := d.Reachable
 		if err == nil && resp.StatusCode == 200 {
 			d.Reachable = true
 			resp.Body.Close()
 		} else {
 			d.Reachable = false
+		}
+		if wasReachable != d.Reachable {
+			go b.broadcastDevices()
 		}
 	}
 }
@@ -484,6 +531,7 @@ func (b *Backend) registerDevice(id, name, address string) {
 	}
 	
 	log.Printf("Device registered: %s (%s) at %s", name, id, address)
+	go b.broadcastDevices()
 }
 
 func (b *Backend) setActiveDevice(deviceID string) error {
@@ -495,7 +543,8 @@ func (b *Backend) setActiveDevice(deviceID string) error {
 	}
 	
 	b.activeDevice = deviceID
-	log.Printf("Active device switched to: %s", deviceID)
+		go b.broadcastDevices()
+log.Printf("Active device switched to: %s", deviceID)
 	return nil
 }
 
@@ -529,6 +578,7 @@ func (b *Backend) clearAllDevices() {
 	b.activeDevice = ""
 	b.tokenCounter = 0
 	log.Printf("Cleared all devices and data (%d devices removed)", count)
+	go b.broadcastDevices()
 }
 
 func (b *Backend) lockDevice(deviceID, clientID string) error {
@@ -1482,10 +1532,12 @@ func main() {
 	if req.SecurityPhrase != "" {
 		d.SecurityPhraseHash = hashPhrase(strings.TrimSpace(req.SecurityPhrase), req.DeviceID)
 		log.Printf("Device registered with hashed security phrase")
+	go b.broadcastDevices()
 	}
 
 	wasNew := !exists
 	log.Printf("Device registered: %s (%s) @ %s (online: %v, new: %v, total devices: %d)", d.Name, d.ID, d.Address, d.Active, wasNew, len(backend.devices))
+	go b.broadcastDevices()
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
