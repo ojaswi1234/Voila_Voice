@@ -1519,6 +1519,13 @@ func main() {
 			backend.activeDevice = req.DeviceID
 		}
 	}
+	wasActive := false
+	oldAddress := ""
+	if exists {
+		wasActive = d.Active
+		oldAddress = d.Address
+	}
+
 	d.Name = req.DeviceName
 	d.Address = strings.TrimRight(req.Address, "/")
 	d.Fingerprint = req.Fingerprint
@@ -1532,12 +1539,14 @@ func main() {
 	if req.SecurityPhrase != "" {
 		d.SecurityPhraseHash = hashPhrase(strings.TrimSpace(req.SecurityPhrase), req.DeviceID)
 		log.Printf("Device registered with hashed security phrase")
-		go backend.broadcastDevices()
 	}
 
 	wasNew := !exists
 	log.Printf("Device registered: %s (%s) @ %s (online: %v, new: %v, total devices: %d)", d.Name, d.ID, d.Address, d.Active, wasNew, len(backend.devices))
-	go backend.broadcastDevices()
+	
+	if wasNew || !wasActive || oldAddress != d.Address {
+		go backend.broadcastDevices()
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
