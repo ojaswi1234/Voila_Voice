@@ -138,8 +138,8 @@ def update_expression():
         canvas.itemconfig(eye_l_shine, state='hidden')
         canvas.itemconfig(eye_r_shine, state='hidden')
 
-    elif ai_state == "IDLE":
-        # NORMAL / IDLE
+    else:
+        # NORMAL / IDLE / WORKING
         canvas.itemconfig(pill, outline='#3a3a40', fill='#1e1e24')
         for cp in cloud_parts: canvas.itemconfig(cp, state='normal', fill='#2a2a32')
         canvas.itemconfig(status_text, state='normal', text="Standing by...", fill='#888888')

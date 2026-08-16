@@ -451,8 +451,14 @@ func (b *Backend) pingDevice(device *Device) {
 	
 	// Ping device's HTTP endpoint
 	client := safeHTTPClient()
-	client.Timeout = 5 * time.Second
-	resp, err := client.Get(strings.TrimRight(device.Address, "/") + "/health")
+	client.Timeout = 10 * time.Second
+	
+	req, err := http.NewRequest("GET", strings.TrimRight(device.Address, "/") + "/health", nil)
+	if err == nil {
+		req.Header.Set("ngrok-skip-browser-warning", "true")
+	}
+	
+	resp, err := client.Do(req)
 	
 	b.mu.Lock()
 	defer b.mu.Unlock()
