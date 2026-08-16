@@ -1532,12 +1532,12 @@ func main() {
 	if req.SecurityPhrase != "" {
 		d.SecurityPhraseHash = hashPhrase(strings.TrimSpace(req.SecurityPhrase), req.DeviceID)
 		log.Printf("Device registered with hashed security phrase")
-	go b.broadcastDevices()
+		go backend.broadcastDevices()
 	}
 
 	wasNew := !exists
 	log.Printf("Device registered: %s (%s) @ %s (online: %v, new: %v, total devices: %d)", d.Name, d.ID, d.Address, d.Active, wasNew, len(backend.devices))
-	go b.broadcastDevices()
+	go backend.broadcastDevices()
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
