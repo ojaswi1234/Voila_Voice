@@ -905,8 +905,13 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 		log.Printf("Mobile client connected: %s", clientID)
 
 		for {
+			// Set a 35 second timeout for reading messages. 
+			// The mobile app sends a {"type": "ping"} every 15 seconds.
+			conn.SetReadDeadline(time.Now().Add(35 * time.Second))
+			
 			messageType, message, err := conn.ReadMessage()
 			if err != nil {
+				log.Printf("WebSocket connection dropped/timeout for %s: %v", clientID, err)
 				break
 			}
 
