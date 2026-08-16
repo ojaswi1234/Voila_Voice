@@ -1,11 +1,13 @@
-﻿import tkinter as tk
+import tkinter as tk
 import subprocess
 import threading
 import sys
 import time
+import math
 
 CREATE_NO_WINDOW = 0x08000000
 subprocess.run(['taskkill', '/F', '/T', '/IM', 'voila.exe'], creationflags=CREATE_NO_WINDOW, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+subprocess.run(['taskkill', '/F', '/T', '/IM', 'ngrok.exe'], creationflags=CREATE_NO_WINDOW, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 time.sleep(1)
 
 root = tk.Tk()
@@ -55,10 +57,21 @@ leg2 = canvas.create_rectangle(sx+28, sy+55, sx+36, sy+70, fill=brown, outline='
 leg3 = canvas.create_rectangle(sx+44, sy+55, sx+52, sy+70, fill=brown, outline='')
 leg4 = canvas.create_rectangle(sx+57, sy+55, sx+65, sy+70, fill=brown, outline='')
 
-eye_l = canvas.create_line(sx+22, sy+32, sx+30, sy+32, sx+30, sy+32, fill=black, width=3, joinstyle=tk.MITER)
-eye_r = canvas.create_line(sx+58, sy+32, sx+50, sy+32, sx+50, sy+32, fill=black, width=3, joinstyle=tk.MITER)
+# Base eyes now ovals instead of lines
+eye_l = canvas.create_oval(sx+22, sy+28, sx+32, sy+38, fill=black, outline='')
+eye_r = canvas.create_oval(sx+48, sy+28, sx+58, sy+38, fill=black, outline='')
 
-face_parts = (body, arm_l, arm_r, leg1, leg2, leg3, leg4, eye_l, eye_r)
+# Shiny contrast reflections
+eye_l_shine = canvas.create_oval(sx+27, sy+30, sx+30, sy+33, fill='white', outline='')
+eye_r_shine = canvas.create_oval(sx+53, sy+30, sx+56, sy+33, fill='white', outline='')
+
+# Snoring / Sleep visual elements
+snot_bubble = canvas.create_oval(0, 0, 0, 0, fill='#aaddff', outline='#ffffff', state='hidden')
+zzz1 = canvas.create_text(0, 0, text="Z", fill='#aaddff', font=("Segoe UI", 12, "bold"), state='hidden')
+zzz2 = canvas.create_text(0, 0, text="z", fill='#aaddff', font=("Segoe UI", 10, "bold"), state='hidden')
+zzz3 = canvas.create_text(0, 0, text="z", fill='#aaddff', font=("Segoe UI", 8, "bold"), state='hidden')
+
+face_parts = (body, arm_l, arm_r, leg1, leg2, leg3, leg4, eye_l, eye_r, eye_l_shine, eye_r_shine, snot_bubble, zzz1, zzz2, zzz3)
 
 # Perfectly positioned Title (x=90)
 title_text = canvas.create_text(90, 45, text="Voila", fill="#ffffff", font=("Segoe UI", 12, "bold"), anchor="w")
@@ -79,7 +92,9 @@ agent_process = subprocess.Popen(
 )
 
 def on_close(e=None):
-    subprocess.run(['taskkill', '/F', '/T', '/PID', str(agent_process.pid)], creationflags=CREATE_NO_WINDOW)
+    subprocess.run(['taskkill', '/F', '/T', '/PID', str(agent_process.pid)], creationflags=CREATE_NO_WINDOW, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(['taskkill', '/F', '/T', '/IM', 'voila.exe'], creationflags=CREATE_NO_WINDOW, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(['taskkill', '/F', '/T', '/IM', 'ngrok.exe'], creationflags=CREATE_NO_WINDOW, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     root.destroy()
     sys.exit(0)
 
@@ -101,90 +116,171 @@ for item in [pill, title_text, status_text] + list(face_parts) + list(cloud_part
     canvas.tag_bind(item, "<B1-Motion>", do_move)
 
 ai_state = "IDLE"
-mobile_clients = 1
+mobile_clients = 0
 anim_frame = 0
 glow_timer = None
 
 def update_expression():
     global ai_state
     if mobile_clients == 0:
-        # SAD / DISCONNECTED
-        canvas.itemconfig(pill, outline='#ff4444', fill='#2a1a1a')
-        for cp in cloud_parts: canvas.itemconfig(cp, fill='#4a1a1a')
-        canvas.itemconfig(status_text, text="Offline", fill='#ff8888')
-        canvas.coords(eye_l, sx+22, sy+28, sx+30, sy+36, sx+30, sy+36) # \
-        canvas.coords(eye_r, sx+58, sy+28, sx+50, sy+36, sx+50, sy+36) # /
-        canvas.itemconfig(eye_l, fill='#ff4444')
-        canvas.itemconfig(eye_r, fill='#ff4444')
-    elif ai_state == "IDLE":
-        # ASLEEP
+        # ASLEEP / OFFLINE
         canvas.itemconfig(pill, outline='#3a3a40', fill='#1e1e24')
-        for cp in cloud_parts: canvas.itemconfig(cp, fill='#2a2a32')
-        canvas.itemconfig(status_text, text="Standing by...", fill='#888888')
-        canvas.coords(eye_l, sx+22, sy+32, sx+30, sy+32, sx+30, sy+32)
-        canvas.coords(eye_r, sx+58, sy+32, sx+50, sy+32, sx+50, sy+32)
+        for cp in cloud_parts: canvas.itemconfig(cp, state='hidden')
+        canvas.itemconfig(status_text, state='hidden')
+        
+        # Eyes closed (flatten the ovals into lines)
+        canvas.coords(eye_l, sx+22, sy+34, sx+32, sy+36)
+        canvas.coords(eye_r, sx+48, sy+34, sx+58, sy+36)
         canvas.itemconfig(eye_l, fill=black)
         canvas.itemconfig(eye_r, fill=black)
+        
+        # hide shine
+        canvas.itemconfig(eye_l_shine, state='hidden')
+        canvas.itemconfig(eye_r_shine, state='hidden')
+
+    elif ai_state == "IDLE":
+        # NORMAL / IDLE
+        canvas.itemconfig(pill, outline='#3a3a40', fill='#1e1e24')
+        for cp in cloud_parts: canvas.itemconfig(cp, state='normal', fill='#2a2a32')
+        canvas.itemconfig(status_text, state='normal', text="Standing by...", fill='#888888')
+        
+        # Eyes normal
+        canvas.coords(eye_l, sx+22, sy+28, sx+32, sy+38)
+        canvas.coords(eye_r, sx+48, sy+28, sx+58, sy+38)
+        canvas.itemconfig(eye_l, fill=black)
+        canvas.itemconfig(eye_r, fill=black)
+        
+        # show shine
+        canvas.itemconfig(eye_l_shine, state='normal')
+        canvas.itemconfig(eye_r_shine, state='normal')
+        canvas.coords(eye_l_shine, sx+27, sy+30, sx+30, sy+33)
+        canvas.coords(eye_r_shine, sx+53, sy+30, sx+56, sy+33)
+        
+        # Hide sleep elements
+        canvas.itemconfig(snot_bubble, state='hidden')
+        canvas.itemconfig(zzz1, state='hidden')
+        canvas.itemconfig(zzz2, state='hidden')
+        canvas.itemconfig(zzz3, state='hidden')
 
 def animation_loop():
     global anim_frame
     anim_frame += 1
     dots = "." * (anim_frame % 4)
     
-    if mobile_clients > 0 and ai_state != "IDLE":
-        canvas.itemconfig(pill, fill='#22222a')
-        for cp in cloud_parts: canvas.itemconfig(cp, fill='#33333d')
+    if mobile_clients == 0:
+        # Animate Sleep Mode
+        canvas.itemconfig(status_text, text=f"Offline (Zzz{dots})", fill='#888888')
         
+        # Snot Bubble expansion/contraction
+        canvas.itemconfig(snot_bubble, state='normal')
+        bubble_phase = anim_frame % 16
+        if bubble_phase < 8: br = 2 + bubble_phase
+        else: br = 2 + (15 - bubble_phase)
+        bx, by = sx+40, sy+40
+        canvas.coords(snot_bubble, bx-br, by-br, bx+br, by+br)
+        
+        # Zzz flying animation
+        canvas.itemconfig(zzz1, state='normal')
+        canvas.itemconfig(zzz2, state='normal')
+        canvas.itemconfig(zzz3, state='normal')
+        
+        z_phase = anim_frame % 24
+        zx1, zy1 = bx + 10 + z_phase, by - 10 - z_phase
+        canvas.coords(zzz1, zx1, zy1)
+        
+        z_phase2 = (anim_frame + 8) % 24
+        zx2, zy2 = bx + 10 + z_phase2, by - 10 - z_phase2
+        canvas.coords(zzz2, zx2, zy2)
+        
+        z_phase3 = (anim_frame + 16) % 24
+        zx3, zy3 = bx + 10 + z_phase3, by - 10 - z_phase3
+        canvas.coords(zzz3, zx3, zy3)
+
+    elif ai_state != "IDLE":
+        canvas.itemconfig(pill, fill='#22222a')
+        canvas.itemconfig(status_text, state='normal')
+        for cp in cloud_parts: canvas.itemconfig(cp, state='normal', fill='#33333d')
+        
+        # Pulse base size for expanding/contracting eyes
+        pulse = (anim_frame % 6)
+        if pulse > 3: pulse = 6 - pulse # 0, 1, 2, 3, 2, 1
+        ew = 4 + pulse # radius 4 to 7
+        
+        elx, ely = sx+27, sy+33
+        erx, ery = sx+53, sy+33
+        
+        canvas.coords(eye_l, elx-ew, ely-ew, elx+ew, ely+ew)
+        canvas.coords(eye_r, erx-ew, ery-ew, erx+ew, ery+ew)
+        
+        # keep shine relative to eye center
+        canvas.itemconfig(eye_l_shine, state='normal')
+        canvas.itemconfig(eye_r_shine, state='normal')
+        canvas.coords(eye_l_shine, elx, ely-3, elx+3, ely)
+        canvas.coords(eye_r_shine, erx, ery-3, erx+3, ery)
+        
+        # State Colors
         if ai_state == "THINKING":
             canvas.itemconfig(status_text, text=f"Thinking{dots}", fill='#ffffaa')
             canvas.itemconfig(pill, outline='#ffff55')
-            up = -4 if anim_frame % 2 == 0 else -6
-            canvas.coords(eye_l, sx+24, sy+32+up, sx+30, sy+32+up, sx+30, sy+32+up)
-            canvas.coords(eye_r, sx+56, sy+32+up, sx+50, sy+32+up, sx+50, sy+32+up)
             canvas.itemconfig(eye_l, fill='#ffff55')
             canvas.itemconfig(eye_r, fill='#ffff55')
-            
         elif ai_state == "SEARCH":
             canvas.itemconfig(status_text, text=f"Search{dots}", fill='#aaffff')
             canvas.itemconfig(pill, outline='#00aaff')
-            offset = (anim_frame % 3) * 3
-            canvas.coords(eye_l, sx+20+offset, sy+32, sx+28+offset, sy+32, sx+28+offset, sy+32)
-            canvas.coords(eye_r, sx+52-offset, sy+32, sx+60-offset, sy+32, sx+60-offset, sy+32)
             canvas.itemconfig(eye_l, fill='#00aaff')
             canvas.itemconfig(eye_r, fill='#00aaff')
-            
         elif ai_state == "BASH":
             canvas.itemconfig(status_text, text=f"Bash{dots}", fill='#aaffaa')
             canvas.itemconfig(pill, outline='#00ff44')
-            if anim_frame % 2 == 0:
-                canvas.coords(eye_l, sx+22, sy+28, sx+30, sy+32, sx+22, sy+36)
-                canvas.coords(eye_r, sx+50, sy+36, sx+58, sy+36, sx+58, sy+36)
-            else:
-                canvas.coords(eye_l, sx+24, sy+30, sx+30, sy+32, sx+24, sy+34)
-                canvas.coords(eye_r, sx+52, sy+36, sx+56, sy+36, sx+56, sy+36)
             canvas.itemconfig(eye_l, fill='#00ff44')
             canvas.itemconfig(eye_r, fill='#00ff44')
-            
         elif ai_state == "FILE":
             canvas.itemconfig(status_text, text=f"I/O{dots}", fill='#ffddaa')
             canvas.itemconfig(pill, outline='#ffaa00')
-            dart = (anim_frame % 4) * 2 - 2
-            canvas.coords(eye_l, sx+24+dart, sy+30, sx+28+dart, sy+34, sx+24+dart, sy+30)
-            canvas.coords(eye_r, sx+56+dart, sy+30, sx+52+dart, sy+34, sx+56+dart, sy+30)
             canvas.itemconfig(eye_l, fill='#ffaa00')
             canvas.itemconfig(eye_r, fill='#ffaa00')
-            
         else:
             canvas.itemconfig(status_text, text=f"Processing{dots}", fill='#aaffff')
             canvas.itemconfig(pill, outline='#00ffcc')
-            if anim_frame % 2 == 0:
-                canvas.coords(eye_l, sx+22, sy+26, sx+32, sy+32, sx+22, sy+38)
-                canvas.coords(eye_r, sx+58, sy+26, sx+48, sy+32, sx+58, sy+38)
-            else:
-                canvas.coords(eye_l, sx+24, sy+28, sx+30, sy+32, sx+24, sy+36)
-                canvas.coords(eye_r, sx+56, sy+28, sx+50, sy+32, sx+56, sy+36)
             canvas.itemconfig(eye_l, fill='#00ffcc')
             canvas.itemconfig(eye_r, fill='#00ffcc')
+            
+    elif ai_state == "IDLE":
+        # Natural blinking animation every ~4.5 seconds (30 frames)
+        blink_phase = anim_frame % 30
+        if blink_phase == 0 or blink_phase == 1:
+            # Eyes closed (flattened)
+            canvas.coords(eye_l, sx+22, sy+32, sx+32, sy+34)
+            canvas.coords(eye_r, sx+48, sy+32, sx+58, sy+34)
+            canvas.itemconfig(eye_l_shine, state='hidden')
+            canvas.itemconfig(eye_r_shine, state='hidden')
+        else:
+            # Eyes open
+            canvas.coords(eye_l, sx+22, sy+28, sx+32, sy+38)
+            canvas.coords(eye_r, sx+48, sy+28, sx+58, sy+38)
+            canvas.itemconfig(eye_l_shine, state='normal')
+            canvas.itemconfig(eye_r_shine, state='normal')
+            
+            cycle = anim_frame % 80
+            px_offset, py_offset = 0, 0
+            
+            # 20 frames (3 sec): look at user (offset 0,0)
+            # 60 frames (9 sec): track mouse
+            if cycle >= 20:
+                mx, my = root.winfo_pointerx(), root.winfo_pointery()
+                ex = root.winfo_rootx() + sx + 27
+                ey = root.winfo_rooty() + sy + 33
+                dx, dy = mx - ex, my - ey
+                dist = math.hypot(dx, dy)
+                if dist > 0:
+                    r = min(3.0, dist / 100.0)
+                    px_offset = (dx / dist) * r
+                    py_offset = (dy / dist) * r
+            
+            el_cx, el_cy = sx+27, sy+33
+            er_cx, er_cy = sx+53, sy+33
+            canvas.coords(eye_l_shine, el_cx+px_offset-1.5, el_cy+py_offset-1.5, el_cx+px_offset+1.5, el_cy+py_offset+1.5)
+            canvas.coords(eye_r_shine, er_cx+px_offset-1.5, er_cy+py_offset-1.5, er_cx+px_offset+1.5, er_cy+py_offset+1.5)
             
     root.after(150, animation_loop)
 
