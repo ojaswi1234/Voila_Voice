@@ -1363,6 +1363,37 @@ func registerWithBackend(data ConnectionData, publicAddress string) error {
 	return nil
 }
 
+func sendHeartbeat(data ConnectionData, publicAddress string) error {
+	// Send periodic heartbeat to keep device marked as online
+	body, _ := json.Marshal(map[string]string{
+		"device_id": data.DeviceID,
+		"address":   publicAddress,
+	})
+
+	req, err := http.NewRequest(http.MethodPost, strings.TrimRight(data.BackendURL, "/")+"/heartbeat", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	
+	if strings.Contains(data.BackendURL, "ngrok") || strings.Contains(data.BackendURL, "ngrok-free") {
+		req.Header.Set("ngrok-skip-browser-warning", "true")
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	// Don't fail on heartbeat errors, just log them
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("heartbeat failed: %s", resp.Status)
+	}
+	
+	return nil
+}
+
 func loadConnectionData() (ConnectionData, error) {
 	path := filepath.Join(getExecutableDir(), "connection_data.json")
 	file, err := os.Open(path)
@@ -1538,8 +1569,9 @@ func runBackgroundMode() {
 	// Start HTTP server
 	go startHTTPServer()
 	
-	// Start ngrok registration loop
+	// Start ngrok registration loop (only register when address changes)
 	go func(data ConnectionData) {
+		var lastRegisteredAddr string
 		for {
 			addr := getNgrokPublicURL()
 			if addr == "" {
@@ -1557,9 +1589,11 @@ func runBackgroundMode() {
 					log.Println("ngrok URL not available yet (is ngrok running?)")
 				}
 			}
-			if addr != "" {
+			if addr != "" && addr != lastRegisteredAddr {
 				if err := registerWithBackend(data, addr); err != nil {
 					log.Printf("register error: %v", err)
+				} else {
+					lastRegisteredAddr = addr
 				}
 			}
 			time.Sleep(5 * time.Second)
@@ -1567,6 +1601,19 @@ func runBackgroundMode() {
 	}(data)
 	
 	// Start presence polling
+	go func() {
+		for {
+			time.Sleep(10 * time.Second) // Heartbeat every 10 seconds
+			addr := getNgrokPublicURL()
+			if addr != "" {
+				if err := sendHeartbeat(data, addr); err != nil {
+					log.Printf("heartbeat error: %v", err)
+				}
+			}
+		}
+	}()
+	
+	// Start mobile client presence polling for AI face
 	go func() {
 		for {
 			time.Sleep(2 * time.Second)

@@ -28,6 +28,8 @@ This system is built on a highly secure, distributed architecture ensuring your 
 ### 🎭 The Voila Desktop Widget
 - **Interactive Personality**: Dynamic, vector-based facial expressions based on real-time execution states (Idle, Thinking, Executing, Offline).
 - **Live Thought Cloud**: Watch exactly what Voila is doing or executing directly in her floating thought bubble.
+- **Resource Monitoring**: Real-time CPU, RAM, and disk usage alerts with top-consuming apps displayed in thought bubble.
+- **Adaptive Sizing**: Popup expands smoothly for longer alert messages, reverts to normal when alert clears.
 - **Pixel-Perfect UI**: Carefully designed so she looks right at home on a modern desktop.
 - **Zero-Zombie Guarantee**: Robust process management ensures no orphaned background tasks remain when she goes to sleep.
 

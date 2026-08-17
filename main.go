@@ -29,6 +29,20 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
+const (
+	// Time allowed to write a message to the peer.
+	writeWait = 10 * time.Second
+
+	// Time allowed to read the next pong message from the peer.
+	pongWait = 60 * time.Second
+
+	// Send pings to peer with this period. Must be less than pongWait.
+	pingPeriod = (pongWait * 9) / 10
+
+	// Maximum message size allowed from peer.
+	maxMessageSize = 8192
+)
+
 const deviceOnlineTTL = 60 * time.Second
 const mockCommandThreshold = 3 // Trip breaker after N mock commands
 const maxAlerts = 100 // Ring buffer size
@@ -904,16 +918,44 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 
 		log.Printf("Mobile client connected: %s", clientID)
 
+		// Set up ping/pong mechanism following gorilla websocket best practices
+		conn.SetReadLimit(maxMessageSize)
+		conn.SetReadDeadline(time.Now().Add(pongWait))
+		conn.SetPongHandler(func(string) error {
+			conn.SetReadDeadline(time.Now().Add(pongWait))
+			return nil
+		})
+
+		// Start ping ticker in separate goroutine
+		pingTicker := time.NewTicker(pingPeriod)
+		defer pingTicker.Stop()
+
+		// Create done channel for graceful shutdown
+		done := make(chan struct{})
+
+		// Start ping goroutine
+		go func() {
+			for {
+				select {
+				case <-pingTicker.C:
+					if err := conn.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(writeWait)); err != nil {
+						log.Printf("Ping failed for %s: %v", clientID, err)
+						return
+					}
+				case <-done:
+					return
+				}
+			}
+		}()
+
 		for {
-			// Set a 35 second timeout for reading messages. 
-			// The mobile app sends a {"type": "ping"} every 15 seconds.
-			conn.SetReadDeadline(time.Now().Add(35 * time.Second))
-			
 			messageType, message, err := conn.ReadMessage()
 			if err != nil {
 				log.Printf("WebSocket connection dropped/timeout for %s: %v", clientID, err)
+				close(done)
 				break
 			}
+			conn.SetReadDeadline(time.Now().Add(pongWait))
 
 			var msg map[string]interface{}
 			if err := json.Unmarshal(message, &msg); err != nil {
@@ -946,6 +988,9 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 			}
 
 			switch msgType {
+			case "ping":
+				b.writeMessage(clientID, messageType, []byte(`{"type":"pong"}`))
+				continue
 			case "unlock":
 				phrase, _ := msg["security_phrase"].(string)
 				cID, _ := msg["client_device_id"].(string)
@@ -1565,7 +1610,51 @@ func main() {
 		"device_id": d.ID,
 	})
 })
-	// Health check endpoint for Render keep-alive
+
+// Heartbeat endpoint for local agents to keep device marked as online
+http.HandleFunc("/heartbeat", func(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		DeviceID string `json:"device_id"`
+		Address  string `json:"address"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
+
+	backend.mu.Lock()
+	defer backend.mu.Unlock()
+
+	device, exists := backend.devices[req.DeviceID]
+	if !exists {
+		http.Error(w, "Device not found", http.StatusNotFound)
+		return
+	}
+
+	// Update device LastSeen and address if changed
+	wasActive := device.Active
+	device.LastSeen = time.Now()
+	if req.Address != "" && device.Address != req.Address {
+		device.Address = req.Address
+		log.Printf("Device address updated: %s -> %s", device.ID, req.Address)
+	}
+	device.Active = true
+
+	// Broadcast if device just came online
+	if !wasActive {
+		go backend.broadcastDevices()
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+})
+
+// Health check endpoint for Render keep-alive
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		// Mark stale devices before serving health
 		backend.markStaleDevices()

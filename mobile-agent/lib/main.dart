@@ -105,6 +105,8 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   bool _localAgentConnected = false;
   String _backendStatus = 'Checking...';
   Timer? _healthCheckTimer;
+  Timer? _pingTimer;
+  int _reconnectAttempts = 0;
   Map<String, dynamic> _devices = {};
   String? _currentDeviceId;
   String? _currentDeviceName;
@@ -414,6 +416,9 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
         setState(() {
           _isConnected = true;
           
+          // Start ping timer when connected
+          _startPingTimer();
+          
           try {
             final jsonResponse = jsonDecode(message);
             
@@ -550,6 +555,9 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                   _selectedModel = _modelsList[0];
                 }
               });
+            } else if (jsonResponse is Map && jsonResponse['type'] == 'pong') {
+              // Silently ignore pong responses
+              return;
             } else if (jsonResponse is Map && jsonResponse['type'] == 'queued') {
               // Task queued! Keep loader spinning.
               return;
@@ -644,6 +652,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
           _scrollToBottom();
         });
       }, onError: (error) {
+        _pingTimer?.cancel();
         setState(() {
           _isThinking = false;
           _isConnected = false;
@@ -654,6 +663,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
           });
         });
       }, onDone: () {
+        _pingTimer?.cancel();
         setState(() {
           _isConnected = false;
           _messages.add({
@@ -685,6 +695,19 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
     });
     
     _checkBackendHealth();
+  }
+
+  void _startPingTimer() {
+    _pingTimer?.cancel(); // Cancel existing timer if any
+    _pingTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      _sendPing();
+    });
+  }
+
+  void _sendPing() {
+    if (channel != null && _isConnected) {
+      channel.sink.add(jsonEncode({"type": "ping"}));
+    }
   }
 
   Future<void> _checkBackendHealth() async {
@@ -754,6 +777,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   @override
   void dispose() {
     _healthCheckTimer?.cancel();
+    _pingTimer?.cancel();
     channel.sink.close();
     _controller.dispose();
     _scrollController.dispose();

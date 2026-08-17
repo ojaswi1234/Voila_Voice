@@ -115,11 +115,11 @@ def main():
                 browser.close()
             except Exception:
                 pass
-            sys.exit(0)
+            os._exit(0)
 
     except Exception as e:
         print(json.dumps({"error": str(e)}))
-        sys.exit(1)
+        os._exit(1)
 
 if __name__ == "__main__":
     main()
