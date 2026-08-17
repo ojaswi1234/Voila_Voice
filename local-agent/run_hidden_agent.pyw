@@ -99,10 +99,20 @@ agent_process = subprocess.Popen(
     creationflags=CREATE_NO_WINDOW
 )
 
+import atexit
+
+def cleanup_processes():
+    try:
+        subprocess.run(['taskkill', '/F', '/T', '/PID', str(agent_process.pid)], creationflags=CREATE_NO_WINDOW, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(['taskkill', '/F', '/T', '/IM', 'voila.exe'], creationflags=CREATE_NO_WINDOW, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(['taskkill', '/F', '/T', '/IM', 'ngrok.exe'], creationflags=CREATE_NO_WINDOW, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except:
+        pass
+
+atexit.register(cleanup_processes)
+
 def on_close(e=None):
-    subprocess.run(['taskkill', '/F', '/T', '/PID', str(agent_process.pid)], creationflags=CREATE_NO_WINDOW, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    subprocess.run(['taskkill', '/F', '/T', '/IM', 'voila.exe'], creationflags=CREATE_NO_WINDOW, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    subprocess.run(['taskkill', '/F', '/T', '/IM', 'ngrok.exe'], creationflags=CREATE_NO_WINDOW, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    cleanup_processes()
     root.destroy()
     sys.exit(0)
 

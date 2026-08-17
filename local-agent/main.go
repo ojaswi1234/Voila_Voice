@@ -981,7 +981,11 @@ func startHTTPServer() {
 
 		cmdMu.Lock()
 		if currentCmd != nil && currentCmd.Process != nil {
-			currentCmd.Process.Kill()
+			if runtime.GOOS == "windows" {
+				exec.Command("taskkill", "/F", "/T", "/PID", fmt.Sprintf("%d", currentCmd.Process.Pid)).Run()
+			} else {
+				currentCmd.Process.Kill()
+			}
 		}
 		cmdMu.Unlock()
 
