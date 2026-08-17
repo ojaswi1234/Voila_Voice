@@ -17,6 +17,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/charmbracelet/bubbletea"
@@ -1067,6 +1068,7 @@ func startHTTPServer() {
 		w.WriteHeader(http.StatusAccepted)
 		
 		go func() {
+			wakeScreen()
 			output, newConvID, err := executeCommand(command, mode, conversationID, modelName)
 			
 			// Post the result back to backend
@@ -1126,8 +1128,35 @@ func stopHTTPServer() {
 
 var currentWorkingDir string
 
+var (
+	kernel32 = syscall.NewLazyDLL("kernel32.dll")
+	procSetThreadExecutionState = kernel32.NewProc("SetThreadExecutionState")
+)
+
+const (
+	esSystemRequired  = 0x00000001
+	esDisplayRequired = 0x00000002
+	esContinuous      = 0x80000000
+)
+
+func keepSystemAwake() {
+	if runtime.GOOS == "windows" {
+		procSetThreadExecutionState.Call(uintptr(esContinuous | esSystemRequired))
+	}
+}
+
+func wakeScreen() {
+	if runtime.GOOS == "windows" {
+		procSetThreadExecutionState.Call(uintptr(esContinuous | esSystemRequired | esDisplayRequired))
+		time.AfterFunc(2*time.Second, func() {
+			procSetThreadExecutionState.Call(uintptr(esContinuous | esSystemRequired))
+		})
+	}
+}
+
 func init() {
 	currentWorkingDir, _ = os.Getwd()
+	keepSystemAwake()
 }
 
 var (
