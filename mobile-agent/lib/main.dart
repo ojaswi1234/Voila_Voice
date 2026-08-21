@@ -665,7 +665,6 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
           
           _checkBackendHealth();
           _scrollToBottom();
-        });
       }, onError: (error) {
         setState(() {
           _isThinking = false; _triggerDataArriving();
