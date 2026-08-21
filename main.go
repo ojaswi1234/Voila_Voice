@@ -921,6 +921,9 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 			log.Printf("WebSocket upgrade error: %v", err)
 			return
 		}
+		clientID := fmt.Sprintf("client-%d", time.Now().UnixNano())
+		clientIP := r.RemoteAddr
+		
 		defer func() {
 			conn.Close()
 			// Clean up client from map
@@ -929,9 +932,6 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 			b.mu.Unlock()
 			log.Printf("Mobile client disconnected: %s", clientID)
 		}()
-
-		clientID := fmt.Sprintf("client-%d", time.Now().UnixNano())
-		clientIP := r.RemoteAddr
 		
 		b.mu.Lock()
 		b.clients[clientID] = &WebSocketClient{
