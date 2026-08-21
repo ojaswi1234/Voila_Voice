@@ -27,6 +27,7 @@ import (
 var (
 	cmdMu      sync.Mutex
 	currentCmd *exec.Cmd
+	currentConvID string
 	circuitMu  sync.Mutex
 	circuitOpen bool
 )
@@ -965,7 +966,7 @@ func startHTTPServer() {
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "mode": "background"})
 	})
 
-		mux.HandleFunc("/stop", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/stop", func(w http.ResponseWriter, r *http.Request) {
 		connData, err := loadConnectionData()
 		if err != nil || connData.SecurityPhrase == "" {
 			http.Error(w, "Agent not configured", http.StatusServiceUnavailable)
@@ -985,6 +986,25 @@ func startHTTPServer() {
 				exec.Command("taskkill", "/F", "/T", "/PID", fmt.Sprintf("%d", currentCmd.Process.Pid)).Run()
 			} else {
 				currentCmd.Process.Kill()
+			}
+			
+			// Clean up the terminal to prevent the face from getting stuck
+			fmt.Print("\r\n\x1b[0m\x1b[?25h\x1b[?1049l\x1b[2J\x1b[H")
+			
+			// Append cancellation to transcript to prevent orphaned running state
+			if currentConvID != "" {
+				brainDir := filepath.Join(os.Getenv("LOCALAPPDATA"), "Google", "Antigravity", "brain")
+				if runtime.GOOS == "darwin" {
+					brainDir = filepath.Join(os.Getenv("HOME"), "Library", "Application Support", "Google", "Antigravity", "brain")
+				} else if runtime.GOOS != "windows" {
+					brainDir = filepath.Join(os.Getenv("HOME"), ".config", "google", "antigravity", "brain")
+				}
+				transcriptPath := filepath.Join(brainDir, currentConvID, ".system_generated", "logs", "transcript.jsonl")
+				cancelMsg := fmt.Sprintf(`{"type":"SYSTEM_MESSAGE","status":"ERROR","content":"Execution forcibly cancelled by user.","created_at":"%s"}` + "\n", time.Now().Format(time.RFC3339))
+				if f, err := os.OpenFile(transcriptPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
+					f.WriteString(cancelMsg)
+					f.Close()
+				}
 			}
 		}
 		cmdMu.Unlock()
@@ -1278,12 +1298,14 @@ func executeCommand(command string, mode string, conversationID string, modelNam
 
 	cmdMu.Lock()
 	currentCmd = cmd
+	currentConvID = conversationID
 	cmdMu.Unlock()
 
 	err := cmd.Run()
 
 	cmdMu.Lock()
 	currentCmd = nil
+	currentConvID = ""
 	cmdMu.Unlock()
 	
 	fmt.Println("STATUS: IDLE")
@@ -1611,10 +1633,8 @@ func runBackgroundMode() {
 		for {
 			time.Sleep(10 * time.Second) // Heartbeat every 10 seconds
 			addr := getNgrokPublicURL()
-			if addr != "" {
-				if err := sendHeartbeat(data, addr); err != nil {
-					log.Printf("heartbeat error: %v", err)
-				}
+			if err := sendHeartbeat(data, addr); err != nil {
+				log.Printf("heartbeat error: %v", err)
 			}
 		}
 	}()
