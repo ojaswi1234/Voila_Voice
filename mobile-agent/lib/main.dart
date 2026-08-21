@@ -1701,6 +1701,24 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
     );
   }
 
+  Widget _buildStatusDot(bool isOnline, Color color) {
+    return Container(
+      width: 10,
+      height: 10,
+      decoration: BoxDecoration(
+        color: isOnline ? color : Colors.grey.withOpacity(0.5),
+        shape: BoxShape.circle,
+        boxShadow: isOnline ? [
+          BoxShadow(
+            color: color.withOpacity(0.4),
+            blurRadius: 4,
+            spreadRadius: 1,
+          )
+        ] : null,
+      ),
+    );
+  }
+
   void _showDeviceSelector(BuildContext context) {
     showModalBottomSheet(
       context: context,
