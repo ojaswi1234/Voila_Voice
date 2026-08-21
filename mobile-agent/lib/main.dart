@@ -1413,50 +1413,157 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   @override
 
   Widget _buildDrawer() {
+    final colorScheme = Theme.of(context).colorScheme;
     return Drawer(
-      backgroundColor: const Color(0xFF191919),
+      backgroundColor: const Color(0xFF131316),
       child: Column(
         children: [
           Container(
             padding: const EdgeInsets.only(top: 60, bottom: 20, left: 20, right: 20),
-            color: const Color(0xFF1E1E1E),
+            color: const Color(0xFF1A1A1F),
             child: Row(
               children: [
-                const Icon(Icons.chat_bubble_outline, color: Colors.white70),
+                const Icon(Icons.mic, color: Colors.blueAccent, size: 28),
                 const SizedBox(width: 12),
-                const Text('Conversations', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                const Text('Voila Voice', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold, letterSpacing: -0.5)),
                 const Spacer(),
-                IconButton(
-                  icon: const Icon(Icons.refresh, color: Colors.white54),
-                  onPressed: _fetchConversations,
-                )
+                if (_currentMode.toUpperCase() == 'AGENT')
+                  IconButton(
+                    icon: const Icon(Icons.refresh, color: Colors.white54),
+                    onPressed: _fetchConversations,
+                  )
               ],
             ),
           ),
-          ListTile(
-            leading: const Icon(Icons.add, color: Colors.white),
-            title: const Text('New Chat', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-            onTap: _startNewConversation,
-          ),
-          const Divider(color: Colors.white24),
+          
           Expanded(
-            child: ListView.builder(
-              padding: EdgeInsets.zero,
-              itemCount: _conversations.length,
-              itemBuilder: (context, index) {
-                final conv = _conversations[index];
-                final isSelected = _currentConversationId == conv['id'];
-                return ListTile(
-                  tileColor: isSelected ? Colors.white.withOpacity(0.1) : null,
-                  leading: const Icon(Icons.history, color: Colors.white54),
-                  title: Text(conv['title'] ?? 'Unknown', style: const TextStyle(color: Colors.white70)),
-                  onTap: () => _resumeConversation(conv['id']!, conv['title']!),
-                );
-              },
+            child: ListView(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              children: [
+                if (_currentMode.toUpperCase() == 'AGENT') ...[
+                  ListTile(
+                    leading: const Icon(Icons.add_circle_outline, color: Colors.blueAccent),
+                    title: const Text('New Conversation', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _startNewConversation();
+                    },
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: Divider(color: Colors.white12),
+                  ),
+                ],
+                
+                _buildDrawerItem(Icons.folder_copy_outlined, 'Artifacts', () {
+                  Navigator.pop(context);
+                  Navigator.push(context, MaterialPageRoute(builder: (context) => const ArtifactsPage()));
+                }),
+                _buildDrawerItem(Icons.security_outlined, 'Security Alerts', () {
+                  Navigator.pop(context);
+                  _showSecurityAlerts();
+                }),
+                _buildDrawerItem(Icons.settings_outlined, 'Settings', () {
+                  Navigator.pop(context);
+                  _showSettingsSheet(context);
+                }),
+                
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: Divider(color: Colors.white12),
+                ),
+                
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: _isSessionValid() 
+                        ? (_isSessionExpiringSoon() ? Colors.orange.withOpacity(0.1) : Colors.green.withOpacity(0.1))
+                        : Colors.red.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: _isSessionValid() 
+                          ? (_isSessionExpiringSoon() ? Colors.orange.withOpacity(0.5) : Colors.green.withOpacity(0.5))
+                          : Colors.red.withOpacity(0.5),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          _isSessionValid() ? Icons.lock_open : Icons.lock,
+                          size: 18,
+                          color: _isSessionValid() 
+                            ? (_isSessionExpiringSoon() ? Colors.orange : Colors.green)
+                            : Colors.red,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('Session Status', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                              const SizedBox(height: 2),
+                              Text(
+                                _getSessionStatusText(),
+                                style: TextStyle(
+                                  color: _isSessionValid() 
+                                    ? (_isSessionExpiringSoon() ? Colors.orange : Colors.green)
+                                    : Colors.red,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                
+                if (_currentMode.toUpperCase() == 'AGENT' && _conversations.isNotEmpty) ...[
+                  const Padding(
+                    padding: EdgeInsets.only(left: 20, top: 16, bottom: 8),
+                    child: Text('RECENT CHATS', style: TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+                  ),
+                  ..._conversations.map((conv) {
+                    final isSelected = _currentConversationId == conv['id'];
+                    return ListTile(
+                      dense: true,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+                      tileColor: isSelected ? colorScheme.primary.withOpacity(0.15) : null,
+                      leading: Icon(Icons.chat_bubble_outline, size: 18, color: isSelected ? colorScheme.primary : Colors.white54),
+                      title: Text(
+                        conv['title'] ?? 'Unknown', 
+                        style: TextStyle(
+                          color: isSelected ? Colors.white : Colors.white70,
+                          fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                          fontSize: 14,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      onTap: () {
+                        Navigator.pop(context);
+                        _resumeConversation(conv['id']!, conv['title']!);
+                      },
+                    );
+                  }).toList(),
+                ],
+              ],
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildDrawerItem(IconData icon, String title, VoidCallback onTap) {
+    return ListTile(
+      leading: Icon(icon, color: Colors.white70),
+      title: Text(title, style: const TextStyle(color: Colors.white, fontSize: 15)),
+      onTap: onTap,
     );
   }
 
@@ -1466,22 +1573,30 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
     final colorScheme = theme.colorScheme;
     
     return Scaffold(
-      drawer: _currentMode.toUpperCase() == 'AGENT' ? _buildDrawer() : null,
+      drawer: _buildDrawer(),
       backgroundColor: const Color(0xFF0F0F12),
       appBar: AppBar(
         title: const Text(
           'Voila Voice',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, letterSpacing: -0.3),
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: -0.5),
         ),
+        centerTitle: false,
+        elevation: 0,
         actions: [
+          if (_currentMode.toUpperCase() == 'AGENT')
+            IconButton(
+              icon: Icon(Icons.auto_awesome, size: 22, color: _selectedModel.isNotEmpty ? colorScheme.secondary : colorScheme.onSurface.withOpacity(0.7)),
+              onPressed: _showModelSelector,
+            ),
           GestureDetector(
             onTap: () => _showDeviceSelector(context),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              margin: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12),
               decoration: BoxDecoration(
                 color: const Color(0xFF1A1A1F),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.white.withOpacity(0.08)),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.white.withOpacity(0.1)),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -1498,69 +1613,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
               ),
             ),
           ),
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: _isSessionValid() 
-                ? (_isSessionExpiringSoon() ? Colors.orange.withOpacity(0.2) : Colors.green.withOpacity(0.2))
-                : Colors.red.withOpacity(0.2),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: _isSessionValid() 
-                  ? (_isSessionExpiringSoon() ? Colors.orange : Colors.green)
-                  : Colors.red,
-                width: 1,
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  _isSessionValid() ? Icons.lock_open : Icons.lock,
-                  size: 14,
-                  color: _isSessionValid() 
-                    ? (_isSessionExpiringSoon() ? Colors.orange : Colors.green)
-                    : Colors.red,
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  _getSessionStatusText(),
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: _isSessionValid() 
-                      ? (_isSessionExpiringSoon() ? Colors.orange : Colors.green)
-                      : Colors.red,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (_currentMode.toUpperCase() == 'AGENT')
-            IconButton(
-              icon: Icon(Icons.auto_awesome, size: 20, color: _selectedModel.isNotEmpty ? colorScheme.secondary : colorScheme.onSurface.withOpacity(0.7)),
-              onPressed: _showModelSelector,
-            ),
-          IconButton(
-            icon: Icon(Icons.folder_copy_outlined, size: 20, color: colorScheme.onSurface.withOpacity(0.7)),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const ArtifactsPage(),
-                ),
-              );
-            },
-          ),
-          IconButton(
-            icon: Icon(Icons.security_outlined, size: 20, color: colorScheme.onSurface.withOpacity(0.7)),
-            onPressed: _showSecurityAlerts,
-          ),
-          IconButton(
-            icon: Icon(Icons.settings_outlined, size: 20, color: colorScheme.onSurface.withOpacity(0.7)),
-            onPressed: () => _showSettingsSheet(context),
-          ),
+          const SizedBox(width: 4),
         ],
       ),
       body: Column(
