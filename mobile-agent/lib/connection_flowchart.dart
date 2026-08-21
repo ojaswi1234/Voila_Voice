@@ -189,17 +189,54 @@ class _ElegantFlowchartPainter extends CustomPainter {
   }
 
   void _drawDataPacket(Canvas canvas, double startX, double endX, double y, Color color, double progress) {
-    final double currentX = startX + (endX - startX) * progress;
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.fill;
+    final double pathLength = endX - startX;
+    final double headX = startX + pathLength * progress;
+    final double cometLength = 30.0;
     
-    final glow = Paint()
-      ..color = color.withOpacity(0.6)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
+    // Direction multiplier
+    final double dir = endX > startX ? 1.0 : -1.0;
+    final double tailX = headX - (cometLength * dir);
+    
+    final Paint cometPaint = Paint()
+      ..shader = LinearGradient(
+        colors: [color.withOpacity(0.0), color, Colors.white],
+        stops: const [0.0, 0.7, 1.0],
+        begin: endX > startX ? Alignment.centerLeft : Alignment.centerRight,
+        end: endX > startX ? Alignment.centerRight : Alignment.centerLeft,
+      ).createShader(Rect.fromPoints(Offset(tailX, y - 2), Offset(headX, y + 2)))
+      ..strokeWidth = 3.0
+      ..strokeCap = StrokeCap.round;
 
-    canvas.drawCircle(Offset(currentX, y), 5, glow);
-    canvas.drawCircle(Offset(currentX, y), 2.5, paint);
+    final Paint glowPaint = Paint()
+      ..shader = LinearGradient(
+        colors: [color.withOpacity(0.0), color.withOpacity(0.8)],
+        stops: const [0.0, 1.0],
+        begin: endX > startX ? Alignment.centerLeft : Alignment.centerRight,
+        end: endX > startX ? Alignment.centerRight : Alignment.centerLeft,
+      ).createShader(Rect.fromPoints(Offset(tailX, y - 4), Offset(headX, y + 4)))
+      ..strokeWidth = 6.0
+      ..strokeCap = StrokeCap.round
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
+
+    // Draw bounds checking so it doesn't draw outside the line segment
+    double drawStartX = tailX;
+    double drawEndX = headX;
+    
+    if (endX > startX) {
+      if (drawStartX < startX) drawStartX = startX;
+      if (drawEndX > endX) drawEndX = endX;
+      if (drawStartX < drawEndX) {
+        canvas.drawLine(Offset(drawStartX, y), Offset(drawEndX, y), glowPaint);
+        canvas.drawLine(Offset(drawStartX, y), Offset(drawEndX, y), cometPaint);
+      }
+    } else {
+      if (drawStartX > startX) drawStartX = startX;
+      if (drawEndX < endX) drawEndX = endX;
+      if (drawStartX > drawEndX) {
+        canvas.drawLine(Offset(drawStartX, y), Offset(drawEndX, y), glowPaint);
+        canvas.drawLine(Offset(drawStartX, y), Offset(drawEndX, y), cometPaint);
+      }
+    }
   }
 
   void _drawGlowingNode(Canvas canvas, double x, double y, Color color) {
