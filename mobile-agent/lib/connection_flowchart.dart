@@ -97,11 +97,11 @@ class _ConnectionFlowchartState extends State<ConnectionFlowchart>
                 ),
                 Positioned(
                   top: 12, left: MediaQuery.of(context).size.width / 2 - 36,
-                  child: _buildNodeLabel('Cloud', Icons.cloud, widget.isBackendConnected ? Colors.blueAccent : Colors.grey),
+                  child: _buildNodeLabel('API', Icons.cloud, widget.isBackendConnected ? Colors.blueAccent : Colors.grey),
                 ),
                 Positioned(
                   top: 12, right: 24,
-                  child: _buildNodeLabel(widget.activeDeviceName ?? 'Desktop', Icons.computer, widget.isLocalAgentConnected ? Colors.greenAccent : Colors.grey),
+                  child: _buildNodeLabel('Desktop', Icons.computer, widget.isLocalAgentConnected ? Colors.greenAccent : Colors.grey),
                 ),
               ],
             ),
