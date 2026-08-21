@@ -1621,6 +1621,14 @@ func runBackgroundMode() {
 	
 	// Start mobile client presence polling for AI face
 	go func() {
+		client := &http.Client{
+			Timeout: 5 * time.Second, // Fast timeout for health checks
+			Transport: &http.Transport{
+				MaxIdleConns:        10,
+				IdleConnTimeout:     30 * time.Second,
+				DisableCompression: true,
+			},
+		}
 		for {
 			time.Sleep(2 * time.Second)
 			healthURL := data.BackendURL + "/health"
@@ -1629,7 +1637,7 @@ func runBackgroundMode() {
 				if strings.Contains(data.BackendURL, "ngrok") || strings.Contains(data.BackendURL, "ngrok-free") {
 					req.Header.Set("ngrok-skip-browser-warning", "true")
 				}
-				resp, err := http.DefaultClient.Do(req)
+				resp, err := client.Do(req)
 				if err == nil && resp.StatusCode == 200 {
 					var healthData struct {
 						Status          string `json:"status"`

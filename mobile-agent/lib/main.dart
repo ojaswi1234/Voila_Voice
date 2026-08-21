@@ -15,6 +15,7 @@ import 'visualizer.dart';
 import 'package:uuid/uuid.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_background/flutter_background.dart';
+import 'connection_flowchart.dart';
 
 // Backend URL from build-time configuration (safe default + scheme fix)
 const String _rawBackendUrl = String.fromEnvironment(
@@ -97,15 +98,30 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   final List<Map<String, dynamic>> _messagesAgent = [];
   List<Map<String, dynamic>> get _messages => _currentMode.toUpperCase() == 'AGENT' ? _messagesAgent : _messagesShell;
   bool _isThinking = false;
+  bool _isDataDeparting = false;
+  bool _isDataArriving = false;
   bool _willTalk = true;
   FlutterTts flutterTts = FlutterTts();
   String _activeDevice = '';
   bool _isConnected = false;
   bool _isHealthy = false;
   bool _localAgentConnected = false;
+
+  void _triggerDataDeparting() {
+    setState(() => _isDataDeparting = true);
+    Future.delayed(const Duration(milliseconds: 1500), () {
+      if (mounted) setState(() => _isDataDeparting = false);
+    });
+  }
+
+  void _triggerDataArriving() {
+    setState(() => _isDataArriving = true);
+    Future.delayed(const Duration(milliseconds: 1500), () {
+      if (mounted) setState(() => _isDataArriving = false);
+    });
+  }
   String _backendStatus = 'Checking...';
   Timer? _healthCheckTimer;
-  Timer? _pingTimer;
   int _reconnectAttempts = 0;
   Map<String, dynamic> _devices = {};
   String? _currentDeviceId;
@@ -385,7 +401,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
       channel.sink.add(jsonEncode(message));
       
       setState(() {
-        _isThinking = false;
+        _isThinking = false; _triggerDataArriving();
         _messages.add({
           'type': 'system',
           'content': 'Cancellation signal sent to local agent (ESC pressed).',
@@ -415,12 +431,11 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
       channel.stream.listen((message) {
         setState(() {
           _isConnected = true;
-          
-          // Start ping timer when connected
-          _startPingTimer();
-          
-          try {
-            final jsonResponse = jsonDecode(message);
+          _reconnectAttempts = 0; // Reset reconnection counter on successful connect
+        });
+        
+        try {
+          final jsonResponse = jsonDecode(message);
             
             if (jsonResponse is Map && jsonResponse['type'] == 'session') {
               setState(() {
@@ -563,7 +578,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
               return;
             } else if (jsonResponse is Map && jsonResponse.containsKey('summary')) {
               setState(() {
-                _isThinking = false;
+                _isThinking = false; _triggerDataArriving();
               });
               if (_willTalk) {
                 _speak(jsonResponse['summary']);
@@ -613,7 +628,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
               _getDevices(); // Refresh device list
             } else if (message.contains('ERROR:')) {
               setState(() { 
-                _isThinking = false; 
+                _isThinking = false; _triggerDataArriving(); 
                 _isFetchingModels = false;
               });
               if (message.contains('Unauthorized')) {
@@ -629,7 +644,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                 'timestamp': DateTime.now().toString(),
               });
             } else {
-              setState(() { _isThinking = false; });
+              setState(() { _isThinking = false; _triggerDataArriving(); });
               _messages.add({
                 'type': 'response',
                 'content': message,
@@ -638,7 +653,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
             }
           } catch (e) {
             setState(() { 
-              _isThinking = false; 
+              _isThinking = false; _triggerDataArriving(); 
               _isFetchingModels = false;
             });
             _messages.add({
@@ -652,9 +667,8 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
           _scrollToBottom();
         });
       }, onError: (error) {
-        _pingTimer?.cancel();
         setState(() {
-          _isThinking = false;
+          _isThinking = false; _triggerDataArriving();
           _isConnected = false;
           _messages.add({
             'type': 'error',
@@ -663,7 +677,6 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
           });
         });
       }, onDone: () {
-        _pingTimer?.cancel();
         setState(() {
           _isConnected = false;
           _messages.add({
@@ -673,7 +686,10 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
           });
         });
         
-        Future.delayed(const Duration(seconds: 5), () {
+        // Exponential backoff reconnection
+        _reconnectAttempts++;
+        final delay = Duration(seconds: 1 << _reconnectAttempts.clamp(0, 10)); // 1s, 2s, 4s, 8s, 16s max
+        Future.delayed(delay, () {
           _connectToBackend();
         });
       });
@@ -697,19 +713,6 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
     _checkBackendHealth();
   }
 
-  void _startPingTimer() {
-    _pingTimer?.cancel(); // Cancel existing timer if any
-    _pingTimer = Timer.periodic(const Duration(seconds: 10), (_) {
-      _sendPing();
-    });
-  }
-
-  void _sendPing() {
-    if (channel != null && _isConnected) {
-      channel.sink.add(jsonEncode({"type": "ping"}));
-    }
-  }
-
   Future<void> _checkBackendHealth() async {
     try {
       String httpUrl = backendUrl;
@@ -717,35 +720,51 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
       httpUrl = httpUrl.replaceAll('wss://', 'https://');
       httpUrl = httpUrl.replaceAll('/ws', '/health');
       
-      final response = await http.get(Uri.parse(httpUrl));
+      final response = await http.get(Uri.parse(httpUrl)).timeout(
+        const Duration(seconds: 10), // Add timeout to prevent hanging
+      );
       
       if (response.statusCode == 200) {
         final healthData = jsonDecode(response.body);
         
-        // Use devices_online for presence (registered-but-stale not counted)
-        final devicesOnline = healthData['devices_online'] is int 
-            ? healthData['devices_online'] as int 
-            : 0;
+        // Now fetch detailed status with device information
+        String statusUrl = backendUrl;
+        statusUrl = statusUrl.replaceAll('ws://', 'http://');
+        statusUrl = statusUrl.replaceAll('wss://', 'https://');
+        statusUrl = statusUrl.replaceAll('/ws', '/status');
         
-        // Check if active device is specifically online and reachable
-        bool activeDeviceOnline = false;
-        if (healthData['online_devices'] is List) {
-          final onlineDevices = healthData['online_devices'] as List;
-          for (var device in onlineDevices) {
-            if (device['id'] == _activeDevice && device['online'] == true) {
-              // Device is online, check if reachable
-              final reachable = device['reachable'] == true;
-              activeDeviceOnline = reachable;
-              break;
+        final statusResponse = await http.get(Uri.parse(statusUrl)).timeout(
+          const Duration(seconds: 10),
+        );
+        
+        if (statusResponse.statusCode == 200) {
+          final statusData = jsonDecode(statusResponse.body);
+          
+          // Check if active device is specifically online and reachable
+          bool activeDeviceOnline = false;
+          if (statusData['online_devices'] is List) {
+            final onlineDevices = statusData['online_devices'] as List;
+            for (var device in onlineDevices) {
+              if (device['id'] == _activeDevice && device['online'] == true) {
+                final reachable = device['reachable'] == true;
+                activeDeviceOnline = reachable;
+                break;
+              }
             }
           }
+          
+          setState(() {
+            _isHealthy = true;
+            _localAgentConnected = activeDeviceOnline;
+            _backendStatus = 'Healthy (${statusData['uptime']})';
+          });
+        } else {
+          setState(() {
+            _isHealthy = false;
+            _localAgentConnected = false;
+            _backendStatus = 'Status endpoint failed (${statusResponse.statusCode})';
+          });
         }
-        
-        setState(() {
-          _isHealthy = true;
-          _localAgentConnected = activeDeviceOnline; // Only show connected if active device is reachable
-          _backendStatus = 'Healthy (${healthData['uptime']})';
-        });
       } else {
         setState(() {
           _isHealthy = false;
@@ -757,7 +776,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
       setState(() {
         _isHealthy = false;
         _localAgentConnected = false;
-        _backendStatus = 'Health check failed';
+        _backendStatus = 'Health check failed: $e';
       });
     }
   }
@@ -777,7 +796,6 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   @override
   void dispose() {
     _healthCheckTimer?.cancel();
-    _pingTimer?.cancel();
     channel.sink.close();
     _controller.dispose();
     _scrollController.dispose();
@@ -792,7 +810,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
     if (channel != null && _isConnected) {
       channel.sink.add(jsonEncode({"type": "stop_command"}));
       setState(() {
-        _isThinking = false;
+        _isThinking = false; _triggerDataArriving();
         _messages.add({
           'type': 'response',
           'content': 'Execution stopped by user.',
@@ -961,6 +979,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
       channel.sink.add(jsonEncode(message));
       setState(() {
         _isThinking = true;
+        _triggerDataDeparting();
         _messages.add({
           'type': 'user',
           'content': _controller.text,
@@ -1456,6 +1475,31 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
           style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, letterSpacing: -0.3),
         ),
         actions: [
+          GestureDetector(
+            onTap: () => _showDeviceSelector(context),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1A1A1F),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.white.withOpacity(0.08)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.computer, size: 14, color: colorScheme.secondary),
+                  const SizedBox(width: 6),
+                  Text(
+                    _activeDevice.isEmpty ? 'Select Device' : (_devices[_activeDevice]?['name'] ?? 'Desktop'),
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                  ),
+                  const SizedBox(width: 4),
+                  const Icon(Icons.keyboard_arrow_down, size: 14, color: Colors.white54),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
@@ -1522,7 +1566,14 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
       ),
       body: Column(
         children: [
-          _buildStatusRow(colorScheme),
+          ConnectionFlowchart(
+            isBackendConnected: _isHealthy,
+            isLocalAgentConnected: _localAgentConnected,
+            isWebSocketConnected: _isConnected,
+            isDataDeparting: _isDataDeparting,
+            isDataArriving: _isDataArriving,
+            activeDeviceName: _activeDevice.isNotEmpty ? (_devices[_activeDevice]?['name'] ?? 'Desktop') : null,
+          ),
           const SizedBox(height: 12),
           _buildModeToggle(colorScheme),
           const SizedBox(height: 16),
@@ -1648,51 +1699,6 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
           ),
         ),
       ),
-    );
-  }
-
-  Widget _buildStatusRow(ColorScheme colorScheme) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(
-        children: [
-          _buildStatusDot(_isConnected, _isConnected ? colorScheme.secondary : Colors.redAccent),
-          const SizedBox(width: 6),
-          Text(_isConnected ? 'Connected' : 'Offline', style: TextStyle(fontSize: 12, color: Colors.white54)),
-          const Spacer(),
-          GestureDetector(
-            onTap: () => _showDeviceSelector(context),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1A1A1F),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.white.withOpacity(0.08)),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.computer, size: 14, color: colorScheme.secondary),
-                  const SizedBox(width: 6),
-                  Text(
-                    _activeDevice.isEmpty ? 'Select Device' : (_devices[_activeDevice]?['name'] ?? 'Desktop'),
-                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-                  ),
-                  const SizedBox(width: 4),
-                  const Icon(Icons.keyboard_arrow_down, size: 14, color: Colors.white54),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatusDot(bool active, Color color) {
-    return Container(
-      width: 8, height: 8,
-      decoration: BoxDecoration(color: color, shape: BoxShape.circle, boxShadow: [BoxShadow(color: color.withOpacity(0.4), blurRadius: 4)]),
     );
   }
 

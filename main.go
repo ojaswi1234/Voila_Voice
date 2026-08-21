@@ -116,9 +116,14 @@ func NewBackend() *Backend {
 
 func safeHTTPClient() *http.Client {
 	return &http.Client{
-		Timeout: 120 * time.Second,
+		Timeout: 10 * time.Second, // Reduced from 120s for faster failure detection
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
+		},
+		Transport: &http.Transport{
+			MaxIdleConns:        100,
+			IdleConnTimeout:     90 * time.Second,
+			DisableCompression: true,
 		},
 	}
 }
@@ -429,7 +434,7 @@ func (b *Backend) markStaleDevices() {
 }
 
 func (b *Backend) startPresenceTicker() {
-	ticker := time.NewTicker(15 * time.Second)
+	ticker := time.NewTicker(30 * time.Second) // Reduced from 15s to reduce load
 	defer ticker.Stop()
 	
 	for range ticker.C {
@@ -463,9 +468,8 @@ func (b *Backend) pingDevice(device *Device) {
 		return
 	}
 	
-	// Ping device's HTTP endpoint
+	// Ping device's HTTP endpoint with timeout
 	client := safeHTTPClient()
-	client.Timeout = 10 * time.Second
 	
 	req, err := http.NewRequest("GET", strings.TrimRight(device.Address, "/") + "/health", nil)
 	if err == nil {
@@ -473,6 +477,21 @@ func (b *Backend) pingDevice(device *Device) {
 	}
 	
 	resp, err := client.Do(req)
+	if err != nil {
+		// Fast failure - don't lock if request failed
+		b.mu.Lock()
+		if d, exists := b.devices[device.ID]; exists {
+			d.LastPing = time.Now()
+			wasReachable := d.Reachable
+			d.Reachable = false
+			if wasReachable {
+				go b.broadcastDevices()
+			}
+		}
+		b.mu.Unlock()
+		return
+	}
+	defer resp.Body.Close()
 	
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -480,9 +499,8 @@ func (b *Backend) pingDevice(device *Device) {
 	if d, exists := b.devices[device.ID]; exists {
 		d.LastPing = time.Now()
 		wasReachable := d.Reachable
-		if err == nil && resp.StatusCode == 200 {
+		if resp.StatusCode == 200 {
 			d.Reachable = true
-			resp.Body.Close()
 		} else {
 			d.Reachable = false
 		}
@@ -903,7 +921,14 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 			log.Printf("WebSocket upgrade error: %v", err)
 			return
 		}
-		defer conn.Close()
+		defer func() {
+			conn.Close()
+			// Clean up client from map
+			b.mu.Lock()
+			delete(b.clients, clientID)
+			b.mu.Unlock()
+			log.Printf("Mobile client disconnected: %s", clientID)
+		}()
 
 		clientID := fmt.Sprintf("client-%d", time.Now().UnixNano())
 		clientIP := r.RemoteAddr
@@ -926,18 +951,16 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 			return nil
 		})
 
-		// Start ping ticker in separate goroutine
-		pingTicker := time.NewTicker(pingPeriod)
-		defer pingTicker.Stop()
-
 		// Create done channel for graceful shutdown
 		done := make(chan struct{})
 
 		// Start ping goroutine
 		go func() {
+			ticker := time.NewTicker(pingPeriod)
+			defer ticker.Stop()
 			for {
 				select {
-				case <-pingTicker.C:
+				case <-ticker.C:
 					if err := conn.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(writeWait)); err != nil {
 						log.Printf("Ping failed for %s: %v", clientID, err)
 						return
@@ -955,6 +978,7 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				close(done)
 				break
 			}
+			// Reset read deadline after each successful message
 			conn.SetReadDeadline(time.Now().Add(pongWait))
 
 			var msg map[string]interface{}
@@ -1655,61 +1679,56 @@ http.HandleFunc("/heartbeat", func(w http.ResponseWriter, r *http.Request) {
 })
 
 // Health check endpoint for Render keep-alive
-	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		// Mark stale devices before serving health
-		backend.markStaleDevices()
-		
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		backend.mu.RLock()
-		
-		// Count online devices securely (no PII or IDs leaked)
-		devicesOnline := 0
-		for _, device := range backend.devices {
-			if device.Active {
-				devicesOnline++
-			}
-		}
-		
-		health := map[string]interface{}{
-			"status":          "ok",
-			"timestamp":       time.Now().Format(time.RFC3339),
-			"uptime":          time.Since(startTime).String(),
-			"devices_registered": len(backend.devices),
-			"devices_online":   devicesOnline,
-			"mobile_clients":   len(backend.clients),
-		}
-		backend.mu.RUnlock()
-		json.NewEncoder(w).Encode(health)
-	})
+http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+	// Fast response - don't mark stale devices here to avoid blocking
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
 	
-	// Status endpoint for monitoring
-	http.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
-		// Mark stale devices before serving status
-		backend.markStaleDevices()
-		
-		w.Header().Set("Content-Type", "application/json")
-		backend.mu.RLock()
-		
-		// Count online devices securely
-		devicesOnline := 0
-		for _, device := range backend.devices {
-			if device.Active {
-				devicesOnline++
-			}
+	backend.mu.RLock()
+	health := map[string]interface{}{
+		"status":          "ok",
+		"timestamp":       time.Now().Format(time.RFC3339),
+		"uptime":          time.Since(startTime).String(),
+		"devices_registered": len(backend.devices),
+		"mobile_clients":   len(backend.clients),
+	}
+	backend.mu.RUnlock()
+	json.NewEncoder(w).Encode(health)
+})
+
+// Status endpoint for monitoring
+http.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
+	// Mark stale devices before serving status
+	backend.markStaleDevices()
+	
+	w.Header().Set("Content-Type", "application/json")
+	backend.mu.RLock()
+	
+	// Build online devices list for mobile app
+	onlineDevices := make([]map[string]interface{}, 0)
+	for _, device := range backend.devices {
+		if device.Active {
+			onlineDevices = append(onlineDevices, map[string]interface{}{
+				"id":        device.ID,
+				"name":      device.Name,
+				"online":    true,
+				"reachable": device.Reachable,
+			})
 		}
-		
-		stats := map[string]interface{}{
-			"status":          "running",
-			"uptime":          time.Since(startTime).String(),
-			"device_count":    len(backend.devices),
-			"devices_online":  devicesOnline,
-			"mobile_clients":  len(backend.clients),
-			"token_counter":   backend.tokenCounter,
-		}
-		backend.mu.RUnlock()
-		json.NewEncoder(w).Encode(stats)
-	})
+	}
+	
+	stats := map[string]interface{}{
+		"status":          "running",
+		"uptime":          time.Since(startTime).String(),
+		"device_count":    len(backend.devices),
+		"devices_online":  len(onlineDevices),
+		"online_devices":  onlineDevices,
+		"mobile_clients":  len(backend.clients),
+		"token_counter":   backend.tokenCounter,
+	}
+	backend.mu.RUnlock()
+	json.NewEncoder(w).Encode(stats)
+})
 	
 	port := os.Getenv("PORT")
 	if port == "" {
