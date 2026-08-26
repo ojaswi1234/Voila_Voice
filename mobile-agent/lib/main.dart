@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart'; // For compute()
 import 'package:flutter/material.dart';
 import 'crypto.dart';
 import 'package:http/http.dart' as http;
@@ -227,9 +228,8 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
 
   Future<void> _initTts() async {
     // 100% Legal, Native, Free OS-Level Neural Voices
-    if (Platform.isAndroid) {
-      await flutterTts.setEngine("com.google.android.tts");
-    }
+    // Use system default TTS engine instead of hardcoding Google TTS
+    // This ensures compatibility with de-Googled devices and Samsung devices
     await flutterTts.setLanguage("en-US");
     
     // Attempt to select a high-quality network voice (Neural/Wavenet)
@@ -245,7 +245,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
         }
       }
     } catch (e) {
-      debugPrint("Voice selection error: ");
+      debugPrint("Voice selection error: $e");
     }
 
     await flutterTts.setSpeechRate(0.5);
@@ -428,30 +428,38 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
         Uri.parse(url),
       );
       
-      channel.stream.listen((message) {
+      channel.stream.listen((message) async {
         setState(() {
           _isConnected = true;
           _reconnectAttempts = 0; // Reset reconnection counter on successful connect
         });
         
         try {
-          final jsonResponse = jsonDecode(message);
+          // Bug #13 Fix: Heavy JSON parsing moved to a background isolate via compute()
+          // to prevent stuttering/frame drops on large payload like conversations_list
+          final jsonResponse = await compute(jsonDecode, message);
             
             if (jsonResponse is Map && jsonResponse['type'] == 'session') {
+              final sessionToken = jsonResponse['session_token'];
+              final sessionExpiresAt = jsonResponse['expires_at'];
+              
+              // Save to storage outside setState
+              await _storage.write(key: 'session_token', value: sessionToken);
+              if (sessionExpiresAt != null) {
+                await _storage.write(key: 'session_expires_at', value: sessionExpiresAt.toString());
+              }
+              
+              // Save the security phrase used to unlock this session
+              if (_securityPhrase.isNotEmpty) {
+                _cachedSecurityPhrase = _securityPhrase;
+                await _storage.write(key: 'security_phrase', value: _securityPhrase);
+              }
+              
               setState(() {
-                _sessionToken = jsonResponse['session_token'];
-                _sessionExpiresAt = jsonResponse['expires_at'];
-                _storage.write(key: 'session_token', value: _sessionToken);
-                if (_sessionExpiresAt != null) {
-                  _storage.write(key: 'session_expires_at', value: _sessionExpiresAt.toString());
-                }
-                
-                // Save the security phrase used to unlock this session
-                if (_securityPhrase.isNotEmpty) {
-                  _cachedSecurityPhrase = _securityPhrase;
-                  _storage.write(key: 'security_phrase', value: _securityPhrase);
-                }
+                _sessionToken = sessionToken;
+                _sessionExpiresAt = sessionExpiresAt;
               });
+              
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Session unlocked successfully.')),
@@ -687,9 +695,13 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
         
         // Exponential backoff reconnection
         _reconnectAttempts++;
-        final delay = Duration(seconds: 1 << _reconnectAttempts.clamp(0, 10)); // 1s, 2s, 4s, 8s, 16s max
+        final delay = Duration(seconds: 1 << _reconnectAttempts.clamp(0, 10));
+        // Bug #14 Fix: Explicitly close the old sink before reconnecting.
+        // Without this, every reconnect orphans the old WebSocketChannel and its
+        // stream listener, leaking memory indefinitely when disconnected.
+        try { channel.sink.close(); } catch (_) {}
         Future.delayed(delay, () {
-          _connectToBackend();
+          if (mounted) _connectToBackend();
         });
       });
     } catch (e) {

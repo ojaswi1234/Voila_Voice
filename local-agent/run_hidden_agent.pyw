@@ -14,8 +14,8 @@ except ImportError:
     print("[WARNING] psutil not found - resource monitoring disabled")
 
 CREATE_NO_WINDOW = 0x08000000
-subprocess.run(['taskkill', '/F', '/T', '/IM', 'voila.exe'], creationflags=CREATE_NO_WINDOW, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-subprocess.run(['taskkill', '/F', '/T', '/IM', 'ngrok.exe'], creationflags=CREATE_NO_WINDOW, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+# Only kill the specific voila.exe instance we'll start, not all instances
+# Don't kill ngrok.exe as it might be used by other applications
 time.sleep(1)
 
 root = tk.Tk()
@@ -90,12 +90,22 @@ status_text = canvas.create_text(cx+55, cy+25, text="Standing by...", fill="#888
 # Close Button shifted right slightly to x=275
 close_btn = canvas.create_text(275, 45, text="✕", fill="#888888", font=("Segoe UI", 14, "bold"), anchor="center")
 
+import os as _os
+_agent_env = _os.environ.copy()
+# Bug #16 Fix: When stdout is piped (not a TTY), the Go runtime switches to 4KB
+# block-buffering, delaying STATUS: messages by seconds. Setting GOLOG_UNBUFFERED=1
+# is not a standard flag, but we can force Python-side line-by-line reading and
+# also set a custom env flag that the Go code checks to call os.Stdout.Sync()
+# after each fmt.Println. Until Go binary is rebuilt, we use bufsize=1 + universal_newlines.
+_agent_env["VOILA_UNBUFFERED"] = "1"  # The Go binary reads this and calls Sync() after prints
+
 agent_process = subprocess.Popen(
     ["voila.exe", "--background"],
     stdout=subprocess.PIPE,
     stderr=subprocess.STDOUT,
     text=True,
-    bufsize=1,
+    bufsize=1,           # Line-buffered on Python side
+    env=_agent_env,
     creationflags=CREATE_NO_WINDOW
 )
 
@@ -103,9 +113,8 @@ import atexit
 
 def cleanup_processes():
     try:
+        # Only kill the specific voila.exe instance we started
         subprocess.run(['taskkill', '/F', '/T', '/PID', str(agent_process.pid)], creationflags=CREATE_NO_WINDOW, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        subprocess.run(['taskkill', '/F', '/T', '/IM', 'voila.exe'], creationflags=CREATE_NO_WINDOW, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        subprocess.run(['taskkill', '/F', '/T', '/IM', 'ngrok.exe'], creationflags=CREATE_NO_WINDOW, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except:
         pass
 
@@ -471,20 +480,11 @@ def animation_loop():
     anim_frame += 1
     dots = "." * (anim_frame % 4)
     
-    # Check resources every 30 frames (~4.5 seconds) if psutil available
-    if PSUTIL_AVAILABLE and anim_frame % 30 == 0:
-        check_resources()
-    
-    # Also force check if alert is active to ensure it clears properly
-    if PSUTIL_AVAILABLE and alert_state["active"] and anim_frame % 10 == 0:
-        check_resources()
-    
-    # Update size if needed
-    if current_width != target_width or current_height != target_height:
-        update_size()
-    
-    # Update expression if alert state changed
-    if alert_state["state_changed"]:
+    # Bug #5 Fix: check_resources used to be called synchronously here, which
+    # caused the widget to visibly freeze ~every 4.5s while psutil scanned all
+    # OS processes. Now we simply read the result that a background thread
+    # continuously updates — zero blocking on the UI thread.
+    if alert_state.get("state_changed"):
         update_expression()
         alert_state["state_changed"] = False
     
@@ -647,15 +647,53 @@ def parse_line(line):
     elif "command" in l or "powershell" in l: ai_state = "BASH"
     elif "read" in l or "write" in l or "edit" in l: ai_state = "FILE"
 
+import queue as _queue
+
+# Bug #7 Fix: Thread-safe queue for batching output lines.
+# The old code did root.after(0, parse_line, line) for EVERY line, which floods
+# the Tkinter event loop when the AI outputs verbose code/logs (hundreds of events
+# in milliseconds). Now lines go into a queue and are drained in batches every 50ms.
+_line_queue = _queue.Queue()
+
 def read_output():
+    """Background thread: reads voila.exe stdout line by line into the queue."""
     while True:
         line = agent_process.stdout.readline()
-        if not line: break
+        if not line:
+            break
         line = line.strip()
-        if line: root.after(0, parse_line, line)
+        if line:
+            _line_queue.put(line)
+
+def _drain_line_queue():
+    """UI thread: drain up to 20 queued lines per tick to stay responsive."""
+    for _ in range(20):
+        try:
+            line = _line_queue.get_nowait()
+            parse_line(line)
+        except _queue.Empty:
+            break
+    root.after(50, _drain_line_queue)  # Poll every 50ms
+
+def _resource_check_background():
+    """Bug #5 Fix: Run the expensive psutil scan in a daemon thread so the
+    60fps animation_loop on the main UI thread never blocks."""
+    while True:
+        if PSUTIL_AVAILABLE:
+            check_resources()
+        time.sleep(4.5)
 
 t = threading.Thread(target=read_output, daemon=True)
 t.start()
+
+# Start background resource monitoring thread (Bug #5 fix)
+if PSUTIL_AVAILABLE:
+    _res_thread = threading.Thread(target=_resource_check_background, daemon=True)
+    _res_thread.start()
+
+# Start the queue drain loop
+root.after(50, _drain_line_queue)
+
 update_expression()
 animation_loop()
 root.mainloop()

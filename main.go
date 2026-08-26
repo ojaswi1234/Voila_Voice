@@ -85,7 +85,10 @@ type Backend struct {
 	mu           sync.RWMutex
 	clients      map[string]*WebSocketClient
 	ipRateLimits map[string]int // IP -> failures
-	securityAlerts []SecurityAlert // Ring buffer
+	// Bug #17 Fix: True circular ring buffer - no O(N) reallocation
+	securityAlerts    [maxAlerts]SecurityAlert
+	alertHead         int // index of oldest alert
+	alertCount        int // how many slots are filled
 	mockCommandCounts map[string]int // deviceID -> count
 }
 
@@ -98,12 +101,11 @@ type WebSocketClient struct {
 
 func NewBackend() *Backend {
 	b := &Backend{
-		devices:      make(map[string]*Device),
-		activeDevice: "",
-		tokenCounter: 0,
-		clients:      make(map[string]*WebSocketClient),
-		ipRateLimits: make(map[string]int),
-		securityAlerts: make([]SecurityAlert, 0, maxAlerts),
+		devices:           make(map[string]*Device),
+		activeDevice:      "",
+		tokenCounter:      0,
+		clients:           make(map[string]*WebSocketClient),
+		ipRateLimits:      make(map[string]int),
 		mockCommandCounts: make(map[string]int),
 	}
 	
@@ -158,10 +160,14 @@ func (b *Backend) addSecurityAlert(alertType, ip, deviceID, clientID, detail, se
 		Severity:  severity,
 	}
 	
-	// Ring buffer: add new, remove old if at capacity
-	b.securityAlerts = append(b.securityAlerts, alert)
-	if len(b.securityAlerts) > maxAlerts {
-		b.securityAlerts = b.securityAlerts[1:]
+	// Bug #17 Fix: True O(1) circular ring buffer write — no slice reallocation
+	writeIdx := (b.alertHead + b.alertCount) % maxAlerts
+	b.securityAlerts[writeIdx] = alert
+	if b.alertCount < maxAlerts {
+		b.alertCount++
+	} else {
+		// Buffer full — advance head to overwrite oldest
+		b.alertHead = (b.alertHead + 1) % maxAlerts
 	}
 	
 	// Push to all connected mobile clients
@@ -211,9 +217,16 @@ func (b *Backend) broadcastDevices() {
 	}
 	jsonData, _ := json.Marshal(deviceList)
 
+	// Send concurrently so one slow/blocked client doesn't stall the rest
+	var wg sync.WaitGroup
 	for _, clientID := range clientIDs {
-		b.writeMessage(clientID, websocket.TextMessage, jsonData)
+		wg.Add(1)
+		go func(cid string) {
+			defer wg.Done()
+			b.writeMessage(cid, websocket.TextMessage, jsonData)
+		}(clientID)
 	}
+	wg.Wait()
 }
 
 func (b *Backend) tripCircuitBreaker(deviceID string) {
@@ -416,15 +429,27 @@ func (b *Backend) markStaleDevices() {
 	
 	now := time.Now()
 	changed := false
-	for _, device := range b.devices {
+	for id, device := range b.devices {
 		if device.Type == "desktop" || strings.HasPrefix(device.ID, "desktop-") {
-			// Desktop devices are online only if they've heartbeated within TTL
 			wasActive := device.Active
 			device.Active = now.Sub(device.LastSeen) < deviceOnlineTTL
 			if wasActive && !device.Active {
 				log.Printf("Device marked offline: %s (%s) - last seen %v ago", device.Name, device.ID, now.Sub(device.LastSeen))
 				changed = true
 			}
+			// Bug #3 Fix: Evict devices that have been offline for more than 24h to prevent map memory leak
+			if !device.Active && now.Sub(device.LastSeen) > 24*time.Hour {
+				log.Printf("Evicting stale device from memory: %s (%s)", device.Name, id)
+				delete(b.devices, id)
+				changed = true
+			}
+		}
+	}
+	
+	// Bug #3 Fix: Evict stale IP rate limit entries (reset after 1h) to prevent map growth
+	for ip, failures := range b.ipRateLimits {
+		if failures == 0 {
+			delete(b.ipRateLimits, ip)
 		}
 	}
 	
@@ -450,13 +475,17 @@ func (b *Backend) pingAllDevices() {
 		devices = append(devices, d)
 	}
 	b.mu.RUnlock()
-	
-	// Ping all devices concurrently
+
+	// Bug #2 Fix: Use a semaphore to cap concurrency at 50 to prevent port exhaustion
+	const maxConcurrentPings = 50
+	sem := make(chan struct{}, maxConcurrentPings)
 	var wg sync.WaitGroup
 	for _, device := range devices {
 		wg.Add(1)
+		sem <- struct{}{} // acquire slot
 		go func(d *Device) {
 			defer wg.Done()
+			defer func() { <-sem }() // release slot
 			b.pingDevice(d)
 		}(device)
 	}
@@ -1322,8 +1351,11 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				}
 				
 				b.mu.RLock()
-				alertsCopy := make([]SecurityAlert, len(b.securityAlerts))
-				copy(alertsCopy, b.securityAlerts)
+				// Bug #17 Fix: Read circular buffer in chronological order
+				alertsCopy := make([]SecurityAlert, b.alertCount)
+				for i := 0; i < b.alertCount; i++ {
+					alertsCopy[i] = b.securityAlerts[(b.alertHead+i)%maxAlerts]
+				}
 				b.mu.RUnlock()
 				
 				jsonData, _ := json.Marshal(map[string]interface{}{

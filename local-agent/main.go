@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/rand"
 	"crypto/sha256"
@@ -30,7 +31,13 @@ var (
 	currentConvID string
 	circuitMu  sync.Mutex
 	circuitOpen bool
+	execSemaphore chan struct{} // Limit concurrent executions
+	maxConcurrentExecs = 2 // Maximum concurrent AI executions
 )
+
+func init() {
+	execSemaphore = make(chan struct{}, maxConcurrentExecs)
+}
 
 const circuitFlagFile = "circuit_open.flag"
 
@@ -993,12 +1000,7 @@ func startHTTPServer() {
 			
 			// Append cancellation to transcript to prevent orphaned running state
 			if currentConvID != "" {
-				brainDir := filepath.Join(os.Getenv("LOCALAPPDATA"), "Google", "Antigravity", "brain")
-				if runtime.GOOS == "darwin" {
-					brainDir = filepath.Join(os.Getenv("HOME"), "Library", "Application Support", "Google", "Antigravity", "brain")
-				} else if runtime.GOOS != "windows" {
-					brainDir = filepath.Join(os.Getenv("HOME"), ".config", "google", "antigravity", "brain")
-				}
+				brainDir := getBrainDir()
 				transcriptPath := filepath.Join(brainDir, currentConvID, ".system_generated", "logs", "transcript.jsonl")
 				cancelMsg := fmt.Sprintf(`{"type":"SYSTEM_MESSAGE","status":"ERROR","content":"Execution forcibly cancelled by user.","created_at":"%s"}` + "\n", time.Now().Format(time.RFC3339))
 				if f, err := os.OpenFile(transcriptPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
@@ -1084,9 +1086,21 @@ func startHTTPServer() {
 			return
 		}
 		
+		// Check semaphore to limit concurrent executions
+		select {
+		case execSemaphore <- struct{}{}:
+			// Acquired semaphore, proceed
+		default:
+			// Semaphore full, reject request
+			w.WriteHeader(http.StatusTooManyRequests)
+			json.NewEncoder(w).Encode(map[string]string{"error": "too_many_requests", "message": "Maximum concurrent executions reached"})
+			return
+		}
+		
 		w.WriteHeader(http.StatusAccepted)
 		
 		go func() {
+			defer func() { <-execSemaphore }() // Release semaphore when done
 			wakeScreen()
 			output, newConvID, err := executeCommand(command, mode, conversationID, modelName)
 			
@@ -1121,7 +1135,31 @@ func startHTTPServer() {
 				req.Header.Set("ngrok-skip-browser-warning", "true")
 			}
 			
-			http.DefaultClient.Do(req)
+			// Webhook retry fix: silently ignoring errors left the mobile app
+			// deadlocked in "Thinking..." forever on any transient network hiccup.
+			webhookClient := &http.Client{Timeout: 10 * time.Second}
+			var webhookErr error
+			for attempt := 0; attempt < 3; attempt++ {
+				if attempt > 0 {
+					time.Sleep(time.Duration(1<<uint(attempt-1)) * time.Second) // 1s, 2s backoff
+				}
+				retryReq, _ := http.NewRequest(http.MethodPost, backendURL, bytes.NewBuffer(payloadBytes))
+				retryReq.Header.Set("Content-Type", "application/json")
+				if strings.Contains(connData.BackendURL, "ngrok") || strings.Contains(connData.BackendURL, "ngrok-free") {
+					retryReq.Header.Set("ngrok-skip-browser-warning", "true")
+				}
+				resp, err := webhookClient.Do(retryReq)
+				if err == nil {
+					resp.Body.Close()
+					webhookErr = nil
+					break
+				}
+				webhookErr = err
+				log.Printf("Webhook delivery attempt %d/3 failed: %v", attempt+1, err)
+			}
+			if webhookErr != nil {
+				log.Printf("All webhook delivery attempts failed — mobile app may be stuck: %v", webhookErr)
+			}
 		}()
 	})
 
@@ -1145,10 +1183,15 @@ func stopHTTPServer() {
 	}
 }
 
-var currentWorkingDir string
+var (
+	currentWorkingDir string
+	workingDirMutex  sync.Mutex
+)
 
 func init() {
+	workingDirMutex.Lock()
 	currentWorkingDir, _ = os.Getwd()
+	workingDirMutex.Unlock()
 	keepSystemAwake()
 }
 
@@ -1195,6 +1238,11 @@ type Conversation struct {
 	Title string `json:"title"`
 }
 
+func getBrainDir() string {
+	homeDir, _ := os.UserHomeDir()
+	return filepath.Join(homeDir, ".gemini", "voila-cli", "brain")
+}
+
 func listConversationsHandler(w http.ResponseWriter, r *http.Request) {
 	// Zero-friction mode: Authenticate using SecurityPhraseHash
 	connData, err := loadConnectionData()
@@ -1210,7 +1258,7 @@ func listConversationsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	
 	homeDir, _ := os.UserHomeDir()
-	brainDir := filepath.Join(homeDir, ".gemini", "voila-cli", "brain")
+	brainDir := getBrainDir()
 	
 	entries, err := os.ReadDir(brainDir)
 	var conversations []Conversation
@@ -1220,12 +1268,13 @@ func listConversationsHandler(w http.ResponseWriter, r *http.Request) {
 			if entry.IsDir() {
 				id := entry.Name()
 				transcriptPath := filepath.Join(brainDir, id, ".system_generated", "logs", "transcript.jsonl")
-				content, err := os.ReadFile(transcriptPath)
 				title := "Unknown Task"
 				
+				file, err := os.Open(transcriptPath)
 				if err == nil {
-					lines := strings.Split(string(content), "\n")
-					for _, line := range lines {
+					scanner := bufio.NewScanner(file)
+					for scanner.Scan() {
+						line := scanner.Text()
 						if strings.Contains(line, "\"type\":\"USER_INPUT\"") {
 							var step map[string]interface{}
 							if json.Unmarshal([]byte(line), &step) == nil {
@@ -1240,6 +1289,7 @@ func listConversationsHandler(w http.ResponseWriter, r *http.Request) {
 							}
 						}
 					}
+					file.Close()
 				}
 				conversations = append(conversations, Conversation{ID: id, Title: title})
 			}
@@ -1274,9 +1324,11 @@ func executeCommand(command string, mode string, conversationID string, modelNam
 		} else {
 			cmd = exec.Command("agy", "--model", modelName, "--dangerously-skip-permissions", "--print", prompt)
 		}
+		workingDirMutex.Lock()
 		if currentWorkingDir != "" {
 			cmd.Dir = currentWorkingDir
 		}
+		workingDirMutex.Unlock()
 	} else {
 		if runtime.GOOS == "windows" {
 			fullCommand := command + "; Write-Output \"`n___PWD___$((Get-Location).Path)\""
@@ -1285,9 +1337,11 @@ func executeCommand(command string, mode string, conversationID string, modelNam
 			fullCommand := command + "; echo \"\n___PWD___$(pwd)\""
 			cmd = exec.Command("sh", "-c", fullCommand)
 		}
+		workingDirMutex.Lock()
 		if currentWorkingDir != "" {
 			cmd.Dir = currentWorkingDir
 		}
+		workingDirMutex.Unlock()
 	}
 
 	var stdout, stderr bytes.Buffer
@@ -1295,6 +1349,7 @@ func executeCommand(command string, mode string, conversationID string, modelNam
 	cmd.Stderr = io.MultiWriter(&stderr, os.Stderr)
 	
 	fmt.Println("STATUS: RUNNING")
+	os.Stdout.Sync() // Force flush to ensure real-time delivery to Python widget
 
 	cmdMu.Lock()
 	currentCmd = cmd
@@ -1309,6 +1364,7 @@ func executeCommand(command string, mode string, conversationID string, modelNam
 	cmdMu.Unlock()
 	
 	fmt.Println("STATUS: IDLE")
+	os.Stdout.Sync() // Force flush to ensure real-time delivery to Python widget
 
 	outStr := stdout.String()
 	errStr := stderr.String()
@@ -1319,7 +1375,9 @@ func executeCommand(command string, mode string, conversationID string, modelNam
 		for _, line := range lines {
 			trimmed := strings.TrimSpace(line)
 			if strings.HasPrefix(trimmed, "___PWD___") {
+				workingDirMutex.Lock()
 				currentWorkingDir = strings.TrimPrefix(trimmed, "___PWD___")
+				workingDirMutex.Unlock()
 			} else {
 				newOut = append(newOut, line)
 			}
@@ -1600,16 +1658,37 @@ func runBackgroundMode() {
 	// Start ngrok registration loop (only register when address changes)
 	go func(data ConnectionData) {
 		var lastRegisteredAddr string
+		var ngrokRetryCount int
+		var ngrokRetryDelay = 5 * time.Second
+		const maxNgrokRetries = 10
+		const maxNgrokRetryDelay = 60 * time.Second
+		
 		for {
 			addr := getNgrokPublicURL()
 			if addr == "" {
 				if !isNgrokRunning() {
 					log.Println("Ngrok not running, attempting to start...")
 					if err := startNgrok(); err != nil {
-						log.Printf("Failed to start ngrok: %v (skipping registration)", err)
-						time.Sleep(5 * time.Second)
+						ngrokRetryCount++
+						log.Printf("Failed to start ngrok (attempt %d/%d): %v", ngrokRetryCount, maxNgrokRetries, err)
+						
+						if ngrokRetryCount >= maxNgrokRetries {
+							log.Printf("Max ngrok retry attempts reached, giving up for now")
+							ngrokRetryCount = 0
+							ngrokRetryDelay = 5 * time.Second // Reset delay
+							time.Sleep(30 * time.Second) // Wait longer before trying again
+							continue
+						}
+						
+						time.Sleep(ngrokRetryDelay)
+						ngrokRetryDelay = time.Duration(float64(ngrokRetryDelay) * 1.5) // Exponential backoff
+						if ngrokRetryDelay > maxNgrokRetryDelay {
+							ngrokRetryDelay = maxNgrokRetryDelay
+						}
 						continue
 					}
+					ngrokRetryCount = 0 // Reset on success
+					ngrokRetryDelay = 5 * time.Second
 					time.Sleep(3 * time.Second)
 					addr = getNgrokPublicURL()
 				}
@@ -1668,9 +1747,11 @@ func runBackgroundMode() {
 					
 					log.Printf("Presence: Backend OK, Mobile clients: %d", healthData.MobileClients)
 					fmt.Printf("STATUS: MOBILE_CLIENTS:%d\n", healthData.MobileClients)
+					os.Stdout.Sync() // Force flush for real-time delivery
 				} else {
 					log.Printf("Presence: Backend unreachable")
 					fmt.Printf("STATUS: MOBILE_CLIENTS:0\n")
+					os.Stdout.Sync() // Force flush for real-time delivery
 				}
 			} else {
 				log.Printf("Presence: Backend unreachable")
@@ -1684,6 +1765,7 @@ func runBackgroundMode() {
 
 func stopBackgroundService() {
 	if runtime.GOOS == "windows" {
+		// Only kill specific voila instance, not all instances
 		exec.Command("taskkill", "/F", "/T", "/IM", "voila.exe").Run()
 	} else if runtime.GOOS == "darwin" {
 		exec.Command("launchctl", "unload", filepath.Join(os.Getenv("HOME"), "Library", "LaunchAgents", "com.voicecli.voila.plist")).Run()
@@ -1840,16 +1922,37 @@ func main() {
 		}
 		go startHTTPServer()
 		go func(data ConnectionData) {
+			var ngrokRetryCount int
+			var ngrokRetryDelay = 5 * time.Second
+			const maxNgrokRetries = 10
+			const maxNgrokRetryDelay = 60 * time.Second
+			
 			for {
 				addr := getNgrokPublicURL()
 				if addr == "" {
 					if !isNgrokRunning() {
 						log.Println("Ngrok not running, attempting to start...")
 						if err := startNgrok(); err != nil {
-							log.Printf("Failed to start ngrok: %v (skipping registration)", err)
-							time.Sleep(5 * time.Second)
+							ngrokRetryCount++
+							log.Printf("Failed to start ngrok (attempt %d/%d): %v", ngrokRetryCount, maxNgrokRetries, err)
+							
+							if ngrokRetryCount >= maxNgrokRetries {
+								log.Printf("Max ngrok retry attempts reached, giving up for now")
+								ngrokRetryCount = 0
+								ngrokRetryDelay = 5 * time.Second
+								time.Sleep(30 * time.Second)
+								continue
+							}
+							
+							time.Sleep(ngrokRetryDelay)
+							ngrokRetryDelay = time.Duration(float64(ngrokRetryDelay) * 1.5)
+							if ngrokRetryDelay > maxNgrokRetryDelay {
+								ngrokRetryDelay = maxNgrokRetryDelay
+							}
 							continue
 						}
+						ngrokRetryCount = 0
+						ngrokRetryDelay = 5 * time.Second
 						time.Sleep(3 * time.Second)
 						addr = getNgrokPublicURL()
 					}
@@ -1886,9 +1989,11 @@ func main() {
 						
 						log.Printf("Presence: Backend OK, Mobile clients: %d", healthData.MobileClients)
 						fmt.Printf("STATUS: MOBILE_CLIENTS:%d\n", healthData.MobileClients)
+						os.Stdout.Sync() // Force flush for real-time delivery
 					} else {
 						log.Printf("Presence: Backend unreachable")
 						fmt.Printf("STATUS: MOBILE_CLIENTS:0\n")
+						os.Stdout.Sync() // Force flush for real-time delivery
 					}
 				} else {
 					log.Printf("Presence: Backend unreachable")
