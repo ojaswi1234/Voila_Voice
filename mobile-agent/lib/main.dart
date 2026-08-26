@@ -525,7 +525,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                  final String phrase = _cachedSecurityPhrase;
                  String dec = CryptoUtils.decrypt(payload['encrypted'], phrase);
                  try {
-                   parsedData = jsonDecode(dec);
+                   parsedData = await compute(jsonDecode, dec);
                  } catch(e) {}
               } else if (payload is List) {
                  parsedData = payload;
@@ -566,7 +566,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                  final String phrase = _cachedSecurityPhrase;
                  String dec = CryptoUtils.decrypt(payload['encrypted'], phrase);
                  try {
-                   parsedData = jsonDecode(dec);
+                   parsedData = await compute(jsonDecode, dec);
                  } catch(e) {}
               } else if (payload is List) {
                  parsedData = payload;

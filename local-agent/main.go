@@ -1257,7 +1257,6 @@ func listConversationsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	
-	homeDir, _ := os.UserHomeDir()
 	brainDir := getBrainDir()
 	
 	entries, err := os.ReadDir(brainDir)
