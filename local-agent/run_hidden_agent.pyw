@@ -5,13 +5,8 @@ import sys
 import time
 import math
 
-try:
-    import psutil
-    PSUTIL_AVAILABLE = True
-    print("[INFO] psutil loaded successfully - resource monitoring enabled")
-except ImportError:
-    PSUTIL_AVAILABLE = False
-    print("[WARNING] psutil not found - resource monitoring disabled")
+# Removed psutil import completely as per user request to drop overhead
+PSUTIL_AVAILABLE = False
 
 CREATE_NO_WINDOW = 0x08000000
 # Only kill the specific voila.exe instance we'll start, not all instances
@@ -167,151 +162,7 @@ target_height = 90
 transition_progress = 0.0
 transition_in_progress = False
 
-# Resource thresholds
-RAM_THRESHOLD = 75  # percent
-CPU_THRESHOLD = 65  # percent
-DISK_THRESHOLD = 85  # percent
-
-def get_top_processes(limit=3, sort_by='cpu'):
-    """Get top processes by resource usage"""
-    try:
-        if sort_by == 'cpu':
-            procs = sorted(psutil.process_iter(['pid', 'name', 'cpu_percent']), key=lambda p: p.info['cpu_percent'] or 0, reverse=True)
-        elif sort_by == 'memory':
-            procs = sorted(psutil.process_iter(['pid', 'name', 'memory_percent']), key=lambda p: p.info['memory_percent'] or 0, reverse=True)
-        else:
-            procs = sorted(psutil.process_iter(['pid', 'name']), key=lambda p: p.info['name'], reverse=True)
-        
-        result = []
-        for p in procs[:limit]:
-            try:
-                name = p.info['name'] or 'Unknown'
-                cpu = p.info['cpu_percent'] or 0
-                mem = p.info['memory_percent'] or 0
-                result.append({'name': name, 'cpu': cpu, 'memory': mem})
-            except:
-                continue
-        return result
-    except:
-        return []
-
-def check_resources():
-    """Check system resources and trigger alert if high"""
-    global alert_state, target_width, target_height
-    
-    if not PSUTIL_AVAILABLE:
-        return  # Skip resource monitoring if psutil not available
-    
-    try:
-        # CPU usage
-        cpu_percent = psutil.cpu_percent(interval=0.1)  # Faster check
-        
-        # Memory usage
-        mem = psutil.virtual_memory()
-        mem_percent = mem.percent
-        
-        # Disk usage (Windows-compatible)
-        try:
-            disk = psutil.disk_usage('C:\\')  # Windows C drive
-            disk_percent = disk.percent
-        except:
-            try:
-                disk = psutil.disk_usage('/')  # Try Unix path
-                disk_percent = disk.percent
-            except:
-                disk_percent = 0  # Skip disk check if fails
-        
-        # Determine which resource is highest
-        resources = {
-            'CPU': cpu_percent,
-            'RAM': mem_percent,
-            'Disk': disk_percent
-        }
-        
-        max_resource = max(resources, key=resources.get)
-        max_value = resources[max_resource]
-        
-        # Get threshold for the specific resource
-        threshold_map = {'RAM': RAM_THRESHOLD, 'CPU': CPU_THRESHOLD, 'Disk': DISK_THRESHOLD}
-        threshold = threshold_map[max_resource]
-        
-        # Trigger alert if max resource exceeds its threshold
-        if max_value > threshold:
-            # Check cooldown to prevent alert spam
-            current_time = time.time()
-            if current_time - alert_state["last_alert_time"] < alert_state["alert_cooldown"] and alert_state["active"]:
-                return  # Skip, already showing alert
-            
-            # Get top apps for the problematic resource
-            if max_resource == 'CPU':
-                top_apps = get_top_processes(2, 'cpu')
-            elif max_resource == 'RAM':
-                top_apps = get_top_processes(2, 'memory')
-            else:
-                top_apps = get_top_processes(2, 'name')[:2]
-            
-            app_names = [app['name'] for app in top_apps]
-            
-            # Casual alert message
-            alert_messages = {
-                'CPU': "CPU running hot boss!",
-                'RAM': "RAM getting tight!",
-                'Disk': "Disk space low!"
-            }
-            
-            alert_state["message"] = alert_messages[max_resource]
-            alert_state["apps"] = app_names
-            alert_state["active"] = True
-            alert_state["alert_duration"] = 8  # seconds
-            alert_state["alert_timer"] = time.time()
-            alert_state["last_alert_time"] = time.time()  # Update cooldown
-            alert_state["state_changed"] = True  # Trigger expression update
-            
-            # Calculate target size based on message length
-            alert_msg = alert_state["message"]
-            apps = alert_state["apps"]
-            if apps:
-                alert_msg += "\n• " + "\n• ".join(apps)
-            
-            # Better size calculation
-            lines = alert_msg.split('\n')
-            max_line_length = max(len(line) for line in lines) if lines else 0
-            line_count = len(lines)
-            
-            # Calculate based on text dimensions
-            if max_line_length > 30 or line_count > 2:
-                target_width = 300 + (max_line_length - 30) * 4
-                target_height = 90 + (line_count - 1) * 20
-                # Cap max size
-                target_width = min(target_width, 600)
-                target_height = min(target_height, 180)
-            else:
-                target_width = 300
-                target_height = 90
-            
-            # Update text width immediately
-            canvas.itemconfig(status_text, width=max(150, target_width - 120))
-            
-            # Trigger size update
-            update_size()
-        else:
-            # Clear alert if resources are normal
-            if alert_state["active"] and time.time() - alert_state["alert_timer"] > alert_state["alert_duration"]:
-                alert_state["active"] = False
-                alert_state["message"] = ""
-                alert_state["apps"] = []
-                target_width = 300
-                target_height = 90
-                
-                # Reset text width
-                canvas.itemconfig(status_text, width=150)
-                
-                # Trigger size update
-                update_size()
-                
-                alert_state["state_changed"] = True  # Trigger expression update
-    except Exception as e:
-        pass  # Silently fail to avoid crashes
+# Resource monitoring functions removed to drop overhead
 
 def update_expression():
     global ai_state, alert_state
@@ -675,21 +526,10 @@ def _drain_line_queue():
             break
     root.after(50, _drain_line_queue)  # Poll every 50ms
 
-def _resource_check_background():
-    """Bug #5 Fix: Run the expensive psutil scan in a daemon thread so the
-    60fps animation_loop on the main UI thread never blocks."""
-    while True:
-        if PSUTIL_AVAILABLE:
-            check_resources()
-        time.sleep(4.5)
+# Resource monitoring background thread removed to drop overhead
 
 t = threading.Thread(target=read_output, daemon=True)
 t.start()
-
-# Start background resource monitoring thread (Bug #5 fix)
-if PSUTIL_AVAILABLE:
-    _res_thread = threading.Thread(target=_resource_check_background, daemon=True)
-    _res_thread.start()
 
 # Start the queue drain loop
 root.after(50, _drain_line_queue)
