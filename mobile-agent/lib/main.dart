@@ -14,6 +14,11 @@ import 'device_identity.dart';
 import 'artifacts_page.dart';
 import 'visualizer.dart';
 import 'package:uuid/uuid.dart';
+
+// Top-level function for background JSON parsing via compute()
+dynamic parseJsonInBackground(String text) {
+  return jsonDecode(text);
+}
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_background/flutter_background.dart';
 import 'connection_flowchart.dart';
@@ -437,7 +442,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
         try {
           // Bug #13 Fix: Heavy JSON parsing moved to a background isolate via compute()
           // to prevent stuttering/frame drops on large payload like conversations_list
-          final jsonResponse = await compute(jsonDecode, message);
+          final jsonResponse = await compute(parseJsonInBackground, message);
             
             if (jsonResponse is Map && jsonResponse['type'] == 'session') {
               final sessionToken = jsonResponse['session_token'];
@@ -525,7 +530,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                  final String phrase = _cachedSecurityPhrase;
                  String dec = CryptoUtils.decrypt(payload['encrypted'], phrase);
                  try {
-                   parsedData = await compute(jsonDecode, dec);
+                   parsedData = await compute(parseJsonInBackground, dec);
                  } catch(e) {}
               } else if (payload is List) {
                  parsedData = payload;
@@ -566,7 +571,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                  final String phrase = _cachedSecurityPhrase;
                  String dec = CryptoUtils.decrypt(payload['encrypted'], phrase);
                  try {
-                   parsedData = await compute(jsonDecode, dec);
+                   parsedData = await compute(parseJsonInBackground, dec);
                  } catch(e) {}
               } else if (payload is List) {
                  parsedData = payload;
