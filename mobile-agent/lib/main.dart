@@ -15,13 +15,20 @@ import 'artifacts_page.dart';
 import 'visualizer.dart';
 import 'package:uuid/uuid.dart';
 
-// Top-level function for background JSON parsing via compute()
-dynamic parseJsonInBackground(String text) {
-  return jsonDecode(text);
-}
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_background/flutter_background.dart';
 import 'connection_flowchart.dart';
+
+// Top-level function for background JSON parsing via compute()
+// Bug #13 Fix: Must take `dynamic` to satisfy compute() type constraints
+dynamic parseJsonInBackground(dynamic text) {
+  return jsonDecode(text as String);
+}
+
+// Helper specifically for JSON lists to satisfy Dart's type inference
+List<dynamic> parseJsonListInBackground(dynamic text) {
+  return jsonDecode(text as String) as List<dynamic>;
+}
 
 // Backend URL from build-time configuration (safe default + scheme fix)
 const String _rawBackendUrl = String.fromEnvironment(
@@ -530,7 +537,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                  final String phrase = _cachedSecurityPhrase;
                  String dec = CryptoUtils.decrypt(payload['encrypted'], phrase);
                  try {
-                   parsedData = await compute(parseJsonInBackground, dec);
+                   parsedData = await compute(parseJsonListInBackground, dec);
                  } catch(e) {}
               } else if (payload is List) {
                  parsedData = payload;
@@ -571,7 +578,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                  final String phrase = _cachedSecurityPhrase;
                  String dec = CryptoUtils.decrypt(payload['encrypted'], phrase);
                  try {
-                   parsedData = await compute(parseJsonInBackground, dec);
+                   parsedData = await compute(parseJsonListInBackground, dec);
                  } catch(e) {}
               } else if (payload is List) {
                  parsedData = payload;
