@@ -925,7 +925,7 @@ func handleWebhookResult(b *Backend) http.HandlerFunc {
 				}
 				
 				if mode == "" {
-					mode = "command"
+					mode = "shell"
 				}
 				
 				response := map[string]string{

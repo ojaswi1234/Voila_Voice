@@ -1604,7 +1604,7 @@ WantedBy=default.target
 	
 	// Enable and start the service
 	exec.Command("systemctl", "--user", "daemon-reload").Run()
-	exec.Command("systemctl", "--user", "enable", "antigravity.service").Run()
+	exec.Command("systemctl", "--user", "enable", "voila.service").Run()
 	
 	log.Printf("Auto-start configured: %s", servicePath)
 	return nil

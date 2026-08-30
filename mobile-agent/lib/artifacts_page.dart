@@ -144,7 +144,7 @@ class _ArtifactsPageState extends State<ArtifactsPage> {
                 Row(
                   children: [
                     Icon(
-                      artifact.source == 'antigravity' ? Icons.terminal : Icons.auto_awesome,
+                      artifact.source == 'voila' ? Icons.terminal : Icons.auto_awesome,
                       size: 14,
                       color: colorScheme.primary,
                     ),
