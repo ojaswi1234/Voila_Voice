@@ -11,7 +11,6 @@ PSUTIL_AVAILABLE = False
 CREATE_NO_WINDOW = 0x08000000
 # Only kill the specific voila.exe instance we'll start, not all instances
 # Don't kill ngrok.exe as it might be used by other applications
-time.sleep(1)
 
 root = tk.Tk()
 root.overrideredirect(True)
@@ -116,14 +115,28 @@ def cleanup_processes():
 atexit.register(cleanup_processes)
 
 def on_close(e=None):
-    cleanup_processes()
-    root.destroy()
-    sys.exit(0)
+    if dashboard_active:
+        toggle_dashboard()  # Revert to mini popup instead of closing
+    else:
+        cleanup_processes()
+        root.destroy()
+        sys.exit(0)
 
-canvas.tag_bind(close_btn, '<Button-1>', on_close)
+# Add hover effect for dashboard toggle
+def on_enter_pill(e): 
+    if not dashboard_active:
+        canvas.itemconfig(pill, outline='#6666ff')
+def on_leave_pill(e): 
+    if not dashboard_active:
+        canvas.itemconfig(pill, outline='#3a3a40')
 
 def on_enter_close(e): canvas.itemconfig(close_btn, fill="#ff5555")
 def on_leave_close(e): canvas.itemconfig(close_btn, fill="#888888")
+
+canvas.tag_bind(close_btn, '<Button-1>', on_close)
+canvas.tag_bind(pill, '<Button-1>', lambda e: toggle_dashboard())  # Click AI face to toggle dashboard
+canvas.tag_bind(pill, '<Enter>', on_enter_pill)
+canvas.tag_bind(pill, '<Leave>', on_leave_pill)
 canvas.tag_bind(close_btn, '<Enter>', on_enter_close)
 canvas.tag_bind(close_btn, '<Leave>', on_leave_close)
 
@@ -250,18 +263,253 @@ def update_expression():
         canvas.itemconfig(zzz2, state='hidden')
         canvas.itemconfig(zzz3, state='hidden')
 
-def update_size():
-    """Smoothly transition window size based on target dimensions"""
-    global current_width, current_height, target_width, target_height, transition_progress, sx, sy, cx, cy, transition_in_progress
+# Dashboard state
+dashboard_active = False
+original_pos = (0, 0)  # Store original position
+original_size = (300, 90)  # Store original size
+usage_stats = {
+    "mobile_minutes": 0,
+    "backend_minutes": 0,
+    "session_start": time.time(),
+    "last_mobile_connect": 0,
+    "last_backend_connect": 0
+}
+
+def toggle_dashboard():
+    """Toggle between mini popup and dashboard mode"""
+    global dashboard_active, original_pos, original_size
     
-    if transition_in_progress:
-        return  # Already transitioning
-    
-    if current_width != target_width or current_height != target_height:
-        transition_in_progress = True
-        transition_progress = 0.0  # Reset for new transition
-        animate_size_transition()
+    if not dashboard_active:
+        # Store current position before expanding
+        original_pos = (root.winfo_x(), root.winfo_y())
+        original_size = (current_width, current_height)
+        dashboard_active = True
         
+        # Calculate center of screen
+        screen_width = root.winfo_screenwidth()
+        screen_height = root.winfo_screenheight()
+        center_x = (screen_width - 800) // 2  # Dashboard width: 800
+        center_y = (screen_height - 500) // 2  # Dashboard height: 500
+        
+        # Animate to center with expansion
+        animate_to_dashboard(center_x, center_y, 800, 500)
+    else:
+        # Animate back to original position
+        animate_to_mini(original_pos[0], original_pos[1], original_size[0], original_size[1])
+        dashboard_active = False
+
+def animate_to_dashboard(target_x, target_y, target_w, target_h):
+    """Smooth animation to dashboard mode"""
+    global current_width, current_height, target_width, target_height, transition_progress, transition_in_progress
+    
+    target_width = target_w
+    target_height = target_h
+    transition_progress = 0.0
+    transition_in_progress = True
+    
+    def animate_step():
+        global current_width, current_height, transition_progress, transition_in_progress
+        
+        transition_progress += 0.08
+        if transition_progress > 1.0:
+            transition_progress = 1.0
+        
+        # Ease-out cubic for smooth motion
+        ease = 1 - pow(1 - transition_progress, 3)
+        
+        # Interpolate position
+        current_x = root.winfo_x()
+        current_y = root.winfo_y()
+        new_x = int(current_x + (target_x - current_x) * ease)
+        new_y = int(current_y + (target_y - current_y) * ease)
+        
+        # Interpolate size
+        new_width = int(current_width + (target_width - current_width) * ease)
+        new_height = int(current_height + (target_height - current_height) * ease)
+        
+        root.geometry(f"{new_width}x{new_height}+{new_x}+{new_y}")
+        canvas.config(width=new_width, height=new_height)
+        
+        # Update canvas elements for dashboard
+        reposition_dashboard_elements(new_width, new_height)
+        
+        if transition_progress < 1.0:
+            root.after(16, animate_step)  # ~60fps
+        else:
+            transition_in_progress = False
+            current_width = target_width
+            current_height = target_height
+            draw_dashboard()  # Draw dashboard UI
+    
+    animate_step()
+
+def animate_to_mini(target_x, target_y, target_w, target_h):
+    """Smooth animation back to mini popup"""
+    global current_width, current_height, target_width, target_height, transition_progress, transition_in_progress
+    
+    target_width = target_w
+    target_height = target_h
+    transition_progress = 0.0
+    transition_in_progress = True
+    
+    def animate_step():
+        global current_width, current_height, transition_progress, transition_in_progress
+        
+        transition_progress += 0.08
+        if transition_progress > 1.0:
+            transition_progress = 1.0
+        
+        ease = 1 - pow(1 - transition_progress, 3)
+        
+        current_x = root.winfo_x()
+        current_y = root.winfo_y()
+        new_x = int(current_x + (target_x - current_x) * ease)
+        new_y = int(current_y + (target_y - current_y) * ease)
+        
+        new_width = int(current_width + (target_width - current_width) * ease)
+        new_height = int(current_height + (target_height - current_height) * ease)
+        
+        root.geometry(f"{new_width}x{new_height}+{new_x}+{new_y}")
+        canvas.config(width=new_width, height=new_height)
+        
+        # Restore mini popup elements
+        reposition_mini_elements(new_width, new_height)
+        
+        if transition_progress < 1.0:
+            root.after(16, animate_step)
+        else:
+            transition_in_progress = False
+            current_width = target_width
+            current_height = target_height
+    
+    animate_step()
+
+def reposition_dashboard_elements(w, h):
+    """Reposition elements for dashboard layout"""
+    global sx, sy, cx, cy
+    
+    cx, cy = w // 2, h // 2
+    sx, sy = 40, 40  # AI face position in dashboard (top center)
+    
+    # Move AI face to top center
+    canvas.coords(pill, cx-150, sy-40, cx+150, sy+40)
+    
+    # Reposition face elements
+    canvas.coords(eye_l, cx-30, sy-10, cx-10, sy+10)
+    canvas.coords(eye_r, cx+10, sy-10, cx+30, sy+10)
+    canvas.coords(eye_l_shine, cx-25, sy-5, cx-22, sy-2)
+    canvas.coords(eye_r_shine, cx+22, sy-5, cx+25, sy-2)
+    
+    # Hide cloud and thought bubble in dashboard mode
+    for cp in cloud_parts:
+        canvas.itemconfig(cp, state='hidden')
+    canvas.itemconfig(status_text, state='hidden')
+    
+    # Reposition close button to top right
+    canvas.coords(close_btn, w-30, 20)
+
+def reposition_mini_elements(w, h):
+    """Restore mini popup element positions"""
+    global sx, sy, cx, cy
+    
+    cx, cy = w // 2, h // 2
+    sx, sy = 15, 10  # Original mini popup position
+    
+    # Restore pill background
+    canvas.coords(pill, 10, 10, w-10, h-10)
+    
+    # Restore face positions
+    canvas.coords(eye_l, sx+22, sy+28, sx+32, sy+38)
+    canvas.coords(eye_r, sx+48, sy+28, sx+58, sy+38)
+    canvas.coords(eye_l_shine, sx+27, sy+30, sx+30, sy+33)
+    canvas.coords(eye_r_shine, sx+53, sy+30, sx+56, sy+33)
+    
+    # Restore cloud elements
+    new_cx = w // 2
+    new_cy = h // 2 - 10
+    canvas.coords(c_dot1, new_cx-60, new_cy+15, new_cx-55, new_cy+20)
+    canvas.coords(c_dot2, new_cx-40, new_cy+5, new_cx-30, new_cy+15)
+    canvas.coords(c_dot3, new_cx-20, new_cy-5, new_cx-5, new_cy+10)
+    canvas.coords(c_oval1, new_cx, new_cy, new_cx+40, new_cy+40)
+    canvas.coords(c_oval2, new_cx+20, new_cy-10, new_cx+80, new_cy+50)
+    
+    # Restore status text
+    canvas.itemconfig(status_text, state='normal')
+    canvas.coords(status_text, new_cx-50, new_cy+55)
+    
+    # Restore close button
+    canvas.coords(close_btn, w-25, h//2)
+    
+    # Show cloud elements
+    for cp in cloud_parts:
+        canvas.itemconfig(cp, state='normal', fill='#2a2a32')
+
+def draw_dashboard():
+    """Draw dashboard UI with usage stats and connections"""
+    global mobile_clients, dashboard_active
+    
+    # Clear canvas for dashboard
+    canvas.delete("dashboard")
+    
+    w, h = current_width, current_height
+    cx, cy = w // 2, h // 2
+    
+    # Draw connection status cards
+    mobile_status = "Connected" if mobile_clients > 0 else "Disconnected"
+    mobile_color = "#10B981" if mobile_clients > 0 else "#EF4444"
+    
+    # Mobile connection card
+    canvas.create_rectangle(cx-300, cy-100, cx-100, cy+50, 
+                           fill="#1E1E24", outline=mobile_color, width=2, tags="dashboard")
+    canvas.create_text(cx-200, cy-75, text="Mobile Device", fill="#888888", 
+                    font=("Segoe UI", 10, "bold"), tags="dashboard")
+    canvas.create_text(cx-200, cy-50, text=mobile_status, fill=mobile_color, 
+                    font=("Segoe UI", 14, "bold"), tags="dashboard")
+    
+    # Backend connection card
+    backend_color = "#10B981"  # Assume backend is connected for now
+    canvas.create_rectangle(cx+100, cy-100, cx+300, cy+50, 
+                           fill="#1E1E24", outline=backend_color, width=2, tags="dashboard")
+    canvas.create_text(cx+200, cy-75, text="Backend API", fill="#888888", 
+                    font=("Segoe UI", 10, "bold"), tags="dashboard")
+    canvas.create_text(cx+200, cy-50, text="Connected", fill=backend_color, 
+                    font=("Segoe UI", 14, "bold"), tags="dashboard")
+    
+    # Usage heatmap area
+    canvas.create_rectangle(cx-350, cy+80, cx+350, cy+220,
+                           fill="#1A1A1F", outline="#2A2A35", width=1, tags="dashboard")
+    canvas.create_text(cx, cy+100, text="Daily Usage Dashboard", fill="#888888",
+                    font=("Segoe UI", 12, "bold"), tags="dashboard")
+    
+    # Calculate usage stats
+    session_duration = int((time.time() - usage_stats["session_start"]) / 60)
+    canvas.create_text(cx-300, cy+130, text=f"Session Duration: {session_duration} min", 
+                    fill="#AAAAAA", font=("Segoe UI", 10), tags="dashboard")
+    canvas.create_text(cx-300, cy+150, text=f"Mobile Usage: {usage_stats['mobile_minutes']} min", 
+                    fill="#AAAAAA", font=("Segoe UI", 10), tags="dashboard")
+    canvas.create_text(cx-300, cy+170, text=f"Backend Usage: {usage_stats['backend_minutes']} min", 
+                    fill="#AAAAAA", font=("Segoe UI", 10), tags="dashboard")
+    
+    # Draw usage bar
+    total_usage = usage_stats['mobile_minutes'] + usage_stats['backend_minutes']
+    bar_width = 600
+    mobile_bar = int((usage_stats['mobile_minutes'] / max(total_usage, 1)) * bar_width)
+    backend_bar = int((usage_stats['backend_minutes'] / max(total_usage, 1)) * bar_width)
+    
+    canvas.create_rectangle(cx-300, cy+195, cx+300, cy+205, fill="#2A2A35", tags="dashboard")
+    canvas.create_rectangle(cx-300, cy+195, cx-300+mobile_bar, cy+205, fill="#8B5CF6", width=0, tags="dashboard")
+    canvas.create_rectangle(cx-300+mobile_bar, cy+195, cx-300+mobile_bar+backend_bar, cy+205, fill="#10B981", width=0, tags="dashboard")
+        
+def update_size():
+    """Handle size changes (keep for compatibility with existing code)"""
+    if not dashboard_active:
+        # Only use old transition logic when not in dashboard mode
+        if current_width != target_width or current_height != target_height:
+            if not transition_in_progress:
+                transition_in_progress = True
+                transition_progress = 0.0
+                animate_size_transition()
+
 def animate_size_transition():
     """Internal function for smooth size animation"""
     global current_width, current_height, target_width, target_height, transition_progress, sx, sy, cx, cy, transition_in_progress
@@ -327,9 +575,15 @@ def animate_size_transition():
         transition_in_progress = False
 
 def animation_loop():
-    global anim_frame
+    global anim_frame, usage_stats
     anim_frame += 1
     dots = "." * (anim_frame % 4)
+    
+    # Track usage stats (every 60 frames = ~9 seconds)
+    if anim_frame % 60 == 0:
+        if mobile_clients > 0:
+            usage_stats["mobile_minutes"] += 1
+        usage_stats["backend_minutes"] += 1  # Track backend usage continuously
     
     # Bug #5 Fix: check_resources used to be called synchronously here, which
     # caused the widget to visibly freeze ~every 4.5s while psutil scanned all
@@ -426,6 +680,10 @@ def animation_loop():
             canvas.itemconfig(eye_l, fill='#00ffcc')
             canvas.itemconfig(eye_r, fill='#00ffcc')
             
+    # Refresh dashboard if active
+    if dashboard_active and anim_frame % 30 == 0:  # Update every 30 frames (~0.5s)
+        draw_dashboard()
+    
     elif ai_state == "IDLE":
         # Natural blinking animation every ~4.5 seconds (30 frames)
         blink_phase = anim_frame % 30

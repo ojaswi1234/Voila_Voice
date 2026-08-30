@@ -524,7 +524,7 @@ func (m model) clearBackendDataWithPhrase(phrase string) tea.Cmd {
 
 func (m model) clearLocalData() tea.Cmd {
 	return func() tea.Msg {
-		path := filepath.Join(getExecutableDir(), "connection_data.json")
+		path := filepath.Join(getConfigDir(), "voice-cli", "connection_data.json")
 		err := os.Remove(path)
 		if err != nil && !os.IsNotExist(err) {
 			return errorMsg{fmt.Sprintf("Failed to clear local data: %v", err)}
@@ -1398,7 +1398,13 @@ func executeCommand(command string, mode string, conversationID string, modelNam
 
 // Save/Load connection data
 func saveConnectionData(data ConnectionData) error {
-	path := filepath.Join(getExecutableDir(), "connection_data.json")
+	configDir := getConfigDir()
+	appDir := filepath.Join(configDir, "voice-cli")
+	if err := os.MkdirAll(appDir, 0755); err != nil {
+		return err
+	}
+	
+	path := filepath.Join(appDir, "connection_data.json")
 	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		return err
@@ -1480,7 +1486,7 @@ func sendHeartbeat(data ConnectionData, publicAddress string) error {
 }
 
 func loadConnectionData() (ConnectionData, error) {
-	path := filepath.Join(getExecutableDir(), "connection_data.json")
+	path := filepath.Join(getConfigDir(), "voice-cli", "connection_data.json")
 	file, err := os.Open(path)
 	if err != nil {
 		return ConnectionData{}, err
@@ -1602,6 +1608,16 @@ WantedBy=default.target
 	
 	log.Printf("Auto-start configured: %s", servicePath)
 	return nil
+}
+
+func getConfigDir() string {
+	if runtime.GOOS == "windows" {
+		return os.Getenv("LOCALAPPDATA")
+	} else if runtime.GOOS == "darwin" {
+		return filepath.Join(os.Getenv("HOME"), "Library", "Application Support")
+	} else {
+		return filepath.Join(os.Getenv("HOME"), ".config")
+	}
 }
 
 func getExecutableDir() string {
@@ -1797,7 +1813,9 @@ func loadCircuitState() {
 	circuitMu.Lock()
 	defer circuitMu.Unlock()
 	
-	path := filepath.Join(getExecutableDir(), circuitFlagFile)
+	configDir := getConfigDir()
+	appDir := filepath.Join(configDir, "voice-cli")
+	path := filepath.Join(appDir, circuitFlagFile)
 	if _, err := os.Stat(path); err == nil {
 		circuitOpen = true
 		log.Println("Circuit breaker loaded as OPEN from disk")
@@ -1808,7 +1826,14 @@ func saveCircuitState() {
 	circuitMu.Lock()
 	defer circuitMu.Unlock()
 	
-	path := filepath.Join(getExecutableDir(), circuitFlagFile)
+	configDir := getConfigDir()
+	appDir := filepath.Join(configDir, "voice-cli")
+	if err := os.MkdirAll(appDir, 0755); err != nil {
+		log.Printf("Failed to create config directory: %v", err)
+		return
+	}
+	
+	path := filepath.Join(appDir, circuitFlagFile)
 	if circuitOpen {
 		os.WriteFile(path, []byte("1"), 0644)
 	} else {

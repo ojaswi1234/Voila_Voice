@@ -133,15 +133,31 @@ function startNgrok(ngrokPath, port = 8088) {
         
         ngrok.unref();
         
-        // Wait for ngrok to start
-        setTimeout(() => {
+        // Bug #6 Fix: Replace fixed 3s timeout with polling loop with retries
+        // The old code would fail if ngrok took 3.5s to initialize. Now we poll
+        // the API endpoint with exponential backoff (up to 30s total).
+        let attempts = 0;
+        const maxAttempts = 30; // 30 attempts * 1s = 30s max wait
+        
+        const pollNgrokUrl = () => {
+            attempts++;
             getNgrokUrlFromAPI().then((ngrokUrl) => {
                 console.log(`Ngrok tunnel started: ${ngrokUrl}`);
                 console.log(`Local: http://localhost:${port} -> Remote: ${ngrokUrl}`);
                 saveNgrokUrl(ngrokUrl);
                 resolve({ ngrokUrl, process: ngrok });
-            }).catch(reject);
-        }, 3000);
+            }).catch((err) => {
+                if (attempts < maxAttempts) {
+                    console.log(`Ngrok not ready yet (attempt ${attempts}/${maxAttempts}), retrying in 1s...`);
+                    setTimeout(pollNgrokUrl, 1000);
+                } else {
+                    reject(new Error(`Ngrok failed to start after ${maxAttempts}s: ${err.message}`));
+                }
+            });
+        };
+        
+        // Start polling after 2s to give ngrok time to initialize
+        setTimeout(pollNgrokUrl, 2000);
     });
 }
 
