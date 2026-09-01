@@ -732,6 +732,18 @@ def _show_settings_widgets():
              insertbackground='#E5E7EB', relief='flat', font=('Segoe UI', 9), width=42, show='*').grid(
         row=2, column=1, columnspan=3, padx=6, pady=4, sticky='ew')
 
+    def _on_ollama_key_change(*args):
+        k = ollama_key_var.get().strip()
+        u = ollama_url_var.get().strip()
+        if k and k != '********':
+            if u == '' or u == 'http://localhost:11434':
+                ollama_url_var.set('https://ollama.com')
+        elif not k:
+            if u == 'https://ollama.com':
+                ollama_url_var.set('http://localhost:11434')
+    
+    ollama_key_var.trace_add('write', _on_ollama_key_change)
+
     ollama_status_var = tk.StringVar(value='')
     ollama_status_lbl = tk.Label(ollama_frame, textvariable=ollama_status_var,
                                   bg='#1A1D23', fg='#10B981', font=('Segoe UI', 9))

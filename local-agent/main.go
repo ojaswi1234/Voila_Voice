@@ -2085,8 +2085,12 @@ func executeGroqCommand(command, apiKey, modelName string) (string, error) {
 // Works for both local Ollama (http://localhost:11434) and Ollama Cloud (https://api.ollama.ai).
 // Supports up to 5 tool-calling iterations using the Ollama /api/chat tools field.
 func executeOllamaCommand(command, baseURL, modelName, apiKey string) (string, error) {
-	if baseURL == "" {
-		baseURL = "http://localhost:11434" // fallback to local
+	if baseURL == "" || baseURL == "http://localhost:11434" {
+		if apiKey != "" {
+			baseURL = "https://ollama.com"
+		} else {
+			baseURL = "http://localhost:11434"
+		}
 	}
 	if modelName == "" {
 		modelName = "llama3.2:1b" // smallest free-tier Ollama Cloud model
