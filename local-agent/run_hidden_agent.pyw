@@ -1083,11 +1083,15 @@ def animation_loop():
             if not alert_state["active"]:
                 canvas.itemconfig(snot_bubble, state='normal')
                 canvas.itemconfig(snot_shine, state='normal')
-                bubble_phase = anim_frame % 16
-                if bubble_phase < 8:
-                    br = 2 + bubble_phase
+                bubble_phase = anim_frame % 24
+                if bubble_phase < 20:
+                    # Inflate exponentially (0 to 19): grows slowly then pops out at the end
+                    t = bubble_phase / 19.0
+                    br = 2 + 8 * (t ** 3)
                 else:
-                    br = 2 + (15 - bubble_phase)
+                    # Deflate quickly (20 to 23)
+                    t = (23 - bubble_phase) / 3.0
+                    br = 2 + 8 * t
                 bx, by = sx + 40, sy + 40
                 # Teardrop oval: anchors near the nose at the top, stretches downwards
                 canvas.coords(snot_bubble, bx - br, by, bx + br, by + br * 2.5)
