@@ -80,12 +80,13 @@ eye_l_shine = canvas.create_oval(sx+27, sy+30, sx+30, sy+33, fill='white', outli
 eye_r_shine = canvas.create_oval(sx+53, sy+30, sx+56, sy+33, fill='white', outline='')
 
 # Snoring / Sleep visual elements
-snot_bubble = canvas.create_oval(0, 0, 0, 0, fill='#aaddff', outline='#ffffff', state='hidden')
+snot_bubble = canvas.create_oval(0, 0, 0, 0, fill='', outline='#aaddff', width=1.5, state='hidden')
+snot_shine = canvas.create_oval(0, 0, 0, 0, fill='#ffffff', outline='', state='hidden')
 zzz1 = canvas.create_text(0, 0, text="Z", fill='#aaddff', font=("Segoe UI", 12, "bold"), state='hidden')
 zzz2 = canvas.create_text(0, 0, text="z", fill='#aaddff', font=("Segoe UI", 10, "bold"), state='hidden')
 zzz3 = canvas.create_text(0, 0, text="z", fill='#aaddff', font=("Segoe UI", 8, "bold"), state='hidden')
 
-face_parts = (body, arm_l, arm_r, leg1, leg2, leg3, leg4, eye_l, eye_r, eye_l_shine, eye_r_shine, snot_bubble, zzz1, zzz2, zzz3)
+face_parts = (body, arm_l, arm_r, leg1, leg2, leg3, leg4, eye_l, eye_r, eye_l_shine, eye_r_shine, snot_bubble, snot_shine, zzz1, zzz2, zzz3)
 
 # Perfectly positioned Title (x=90)
 title_text = canvas.create_text(90, 45, text="Voila", fill="#ffffff", font=("Segoe UI", 12, "bold"), anchor="w")
@@ -315,6 +316,7 @@ def update_expression():
             
             # Hide alert elements
             canvas.itemconfig(snot_bubble, state='hidden')
+            canvas.itemconfig(snot_shine, state='hidden')
             canvas.itemconfig(zzz1, state='hidden')
             canvas.itemconfig(zzz2, state='hidden')
             canvas.itemconfig(zzz3, state='hidden')
@@ -354,6 +356,7 @@ def update_expression():
         
         # Hide sleep elements
         canvas.itemconfig(snot_bubble, state='hidden')
+        canvas.itemconfig(snot_shine, state='hidden')
         canvas.itemconfig(zzz1, state='hidden')
         canvas.itemconfig(zzz2, state='hidden')
         canvas.itemconfig(zzz3, state='hidden')
@@ -1079,6 +1082,7 @@ def animation_loop():
             # Snot Bubble expansion/contraction (only if no alert)
             if not alert_state["active"]:
                 canvas.itemconfig(snot_bubble, state='normal')
+                canvas.itemconfig(snot_shine, state='normal')
                 bubble_phase = anim_frame % 16
                 if bubble_phase < 8:
                     br = 2 + bubble_phase
@@ -1087,8 +1091,11 @@ def animation_loop():
                 bx, by = sx + 40, sy + 40
                 # Teardrop oval: anchors near the nose at the top, stretches downwards
                 canvas.coords(snot_bubble, bx - br, by, bx + br, by + br * 2.5)
+                # Shine patch in top-right of the bubble
+                canvas.coords(snot_shine, bx + br*0.2, by + br*0.4, bx + br*0.7, by + br*1.0)
             else:
                 canvas.itemconfig(snot_bubble, state='hidden')
+                canvas.itemconfig(snot_shine, state='hidden')
 
             # Zzz flying animation (only if no alert)
             if not alert_state["active"]:
