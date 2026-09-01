@@ -708,18 +708,15 @@ def _show_settings_widgets():
 
     tk.Label(ollama_frame, text='Model:', bg='#1A1D23', fg='#9CA3AF', font=('Segoe UI', 9)).grid(
         row=1, column=0, padx=12, pady=4, sticky='w')
-    ollama_model_var = tk.StringVar(value=data.get('ollama_model', 'llama3.2:1b'))
+    ollama_model_var = tk.StringVar(value=data.get('ollama_model', 'gemma4:31b'))
     
     ollama_models = [
-        "llama3.2:1b",
-        "llama3.2:3b",
-        "llama3.1:8b",
-        "qwen2.5:0.5b",
-        "qwen2.5:1.5b",
-        "qwen2.5:3b",
-        "gemma2:2b",
-        "phi3.5",
-        "mistral:7b"
+        "gemma4:31b",
+        "gpt-oss:120b",
+        "gpt-oss:20b",
+        "nemotron-3-nano:30b",
+        "nemotron-3-super",
+        "nemotron-3-ultra"
     ]
     ollama_model_cb = ttk.Combobox(ollama_frame, textvariable=ollama_model_var, values=ollama_models, width=40, font=('Segoe UI', 9))
     ollama_model_cb.grid(row=1, column=1, columnspan=2, padx=6, pady=4, sticky='w')
@@ -804,7 +801,7 @@ def _show_settings_widgets():
     _make_btn(obtn_row, '✓ Verify', on_ollama_verify, bg='#10B981', width=9).pack(side='left', padx=(0, 6))
     _make_btn(obtn_row, '🗑 Delete', on_ollama_delete, bg='#DC2626', width=9).pack(side='left')
 
-    tk.Label(ollama_frame, text='Ollama Cloud free models: llama3.2:1b, llama3.2:3b, gemma3:1b, phi3.5, qwen2.5:0.5b',
+    tk.Label(ollama_frame, text='Ollama Cloud free models: gemma4:31b, gpt-oss:120b, nemotron-3-nano:30b, ...',
              bg='#1A1D23', fg='#4B5563', font=('Segoe UI', 8, 'italic')).grid(
         row=5, column=0, columnspan=4, padx=12, pady=(0, 10), sticky='w')
 

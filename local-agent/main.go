@@ -1372,7 +1372,7 @@ func startHTTPServer() {
 				os.Stdout.Sync()
 				ollamaModel := connData.OllamaModel
 				if ollamaModel == "" {
-					ollamaModel = "llama3.2:1b"
+					ollamaModel = "gemma4:31b"
 				}
 				output, err = executeOllamaCommand(command, connData.OllamaBaseURL, ollamaModel, connData.OllamaAPIKey)
 				fmt.Println("STATUS: IDLE")
@@ -2093,7 +2093,7 @@ func executeOllamaCommand(command, baseURL, modelName, apiKey string) (string, e
 		}
 	}
 	if modelName == "" {
-		modelName = "llama3.2:1b" // smallest free-tier Ollama Cloud model
+		modelName = "gemma4:31b" // default free-tier cloud model
 	}
 
 	// Ollama uses the same OpenAI-compatible endpoint
