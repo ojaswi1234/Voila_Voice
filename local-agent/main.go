@@ -20,6 +20,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/charmbracelet/bubbletea"
@@ -1626,6 +1627,28 @@ func listConversationsHandler(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(conversations)
 	}
 }
+// runInNewConsole writes psScript to a temp .ps1 file and launches PowerShell
+// in a brand-new visible console window (CREATE_NEW_CONSOLE Windows API flag).
+// This works even when voila.exe itself has no console (headless/background).
+// It blocks until the window is closed and returns the content of outFile.
+func runInNewConsole(psScript, outFile string) error {
+	scriptFile := filepath.Join(os.TempDir(), fmt.Sprintf("voila_ps_%d.ps1", time.Now().UnixNano()))
+	if err := os.WriteFile(scriptFile, []byte(psScript), 0600); err != nil {
+		return err
+	}
+	defer os.Remove(scriptFile)
+
+	cmd := exec.Command("powershell", "-NoLogo", "-File", scriptFile)
+	// CREATE_NEW_CONSOLE (0x10): forces Windows to open a brand-new console window
+	// for this process, completely independent of the parent's console state.
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		CreationFlags: 0x00000010, // CREATE_NEW_CONSOLE
+		HideWindow:    false,
+	}
+	// Do NOT set cmd.Stdout/Stderr — the new console window IS the output
+	return cmd.Run()
+}
+
 func executeCommand(command string, mode string, conversationID string, modelName string) (string, string, error) {
 	var cmd *exec.Cmd
 
@@ -1696,33 +1719,21 @@ Start-Sleep -Seconds 4
 			wrapperPs = fmt.Sprintf("Set-Location '%s'\n", strings.ReplaceAll(cwd, "'", "''")) + wrapperPs
 		}
 
-		// Write script to a temp .ps1 file (avoids command-line quoting hell)
-		scriptFile := filepath.Join(os.TempDir(), fmt.Sprintf("voila_agent_%d.ps1", time.Now().UnixNano()))
-		if err := os.WriteFile(scriptFile, []byte(wrapperPs), 0600); err != nil {
-			return "error: failed to write agent script: " + err.Error(), "", err
-		}
-
 		fmt.Println("STATUS: RUNNING")
 		os.Stdout.Sync()
 
-		// "cmd /c start /wait" ALWAYS opens a brand-new visible console window
-		// even when voila.exe itself has no console (hidden background process).
-		visibleCmd := exec.Command("cmd", "/c", "start", "/wait",
-			"powershell", "-NoLogo", "-NoExit", "-File", scriptFile)
-
 		cmdMu.Lock()
-		currentCmd = visibleCmd
 		currentConvID = conversationID
 		cmdMu.Unlock()
 
-		_ = visibleCmd.Run() // blocks until PowerShell window is closed
+		// runInNewConsole uses CREATE_NEW_CONSOLE (Windows API) — guaranteed visible
+		// window even from a headless parent process. No -NoExit needed; the script
+		// ends naturally after the 4-second sleep.
+		_ = runInNewConsole(wrapperPs, tmpFile)
 
 		cmdMu.Lock()
-		currentCmd = nil
 		currentConvID = ""
 		cmdMu.Unlock()
-
-		_ = os.Remove(scriptFile) // cleanup script
 
 		fmt.Println("STATUS: IDLE")
 		os.Stdout.Sync()
@@ -2029,15 +2040,8 @@ Write-Host 'Execution complete. Closing in 2 seconds...' -ForegroundColor DarkGr
 Start-Sleep -Seconds 2
 `, encodedCmd, tmpFile, tmpFile)
 
-		// Write to temp .ps1 file so cmd /c start can open it as a new visible window
-		scriptFile2 := filepath.Join(os.TempDir(), fmt.Sprintf("voila_tool_%d.ps1", time.Now().UnixNano()))
-		_ = os.WriteFile(scriptFile2, []byte(wrapperPs), 0600)
-
-		// "cmd /c start /wait" forces a brand-new visible console window from a headless parent
-		cmd := exec.Command("cmd", "/c", "start", "/wait",
-			"powershell", "-NoLogo", "-File", scriptFile2)
-		_ = cmd.Run() // Block until the window closes
-		_ = os.Remove(scriptFile2)
+		// runInNewConsole uses CREATE_NEW_CONSOLE — guaranteed visible window from headless parent
+		_ = runInNewConsole(wrapperPs, tmpFile)
 
 		// Read the captured output
 		outBytes, err := os.ReadFile(tmpFile)
