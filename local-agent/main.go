@@ -1696,22 +1696,33 @@ Start-Sleep -Seconds 4
 			wrapperPs = fmt.Sprintf("Set-Location '%s'\n", strings.ReplaceAll(cwd, "'", "''")) + wrapperPs
 		}
 
+		// Write script to a temp .ps1 file (avoids command-line quoting hell)
+		scriptFile := filepath.Join(os.TempDir(), fmt.Sprintf("voila_agent_%d.ps1", time.Now().UnixNano()))
+		if err := os.WriteFile(scriptFile, []byte(wrapperPs), 0600); err != nil {
+			return "error: failed to write agent script: " + err.Error(), "", err
+		}
+
 		fmt.Println("STATUS: RUNNING")
 		os.Stdout.Sync()
 
-		visibleCmd := exec.Command("powershell", "-WindowStyle", "Normal", "-Command", wrapperPs)
+		// "cmd /c start /wait" ALWAYS opens a brand-new visible console window
+		// even when voila.exe itself has no console (hidden background process).
+		visibleCmd := exec.Command("cmd", "/c", "start", "/wait",
+			"powershell", "-NoLogo", "-NoExit", "-File", scriptFile)
 
 		cmdMu.Lock()
 		currentCmd = visibleCmd
 		currentConvID = conversationID
 		cmdMu.Unlock()
 
-		_ = visibleCmd.Run() // blocks until window closes
+		_ = visibleCmd.Run() // blocks until PowerShell window is closed
 
 		cmdMu.Lock()
 		currentCmd = nil
 		currentConvID = ""
 		cmdMu.Unlock()
+
+		_ = os.Remove(scriptFile) // cleanup script
 
 		fmt.Println("STATUS: IDLE")
 		os.Stdout.Sync()
@@ -2018,10 +2029,15 @@ Write-Host 'Execution complete. Closing in 2 seconds...' -ForegroundColor DarkGr
 Start-Sleep -Seconds 2
 `, encodedCmd, tmpFile, tmpFile)
 
-		// Run visible window synchronously
-		// -WindowStyle Normal ensures it pops up. No -NoExit so it closes when done.
-		cmd := exec.Command("powershell", "-WindowStyle", "Normal", "-Command", wrapperPs)
+		// Write to temp .ps1 file so cmd /c start can open it as a new visible window
+		scriptFile2 := filepath.Join(os.TempDir(), fmt.Sprintf("voila_tool_%d.ps1", time.Now().UnixNano()))
+		_ = os.WriteFile(scriptFile2, []byte(wrapperPs), 0600)
+
+		// "cmd /c start /wait" forces a brand-new visible console window from a headless parent
+		cmd := exec.Command("cmd", "/c", "start", "/wait",
+			"powershell", "-NoLogo", "-File", scriptFile2)
 		_ = cmd.Run() // Block until the window closes
+		_ = os.Remove(scriptFile2)
 
 		// Read the captured output
 		outBytes, err := os.ReadFile(tmpFile)
