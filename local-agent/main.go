@@ -239,6 +239,7 @@ type ConnectionData struct {
 	LastConnected     string `json:"last_connected"`
 	// Cloud API keys (stored locally, never sent to backend)
 	GroqAPIKey    string `json:"groq_api_key,omitempty"`
+	GroqModel     string `json:"groq_model,omitempty"`
 	OllamaBaseURL string `json:"ollama_base_url,omitempty"` // e.g. https://api.ollama.ai
 	OllamaModel   string `json:"ollama_model,omitempty"`    // e.g. llama3.2:1b
 }
@@ -1139,6 +1140,7 @@ func startHTTPServer() {
 			resp := map[string]string{
 				"groq_api_key_masked": groqMasked,
 				"groq_api_key_set":    fmt.Sprintf("%v", connData.GroqAPIKey != ""),
+				"groq_model":          connData.GroqModel,
 				"ollama_base_url":     connData.OllamaBaseURL,
 				"ollama_model":        connData.OllamaModel,
 			}
@@ -1147,24 +1149,29 @@ func startHTTPServer() {
 		case http.MethodPost:
 			var payload struct {
 				GroqAPIKey    string `json:"groq_api_key"`
+				GroqModel     string `json:"groq_model"`
 				OllamaBaseURL string `json:"ollama_base_url"`
 				OllamaModel   string `json:"ollama_model"`
 				Action        string `json:"action"` // "save" or "delete_groq" or "delete_ollama"
 			}
 			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-				http.Error(w, `{"error":"invalid JSON"}`, http.StatusBadRequest)
+				http.Error(w, "Bad request", http.StatusBadRequest)
 				return
 			}
 
 			switch payload.Action {
 			case "delete_groq":
 				connData.GroqAPIKey = ""
+				connData.GroqModel = ""
 			case "delete_ollama":
 				connData.OllamaBaseURL = ""
 				connData.OllamaModel = ""
 			default: // "save"
 				if payload.GroqAPIKey != "" {
 					connData.GroqAPIKey = payload.GroqAPIKey
+				}
+				if payload.GroqModel != "" {
+					connData.GroqModel = payload.GroqModel
 				}
 				if payload.OllamaBaseURL != "" {
 					connData.OllamaBaseURL = payload.OllamaBaseURL
@@ -1317,7 +1324,11 @@ func startHTTPServer() {
 				// Direct Groq API call — fast, no agy overhead
 				fmt.Println("STATUS: RUNNING")
 				os.Stdout.Sync()
-				output, err = executeGroqCommand(command, connData.GroqAPIKey, modelName)
+				m := modelName
+				if m == "" {
+					m = connData.GroqModel
+				}
+				output, err = executeGroqCommand(command, connData.GroqAPIKey, m)
 				fmt.Println("STATUS: IDLE")
 				os.Stdout.Sync()
 				newConvID = conversationID

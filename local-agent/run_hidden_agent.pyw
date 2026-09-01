@@ -1,4 +1,5 @@
 import tkinter as tk
+from tkinter import ttk
 import subprocess
 import threading
 import sys
@@ -99,21 +100,19 @@ close_btn_bg = canvas.create_oval(245, 25, 295, 65, fill="", outline="", width=0
 close_btn = canvas.create_text(270, 45, text="✕", fill="#888888", font=("Segoe UI", 20, "bold"), anchor="center")
 
 # ── LOCAL/CLOUD mode toggle badge ───────────────────────────────────────────
-# Cycles: LOCAL (agy) → GROQ → OLLAMA → LOCAL
-# Stored in global; sent to voila.exe /set-mode so /execute uses correct executor
 MODES = ["LOCAL", "GROQ", "OLLAMA"]
 MODE_COLORS = {"LOCAL": "#6366F1", "GROQ": "#10B981", "OLLAMA": "#F59E0B"}
 MODE_LABELS = {"LOCAL": "⚡LOCAL", "GROQ": "☁ GROQ", "OLLAMA": "🦙OLLAMA"}
-current_mode = "LOCAL"  # Default: use agy agent
+current_mode = "LOCAL"
 
+mode_bg = canvas.create_rectangle(85, 60, 145, 76, fill='#16171C', outline='#3a3a40', width=1, state='normal')
 mode_badge = canvas.create_text(
-    90, 68, text=MODE_LABELS["LOCAL"],
-    fill=MODE_COLORS["LOCAL"], font=("Segoe UI", 7, "bold"),
+    92, 68, text=MODE_LABELS["LOCAL"],
+    fill=MODE_COLORS["LOCAL"], font=("Segoe UI", 8, "bold"),
     anchor="w", state='normal'
 )
 
 def _set_voila_mode(mode):
-    """Notify voila.exe of the mode change via HTTP (fire and forget)."""
     def _do():
         try:
             import urllib.request as _ur, json as _j
@@ -127,12 +126,15 @@ def _set_voila_mode(mode):
 
 def cycle_mode(e=None):
     global current_mode
-    if dashboard_active: return
     idx = (MODES.index(current_mode) + 1) % len(MODES)
     current_mode = MODES[idx]
     canvas.itemconfig(mode_badge, text=MODE_LABELS[current_mode], fill=MODE_COLORS[current_mode])
     _set_voila_mode(current_mode)
+    if 'dashboard_active' in globals() and dashboard_active and 'refresh_dashboard_content' in globals():
+        try: refresh_dashboard_content()
+        except: pass
 
+canvas.tag_bind(mode_bg, '<Button-1>', cycle_mode)
 canvas.tag_bind(mode_badge, '<Button-1>', cycle_mode)
 
 import os as _os
@@ -433,8 +435,16 @@ def restore_mini_popup_elements(w=300, h=90):
     canvas.coords(close_btn, w - 25, h // 2)
     canvas.itemconfig(close_btn, state='normal', fill="#888888", font=("Segoe UI", 20, "bold"))
     
-    canvas.coords(mode_badge, 90, 68)
+    canvas.coords(mode_bg, 85, 60, 145, 76)
+    canvas.itemconfig(mode_bg, state='normal')
+    canvas.coords(mode_badge, 92, 68)
     canvas.itemconfig(mode_badge, state='normal')
+    
+    # Ensure they are clickable above the pill
+    canvas.tag_raise(close_btn_bg)
+    canvas.tag_raise(close_btn)
+    canvas.tag_raise(mode_bg)
+    canvas.tag_raise(mode_badge)
 
     update_expression()
 
@@ -605,18 +615,43 @@ def _show_settings_widgets():
                                 bg='#1A1D23', fg=groq_status_color, font=('Segoe UI', 9))
     groq_status_lbl.grid(row=0, column=3, padx=8, pady=8)
 
+    # Groq Model Dropdown
+    tk.Label(groq_frame, text='Model:', bg='#1A1D23', fg='#9CA3AF', font=('Segoe UI', 9)).grid(
+        row=1, column=0, padx=12, pady=4, sticky='w')
+    
+    groq_models = [
+        "llama3-70b-8192",
+        "llama3-8b-8192",
+        "llama-3.1-70b-versatile",
+        "llama-3.1-8b-instant",
+        "llama3-groq-70b-8192-tool-use-preview",
+        "llama3-groq-8b-8192-tool-use-preview",
+        "mixtral-8x7b-32768",
+        "gemma2-9b-it"
+    ]
+    groq_model_var = tk.StringVar(value=data.get('groq_model', 'llama3-70b-8192') or 'llama3-70b-8192')
+    
+    style = ttk.Style()
+    style.theme_use('default')
+    style.configure('TCombobox', fieldbackground='#2D3039', background='#1A1D23', foreground='white')
+    
+    groq_model_cb = ttk.Combobox(groq_frame, textvariable=groq_model_var, values=groq_models, width=38, font=('Segoe UI', 9))
+    groq_model_cb.grid(row=1, column=1, columnspan=2, padx=6, pady=4, sticky='w')
+    tk.Label(groq_frame, text='(Free tier + tool calling)', bg='#1A1D23', fg='#6B7280', font=('Segoe UI', 8)).grid(row=1, column=3, sticky='w')
+
     def on_groq_save():
         key = groq_key_var.get().strip()
+        model = groq_model_var.get().strip()
         if not key:
-            groq_status_var.set('⚠ Enter a key first')
+            groq_status_var.set('⚠️ Enter a key first')
             groq_status_lbl.config(fg='#F59E0B')
             return
-        res = _api_call('POST', '/api-keys', {'groq_api_key': key, 'action': 'save'})
+        res = _api_call('POST', '/api-keys', {'groq_api_key': key, 'groq_model': model, 'action': 'save'})
         if 'error' in res:
-            groq_status_var.set(f'✗ {res["error"][:40]}')
+            groq_status_var.set(f'❌ {res["error"][:40]}')
             groq_status_lbl.config(fg='#EF4444')
         else:
-            groq_status_var.set('● Saved')
+            groq_status_var.set('✅ Saved')
             groq_status_lbl.config(fg='#10B981')
             groq_key_var.set('')
 
@@ -645,14 +680,14 @@ def _show_settings_widgets():
             groq_status_lbl.config(fg='#6B7280')
 
     btn_row = tk.Frame(groq_frame, bg='#1A1D23')
-    btn_row.grid(row=1, column=0, columnspan=4, padx=12, pady=(0, 10), sticky='w')
+    btn_row.grid(row=2, column=0, columnspan=4, padx=12, pady=(0, 10), sticky='w')
     _make_btn(btn_row, '💾 Save', on_groq_save, bg='#6366F1', width=9).pack(side='left', padx=(0, 6))
     _make_btn(btn_row, '✓ Verify', on_groq_verify, bg='#10B981', width=9).pack(side='left', padx=(0, 6))
     _make_btn(btn_row, '🗑 Delete', on_groq_delete, bg='#DC2626', width=9).pack(side='left')
 
     tk.Label(groq_frame, text='Free models: llama3-70b-8192, llama3-8b-8192, mixtral-8x7b-32768, gemma2-9b-it',
              bg='#1A1D23', fg='#4B5563', font=('Segoe UI', 8, 'italic')).grid(
-        row=2, column=0, columnspan=4, padx=12, pady=(0, 10), sticky='w')
+        row=3, column=0, columnspan=4, padx=12, pady=(0, 10), sticky='w')
 
     # ─── OLLAMA SECTION ──────────────────────────────────────────────────────
     ollama_frame = tk.LabelFrame(inner, text=' Ollama (Local / Ollama Cloud free tier) ',
@@ -670,9 +705,21 @@ def _show_settings_widgets():
     tk.Label(ollama_frame, text='Model:', bg='#1A1D23', fg='#9CA3AF', font=('Segoe UI', 9)).grid(
         row=1, column=0, padx=12, pady=4, sticky='w')
     ollama_model_var = tk.StringVar(value=data.get('ollama_model', 'llama3.2:1b'))
-    tk.Entry(ollama_frame, textvariable=ollama_model_var, bg='#2D3039', fg='#E5E7EB',
-             insertbackground='#E5E7EB', relief='flat', font=('Segoe UI', 9), width=42).grid(
-        row=1, column=1, columnspan=3, padx=6, pady=4, sticky='ew')
+    
+    ollama_models = [
+        "llama3.2:1b",
+        "llama3.2:3b",
+        "llama3.1:8b",
+        "qwen2.5:0.5b",
+        "qwen2.5:1.5b",
+        "qwen2.5:3b",
+        "gemma2:2b",
+        "phi3.5",
+        "mistral:7b"
+    ]
+    ollama_model_cb = ttk.Combobox(ollama_frame, textvariable=ollama_model_var, values=ollama_models, width=40, font=('Segoe UI', 9))
+    ollama_model_cb.grid(row=1, column=1, columnspan=2, padx=6, pady=4, sticky='w')
+    tk.Label(ollama_frame, text='(Free tier + tool calling)', bg='#1A1D23', fg='#6B7280', font=('Segoe UI', 8)).grid(row=1, column=3, sticky='w')
 
     ollama_status_var = tk.StringVar(value='')
     ollama_status_lbl = tk.Label(ollama_frame, textvariable=ollama_status_var,
