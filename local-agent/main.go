@@ -241,6 +241,7 @@ type ConnectionData struct {
 	GroqAPIKey    string `json:"groq_api_key,omitempty"`
 	GroqModel     string `json:"groq_model,omitempty"`
 	OllamaBaseURL string `json:"ollama_base_url,omitempty"` // e.g. https://api.ollama.ai
+	OllamaAPIKey  string `json:"ollama_api_key,omitempty"`  // optional auth
 	OllamaModel   string `json:"ollama_model,omitempty"`    // e.g. llama3.2:1b
 }
 
@@ -1137,11 +1138,22 @@ func startHTTPServer() {
 					groqMasked = strings.Repeat("*", len(k))
 				}
 			}
+			ollamaMasked := ""
+			if connData.OllamaAPIKey != "" {
+				k := connData.OllamaAPIKey
+				if len(k) > 8 {
+					ollamaMasked = k[:4] + strings.Repeat("*", len(k)-8) + k[len(k)-4:]
+				} else {
+					ollamaMasked = strings.Repeat("*", len(k))
+				}
+			}
 			resp := map[string]string{
 				"groq_api_key_masked": groqMasked,
 				"groq_api_key_set":    fmt.Sprintf("%v", connData.GroqAPIKey != ""),
 				"groq_model":          connData.GroqModel,
 				"ollama_base_url":     connData.OllamaBaseURL,
+				"ollama_api_key_masked": ollamaMasked,
+				"ollama_api_key_set":    fmt.Sprintf("%v", connData.OllamaAPIKey != ""),
 				"ollama_model":        connData.OllamaModel,
 			}
 			json.NewEncoder(w).Encode(resp)
@@ -1151,6 +1163,7 @@ func startHTTPServer() {
 				GroqAPIKey    string `json:"groq_api_key"`
 				GroqModel     string `json:"groq_model"`
 				OllamaBaseURL string `json:"ollama_base_url"`
+				OllamaAPIKey  string `json:"ollama_api_key"`
 				OllamaModel   string `json:"ollama_model"`
 				Action        string `json:"action"` // "save" or "delete_groq" or "delete_ollama"
 			}
@@ -1165,6 +1178,7 @@ func startHTTPServer() {
 				connData.GroqModel = ""
 			case "delete_ollama":
 				connData.OllamaBaseURL = ""
+				connData.OllamaAPIKey = ""
 				connData.OllamaModel = ""
 			default: // "save"
 				if payload.GroqAPIKey != "" {
@@ -1175,6 +1189,9 @@ func startHTTPServer() {
 				}
 				if payload.OllamaBaseURL != "" {
 					connData.OllamaBaseURL = payload.OllamaBaseURL
+				}
+				if payload.OllamaAPIKey != "" {
+					connData.OllamaAPIKey = payload.OllamaAPIKey
 				}
 				if payload.OllamaModel != "" {
 					connData.OllamaModel = payload.OllamaModel
@@ -1212,7 +1229,7 @@ func startHTTPServer() {
 		w.Header().Set("Content-Type", "application/json")
 
 		connData, _ := loadConnectionData()
-		out, err := executeOllamaCommand("Say hello in one word", connData.OllamaBaseURL, connData.OllamaModel, "")
+		out, err := executeOllamaCommand("Say hello in one word", connData.OllamaBaseURL, connData.OllamaModel, connData.OllamaAPIKey)
 		if err != nil {
 			json.NewEncoder(w).Encode(map[string]string{"status": "error", "message": err.Error()})
 			return
@@ -1357,7 +1374,7 @@ func startHTTPServer() {
 				if ollamaModel == "" {
 					ollamaModel = "llama3.2:1b"
 				}
-				output, err = executeOllamaCommand(command, connData.OllamaBaseURL, ollamaModel, "")
+				output, err = executeOllamaCommand(command, connData.OllamaBaseURL, ollamaModel, connData.OllamaAPIKey)
 				fmt.Println("STATUS: IDLE")
 				os.Stdout.Sync()
 				newConvID = conversationID

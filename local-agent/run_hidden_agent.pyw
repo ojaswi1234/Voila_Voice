@@ -725,21 +725,30 @@ def _show_settings_widgets():
     ollama_model_cb.grid(row=1, column=1, columnspan=2, padx=6, pady=4, sticky='w')
     tk.Label(ollama_frame, text='(Free tier + tool calling)', bg='#1A1D23', fg='#6B7280', font=('Segoe UI', 8)).grid(row=1, column=3, sticky='w')
 
+    tk.Label(ollama_frame, text='API Key (Opt):', bg='#1A1D23', fg='#9CA3AF', font=('Segoe UI', 9)).grid(
+        row=2, column=0, padx=12, pady=4, sticky='w')
+    ollama_key_var = tk.StringVar(value=data.get('ollama_api_key_set') == 'true' and '********' or '')
+    tk.Entry(ollama_frame, textvariable=ollama_key_var, bg='#2D3039', fg='#E5E7EB',
+             insertbackground='#E5E7EB', relief='flat', font=('Segoe UI', 9), width=42, show='*').grid(
+        row=2, column=1, columnspan=3, padx=6, pady=4, sticky='ew')
+
     ollama_status_var = tk.StringVar(value='')
     ollama_status_lbl = tk.Label(ollama_frame, textvariable=ollama_status_var,
                                   bg='#1A1D23', fg='#10B981', font=('Segoe UI', 9))
-    ollama_status_lbl.grid(row=2, column=0, columnspan=4, padx=12, pady=(0, 4), sticky='w')
+    ollama_status_lbl.grid(row=3, column=0, columnspan=4, padx=12, pady=(0, 4), sticky='w')
 
     def on_ollama_save():
         url = ollama_url_var.get().strip()
         model = ollama_model_var.get().strip()
+        key = ollama_key_var.get().strip()
+        if key == '********': key = '' # Don't resave placeholder
         if not url:
-            ollama_status_var.set('⚠ Enter Base URL first')
+            ollama_status_var.set('⚠️ Enter Base URL first')
             ollama_status_lbl.config(fg='#F59E0B')
             return
-        res = _api_call('POST', '/api-keys', {'ollama_base_url': url, 'ollama_model': model, 'action': 'save'})
+        res = _api_call('POST', '/api-keys', {'ollama_base_url': url, 'ollama_model': model, 'ollama_api_key': key, 'action': 'save'})
         if 'error' in res:
-            ollama_status_var.set(f'✗ {res["error"][:40]}')
+            ollama_status_var.set(f'❌ {res["error"][:40]}')
             ollama_status_lbl.config(fg='#EF4444')
         else:
             ollama_status_var.set('● Saved')
@@ -778,14 +787,14 @@ def _show_settings_widgets():
             ollama_status_lbl.config(fg='#6B7280')
 
     obtn_row = tk.Frame(ollama_frame, bg='#1A1D23')
-    obtn_row.grid(row=3, column=0, columnspan=4, padx=12, pady=(0, 10), sticky='w')
+    obtn_row.grid(row=4, column=0, columnspan=4, padx=12, pady=(0, 10), sticky='w')
     _make_btn(obtn_row, '💾 Save', on_ollama_save, bg='#D97706', width=9).pack(side='left', padx=(0, 6))
     _make_btn(obtn_row, '✓ Verify', on_ollama_verify, bg='#10B981', width=9).pack(side='left', padx=(0, 6))
     _make_btn(obtn_row, '🗑 Delete', on_ollama_delete, bg='#DC2626', width=9).pack(side='left')
 
     tk.Label(ollama_frame, text='Ollama Cloud free models: llama3.2:1b, llama3.2:3b, gemma3:1b, phi3.5, qwen2.5:0.5b',
              bg='#1A1D23', fg='#4B5563', font=('Segoe UI', 8, 'italic')).grid(
-        row=4, column=0, columnspan=4, padx=12, pady=(0, 10), sticky='w')
+        row=5, column=0, columnspan=4, padx=12, pady=(0, 10), sticky='w')
 
     # ─── Info footer ─────────────────────────────────────────────────────────
     info = tk.Frame(inner, bg='#0F1115')
