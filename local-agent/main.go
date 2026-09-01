@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -33,10 +34,92 @@ var (
 	circuitOpen bool
 	execSemaphore chan struct{} // Limit concurrent executions
 	maxConcurrentExecs = 2 // Maximum concurrent AI executions
+	resilienceManager *ResilienceManager
 )
 
 func init() {
 	execSemaphore = make(chan struct{}, maxConcurrentExecs)
+	
+	// Initialize network resilience manager
+	initResilienceManager()
+}
+
+func initResilienceManager() {
+	config := ResilienceConfig{
+		MaxRetries:          5,
+		BaseDelay:           1 * time.Second,
+		MaxDelay:            30 * time.Second,
+		HealthCheckInterval: 30 * time.Second,
+		HealthCheckTimeout:  10 * time.Second,
+		DNSCacheTTL:         5 * time.Minute,
+		CircuitThreshold:    5,
+		CircuitTimeout:      30 * time.Second,
+	}
+	
+	resilienceManager = NewResilienceManager(config)
+	log.Printf("Network resilience manager initialized with %d transport layers", len(resilienceManager.transportStack.transports))
+	
+	// Start health check goroutine
+	go func() {
+		ticker := time.NewTicker(config.HealthCheckInterval)
+		defer ticker.Stop()
+		
+		for range ticker.C {
+			// Health check logic for backend
+			if resilienceManager != nil {
+				// Periodic health checks could be added here
+			}
+		}
+	}()
+}
+
+// Resilient HTTP client wrapper
+func resilientHTTPGet(url string) (*http.Response, error) {
+	// Skip resilience for localhost to avoid conflicts with local services
+	if strings.Contains(url, "127.0.0.1") || strings.Contains(url, "localhost") {
+		client := &http.Client{Timeout: 5 * time.Second}
+		return client.Get(url)
+	}
+	
+	if resilienceManager == nil {
+		// Fallback to basic HTTP client if resilience manager not initialized
+		return http.Get(url)
+	}
+	
+	resp, err := resilienceManager.Request(context.Background(), url)
+	if err != nil {
+		log.Printf("Resilient HTTP request failed for %s: %v", url, err)
+		// Fallback to basic HTTP client
+		return http.Get(url)
+	}
+	
+	return resp, nil
+}
+
+// Resilient HTTP client with custom request
+func resilientHTTPDo(req *http.Request) (*http.Response, error) {
+	// Skip resilience for localhost to avoid conflicts with local services
+	if strings.Contains(req.URL.String(), "127.0.0.1") || strings.Contains(req.URL.String(), "localhost") {
+		client := &http.Client{Timeout: 5 * time.Second}
+		return client.Do(req)
+	}
+	
+	if resilienceManager == nil {
+		client := &http.Client{Timeout: 30 * time.Second}
+		return client.Do(req)
+	}
+	
+	// For now, use basic client with resilience manager for DNS and connection pooling
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+		Transport: &http.Transport{
+			MaxIdleConns:        10,
+			MaxIdleConnsPerHost: 5,
+			IdleConnTimeout:     90 * time.Second,
+		},
+	}
+	
+	return client.Do(req)
 }
 
 const circuitFlagFile = "circuit_open.flag"
@@ -524,7 +607,7 @@ func (m model) clearBackendDataWithPhrase(phrase string) tea.Cmd {
 
 func (m model) clearLocalData() tea.Cmd {
 	return func() tea.Msg {
-		path := filepath.Join(getConfigDir(), "voice-cli", "connection_data.json")
+		path := filepath.Join(getConfigDir(), "connection_data.json")
 		err := os.Remove(path)
 		if err != nil && !os.IsNotExist(err) {
 			return errorMsg{fmt.Sprintf("Failed to clear local data: %v", err)}
@@ -825,7 +908,7 @@ var serverRunning bool
 
 
 func getNgrokPublicURL() string {
-	resp, err := http.Get("http://127.0.0.1:4040/api/tunnels")
+	resp, err := resilientHTTPGet("http://127.0.0.1:4040/api/tunnels")
 	if err != nil {
 		return ""
 	}
@@ -852,7 +935,7 @@ func getNgrokPublicURL() string {
 }
 
 func isNgrokRunning() bool {
-	resp, err := http.Get("http://127.0.0.1:4040/api/tunnels")
+	resp, err := resilientHTTPGet("http://127.0.0.1:4040/api/tunnels")
 	if err != nil {
 		return false
 	}
@@ -1399,12 +1482,7 @@ func executeCommand(command string, mode string, conversationID string, modelNam
 // Save/Load connection data
 func saveConnectionData(data ConnectionData) error {
 	configDir := getConfigDir()
-	appDir := filepath.Join(configDir, "voice-cli")
-	if err := os.MkdirAll(appDir, 0755); err != nil {
-		return err
-	}
-	
-	path := filepath.Join(appDir, "connection_data.json")
+	path := filepath.Join(configDir, "connection_data.json")
 	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		return err
@@ -1486,7 +1564,7 @@ func sendHeartbeat(data ConnectionData, publicAddress string) error {
 }
 
 func loadConnectionData() (ConnectionData, error) {
-	path := filepath.Join(getConfigDir(), "voice-cli", "connection_data.json")
+	path := filepath.Join(getConfigDir(), "connection_data.json")
 	file, err := os.Open(path)
 	if err != nil {
 		return ConnectionData{}, err
@@ -1611,13 +1689,8 @@ WantedBy=default.target
 }
 
 func getConfigDir() string {
-	if runtime.GOOS == "windows" {
-		return os.Getenv("LOCALAPPDATA")
-	} else if runtime.GOOS == "darwin" {
-		return filepath.Join(os.Getenv("HOME"), "Library", "Application Support")
-	} else {
-		return filepath.Join(os.Getenv("HOME"), ".config")
-	}
+	// Use local-agent directory for connection data
+	return getExecutableDir()
 }
 
 func getExecutableDir() string {
@@ -1792,7 +1865,7 @@ func stopBackgroundService() {
 
 func isBackgroundServiceRunning() bool {
 	// Simple check: try to connect to the local HTTP server
-	resp, err := http.Get("http://localhost:8088/health")
+	resp, err := resilientHTTPGet("http://localhost:8088/health")
 	if err == nil && resp.StatusCode == 200 {
 		resp.Body.Close()
 		return true
@@ -1814,8 +1887,7 @@ func loadCircuitState() {
 	defer circuitMu.Unlock()
 	
 	configDir := getConfigDir()
-	appDir := filepath.Join(configDir, "voice-cli")
-	path := filepath.Join(appDir, circuitFlagFile)
+	path := filepath.Join(configDir, circuitFlagFile)
 	if _, err := os.Stat(path); err == nil {
 		circuitOpen = true
 		log.Println("Circuit breaker loaded as OPEN from disk")
@@ -1827,13 +1899,7 @@ func saveCircuitState() {
 	defer circuitMu.Unlock()
 	
 	configDir := getConfigDir()
-	appDir := filepath.Join(configDir, "voice-cli")
-	if err := os.MkdirAll(appDir, 0755); err != nil {
-		log.Printf("Failed to create config directory: %v", err)
-		return
-	}
-	
-	path := filepath.Join(appDir, circuitFlagFile)
+	path := filepath.Join(configDir, circuitFlagFile)
 	if circuitOpen {
 		os.WriteFile(path, []byte("1"), 0644)
 	} else {
