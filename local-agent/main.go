@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -1853,32 +1854,54 @@ func executeTool(toolName string, argsJSON json.RawMessage) string {
 			return "error: command is required"
 		}
 
-		// Launch a VISIBLE PowerShell window with ASCII banner for transparency
-		bannerCmd := `& {
-  Write-Host '╔══════════════════════════════════════╗' -ForegroundColor Cyan;
-  Write-Host '║  🤖 VOILA AI - CLOUD TERMINAL         ║' -ForegroundColor Cyan;
-  Write-Host '║  Model executing command below...     ║' -ForegroundColor Cyan;
-  Write-Host '╚══════════════════════════════════════╝' -ForegroundColor Cyan;
-  Write-Host '';
-  ` + actualCommand + `
-}`
-		visibleCmd := exec.Command("powershell", "-NoExit", "-Command", bannerCmd)
-		// Start visible window non-blocking — user can see what AI is doing
-		_ = visibleCmd.Start()
+		// Use Base64 to safely pass the command to PowerShell
+		encodedCmd := base64.StdEncoding.EncodeToString([]byte(actualCommand))
+		
+		// Create a temp file to capture output
+		tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("voila_out_%d.txt", time.Now().UnixNano()))
+		
+		// Wrapper script: shows banner, types command like a robot, executes it, and Tees output
+		wrapperPs := fmt.Sprintf(`
+$ErrorActionPreference = 'Continue'
+Write-Host '╔══════════════════════════════════════╗' -ForegroundColor Cyan
+Write-Host '║  🤖 VOILA AI - CLOUD TERMINAL         ║' -ForegroundColor Cyan
+Write-Host '║  Model executing command...           ║' -ForegroundColor Cyan
+Write-Host '╚══════════════════════════════════════╝' -ForegroundColor Cyan
+Write-Host ''
 
-		// Separately capture output via hidden process for returning to AI
-		hiddenCmd := exec.Command("powershell", "-Command", actualCommand)
-		var outBuf, errBuf bytes.Buffer
-		hiddenCmd.Stdout = &outBuf
-		hiddenCmd.Stderr = &errBuf
-		runErr := hiddenCmd.Run()
+$cmd = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('%s'))
+Write-Host 'PS > ' -NoNewline -ForegroundColor Green
+foreach ($char in $cmd.ToCharArray()) {
+    Write-Host $char -NoNewline -ForegroundColor Yellow
+    Start-Sleep -Milliseconds 15
+}
+Write-Host ''
+Write-Host '----------------------------------------' -ForegroundColor DarkGray
 
-		result := strings.TrimSpace(outBuf.String())
-		if errBuf.Len() > 0 {
-			result += "\nSTDERR: " + strings.TrimSpace(errBuf.String())
-		}
-		if runErr != nil {
-			result += "\nExit error: " + runErr.Error()
+try {
+    $sb = [scriptblock]::Create($cmd)
+    & $sb 2>&1 | Tee-Object -FilePath '%s'
+} catch {
+    $_.Exception.Message | Tee-Object -FilePath '%s' -Append
+}
+
+Write-Host '----------------------------------------' -ForegroundColor DarkGray
+Write-Host 'Execution complete. Closing in 2 seconds...' -ForegroundColor DarkGray
+Start-Sleep -Seconds 2
+`, encodedCmd, tmpFile, tmpFile)
+
+		// Run visible window synchronously
+		// -WindowStyle Normal ensures it pops up. No -NoExit so it closes when done.
+		cmd := exec.Command("powershell", "-WindowStyle", "Normal", "-Command", wrapperPs)
+		_ = cmd.Run() // Block until the window closes
+
+		// Read the captured output
+		outBytes, err := os.ReadFile(tmpFile)
+		_ = os.Remove(tmpFile) // Clean up
+		
+		result := strings.TrimSpace(string(outBytes))
+		if err != nil {
+			result += "\n(Failed to read output transcript: " + err.Error() + ")"
 		}
 		if result == "" {
 			result = "(no output)"
