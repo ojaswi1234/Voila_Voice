@@ -1294,6 +1294,8 @@ func startHTTPServer() {
 			var newConvID string
 			var err error
 
+			startTime := time.Now()
+
 			modeUpper := strings.ToUpper(mode)
 			switch modeUpper {
 			case "GROQ":
@@ -1317,6 +1319,16 @@ func startHTTPServer() {
 				output, newConvID, err = executeCommand(command, mode, conversationID, modelName)
 			}
 			
+			latencyMs := time.Since(startTime).Milliseconds()
+			fmt.Printf("STATUS: LATENCY_MS:%d\n", latencyMs)
+			os.Stdout.Sync()
+			if err == nil {
+				fmt.Printf("STATUS: CMD_DONE:SUCCESS\n")
+			} else {
+				fmt.Printf("STATUS: CMD_DONE:FAILED\n")
+			}
+			os.Stdout.Sync()
+
 			// Post the result back to backend
 			backendURL := strings.TrimRight(connData.BackendURL, "/") + "/webhook/result"
 			
@@ -1610,13 +1622,454 @@ func executeCommand(command string, mode string, conversationID string, modelNam
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Cloud API executors — Groq & Ollama
+// Cloud API executors — Groq & Ollama (with tool-calling support)
 // ─────────────────────────────────────────────────────────────────────────────
 
 // groqMessage mirrors the Groq / OpenAI chat message format.
+// For tool-calling we need a richer raw message so we use map[string]interface{} in loops.
 type groqMessage struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
+}
+
+// ── Tool definitions ─────────────────────────────────────────────────────────
+
+// toolDef is the JSON structure sent to cloud APIs describing an available tool.
+type toolDef struct {
+	Type     string       `json:"type"`
+	Function toolFuncDef  `json:"function"`
+}
+
+type toolFuncDef struct {
+	Name        string                 `json:"name"`
+	Description string                 `json:"description"`
+	Parameters  map[string]interface{} `json:"parameters"`
+}
+
+// availableTools is the standard list of tools sent with every cloud API request.
+var availableTools = []toolDef{
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "web_search",
+			Description: "Search the web for up-to-date information on any topic.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"query": map[string]interface{}{
+						"type":        "string",
+						"description": "The search query",
+					},
+				},
+				"required": []string{"query"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "read_file",
+			Description: "Read the content of a file from the local filesystem.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"path": map[string]interface{}{
+						"type":        "string",
+						"description": "Absolute or relative path to the file",
+					},
+				},
+				"required": []string{"path"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "write_file",
+			Description: "Write content to a file on the local filesystem.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"path": map[string]interface{}{
+						"type":        "string",
+						"description": "Absolute or relative path to the file",
+					},
+					"content": map[string]interface{}{
+						"type":        "string",
+						"description": "Content to write into the file",
+					},
+				},
+				"required": []string{"path", "content"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "run_terminal",
+			Description: "Run a PowerShell command on the local machine. A visible terminal window will open showing the command.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"command": map[string]interface{}{
+						"type":        "string",
+						"description": "PowerShell command to execute",
+					},
+				},
+				"required": []string{"command"},
+			},
+		},
+	},
+}
+
+// executeTool dispatches to the correct tool implementation and returns a result string.
+// It also emits a STATUS: TOOL:<name> line so the Python face can show per-tool states.
+func executeTool(toolName string, argsJSON json.RawMessage) string {
+	// Emit status so Python face knows which tool is running
+	fmt.Printf("STATUS: TOOL:%s\n", toolName)
+	os.Stdout.Sync()
+
+	var args map[string]interface{}
+	if err := json.Unmarshal(argsJSON, &args); err != nil {
+		return "error: failed to parse tool arguments: " + err.Error()
+	}
+
+	getString := func(key string) string {
+		v, _ := args[key].(string)
+		return v
+	}
+
+	switch toolName {
+	case "web_search":
+		query := getString("query")
+		if query == "" {
+			return "error: query is required"
+		}
+		searchURL := "https://api.duckduckgo.com/?q=" + strings.ReplaceAll(query, " ", "+") + "&format=json&no_html=1&skip_disambig=1"
+		resp, err := http.Get(searchURL)
+		if err != nil {
+			return "web search failed: " + err.Error()
+		}
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(resp.Body)
+
+		var ddg struct {
+			AbstractText  string `json:"AbstractText"`
+			RelatedTopics []struct {
+				Text string `json:"Text"`
+			} `json:"RelatedTopics"`
+		}
+		if err := json.Unmarshal(body, &ddg); err != nil {
+			return "web search: failed to parse response"
+		}
+
+		var parts []string
+		if ddg.AbstractText != "" {
+			parts = append(parts, ddg.AbstractText)
+		} else {
+			parts = append(parts, "(No direct answer found — see related topics below)")
+		}
+		for i, rt := range ddg.RelatedTopics {
+			if i >= 3 {
+				break
+			}
+			if rt.Text != "" {
+				parts = append(parts, rt.Text)
+			}
+		}
+		return strings.Join(parts, "\n")
+
+	case "read_file":
+		path := getString("path")
+		if path == "" {
+			return "error: path is required"
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return "error reading file: " + err.Error()
+		}
+		content := string(data)
+		if len(content) > 8000 {
+			content = content[:8000] + "\n... (truncated)"
+		}
+		return content
+
+	case "write_file":
+		path := getString("path")
+		content := getString("content")
+		if path == "" {
+			return "error: path is required"
+		}
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			return "error writing file: " + err.Error()
+		}
+		return "ok"
+
+	case "run_terminal":
+		actualCommand := getString("command")
+		if actualCommand == "" {
+			return "error: command is required"
+		}
+
+		// Launch a VISIBLE PowerShell window with ASCII banner for transparency
+		bannerCmd := `& {
+  Write-Host '╔══════════════════════════════════════╗' -ForegroundColor Cyan;
+  Write-Host '║  🤖 VOILA AI - CLOUD TERMINAL         ║' -ForegroundColor Cyan;
+  Write-Host '║  Model executing command below...     ║' -ForegroundColor Cyan;
+  Write-Host '╚══════════════════════════════════════╝' -ForegroundColor Cyan;
+  Write-Host '';
+  ` + actualCommand + `
+}`
+		visibleCmd := exec.Command("powershell", "-NoExit", "-Command", bannerCmd)
+		// Start visible window non-blocking — user can see what AI is doing
+		_ = visibleCmd.Start()
+
+		// Separately capture output via hidden process for returning to AI
+		hiddenCmd := exec.Command("powershell", "-Command", actualCommand)
+		var outBuf, errBuf bytes.Buffer
+		hiddenCmd.Stdout = &outBuf
+		hiddenCmd.Stderr = &errBuf
+		runErr := hiddenCmd.Run()
+
+		result := strings.TrimSpace(outBuf.String())
+		if errBuf.Len() > 0 {
+			result += "\nSTDERR: " + strings.TrimSpace(errBuf.String())
+		}
+		if runErr != nil {
+			result += "\nExit error: " + runErr.Error()
+		}
+		if result == "" {
+			result = "(no output)"
+		}
+		return result
+
+	default:
+		return "error: unknown tool: " + toolName
+	}
+}
+
+// ── Groq executor with tool-calling loop ─────────────────────────────────────
+
+// executeGroqCommand sends a prompt to the Groq cloud API and returns the response.
+// It uses the fast llama3-70b-8192 model by default, but respects modelName if provided.
+// Supports up to 5 tool-calling iterations using OpenAI-compatible tool_calls format.
+func executeGroqCommand(command, apiKey, modelName string) (string, error) {
+	if apiKey == "" {
+		return "", fmt.Errorf("Groq API key not set. Open the Voila dashboard → Settings to add your key")
+	}
+	if modelName == "" {
+		modelName = "llama3-70b-8192" // Groq free-tier default
+	}
+
+	systemPrompt := "You are Voila, a helpful AI voice assistant. Keep responses casual, conversational, and brief. Address the user as 'boss'."
+
+	// Maintain conversation as raw JSON-friendly messages
+	messages := []map[string]interface{}{
+		{"role": "system", "content": systemPrompt},
+		{"role": "user", "content": command},
+	}
+
+	client := &http.Client{Timeout: 60 * time.Second}
+	const maxIter = 5
+
+	for iter := 0; iter < maxIter; iter++ {
+		payload := map[string]interface{}{
+			"model":       modelName,
+			"messages":    messages,
+			"temperature": 0.7,
+			"max_tokens":  2048,
+			"stream":      false,
+			"tools":       availableTools,
+		}
+
+		body, err := json.Marshal(payload)
+		if err != nil {
+			return "", fmt.Errorf("failed to build Groq request: %w", err)
+		}
+
+		req, err := http.NewRequest("POST", "https://api.groq.com/openai/v1/chat/completions", bytes.NewBuffer(body))
+		if err != nil {
+			return "", err
+		}
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return "", fmt.Errorf("Groq API request failed: %w", err)
+		}
+		respBody, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return "", fmt.Errorf("Groq API error %d: %s", resp.StatusCode, string(respBody))
+		}
+
+		var result struct {
+			Choices []struct {
+				Message struct {
+					Role      string          `json:"role"`
+					Content   string          `json:"content"`
+					ToolCalls []struct {
+						ID       string `json:"id"`
+						Type     string `json:"type"`
+						Function struct {
+							Name      string          `json:"name"`
+							Arguments json.RawMessage `json:"arguments"`
+						} `json:"function"`
+					} `json:"tool_calls"`
+				} `json:"message"`
+				FinishReason string `json:"finish_reason"`
+			} `json:"choices"`
+			Error struct {
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if err := json.Unmarshal(respBody, &result); err != nil {
+			return "", fmt.Errorf("failed to parse Groq response: %w", err)
+		}
+		if len(result.Choices) == 0 {
+			if result.Error.Message != "" {
+				return "", fmt.Errorf("Groq error: %s", result.Error.Message)
+			}
+			return "", fmt.Errorf("Groq returned no choices")
+		}
+
+		choice := result.Choices[0]
+
+		// No tool calls — return the final text answer
+		if len(choice.Message.ToolCalls) == 0 {
+			return strings.TrimSpace(choice.Message.Content), nil
+		}
+
+		// Append assistant message with tool_calls
+		assistantMsg := map[string]interface{}{
+			"role":       "assistant",
+			"content":    choice.Message.Content,
+			"tool_calls": choice.Message.ToolCalls,
+		}
+		messages = append(messages, assistantMsg)
+
+		// Execute each tool and collect results
+		for _, tc := range choice.Message.ToolCalls {
+			argsBytes, _ := json.Marshal(tc.Function.Arguments)
+			toolResult := executeTool(tc.Function.Name, json.RawMessage(argsBytes))
+			messages = append(messages, map[string]interface{}{
+				"role":         "tool",
+				"tool_call_id": tc.ID,
+				"content":      toolResult,
+			})
+		}
+	}
+
+	return "(max tool iterations reached)", nil
+}
+
+// ── Ollama executor with tool-calling loop ────────────────────────────────────
+
+// executeOllamaCommand sends a prompt to an Ollama-compatible endpoint.
+// Works for both local Ollama (http://localhost:11434) and Ollama Cloud (https://api.ollama.ai).
+// Supports up to 5 tool-calling iterations using the Ollama /api/chat tools field.
+func executeOllamaCommand(command, baseURL, modelName, apiKey string) (string, error) {
+	if baseURL == "" {
+		baseURL = "http://localhost:11434" // fallback to local
+	}
+	if modelName == "" {
+		modelName = "llama3.2:1b" // smallest free-tier Ollama Cloud model
+	}
+
+	// Ollama uses the same OpenAI-compatible endpoint
+	apiURL := strings.TrimRight(baseURL, "/") + "/api/chat"
+
+	systemPrompt := "You are Voila, a helpful AI voice assistant. Keep responses casual, conversational, and brief. Address the user as 'boss'."
+
+	messages := []map[string]interface{}{
+		{"role": "system", "content": systemPrompt},
+		{"role": "user", "content": command},
+	}
+
+	client := &http.Client{Timeout: 120 * time.Second}
+	const maxIter = 5
+
+	for iter := 0; iter < maxIter; iter++ {
+		payload := map[string]interface{}{
+			"model":    modelName,
+			"messages": messages,
+			"stream":   false,
+			"tools":    availableTools,
+		}
+
+		body, err := json.Marshal(payload)
+		if err != nil {
+			return "", fmt.Errorf("failed to build Ollama request: %w", err)
+		}
+
+		req, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(body))
+		if err != nil {
+			return "", err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if apiKey != "" {
+			req.Header.Set("Authorization", "Bearer "+apiKey)
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return "", fmt.Errorf("Ollama request failed: %w", err)
+		}
+		respBody, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return "", fmt.Errorf("Ollama error %d: %s", resp.StatusCode, string(respBody))
+		}
+
+		var result struct {
+			Message struct {
+				Role      string `json:"role"`
+				Content   string `json:"content"`
+				ToolCalls []struct {
+					Function struct {
+						Name      string          `json:"name"`
+						Arguments json.RawMessage `json:"arguments"`
+					} `json:"function"`
+				} `json:"tool_calls"`
+			} `json:"message"`
+			Error string `json:"error"`
+		}
+		if err := json.Unmarshal(respBody, &result); err != nil {
+			return "", fmt.Errorf("failed to parse Ollama response: %w", err)
+		}
+		if result.Error != "" {
+			return "", fmt.Errorf("Ollama error: %s", result.Error)
+		}
+
+		// No tool calls — return the final text answer
+		if len(result.Message.ToolCalls) == 0 {
+			return strings.TrimSpace(result.Message.Content), nil
+		}
+
+		// Append assistant message
+		assistantMsg := map[string]interface{}{
+			"role":       "assistant",
+			"content":    result.Message.Content,
+			"tool_calls": result.Message.ToolCalls,
+		}
+		messages = append(messages, assistantMsg)
+
+		// Execute each tool and collect results
+		for _, tc := range result.Message.ToolCalls {
+			argsBytes, _ := json.Marshal(tc.Function.Arguments)
+			toolResult := executeTool(tc.Function.Name, json.RawMessage(argsBytes))
+			// Ollama tool result uses role "tool" same as OpenAI
+			messages = append(messages, map[string]interface{}{
+				"role":    "tool",
+				"content": toolResult,
+			})
+		}
+	}
+
+	return "(max tool iterations reached)", nil
 }
 
 // executeGroqCommand sends a prompt to the Groq cloud API and returns the response.

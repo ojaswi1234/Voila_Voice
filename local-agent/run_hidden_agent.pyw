@@ -97,6 +97,43 @@ status_text = canvas.create_text(cx+55, cy+25, text="Standing by...", fill="#888
 close_btn_bg = canvas.create_oval(245, 25, 295, 65, fill="", outline="", width=0, state='hidden')
 close_btn = canvas.create_text(270, 45, text="✕", fill="#888888", font=("Segoe UI", 20, "bold"), anchor="center")
 
+# ── LOCAL/CLOUD mode toggle badge ───────────────────────────────────────────
+# Cycles: LOCAL (agy) → GROQ → OLLAMA → LOCAL
+# Stored in global; sent to voila.exe /set-mode so /execute uses correct executor
+MODES = ["LOCAL", "GROQ", "OLLAMA"]
+MODE_COLORS = {"LOCAL": "#6366F1", "GROQ": "#10B981", "OLLAMA": "#F59E0B"}
+MODE_LABELS = {"LOCAL": "⚡LOCAL", "GROQ": "☁ GROQ", "OLLAMA": "🦙OLLAMA"}
+current_mode = "LOCAL"  # Default: use agy agent
+
+mode_badge = canvas.create_text(
+    90, 68, text=MODE_LABELS["LOCAL"],
+    fill=MODE_COLORS["LOCAL"], font=("Segoe UI", 7, "bold"),
+    anchor="w", state='normal'
+)
+
+def _set_voila_mode(mode):
+    """Notify voila.exe of the mode change via HTTP (fire and forget)."""
+    def _do():
+        try:
+            import urllib.request as _ur, json as _j
+            data = _j.dumps({"mode": mode}).encode()
+            req = _ur.Request("http://localhost:8088/set-mode", data=data,
+                              headers={"Content-Type": "application/json"}, method="POST")
+            _ur.urlopen(req, timeout=3)
+        except: pass
+    import threading as _t
+    _t.Thread(target=_do, daemon=True).start()
+
+def cycle_mode(e=None):
+    global current_mode
+    if dashboard_active: return
+    idx = (MODES.index(current_mode) + 1) % len(MODES)
+    current_mode = MODES[idx]
+    canvas.itemconfig(mode_badge, text=MODE_LABELS[current_mode], fill=MODE_COLORS[current_mode])
+    _set_voila_mode(current_mode)
+
+canvas.tag_bind(mode_badge, '<Button-1>', cycle_mode)
+
 import os as _os
 _agent_env = _os.environ.copy()
 # Bug #16 Fix: When stdout is piped (not a TTY), the Go runtime switches to 4KB
@@ -1018,28 +1055,8 @@ def animation_loop():
     dots = "." * (anim_frame % 4)
 
     if not dashboard_active and not dashboard_transition_in_progress:
-        # Track usage stats (every 60 frames = ~9 seconds)
-        if anim_frame % 60 == 0 and mobile_clients > 0:
-            if random.random() > 0.7:
-                usage_stats["commands_executed"] += 1
-                if random.random() > 0.1:
-                    usage_stats["commands_successful"] += 1
-                else:
-                    usage_stats["commands_failed"] += 1
-                usage_stats["last_command_time"] = time.time()
-                usage_stats["avg_latency_ms"] = random.randint(20, 150)
-                
-                # Track peak commands per minute
-                session_duration = int((time.time() - usage_stats['session_start']) / 60)
-                if session_duration > 0:
-                    current_cpm = usage_stats["commands_executed"] // session_duration
-                    if current_cpm > usage_stats["peak_commands_per_min"]:
-                        usage_stats["peak_commands_per_min"] = current_cpm
-                
-                # Update timeline data (keep last 20 data points)
-                usage_stats["timeline_data"].append(usage_stats["avg_latency_ms"])
-                if len(usage_stats["timeline_data"]) > 20:
-                    usage_stats["timeline_data"].pop(0)
+        # usage_stats are now updated in real-time via STATUS: protocol messages
+        # (STATUS: CMD_DONE:SUCCESS/FAILED, STATUS: LATENCY_MS:N)
 
         if alert_state.get("state_changed"):
             update_expression()
@@ -1164,7 +1181,10 @@ def animation_loop():
                 canvas.coords(eye_r_shine, er_cx + px_offset - 1.5, er_cy + py_offset - 1.5, er_cx + px_offset + 1.5, er_cy + py_offset + 1.5)
 
     elif dashboard_active and anim_frame % 120 == 0:
-        refresh_dashboard_content()
+        # Don't refresh Settings section — it's widget-based and self-managed.
+        # Refreshing it would destroy all typed API keys every 18 seconds.
+        if current_section != 'Settings':
+            refresh_dashboard_content()
 
     root.after(150, animation_loop)
 
@@ -1176,32 +1196,79 @@ def reset_to_idle():
 
 def parse_line(line):
     global ai_state, mobile_clients, glow_timer
-    
+
+    if not line.startswith("STATUS:"):
+        # Non-STATUS lines: use keyword sniffing ONLY as a soft hint, not authoritative
+        l = line.lower()
+        if ai_state == "RUNNING":
+            if "thinking" in l or "planning" in l:     ai_state = "THINKING"
+            elif "search" in l or "browse" in l:       ai_state = "SEARCH"
+            elif "command" in l or "powershell" in l or "bash" in l: ai_state = "BASH"
+            elif "read" in l or "write" in l or "file" in l: ai_state = "FILE"
+        return
+
+    # ── Authoritative STATUS: protocol ──────────────────────────────────────
     if "STATUS: MOBILE_CLIENTS:" in line:
         count_str = line.split("STATUS: MOBILE_CLIENTS:")[1].strip()
         try:
             mobile_clients = int(count_str)
             update_expression()
-            if dashboard_active:
+            if dashboard_active and current_section != 'Settings':
                 refresh_dashboard_content()
         except: pass
         return
-        
+
     if "STATUS: IDLE" in line:
         if glow_timer: root.after_cancel(glow_timer)
         glow_timer = root.after(1500, reset_to_idle)
         return
-        
+
     if "STATUS: RUNNING" in line:
         if glow_timer: root.after_cancel(glow_timer)
         ai_state = "RUNNING"
         return
-        
-    l = line.lower()
-    if "thinking" in l: ai_state = "THINKING"
-    elif "search" in l: ai_state = "SEARCH"
-    elif "command" in l or "powershell" in l: ai_state = "BASH"
-    elif "read" in l or "write" in l or "edit" in l: ai_state = "FILE"
+
+    # Real command outcome tracking (from Go's /execute goroutine)
+    if "STATUS: CMD_DONE:SUCCESS" in line:
+        usage_stats["commands_executed"] += 1
+        usage_stats["commands_successful"] += 1
+        usage_stats["last_command_time"] = time.time()
+        # Update peak commands/min
+        session_duration = max(1, int((time.time() - usage_stats['session_start']) / 60))
+        cpm = usage_stats["commands_executed"] // session_duration
+        if cpm > usage_stats["peak_commands_per_min"]:
+            usage_stats["peak_commands_per_min"] = cpm
+        return
+
+    if "STATUS: CMD_DONE:FAILED" in line:
+        usage_stats["commands_executed"] += 1
+        usage_stats["commands_failed"] += 1
+        return
+
+    # Real latency tracking
+    if "STATUS: LATENCY_MS:" in line:
+        try:
+            ms = int(line.split("STATUS: LATENCY_MS:")[1].strip())
+            # Exponential moving average
+            usage_stats["avg_latency_ms"] = int(usage_stats["avg_latency_ms"] * 0.7 + ms * 0.3)
+            usage_stats["timeline_data"].append(ms)
+            if len(usage_stats["timeline_data"]) > 20:
+                usage_stats["timeline_data"].pop(0)
+        except: pass
+        return
+
+    # Tool-specific face states (from cloud AI tool calls)
+    if "STATUS: TOOL:" in line:
+        tool = line.split("STATUS: TOOL:")[1].strip().lower()
+        if "web_search" in tool or "search" in tool:
+            ai_state = "SEARCH"
+        elif "run_terminal" in tool or "terminal" in tool:
+            ai_state = "BASH"
+        elif "read_file" in tool or "write_file" in tool or "file" in tool:
+            ai_state = "FILE"
+        else:
+            ai_state = "THINKING"
+        return
 
 import queue as _queue
 
