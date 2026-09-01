@@ -1626,25 +1626,104 @@ func listConversationsHandler(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(conversations)
 	}
 }
-
 func executeCommand(command string, mode string, conversationID string, modelName string) (string, string, error) {
 	var cmd *exec.Cmd
 
 	if strings.ToUpper(mode) == "AGENT" {
 		prompt := command + "\n\n(CRITICAL SYSTEM NOTE: Keep your responses casual, brief, and conversational as if you are a friendly voice assistant. Address the user as 'boss'. Do not use overly formal language.\n\nCRITICAL SYSTEM NOTE: You are running inside an isolated background sandbox (`exebox` desktop). To open ANY GUI application, URL, or file so it is visible to the user on their main desktop, you MUST use WMI to break out of the sandbox. Use exactly this command format: `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'explorer.exe \"<URL_OR_PATH>\"'` (for URLs/files) or `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList '<APP_EXE>'` (for apps). DO NOT use Start-Process, as it will spawn invisibly in the sandbox! To perform browser automation, you MUST first launch a visible browser using Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe --remote-debugging-port=9222 --user-data-dir=C:\\tmp\\ai_browser_profile \"about:blank\"'. Then, control it by running python C:\\Users\\ojasw\\Desktop\\voice-cli-system\\local-agent\\browser_tools.py with args --action [goto|click|type|scrape|extract_links|snapshot] --url <url> --selector <css> --value <text>.)"
 		if modelName == "" || modelName == "flash" {
-			modelName = "Gemini 3.7 Flash (High)" // default if not provided
+			modelName = "Gemini 3.7 Flash (High)"
 		}
-		if conversationID != "" {
-			cmd = exec.Command("agy", "--model", modelName, "--conversation", conversationID, "--dangerously-skip-permissions", "--print", prompt)
-		} else {
-			cmd = exec.Command("agy", "--model", modelName, "--dangerously-skip-permissions", "--print", prompt)
-		}
+
 		workingDirMutex.Lock()
-		if currentWorkingDir != "" {
-			cmd.Dir = currentWorkingDir
-		}
+		cwd := currentWorkingDir
 		workingDirMutex.Unlock()
+
+		// Encode prompt safely as base64 to avoid quoting issues
+		encodedPrompt := base64.StdEncoding.EncodeToString([]byte(prompt))
+
+		// Build agy invocation string
+		var agyCmd string
+		if conversationID != "" {
+			agyCmd = fmt.Sprintf(`agy --model "%s" --conversation "%s" --dangerously-skip-permissions --print ([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('%s')))`,
+				modelName, conversationID, encodedPrompt)
+		} else {
+			agyCmd = fmt.Sprintf(`agy --model "%s" --dangerously-skip-permissions --print ([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('%s')))`,
+				modelName, encodedPrompt)
+		}
+
+		// Temp file for output capture
+		tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("voila_agent_%d.txt", time.Now().UnixNano()))
+
+		// Short preview of the user's command for the window title (max 60 chars)
+		preview := command
+		if len(preview) > 60 {
+			preview = preview[:57] + "..."
+		}
+		encodedPreview := base64.StdEncoding.EncodeToString([]byte(preview))
+
+		wrapperPs := fmt.Sprintf(`
+$ErrorActionPreference = 'Continue'
+$host.UI.RawUI.WindowTitle = 'Voila AI Agent'
+Clear-Host
+Write-Host '╔══════════════════════════════════════════════╗' -ForegroundColor Cyan
+Write-Host '║   🤖  VOILA AI — LOCAL AGENT TERMINAL        ║' -ForegroundColor Cyan
+Write-Host '║   Gemini is thinking and executing...        ║' -ForegroundColor Cyan
+Write-Host '╚══════════════════════════════════════════════╝' -ForegroundColor Cyan
+Write-Host ''
+$preview = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('%s'))
+Write-Host '📋 Task: ' -NoNewline -ForegroundColor DarkGray
+Write-Host $preview -ForegroundColor White
+Write-Host ''
+Write-Host '──────────────────────────────────────────────' -ForegroundColor DarkGray
+Write-Host ''
+
+%s
+if ($LASTEXITCODE -ne $null) {
+	if ($LASTEXITCODE -eq 0) {
+		Write-Host '' ; Write-Host '✅ Agent finished successfully.' -ForegroundColor Green
+	} else {
+		Write-Host '' ; Write-Host "⚠️  Agent exited with code $LASTEXITCODE" -ForegroundColor Yellow
+	}
+}
+Write-Host ''
+Write-Host '──────────────────────────────────────────────' -ForegroundColor DarkGray
+Write-Host 'Window closes in 4 seconds...' -ForegroundColor DarkGray
+Start-Sleep -Seconds 4
+`, encodedPreview, agyCmd+" 2>&1 | Tee-Object -FilePath '"+tmpFile+"'")
+
+		if cwd != "" {
+			wrapperPs = fmt.Sprintf("Set-Location '%s'\n", strings.ReplaceAll(cwd, "'", "''")) + wrapperPs
+		}
+
+		fmt.Println("STATUS: RUNNING")
+		os.Stdout.Sync()
+
+		visibleCmd := exec.Command("powershell", "-WindowStyle", "Normal", "-Command", wrapperPs)
+
+		cmdMu.Lock()
+		currentCmd = visibleCmd
+		currentConvID = conversationID
+		cmdMu.Unlock()
+
+		_ = visibleCmd.Run() // blocks until window closes
+
+		cmdMu.Lock()
+		currentCmd = nil
+		currentConvID = ""
+		cmdMu.Unlock()
+
+		fmt.Println("STATUS: IDLE")
+		os.Stdout.Sync()
+
+		outBytes, _ := os.ReadFile(tmpFile)
+		_ = os.Remove(tmpFile)
+		outStr := strings.TrimSpace(string(outBytes))
+		if outStr == "" {
+			outStr = "(no output)"
+		}
+		return outStr, "", nil
+
 	} else {
 		if runtime.GOOS == "windows" {
 			fullCommand := command + "; Write-Output \"`n___PWD___$((Get-Location).Path)\""
