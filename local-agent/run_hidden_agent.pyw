@@ -495,6 +495,41 @@ def build_dashboard_ui():
     )
     close_dash.pack(side='right', padx=(0, 8))
 
+    # ── Mode Toggle Pill (in dashboard header) ──────────────────────────────
+    _mode_toggle_frame = tk.Frame(header, bg='#1A1D23', bd=0, relief='flat')
+    _mode_toggle_frame.pack(side='right', padx=(0, 16))
+
+    _dash_mode_btns = {}
+
+    def _switch_mode_btn(new_mode):
+        global current_mode
+        current_mode = new_mode
+        _set_voila_mode(new_mode)
+        # Update canvas badge on mini widget
+        try:
+            canvas.itemconfig(mode_badge, text=MODE_LABELS[current_mode], fill=MODE_COLORS[current_mode])
+        except: pass
+        # Refresh button highlights
+        for m, btn in _dash_mode_btns.items():
+            if m == current_mode:
+                btn.config(bg=MODE_COLORS[m], fg='#FFFFFF')
+            else:
+                btn.config(bg='#2D3039', fg='#9CA3AF')
+
+    for m in MODES:
+        is_active = (m == current_mode)
+        b = tk.Button(
+            _mode_toggle_frame, text=MODE_LABELS[m],
+            bg=MODE_COLORS[m] if is_active else '#2D3039',
+            fg='#FFFFFF' if is_active else '#9CA3AF',
+            activebackground=MODE_COLORS[m], activeforeground='#FFFFFF',
+            relief='flat', bd=0, padx=10, pady=4,
+            font=('Segoe UI', 9, 'bold'), cursor='hand2',
+            command=lambda mo=m: _switch_mode_btn(mo)
+        )
+        b.pack(side='left', padx=2, pady=3)
+        _dash_mode_btns[m] = b
+
     dash_body.pack(fill='both', expand=True, padx=0, pady=(8, 0))
     dash_sidebar.pack(side='left', fill='y')
     dash_content.pack(side='left', fill='both', expand=True, padx=(12, 16), pady=(0, 12))
@@ -1326,6 +1361,17 @@ def parse_line(line):
         return
 
     # Tool-specific face states (from cloud AI tool calls)
+    if "STATUS: MODE:" in line:
+        # Go confirmed the actual mode used — keep Python badge in sync
+        confirmed_mode = line.split("STATUS: MODE:")[1].strip().upper()
+        if confirmed_mode in MODE_LABELS and confirmed_mode != current_mode:
+            global current_mode
+            current_mode = confirmed_mode
+            try:
+                canvas.itemconfig(mode_badge, text=MODE_LABELS[current_mode], fill=MODE_COLORS[current_mode])
+            except: pass
+        return
+
     if "STATUS: TOOL:" in line:
         tool = line.split("STATUS: TOOL:")[1].strip().lower()
         if "web_search" in tool or "search" in tool:

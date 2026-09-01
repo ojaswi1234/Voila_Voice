@@ -1311,38 +1311,59 @@ func startHTTPServer() {
 
 			startTime := time.Now()
 
-			// Determine effective mode: request body overrides, otherwise use badge-set currentMode
-			effectiveMode := strings.ToUpper(mode)
-			if effectiveMode == "" || effectiveMode == "AUTO" {
-				currentModeMu.Lock()
-				effectiveMode = strings.ToUpper(currentMode)
-				currentModeMu.Unlock()
+			// Determine effective mode.
+			// Priority: explicit GROQ/OLLAMA/SHELL in request body > global badge (currentMode) > LOCAL fallback.
+			// The mobile app always sends mode="AGENT", so we must prefer the badge-set global mode.
+			currentModeMu.Lock()
+			globalMode := strings.ToUpper(currentMode)
+			currentModeMu.Unlock()
+
+			reqMode := strings.ToUpper(mode)
+			var effectiveMode string
+			switch reqMode {
+			case "GROQ", "OLLAMA", "SHELL":
+				// Caller explicitly chose a specific executor — honour it
+				effectiveMode = reqMode
+			default:
+				// "AGENT", "", or anything else — use whatever the badge is set to
+				effectiveMode = globalMode
+				if effectiveMode == "" {
+					effectiveMode = "LOCAL"
+				}
 			}
+
+			fmt.Printf("STATUS: MODE:%s\n", effectiveMode)
+			os.Stdout.Sync()
 
 			switch effectiveMode {
 			case "GROQ":
-				// Direct Groq API call — fast, no agy overhead
 				fmt.Println("STATUS: RUNNING")
 				os.Stdout.Sync()
 				m := modelName
 				if m == "" {
 					m = connData.GroqModel
 				}
+				if m == "" {
+					m = "llama3-70b-8192"
+				}
 				output, err = executeGroqCommand(command, connData.GroqAPIKey, m)
 				fmt.Println("STATUS: IDLE")
 				os.Stdout.Sync()
 				newConvID = conversationID
 			case "OLLAMA":
-				// Ollama / Ollama Cloud API call
 				fmt.Println("STATUS: RUNNING")
 				os.Stdout.Sync()
-				output, err = executeOllamaCommand(command, connData.OllamaBaseURL, connData.OllamaModel, "")
+				ollamaModel := connData.OllamaModel
+				if ollamaModel == "" {
+					ollamaModel = "llama3.2:1b"
+				}
+				output, err = executeOllamaCommand(command, connData.OllamaBaseURL, ollamaModel, "")
 				fmt.Println("STATUS: IDLE")
 				os.Stdout.Sync()
 				newConvID = conversationID
 			default:
 				// LOCAL / AGENT / SHELL — use agy or powershell
-				output, newConvID, err = executeCommand(command, mode, conversationID, modelName)
+				output, newConvID, err = executeCommand(command, effectiveMode, conversationID, modelName)
 			}
 			
 			latencyMs := time.Since(startTime).Milliseconds()
