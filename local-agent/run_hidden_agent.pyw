@@ -429,6 +429,9 @@ def restore_mini_popup_elements(w=300, h=90):
     canvas.itemconfig(close_btn_bg, state='hidden', fill="", outline="")
     canvas.coords(close_btn, w - 25, h // 2)
     canvas.itemconfig(close_btn, state='normal', fill="#888888", font=("Segoe UI", 20, "bold"))
+    
+    canvas.coords(mode_badge, 90, 68)
+    canvas.itemconfig(mode_badge, state='normal')
 
     update_expression()
 
@@ -781,6 +784,12 @@ def _draw_connections_section(dc, w, h):
     dc.create_text(24, 148, text='Backend Relay', fill='#888888', font=('Segoe UI', 9), anchor='w')
     dc.create_text(24, 178, text='Active', fill='#10B981', font=('Segoe UI', 20, 'bold'), anchor='w')
     dc.create_text(w - 24, 178, text=f"{usage_stats['avg_latency_ms']}ms", fill='#6B7280', font=('Segoe UI', 12), anchor='e')
+
+    # Cloud AI Mode
+    dc.create_rectangle(10, 232, w - 10, 322, fill='#1A1D23', outline='#2A2D35')
+    dc.create_text(24, 254, text='Execution Mode', fill='#888888', font=('Segoe UI', 9), anchor='w')
+    dc.create_text(24, 284, text=current_mode, fill=MODE_COLORS[current_mode], font=('Segoe UI', 20, 'bold'), anchor='w')
+    dc.create_text(w - 24, 284, text='Toggle on main widget', fill='#6B7280', font=('Segoe UI', 10), anchor='e')
 
 def _draw_analytics_section(dc, w, h):
     success_rate = 0
