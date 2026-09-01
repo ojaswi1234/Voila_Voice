@@ -99,18 +99,11 @@ status_text = canvas.create_text(cx+55, cy+25, text="Standing by...", fill="#888
 close_btn_bg = canvas.create_oval(245, 25, 295, 65, fill="", outline="", width=0, state='hidden')
 close_btn = canvas.create_text(270, 45, text="✕", fill="#888888", font=("Segoe UI", 20, "bold"), anchor="center")
 
-# ── LOCAL/CLOUD mode toggle badge ───────────────────────────────────────────
+# ── LOCAL/CLOUD mode toggle  ───────────────────────────────────────────
 MODES = ["LOCAL", "GROQ", "OLLAMA"]
 MODE_COLORS = {"LOCAL": "#6366F1", "GROQ": "#10B981", "OLLAMA": "#F59E0B"}
 MODE_LABELS = {"LOCAL": "⚡LOCAL", "GROQ": "☁ GROQ", "OLLAMA": "🦙OLLAMA"}
 current_mode = "LOCAL"
-
-mode_bg = canvas.create_rectangle(85, 60, 145, 76, fill='#16171C', outline='#3a3a40', width=1, state='normal')
-mode_badge = canvas.create_text(
-    92, 68, text=MODE_LABELS["LOCAL"],
-    fill=MODE_COLORS["LOCAL"], font=("Segoe UI", 8, "bold"),
-    anchor="w", state='normal'
-)
 
 def _set_voila_mode(mode):
     def _do():
@@ -123,19 +116,6 @@ def _set_voila_mode(mode):
         except: pass
     import threading as _t
     _t.Thread(target=_do, daemon=True).start()
-
-def cycle_mode(e=None):
-    global current_mode
-    idx = (MODES.index(current_mode) + 1) % len(MODES)
-    current_mode = MODES[idx]
-    canvas.itemconfig(mode_badge, text=MODE_LABELS[current_mode], fill=MODE_COLORS[current_mode])
-    _set_voila_mode(current_mode)
-    if 'dashboard_active' in globals() and dashboard_active and 'refresh_dashboard_content' in globals():
-        try: refresh_dashboard_content()
-        except: pass
-
-canvas.tag_bind(mode_bg, '<Button-1>', cycle_mode)
-canvas.tag_bind(mode_badge, '<Button-1>', cycle_mode)
 
 import os as _os
 _agent_env = _os.environ.copy()
@@ -435,16 +415,9 @@ def restore_mini_popup_elements(w=300, h=90):
     canvas.coords(close_btn, w - 25, h // 2)
     canvas.itemconfig(close_btn, state='normal', fill="#888888", font=("Segoe UI", 20, "bold"))
     
-    canvas.coords(mode_bg, 85, 60, 145, 76)
-    canvas.itemconfig(mode_bg, state='normal')
-    canvas.coords(mode_badge, 92, 68)
-    canvas.itemconfig(mode_badge, state='normal')
-    
     # Ensure they are clickable above the pill
     canvas.tag_raise(close_btn_bg)
     canvas.tag_raise(close_btn)
-    canvas.tag_raise(mode_bg)
-    canvas.tag_raise(mode_badge)
 
     update_expression()
 
@@ -505,10 +478,6 @@ def build_dashboard_ui():
         global current_mode
         current_mode = new_mode
         _set_voila_mode(new_mode)
-        # Update canvas badge on mini widget
-        try:
-            canvas.itemconfig(mode_badge, text=MODE_LABELS[current_mode], fill=MODE_COLORS[current_mode])
-        except: pass
         # Refresh button highlights
         for m, btn in _dash_mode_btns.items():
             if m == current_mode:
@@ -1362,13 +1331,16 @@ def parse_line(line):
 
     # Tool-specific face states (from cloud AI tool calls)
     if "STATUS: MODE:" in line:
-        # Go confirmed the actual mode used — keep Python badge in sync
+        # Go confirmed the actual mode used — keep Python in sync
         confirmed_mode = line.split("STATUS: MODE:")[1].strip().upper()
         if confirmed_mode in MODE_LABELS and confirmed_mode != current_mode:
             current_mode = confirmed_mode
-            try:
-                canvas.itemconfig(mode_badge, text=MODE_LABELS[current_mode], fill=MODE_COLORS[current_mode])
-            except: pass
+            if '_dash_mode_btns' in globals():
+                for m, btn in _dash_mode_btns.items():
+                    if m == current_mode:
+                        btn.config(bg=MODE_COLORS[m], fg='#FFFFFF')
+                    else:
+                        btn.config(bg='#2D3039', fg='#9CA3AF')
         return
 
     if "STATUS: TOOL:" in line:
