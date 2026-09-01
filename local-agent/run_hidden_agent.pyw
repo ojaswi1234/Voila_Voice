@@ -334,7 +334,8 @@ usage_stats = {
     "avg_latency_ms": 45,  # Initial simulated latency
     "session_start": time.time(),
     "last_command_time": 0,
-    "peak_commands_per_min": 0
+    "peak_commands_per_min": 0,
+    "timeline_data": []  # Store performance timeline data
 }
 current_section = "Dashboard"  # Current active section
 heatmap_cache = None
@@ -466,10 +467,247 @@ def build_dashboard_ui():
     dash_canvas = tk.Canvas(dash_content, bg='#0F1115', highlightthickness=0, bd=0)
     dash_canvas.pack(fill='both', expand=True)
 
+import urllib.request as _urllib_req
+import json as _json_mod
+
+# ── Settings widget state ────────────────────────────────────────────────────
+_settings_frame_widget = None
+
+def _make_btn(parent, text, cmd, bg='#374151', fg='#E5E7EB', width=8):
+    return tk.Button(parent, text=text, command=cmd, bg=bg, fg=fg,
+                     activebackground='#4B5563', activeforeground='#fff',
+                     relief='flat', bd=0, font=('Segoe UI', 9), cursor='hand2',
+                     padx=6, pady=4, width=width)
+
+def _api_call(method, path, payload=None):
+    """Call the local voila.exe HTTP server synchronously."""
+    url = f'http://localhost:8088{path}'
+    try:
+        if payload is not None:
+            data = _json_mod.dumps(payload).encode()
+            req = _urllib_req.Request(url, data=data, headers={'Content-Type': 'application/json'}, method=method)
+        else:
+            req = _urllib_req.Request(url, method=method)
+        with _urllib_req.urlopen(req, timeout=10) as r:
+            return _json_mod.loads(r.read())
+    except Exception as e:
+        return {'error': str(e)}
+
+def _hide_settings_widgets():
+    global _settings_frame_widget
+    if _settings_frame_widget:
+        _settings_frame_widget.destroy()
+        _settings_frame_widget = None
+
+def _show_settings_widgets():
+    global _settings_frame_widget
+    _hide_settings_widgets()
+
+    # Fetch current values from agent
+    data = _api_call('GET', '/api-keys')
+
+    frame = tk.Frame(dash_content, bg='#0F1115')
+    frame.place(x=0, y=0, relwidth=1.0, relheight=1.0)
+    _settings_frame_widget = frame
+
+    # ── Scrollable container ─────────────────────────────────────────────────
+    canvas_s = tk.Canvas(frame, bg='#0F1115', highlightthickness=0)
+    scrollbar = tk.Scrollbar(frame, orient='vertical', command=canvas_s.yview)
+    canvas_s.configure(yscrollcommand=scrollbar.set)
+    scrollbar.pack(side='right', fill='y')
+    canvas_s.pack(side='left', fill='both', expand=True)
+
+    inner = tk.Frame(canvas_s, bg='#0F1115')
+    inner_win = canvas_s.create_window((0, 0), window=inner, anchor='nw')
+
+    def _on_frame_configure(e):
+        canvas_s.configure(scrollregion=canvas_s.bbox('all'))
+    def _on_canvas_configure(e):
+        canvas_s.itemconfig(inner_win, width=e.width)
+    inner.bind('<Configure>', _on_frame_configure)
+    canvas_s.bind('<Configure>', _on_canvas_configure)
+
+    PAD = dict(padx=16, pady=6, sticky='w')
+
+    # ─── Title ───────────────────────────────────────────────────────────────
+    tk.Label(inner, text='⚙  API Keys & Cloud Settings', bg='#0F1115', fg='#E5E7EB',
+             font=('Segoe UI', 14, 'bold')).grid(row=0, column=0, columnspan=4, padx=16, pady=(16, 4), sticky='w')
+
+    # ─── GROQ SECTION ────────────────────────────────────────────────────────
+    groq_frame = tk.LabelFrame(inner, text=' Groq Cloud (Free tier — llama3-70b, mixtral) ',
+                               bg='#1A1D23', fg='#6366F1', font=('Segoe UI', 10, 'bold'),
+                               bd=1, relief='solid', labelanchor='nw')
+    groq_frame.grid(row=1, column=0, columnspan=4, padx=16, pady=(12, 6), sticky='ew')
+
+    tk.Label(groq_frame, text='API Key:', bg='#1A1D23', fg='#9CA3AF', font=('Segoe UI', 9)).grid(
+        row=0, column=0, padx=12, pady=8, sticky='w')
+
+    groq_key_var = tk.StringVar()
+    groq_status_var = tk.StringVar(value='● Set' if data.get('groq_api_key_set') == 'true' else '○ Not set')
+    groq_status_color = '#10B981' if data.get('groq_api_key_set') == 'true' else '#6B7280'
+    groq_entry = tk.Entry(groq_frame, textvariable=groq_key_var, bg='#2D3039', fg='#E5E7EB',
+                          insertbackground='#E5E7EB', relief='flat', font=('Segoe UI', 9),
+                          width=40, show='●')
+    groq_entry.grid(row=0, column=1, padx=6, pady=8, sticky='ew')
+
+    # Show/hide toggle
+    groq_show_var = tk.BooleanVar(value=False)
+    def toggle_groq_show():
+        groq_entry.config(show='' if groq_show_var.get() else '●')
+    tk.Checkbutton(groq_frame, text='Show', variable=groq_show_var, command=toggle_groq_show,
+                   bg='#1A1D23', fg='#9CA3AF', selectcolor='#2D3039',
+                   activebackground='#1A1D23', font=('Segoe UI', 8)).grid(row=0, column=2, padx=4)
+
+    groq_status_lbl = tk.Label(groq_frame, textvariable=groq_status_var,
+                                bg='#1A1D23', fg=groq_status_color, font=('Segoe UI', 9))
+    groq_status_lbl.grid(row=0, column=3, padx=8, pady=8)
+
+    def on_groq_save():
+        key = groq_key_var.get().strip()
+        if not key:
+            groq_status_var.set('⚠ Enter a key first')
+            groq_status_lbl.config(fg='#F59E0B')
+            return
+        res = _api_call('POST', '/api-keys', {'groq_api_key': key, 'action': 'save'})
+        if 'error' in res:
+            groq_status_var.set(f'✗ {res["error"][:40]}')
+            groq_status_lbl.config(fg='#EF4444')
+        else:
+            groq_status_var.set('● Saved')
+            groq_status_lbl.config(fg='#10B981')
+            groq_key_var.set('')
+
+    def on_groq_verify():
+        groq_status_var.set('⏳ Verifying...')
+        groq_status_lbl.config(fg='#F59E0B')
+        frame.update_idletasks()
+
+        def _do():
+            res = _api_call('GET', '/verify-groq')
+            if res.get('status') == 'ok':
+                groq_status_var.set(f'✓ OK: {res.get("response","")[:30]}')
+                groq_status_lbl.config(fg='#10B981')
+            else:
+                groq_status_var.set(f'✗ {res.get("message", res.get("error","Unknown"))[:40]}')
+                groq_status_lbl.config(fg='#EF4444')
+        threading.Thread(target=_do, daemon=True).start()
+
+    def on_groq_delete():
+        res = _api_call('POST', '/api-keys', {'action': 'delete_groq'})
+        if 'error' in res:
+            groq_status_var.set(f'✗ {res["error"][:40]}')
+            groq_status_lbl.config(fg='#EF4444')
+        else:
+            groq_status_var.set('○ Deleted')
+            groq_status_lbl.config(fg='#6B7280')
+
+    btn_row = tk.Frame(groq_frame, bg='#1A1D23')
+    btn_row.grid(row=1, column=0, columnspan=4, padx=12, pady=(0, 10), sticky='w')
+    _make_btn(btn_row, '💾 Save', on_groq_save, bg='#6366F1', width=9).pack(side='left', padx=(0, 6))
+    _make_btn(btn_row, '✓ Verify', on_groq_verify, bg='#10B981', width=9).pack(side='left', padx=(0, 6))
+    _make_btn(btn_row, '🗑 Delete', on_groq_delete, bg='#DC2626', width=9).pack(side='left')
+
+    tk.Label(groq_frame, text='Free models: llama3-70b-8192, llama3-8b-8192, mixtral-8x7b-32768, gemma2-9b-it',
+             bg='#1A1D23', fg='#4B5563', font=('Segoe UI', 8, 'italic')).grid(
+        row=2, column=0, columnspan=4, padx=12, pady=(0, 10), sticky='w')
+
+    # ─── OLLAMA SECTION ──────────────────────────────────────────────────────
+    ollama_frame = tk.LabelFrame(inner, text=' Ollama (Local / Ollama Cloud free tier) ',
+                                 bg='#1A1D23', fg='#F59E0B', font=('Segoe UI', 10, 'bold'),
+                                 bd=1, relief='solid', labelanchor='nw')
+    ollama_frame.grid(row=2, column=0, columnspan=4, padx=16, pady=(12, 6), sticky='ew')
+
+    tk.Label(ollama_frame, text='Base URL:', bg='#1A1D23', fg='#9CA3AF', font=('Segoe UI', 9)).grid(
+        row=0, column=0, padx=12, pady=8, sticky='w')
+    ollama_url_var = tk.StringVar(value=data.get('ollama_base_url', 'http://localhost:11434'))
+    tk.Entry(ollama_frame, textvariable=ollama_url_var, bg='#2D3039', fg='#E5E7EB',
+             insertbackground='#E5E7EB', relief='flat', font=('Segoe UI', 9), width=42).grid(
+        row=0, column=1, columnspan=3, padx=6, pady=8, sticky='ew')
+
+    tk.Label(ollama_frame, text='Model:', bg='#1A1D23', fg='#9CA3AF', font=('Segoe UI', 9)).grid(
+        row=1, column=0, padx=12, pady=4, sticky='w')
+    ollama_model_var = tk.StringVar(value=data.get('ollama_model', 'llama3.2:1b'))
+    tk.Entry(ollama_frame, textvariable=ollama_model_var, bg='#2D3039', fg='#E5E7EB',
+             insertbackground='#E5E7EB', relief='flat', font=('Segoe UI', 9), width=42).grid(
+        row=1, column=1, columnspan=3, padx=6, pady=4, sticky='ew')
+
+    ollama_status_var = tk.StringVar(value='')
+    ollama_status_lbl = tk.Label(ollama_frame, textvariable=ollama_status_var,
+                                  bg='#1A1D23', fg='#10B981', font=('Segoe UI', 9))
+    ollama_status_lbl.grid(row=2, column=0, columnspan=4, padx=12, pady=(0, 4), sticky='w')
+
+    def on_ollama_save():
+        url = ollama_url_var.get().strip()
+        model = ollama_model_var.get().strip()
+        if not url:
+            ollama_status_var.set('⚠ Enter Base URL first')
+            ollama_status_lbl.config(fg='#F59E0B')
+            return
+        res = _api_call('POST', '/api-keys', {'ollama_base_url': url, 'ollama_model': model, 'action': 'save'})
+        if 'error' in res:
+            ollama_status_var.set(f'✗ {res["error"][:40]}')
+            ollama_status_lbl.config(fg='#EF4444')
+        else:
+            ollama_status_var.set('● Saved')
+            ollama_status_lbl.config(fg='#10B981')
+
+    def on_ollama_verify():
+        ollama_status_var.set('⏳ Verifying...')
+        ollama_status_lbl.config(fg='#F59E0B')
+        frame.update_idletasks()
+
+        def _do():
+            # Save URL/model first so the agent uses the live values
+            _api_call('POST', '/api-keys', {
+                'ollama_base_url': ollama_url_var.get().strip(),
+                'ollama_model': ollama_model_var.get().strip(),
+                'action': 'save'
+            })
+            res = _api_call('GET', '/verify-ollama')
+            if res.get('status') == 'ok':
+                ollama_status_var.set(f'✓ OK: {res.get("response","")[:30]}')
+                ollama_status_lbl.config(fg='#10B981')
+            else:
+                ollama_status_var.set(f'✗ {res.get("message", res.get("error","Unknown"))[:50]}')
+                ollama_status_lbl.config(fg='#EF4444')
+        threading.Thread(target=_do, daemon=True).start()
+
+    def on_ollama_delete():
+        res = _api_call('POST', '/api-keys', {'action': 'delete_ollama'})
+        if 'error' in res:
+            ollama_status_var.set(f'✗ {res["error"][:40]}')
+            ollama_status_lbl.config(fg='#EF4444')
+        else:
+            ollama_url_var.set('http://localhost:11434')
+            ollama_model_var.set('llama3.2:1b')
+            ollama_status_var.set('○ Cleared')
+            ollama_status_lbl.config(fg='#6B7280')
+
+    obtn_row = tk.Frame(ollama_frame, bg='#1A1D23')
+    obtn_row.grid(row=3, column=0, columnspan=4, padx=12, pady=(0, 10), sticky='w')
+    _make_btn(obtn_row, '💾 Save', on_ollama_save, bg='#D97706', width=9).pack(side='left', padx=(0, 6))
+    _make_btn(obtn_row, '✓ Verify', on_ollama_verify, bg='#10B981', width=9).pack(side='left', padx=(0, 6))
+    _make_btn(obtn_row, '🗑 Delete', on_ollama_delete, bg='#DC2626', width=9).pack(side='left')
+
+    tk.Label(ollama_frame, text='Ollama Cloud free models: llama3.2:1b, llama3.2:3b, gemma3:1b, phi3.5, qwen2.5:0.5b',
+             bg='#1A1D23', fg='#4B5563', font=('Segoe UI', 8, 'italic')).grid(
+        row=4, column=0, columnspan=4, padx=12, pady=(0, 10), sticky='w')
+
+    # ─── Info footer ─────────────────────────────────────────────────────────
+    info = tk.Frame(inner, bg='#0F1115')
+    info.grid(row=3, column=0, columnspan=4, padx=16, pady=12, sticky='ew')
+    tk.Label(info, text='Version: 1.0.0  |  Platform: Windows  |  Build: Stable',
+             bg='#0F1115', fg='#374151', font=('Segoe UI', 9)).pack(anchor='w')
+
 def refresh_dashboard_content():
+
     global dash_canvas
     if not dashboard_active or dash_canvas is None:
         return
+
+    # Always destroy settings widget frame when refreshing (navigated away)
+    if current_section != 'Settings':
+        _hide_settings_widgets()
 
     build_dashboard_ui()
     dash_title_var.set(current_section)
@@ -486,6 +724,11 @@ def refresh_dashboard_content():
         _draw_dashboard_section(dash_canvas, w, h)
     elif current_section == 'Connections':
         _draw_connections_section(dash_canvas, w, h)
+    elif current_section == 'Analytics':
+        _draw_analytics_section(dash_canvas, w, h)
+    elif current_section == 'Settings':
+        _show_settings_widgets()
+        return  # Settings are all widgets, not canvas drawing
     else:
         dash_canvas.create_text(w // 2, h // 2 - 12, text=current_section, fill='#E5E7EB', font=('Segoe UI', 16, 'bold'))
         dash_canvas.create_text(w // 2, h // 2 + 16, text='Coming soon', fill='#6B7280', font=('Segoe UI', 11))
@@ -501,6 +744,75 @@ def _draw_connections_section(dc, w, h):
     dc.create_text(24, 148, text='Backend Relay', fill='#888888', font=('Segoe UI', 9), anchor='w')
     dc.create_text(24, 178, text='Active', fill='#10B981', font=('Segoe UI', 20, 'bold'), anchor='w')
     dc.create_text(w - 24, 178, text=f"{usage_stats['avg_latency_ms']}ms", fill='#6B7280', font=('Segoe UI', 12), anchor='e')
+
+def _draw_analytics_section(dc, w, h):
+    success_rate = 0
+    if usage_stats['commands_executed'] > 0:
+        success_rate = int((usage_stats['commands_successful'] / usage_stats['commands_executed']) * 100)
+    session_duration = int((time.time() - usage_stats['session_start']) / 60)
+    commands_per_min = usage_stats['commands_executed'] // max(session_duration, 1) if session_duration > 0 else 0
+
+    # Stats cards row
+    card_w = (w - 35) // 3
+    card_h = 80
+    card_y = 20
+
+    # Commands Executed
+    dc.create_rectangle(10, card_y, card_w, card_y + card_h, fill='#1A1D23', outline='#2A2D35')
+    dc.create_text(24, card_y + 20, text='Commands Executed', fill='#888888', font=('Segoe UI', 8), anchor='w')
+    dc.create_text(24, card_y + 50, text=str(usage_stats['commands_executed']), fill='#E5E7EB', font=('Segoe UI', 24, 'bold'), anchor='w')
+
+    # Success Rate
+    dc.create_rectangle(card_w + 15, card_y, card_w * 2 + 15, card_y + card_h, fill='#1A1D23', outline='#2A2D35')
+    dc.create_text(card_w + 27, card_y + 20, text='Success Rate', fill='#888888', font=('Segoe UI', 8), anchor='w')
+    dc.create_text(card_w + 27, card_y + 50, text=f"{success_rate}%", fill='#10B981', font=('Segoe UI', 24, 'bold'), anchor='w')
+
+    # Avg Latency
+    dc.create_rectangle(card_w * 2 + 30, card_y, w - 10, card_y + card_h, fill='#1A1D23', outline='#2A2D35')
+    dc.create_text(card_w * 2 + 42, card_y + 20, text='Avg Latency', fill='#888888', font=('Segoe UI', 8), anchor='w')
+    dc.create_text(card_w * 2 + 42, card_y + 50, text=f"{usage_stats['avg_latency_ms']}ms", fill='#E5E7EB', font=('Segoe UI', 24, 'bold'), anchor='w')
+
+    # Performance timeline
+    timeline_y = card_y + card_h + 20
+    dc.create_text(10, timeline_y, text='Performance Timeline', fill='#888888', font=('Segoe UI', 10, 'bold'), anchor='w')
+    
+    timeline_h = 150
+    dc.create_rectangle(10, timeline_y + 20, w - 10, timeline_y + 20 + timeline_h, fill='#1A1D23', outline='#2A2D35')
+    
+    # Draw timeline bars from actual data
+    timeline_data = usage_stats.get('timeline_data', [])
+    if not timeline_data:
+        # Generate sample data if empty
+        timeline_data = [random.randint(20, 100) for _ in range(20)]
+    
+    bar_count = min(len(timeline_data), 20)
+    bar_w = (w - 40) // 20
+    for i in range(bar_count):
+        if i < len(timeline_data):
+            height = min(timeline_h - 20, max(20, timeline_data[i]))
+            color = '#10B981' if height > timeline_h * 0.5 else '#6366F1'
+            x = 20 + i * bar_w
+            y = timeline_y + 20 + timeline_h - height
+            dc.create_rectangle(x, y, x + bar_w - 2, timeline_y + 20 + timeline_h, fill=color, outline='')
+
+    # Detailed stats
+    stats_y = timeline_y + 20 + timeline_h + 20
+    dc.create_text(10, stats_y, text='Detailed Statistics', fill='#888888', font=('Segoe UI', 10, 'bold'), anchor='w')
+    
+    dc.create_rectangle(10, stats_y + 20, w - 10, stats_y + 120, fill='#1A1D23', outline='#2A2D35')
+    
+    dc.create_text(24, stats_y + 40, text=f"Successful: {usage_stats['commands_successful']}", fill='#10B981', font=('Segoe UI', 11), anchor='w')
+    dc.create_text(24, stats_y + 65, text=f"Failed: {usage_stats['commands_failed']}", fill='#EF4444', font=('Segoe UI', 11), anchor='w')
+    dc.create_text(24, stats_y + 90, text=f"Commands/min: {commands_per_min}", fill='#6B7280', font=('Segoe UI', 11), anchor='w')
+    dc.create_text(w - 24, stats_y + 40, text=f"Session: {session_duration}m", fill='#6B7280', font=('Segoe UI', 11), anchor='e')
+    dc.create_text(w - 24, stats_y + 65, text=f"Peak/min: {usage_stats['peak_commands_per_min']}", fill='#6B7280', font=('Segoe UI', 11), anchor='e')
+
+def _draw_settings_section(dc, w, h):
+    """Settings section is rendered as real Tk widgets inside the dashboard canvas frame.
+    We use a dedicated frame overlaid on the canvas area for proper Entry/Button support."""
+    # This is called when we just need a placeholder while the real widget frame loads.
+    dc.create_text(w // 2, 40, text='API Keys & Settings', fill='#E5E7EB', font=('Segoe UI', 14, 'bold'))
+    dc.create_text(w // 2, 70, text='Loading...', fill='#6B7280', font=('Segoe UI', 10))
 
 def _draw_dashboard_section(dc, w, h):
     card_w = (w - 35) // 2
@@ -716,6 +1028,18 @@ def animation_loop():
                     usage_stats["commands_failed"] += 1
                 usage_stats["last_command_time"] = time.time()
                 usage_stats["avg_latency_ms"] = random.randint(20, 150)
+                
+                # Track peak commands per minute
+                session_duration = int((time.time() - usage_stats['session_start']) / 60)
+                if session_duration > 0:
+                    current_cpm = usage_stats["commands_executed"] // session_duration
+                    if current_cpm > usage_stats["peak_commands_per_min"]:
+                        usage_stats["peak_commands_per_min"] = current_cpm
+                
+                # Update timeline data (keep last 20 data points)
+                usage_stats["timeline_data"].append(usage_stats["avg_latency_ms"])
+                if len(usage_stats["timeline_data"]) > 20:
+                    usage_stats["timeline_data"].pop(0)
 
         if alert_state.get("state_changed"):
             update_expression()

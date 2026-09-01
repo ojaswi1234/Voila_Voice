@@ -229,13 +229,17 @@ const (
 
 // Connection data
 type ConnectionData struct {
-	BackendURL     string `json:"backend_url"`
-	DeviceID       string `json:"device_id"`
-	DeviceName     string `json:"device_name"`
-	SecurityPhrase string `json:"security_phrase"`
+	BackendURL        string `json:"backend_url"`
+	DeviceID          string `json:"device_id"`
+	DeviceName        string `json:"device_name"`
+	SecurityPhrase    string `json:"security_phrase"`
 	DeviceFingerprint string `json:"device_fingerprint"`
-	Connected      bool   `json:"connected"`
-	LastConnected   string `json:"last_connected"`
+	Connected         bool   `json:"connected"`
+	LastConnected     string `json:"last_connected"`
+	// Cloud API keys (stored locally, never sent to backend)
+	GroqAPIKey    string `json:"groq_api_key,omitempty"`
+	OllamaBaseURL string `json:"ollama_base_url,omitempty"` // e.g. https://api.ollama.ai
+	OllamaModel   string `json:"ollama_model,omitempty"`    // e.g. llama3.2:1b
 }
 
 // Model
@@ -1100,6 +1104,106 @@ func startHTTPServer() {
 
 	mux.HandleFunc("/models", listModelsHandler)
 	mux.HandleFunc("/conversations", listConversationsHandler)
+
+	// ── API Key management endpoints (called by Python dashboard) ──────────
+	mux.HandleFunc("/api-keys", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Content-Type", "application/json")
+
+		connData, err := loadConnectionData()
+		if err != nil {
+			http.Error(w, `{"error":"failed to load config"}`, http.StatusInternalServerError)
+			return
+		}
+
+		switch r.Method {
+		case http.MethodGet:
+			// Return keys (mask Groq key for security)
+			groqMasked := ""
+			if connData.GroqAPIKey != "" {
+				k := connData.GroqAPIKey
+				if len(k) > 8 {
+					groqMasked = k[:4] + strings.Repeat("*", len(k)-8) + k[len(k)-4:]
+				} else {
+					groqMasked = strings.Repeat("*", len(k))
+				}
+			}
+			resp := map[string]string{
+				"groq_api_key_masked": groqMasked,
+				"groq_api_key_set":    fmt.Sprintf("%v", connData.GroqAPIKey != ""),
+				"ollama_base_url":     connData.OllamaBaseURL,
+				"ollama_model":        connData.OllamaModel,
+			}
+			json.NewEncoder(w).Encode(resp)
+
+		case http.MethodPost:
+			var payload struct {
+				GroqAPIKey    string `json:"groq_api_key"`
+				OllamaBaseURL string `json:"ollama_base_url"`
+				OllamaModel   string `json:"ollama_model"`
+				Action        string `json:"action"` // "save" or "delete_groq" or "delete_ollama"
+			}
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				http.Error(w, `{"error":"invalid JSON"}`, http.StatusBadRequest)
+				return
+			}
+
+			switch payload.Action {
+			case "delete_groq":
+				connData.GroqAPIKey = ""
+			case "delete_ollama":
+				connData.OllamaBaseURL = ""
+				connData.OllamaModel = ""
+			default: // "save"
+				if payload.GroqAPIKey != "" {
+					connData.GroqAPIKey = payload.GroqAPIKey
+				}
+				if payload.OllamaBaseURL != "" {
+					connData.OllamaBaseURL = payload.OllamaBaseURL
+				}
+				if payload.OllamaModel != "" {
+					connData.OllamaModel = payload.OllamaModel
+				}
+			}
+
+			if err := saveConnectionData(connData); err != nil {
+				http.Error(w, `{"error":"failed to save"}`, http.StatusInternalServerError)
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+
+	// /verify-groq — pings Groq API with a tiny "hello" prompt
+	mux.HandleFunc("/verify-groq", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Content-Type", "application/json")
+
+		connData, _ := loadConnectionData()
+		out, err := executeGroqCommand("Say hello in one word", connData.GroqAPIKey, "")
+		if err != nil {
+			json.NewEncoder(w).Encode(map[string]string{"status": "error", "message": err.Error()})
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "response": out})
+	})
+
+	// /verify-ollama — pings Ollama endpoint with a tiny "hello" prompt
+	mux.HandleFunc("/verify-ollama", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Content-Type", "application/json")
+
+		connData, _ := loadConnectionData()
+		out, err := executeOllamaCommand("Say hello in one word", connData.OllamaBaseURL, connData.OllamaModel, "")
+		if err != nil {
+			json.NewEncoder(w).Encode(map[string]string{"status": "error", "message": err.Error()})
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "response": out})
+	})
 	mux.HandleFunc("/circuit", func(w http.ResponseWriter, r *http.Request) {
 		// Authenticate using SecurityPhraseHash
 		connData, err := loadConnectionData()
@@ -1185,7 +1289,33 @@ func startHTTPServer() {
 		go func() {
 			defer func() { <-execSemaphore }() // Release semaphore when done
 			wakeScreen()
-			output, newConvID, err := executeCommand(command, mode, conversationID, modelName)
+
+			var output string
+			var newConvID string
+			var err error
+
+			modeUpper := strings.ToUpper(mode)
+			switch modeUpper {
+			case "GROQ":
+				// Direct Groq API call — fast, no agy overhead
+				fmt.Println("STATUS: RUNNING")
+				os.Stdout.Sync()
+				output, err = executeGroqCommand(command, connData.GroqAPIKey, modelName)
+				fmt.Println("STATUS: IDLE")
+				os.Stdout.Sync()
+				newConvID = conversationID
+			case "OLLAMA":
+				// Ollama / Ollama Cloud API call
+				fmt.Println("STATUS: RUNNING")
+				os.Stdout.Sync()
+				output, err = executeOllamaCommand(command, connData.OllamaBaseURL, connData.OllamaModel, "")
+				fmt.Println("STATUS: IDLE")
+				os.Stdout.Sync()
+				newConvID = conversationID
+			default:
+				// AGENT or SHELL — use agy or powershell
+				output, newConvID, err = executeCommand(command, mode, conversationID, modelName)
+			}
 			
 			// Post the result back to backend
 			backendURL := strings.TrimRight(connData.BackendURL, "/") + "/webhook/result"
@@ -1477,6 +1607,155 @@ func executeCommand(command string, mode string, conversationID string, modelNam
 	}
 
 	return outStr, conversationID, nil
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Cloud API executors — Groq & Ollama
+// ─────────────────────────────────────────────────────────────────────────────
+
+// groqMessage mirrors the Groq / OpenAI chat message format.
+type groqMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+// executeGroqCommand sends a prompt to the Groq cloud API and returns the response.
+// It uses the fast llama3-70b-8192 model by default, but respects modelName if provided.
+func executeGroqCommand(command, apiKey, modelName string) (string, error) {
+	if apiKey == "" {
+		return "", fmt.Errorf("Groq API key not set. Open the Voila dashboard → Settings to add your key")
+	}
+	if modelName == "" {
+		modelName = "llama3-70b-8192" // Groq free-tier default
+	}
+
+	systemPrompt := "You are Voila, a helpful AI voice assistant. Keep responses casual, conversational, and brief. Address the user as 'boss'."
+
+	messages := []groqMessage{
+		{Role: "system", Content: systemPrompt},
+		{Role: "user", Content: command},
+	}
+
+	payload := map[string]interface{}{
+		"model":       modelName,
+		"messages":    messages,
+		"temperature": 0.7,
+		"max_tokens":  2048,
+		"stream":      false,
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("failed to build Groq request: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", "https://api.groq.com/openai/v1/chat/completions", bytes.NewBuffer(body))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 60 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("Groq API request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("Groq API error %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var result struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return "", fmt.Errorf("failed to parse Groq response: %w", err)
+	}
+	if len(result.Choices) == 0 {
+		if result.Error.Message != "" {
+			return "", fmt.Errorf("Groq error: %s", result.Error.Message)
+		}
+		return "", fmt.Errorf("Groq returned no choices")
+	}
+	return strings.TrimSpace(result.Choices[0].Message.Content), nil
+}
+
+// executeOllamaCommand sends a prompt to an Ollama-compatible endpoint.
+// Works for both local Ollama (http://localhost:11434) and Ollama Cloud (https://api.ollama.ai).
+// For Ollama Cloud the base URL should be https://api.ollama.ai and apiKey can be empty or a token.
+func executeOllamaCommand(command, baseURL, modelName, apiKey string) (string, error) {
+	if baseURL == "" {
+		baseURL = "http://localhost:11434" // fallback to local
+	}
+	if modelName == "" {
+		modelName = "llama3.2:1b" // smallest free-tier Ollama Cloud model
+	}
+
+	// Ollama uses the same OpenAI-compatible endpoint
+	apiURL := strings.TrimRight(baseURL, "/") + "/api/chat"
+
+	systemPrompt := "You are Voila, a helpful AI voice assistant. Keep responses casual, conversational, and brief. Address the user as 'boss'."
+
+	messages := []groqMessage{
+		{Role: "system", Content: systemPrompt},
+		{Role: "user", Content: command},
+	}
+
+	payload := map[string]interface{}{
+		"model":    modelName,
+		"messages": messages,
+		"stream":   false,
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("failed to build Ollama request: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(body))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+
+	client := &http.Client{Timeout: 120 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("Ollama request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("Ollama error %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var result struct {
+		Message struct {
+			Content string `json:"content"`
+		} `json:"message"`
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return "", fmt.Errorf("failed to parse Ollama response: %w", err)
+	}
+	if result.Error != "" {
+		return "", fmt.Errorf("Ollama error: %s", result.Error)
+	}
+	return strings.TrimSpace(result.Message.Content), nil
 }
 
 // Save/Load connection data
