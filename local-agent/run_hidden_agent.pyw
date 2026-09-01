@@ -1298,7 +1298,7 @@ def reset_to_idle():
         update_expression()
 
 def parse_line(line):
-    global ai_state, mobile_clients, glow_timer
+    global ai_state, mobile_clients, glow_timer, current_mode
 
     if not line.startswith("STATUS:"):
         # Non-STATUS lines: use keyword sniffing ONLY as a soft hint, not authoritative
@@ -1365,7 +1365,6 @@ def parse_line(line):
         # Go confirmed the actual mode used — keep Python badge in sync
         confirmed_mode = line.split("STATUS: MODE:")[1].strip().upper()
         if confirmed_mode in MODE_LABELS and confirmed_mode != current_mode:
-            global current_mode
             current_mode = confirmed_mode
             try:
                 canvas.itemconfig(mode_badge, text=MODE_LABELS[current_mode], fill=MODE_COLORS[current_mode])
