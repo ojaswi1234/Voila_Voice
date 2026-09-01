@@ -1085,7 +1085,8 @@ def animation_loop():
                 else:
                     br = 2 + (15 - bubble_phase)
                 bx, by = sx + 40, sy + 40
-                canvas.coords(snot_bubble, bx - br, by - br, bx + br, by + br)
+                # Teardrop oval: anchors near the nose at the top, stretches downwards
+                canvas.coords(snot_bubble, bx - br, by, bx + br, by + br * 2.5)
             else:
                 canvas.itemconfig(snot_bubble, state='hidden')
 
