@@ -5,6 +5,7 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -39,8 +40,8 @@ const (
 	// Send pings to peer with this period. Must be less than pongWait.
 	pingPeriod = (pongWait * 9) / 10
 
-	// Maximum message size allowed from peer.
-	maxMessageSize = 8192
+	// Maximum message size allowed from peer (512KB — AI responses can be large).
+	maxMessageSize = 512 * 1024
 )
 
 const deviceOnlineTTL = 60 * time.Second
@@ -767,10 +768,21 @@ func (b *Backend) forwardCommand(deviceID, command, mode, clientID, conversation
 		return "", fmt.Errorf("device offline: %s", deviceID)
 	}
 
-	optimizedCommand := b.optimizeCommand(command)
+	// Only apply command optimization for plain SHELL mode.
+	// AGENT/GROQ/OLLAMA modes send natural language — we must NOT rewrite them.
+	optimizedCommand := command
+	if strings.ToUpper(mode) == "SHELL" || mode == "" {
+		optimizedCommand = b.optimizeCommand(command)
+	}
 
 	urlStr := address + "/execute"
-	payload := map[string]string{"command": optimizedCommand, "mode": mode, "client_id": clientID, "conversation_id": conversationID}
+	// Send mode="" so the local agent applies its own badge setting (single source of truth).
+	// Sending "AGENT" would compete with the user's toggle selection.
+	forwardMode := mode
+	if strings.ToUpper(mode) == "AGENT" {
+		forwardMode = ""
+	}
+	payload := map[string]string{"command": optimizedCommand, "mode": forwardMode, "client_id": clientID, "conversation_id": conversationID}
 	jsonPayload, _ := json.Marshal(payload)
 
 	client := safeHTTPClient()
@@ -892,7 +904,7 @@ func handleWebhookResult(b *Backend) http.HandlerFunc {
 		device, exists := b.devices[deviceID]
 		b.mu.RUnlock()
 
-		if !exists || device.SecurityPhraseHash != secretHash {
+		if !exists || subtle.ConstantTimeCompare([]byte(device.SecurityPhraseHash), []byte(secretHash)) != 1 {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -1080,7 +1092,7 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 					b.mu.Unlock()
 					
 					token, expiresAt := createSessionToken(deviceID, cID)
-					ttlSec := int64(15 * 60 / time.Second) // 15 minutes in seconds
+					ttlSec := int64(15 * 60) // 900 seconds (was incorrectly dividing by time.Second)
 					resp := map[string]interface{}{
 						"type": "session",
 						"session_token": token,

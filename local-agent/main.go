@@ -20,7 +20,6 @@ import (
 	"runtime"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/charmbracelet/bubbletea"
@@ -38,6 +37,18 @@ var (
 	maxConcurrentExecs = 2 // Maximum concurrent AI executions
 	resilienceManager *ResilienceManager
 )
+
+var debugLog *log.Logger
+
+func initDebugLog() {
+	logPath := filepath.Join(filepath.Dir(os.Args[0]), "voila_debug.log")
+	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		f, _ = os.OpenFile(filepath.Join(os.TempDir(), "voila_debug.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	}
+	debugLog = log.New(f, "", log.Ldate|log.Ltime|log.Lmicroseconds)
+	debugLog.Printf("=== VOILA STARTED PID=%d ===", os.Getpid())
+}
 
 func init() {
 	execSemaphore = make(chan struct{}, maxConcurrentExecs)
@@ -1632,21 +1643,34 @@ func listConversationsHandler(w http.ResponseWriter, r *http.Request) {
 // This works even when voila.exe itself has no console (headless/background).
 // It blocks until the window is closed and returns the content of outFile.
 func runInNewConsole(psScript, outFile string) error {
+	// Write PS script to temp file
 	scriptFile := filepath.Join(os.TempDir(), fmt.Sprintf("voila_ps_%d.ps1", time.Now().UnixNano()))
 	if err := os.WriteFile(scriptFile, []byte(psScript), 0600); err != nil {
+		debugLog.Printf("[runInNewConsole] ERROR writing script: %v", err)
 		return err
 	}
+	debugLog.Printf("[runInNewConsole] Script written to %s (%d bytes)", scriptFile, len(psScript))
 	defer os.Remove(scriptFile)
 
-	cmd := exec.Command("powershell", "-NoLogo", "-File", scriptFile)
-	// CREATE_NEW_CONSOLE (0x10): forces Windows to open a brand-new console window
-	// for this process, completely independent of the parent's console state.
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		CreationFlags: 0x00000010, // CREATE_NEW_CONSOLE
-		HideWindow:    false,
+	// VBScript launcher: WScript.Shell.Run with style=1 (SW_NORMAL) ALWAYS opens
+	// a visible window, completely independent of the parent process's console flags.
+	// This bypasses the CREATE_NO_WINDOW inheritance from Python's Popen.
+	vbsContent := `Set wsh = CreateObject("WScript.Shell")` + "\r\n" +
+		`wsh.Run "powershell -NoLogo -ExecutionPolicy Bypass -File """ & "` + scriptFile + `" & """", 1, True` + "\r\n"
+
+	vbsFile := filepath.Join(os.TempDir(), fmt.Sprintf("voila_launch_%d.vbs", time.Now().UnixNano()))
+	if err := os.WriteFile(vbsFile, []byte(vbsContent), 0600); err != nil {
+		debugLog.Printf("[runInNewConsole] ERROR writing vbs: %v", err)
+		return err
 	}
-	// Do NOT set cmd.Stdout/Stderr — the new console window IS the output
-	return cmd.Run()
+	debugLog.Printf("[runInNewConsole] VBS launcher written to %s", vbsFile)
+	defer os.Remove(vbsFile)
+
+	debugLog.Printf("[runInNewConsole] Launching wscript /nologo %s", vbsFile)
+	cmd := exec.Command("wscript", "/nologo", vbsFile)
+	err := cmd.Run()
+	debugLog.Printf("[runInNewConsole] wscript finished, err=%v", err)
+	return err
 }
 
 func executeCommand(command string, mode string, conversationID string, modelName string) (string, string, error) {
@@ -1661,6 +1685,14 @@ func executeCommand(command string, mode string, conversationID string, modelNam
 		workingDirMutex.Lock()
 		cwd := currentWorkingDir
 		workingDirMutex.Unlock()
+
+		// Short preview of the user's command (max 60 chars)
+		preview := command
+		if len(preview) > 60 {
+			preview = preview[:57] + "..."
+		}
+
+		debugLog.Printf("[executeCommand/AGENT] command preview=%q modelName=%q cwd=%q", preview, modelName, cwd)
 
 		// Encode prompt safely as base64 to avoid quoting issues
 		encodedPrompt := base64.StdEncoding.EncodeToString([]byte(prompt))
@@ -1677,12 +1709,9 @@ func executeCommand(command string, mode string, conversationID string, modelNam
 
 		// Temp file for output capture
 		tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("voila_agent_%d.txt", time.Now().UnixNano()))
+		debugLog.Printf("[executeCommand/AGENT] tmpFile=%s", tmpFile)
 
 		// Short preview of the user's command for the window title (max 60 chars)
-		preview := command
-		if len(preview) > 60 {
-			preview = preview[:57] + "..."
-		}
 		encodedPreview := base64.StdEncoding.EncodeToString([]byte(preview))
 
 		wrapperPs := fmt.Sprintf(`
@@ -1719,6 +1748,8 @@ Start-Sleep -Seconds 4
 			wrapperPs = fmt.Sprintf("Set-Location '%s'\n", strings.ReplaceAll(cwd, "'", "''")) + wrapperPs
 		}
 
+		debugLog.Printf("[executeCommand/AGENT] wrapperPs length=%d bytes", len(wrapperPs))
+
 		fmt.Println("STATUS: RUNNING")
 		os.Stdout.Sync()
 
@@ -1729,7 +1760,9 @@ Start-Sleep -Seconds 4
 		// runInNewConsole uses CREATE_NEW_CONSOLE (Windows API) — guaranteed visible
 		// window even from a headless parent process. No -NoExit needed; the script
 		// ends naturally after the 4-second sleep.
-		_ = runInNewConsole(wrapperPs, tmpFile)
+		debugLog.Printf("[executeCommand/AGENT] calling runInNewConsole")
+		err := runInNewConsole(wrapperPs, tmpFile)
+		debugLog.Printf("[executeCommand/AGENT] runInNewConsole returned err=%v", err)
 
 		cmdMu.Lock()
 		currentConvID = ""
@@ -1741,6 +1774,7 @@ Start-Sleep -Seconds 4
 		outBytes, _ := os.ReadFile(tmpFile)
 		_ = os.Remove(tmpFile)
 		outStr := strings.TrimSpace(string(outBytes))
+		debugLog.Printf("[executeCommand/AGENT] outStr length=%d bytes", len(outStr))
 		if outStr == "" {
 			outStr = "(no output)"
 		}
@@ -2760,6 +2794,7 @@ func (m model) resetCircuitBreakerWithPhrase(phrase string) tea.Cmd {
 }
 
 func main() {
+	initDebugLog()
 	// Load circuit state on startup
 	loadCircuitState()
 	
