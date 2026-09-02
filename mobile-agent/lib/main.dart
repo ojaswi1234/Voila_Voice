@@ -1667,6 +1667,33 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   String _normalizeForSpeech(String text) {
     String normalized = text;
     
+    // --- Smart Speech Techniques ---
+    // 1. URLs (e.g., https://github.com/foo/bar -> "a link to github.com")
+    normalized = normalized.replaceAllMapped(
+      RegExp(r'https?://([a-zA-Z0-9.-]+)[^\s]*'),
+      (match) => 'a link to ${match.group(1)}'
+    );
+    
+    // 2. Windows paths (e.g., C:\Users\desktop\file.txt -> "file file.txt")
+    // Note: double escaping backslashes for Dart regex
+    normalized = normalized.replaceAllMapped(
+      RegExp(r'[a-zA-Z]:\\(?:[^\s\\]+\\)+([^\s\\]+\.[a-zA-Z0-9]+)'),
+      (match) => 'file ${match.group(1)}'
+    );
+    
+    // 3. Unix/Relative paths with at least 2 slashes (e.g., src/components/button.tsx -> "file button.tsx")
+    normalized = normalized.replaceAllMapped(
+      RegExp(r'(?:[a-zA-Z0-9_.-]+/){2,}([a-zA-Z0-9_.-]+\.[a-zA-Z0-9]+)'),
+      (match) => 'file ${match.group(1)}'
+    );
+    
+    // 4. UUIDs
+    normalized = normalized.replaceAll(RegExp(r'\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b'), 'an ID');
+    
+    // 5. Long hex hashes (12+ chars like git commits)
+    normalized = normalized.replaceAll(RegExp(r'\b[0-9a-fA-F]{12,}\b'), 'a hash');
+    // --------------------------------
+    
     // Remove Markdown formatting
     normalized = normalized.replaceAll('**', '');
     normalized = normalized.replaceAll('*', '');
