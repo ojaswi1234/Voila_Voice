@@ -2084,7 +2084,7 @@ func executeTool(toolName string, argsJSON json.RawMessage, streamFileObj *os.Fi
 		case "list_dir":
 			pseudoCommand = "ls " + getString("path")
 		case "web_search":
-			pseudoCommand = "search "" + getString("query") + """
+			pseudoCommand = "search \"" + getString("query") + "\""
 		default:
 			pseudoCommand = toolName + " ..."
 		}
