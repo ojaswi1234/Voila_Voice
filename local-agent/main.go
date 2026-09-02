@@ -1989,6 +1989,23 @@ var availableTools = []toolDef{
 	{
 		Type: "function",
 		Function: toolFuncDef{
+			Name:        "browser_action",
+			Description: "Control a headless browser to scrape web pages, click elements, or extract links.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"action":   map[string]interface{}{"type": "string", "description": "Action to perform: 'goto', 'click', 'type', 'scrape', 'extract_links'"},
+					"url":      map[string]interface{}{"type": "string", "description": "URL to navigate to (required for 'goto')"},
+					"selector": map[string]interface{}{"type": "string", "description": "CSS selector to click or type into"},
+					"value":    map[string]interface{}{"type": "string", "description": "Text to type"},
+				},
+				"required": []string{"action"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
 			Name:        "web_search",
 			Description: "Search the web for up-to-date information on any topic.",
 			Parameters: map[string]interface{}{
@@ -2190,8 +2207,13 @@ func executeTool(toolName string, argsJSON json.RawMessage, streamFileObj *os.Fi
 	if err := json.Unmarshal(argsJSON, &args); err == nil {
 		var pseudoCommand string
 		getString := func(key string) string {
-			if v, ok := args[key].(string); ok {
-				return v
+			if val, exists := args[key]; exists {
+				if strVal, ok := val.(string); ok {
+					return strVal
+				}
+				if jsonBytes, err := json.Marshal(val); err == nil {
+					return string(jsonBytes)
+				}
 			}
 			return ""
 		}
@@ -2210,6 +2232,8 @@ func executeTool(toolName string, argsJSON json.RawMessage, streamFileObj *os.Fi
 			pseudoCommand = "write_doc " + getString("path")
 		case "read_pdf", "read_excel", "read_csv":
 			pseudoCommand = "read_doc " + getString("path")
+		case "browser_action":
+			pseudoCommand = "browser " + getString("action") + " " + getString("url") + getString("selector")
 		default:
 			pseudoCommand = toolName + " ..."
 		}
@@ -2303,8 +2327,15 @@ func executeToolInner(toolName string, argsJSON json.RawMessage, streamFileObj *
 	}
 
 	getString := func(key string) string {
-		v, _ := args[key].(string)
-		return v
+		if val, exists := args[key]; exists {
+			if strVal, ok := val.(string); ok {
+				return strVal
+			}
+			if jsonBytes, err := json.Marshal(val); err == nil {
+				return string(jsonBytes)
+			}
+		}
+		return ""
 	}
 
 	switch toolName {
@@ -2401,6 +2432,38 @@ func executeToolInner(toolName string, argsJSON json.RawMessage, streamFileObj *
 
 	case "create_pdf", "read_pdf", "create_ppt", "create_excel", "modify_excel", "read_excel", "create_csv", "read_csv":
 		return callPythonDocumentTool(toolName, argsJSON)
+	case "browser_action":
+		action := getString("action")
+		url := getString("url")
+		selector := getString("selector")
+		value := getString("value")
+
+		exeDir, _ := os.Executable()
+		scriptPath := filepath.Join(filepath.Dir(exeDir), "browser_tools.py")
+		
+		cmdArgs := []string{scriptPath, "--action", action}
+		if url != "" {
+			cmdArgs = append(cmdArgs, "--url", url)
+		}
+		if selector != "" {
+			cmdArgs = append(cmdArgs, "--selector", selector)
+		}
+		if value != "" {
+			cmdArgs = append(cmdArgs, "--value", value)
+		}
+		
+		cmdObj := exec.Command("python", cmdArgs...)
+		outBytes, err := cmdObj.CombinedOutput()
+		
+		res := string(outBytes)
+		if err != nil {
+			res += "\n(Error: " + err.Error() + ")"
+		}
+		if len(res) > 8000 {
+			res = res[:8000] + "\n... (truncated)"
+		}
+		return res
+
 	default:
 		return "error: unknown tool: " + toolName
 	}

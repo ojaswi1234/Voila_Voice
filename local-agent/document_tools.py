@@ -20,6 +20,15 @@ def read_csv(kwargs):
 def create_csv(kwargs):
     path = kwargs.get('path')
     data = kwargs.get('data') # string or list of dicts
+    
+    if isinstance(data, str):
+        try:
+            parsed = json.loads(data)
+            if isinstance(parsed, list):
+                data = parsed
+        except:
+            pass
+
     if isinstance(data, str):
         with open(path, 'w', encoding='utf-8') as f:
             f.write(data)
