@@ -1645,33 +1645,34 @@ func listConversationsHandler(w http.ResponseWriter, r *http.Request) {
 // This works even when voila.exe itself has no console (headless/background).
 // It blocks until the window is closed and returns the content of outFile.
 func runInNewConsole(psScript, outFile string) error {
-	// Write PS script to temp file
+	// Step 1: Write the PowerShell script to a temp .ps1 file
 	scriptFile := filepath.Join(os.TempDir(), fmt.Sprintf("voila_ps_%d.ps1", time.Now().UnixNano()))
 	if err := os.WriteFile(scriptFile, []byte(psScript), 0600); err != nil {
-		debugLog.Printf("[runInNewConsole] ERROR writing script: %v", err)
+		debugLog.Printf("[runInNewConsole] ERROR writing .ps1: %v", err)
 		return err
 	}
-	debugLog.Printf("[runInNewConsole] Script written to %s (%d bytes)", scriptFile, len(psScript))
+	debugLog.Printf("[runInNewConsole] PS script: %s (%d bytes)", scriptFile, len(psScript))
 	defer os.Remove(scriptFile)
 
-	// VBScript launcher: WScript.Shell.Run with style=1 (SW_NORMAL) ALWAYS opens
-	// a visible window, completely independent of the parent process's console flags.
-	// This bypasses the CREATE_NO_WINDOW inheritance from Python's Popen.
-	vbsContent := `Set wsh = CreateObject("WScript.Shell")` + "\r\n" +
-		`wsh.Run "powershell -NoLogo -ExecutionPolicy Bypass -File """ & "` + scriptFile + `" & """", 1, True` + "\r\n"
-
-	vbsFile := filepath.Join(os.TempDir(), fmt.Sprintf("voila_launch_%d.vbs", time.Now().UnixNano()))
-	if err := os.WriteFile(vbsFile, []byte(vbsContent), 0600); err != nil {
-		debugLog.Printf("[runInNewConsole] ERROR writing vbs: %v", err)
+	// Step 2: Write a tiny .bat launcher that calls PowerShell.
+	// .bat files opened via "cmd /c start" ALWAYS get their own new visible console
+	// window on Windows — completely independent of the parent process's console flags.
+	// This bypasses the CREATE_NO_WINDOW inheritance from Python's subprocess.Popen.
+	batContent := "@echo off\r\npowershell.exe -NoLogo -ExecutionPolicy Bypass -File \"" + scriptFile + "\"\r\n"
+	batFile := filepath.Join(os.TempDir(), fmt.Sprintf("voila_launch_%d.bat", time.Now().UnixNano()))
+	if err := os.WriteFile(batFile, []byte(batContent), 0600); err != nil {
+		debugLog.Printf("[runInNewConsole] ERROR writing .bat: %v", err)
 		return err
 	}
-	debugLog.Printf("[runInNewConsole] VBS launcher written to %s", vbsFile)
-	defer os.Remove(vbsFile)
+	debugLog.Printf("[runInNewConsole] BAT launcher: %s", batFile)
+	defer os.Remove(batFile)
 
-	debugLog.Printf("[runInNewConsole] Launching wscript /nologo %s", vbsFile)
-	cmd := exec.Command("wscript", "/nologo", vbsFile)
+	// Step 3: Launch. "start" with an empty title "" + "/wait" opens the .bat in a
+	// new visible cmd.exe window and blocks until the batch/PS finishes.
+	debugLog.Printf("[runInNewConsole] Launching: cmd /c start \"\" /wait %s", batFile)
+	cmd := exec.Command("cmd", "/c", "start", "", "/wait", batFile)
 	err := cmd.Run()
-	debugLog.Printf("[runInNewConsole] wscript finished, err=%v", err)
+	debugLog.Printf("[runInNewConsole] Launch finished, err=%v", err)
 	return err
 }
 

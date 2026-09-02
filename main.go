@@ -776,11 +776,14 @@ func (b *Backend) forwardCommand(deviceID, command, mode, clientID, conversation
 	}
 
 	urlStr := address + "/execute"
-	// Send mode="" so the local agent applies its own badge setting (single source of truth).
-	// Sending "AGENT" would compete with the user's toggle selection.
-	forwardMode := mode
-	if strings.ToUpper(mode) == "AGENT" {
-		forwardMode = ""
+	// The desktop badge (LOCAL/GROQ/OLLAMA toggle) is the SINGLE source of truth for
+	// execution mode. The mobile app only sends "agent" or "shell", both of which we
+	// normalize to "" so the local agent uses its badge setting.
+	// Only explicit GROQ or OLLAMA from mobile are forwarded as overrides.
+	modeUp := strings.ToUpper(mode)
+	forwardMode := ""
+	if modeUp == "GROQ" || modeUp == "OLLAMA" {
+		forwardMode = modeUp // honour explicit cloud executor selection
 	}
 	payload := map[string]string{"command": optimizedCommand, "mode": forwardMode, "client_id": clientID, "conversation_id": conversationID}
 	jsonPayload, _ := json.Marshal(payload)
