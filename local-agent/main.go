@@ -1361,6 +1361,8 @@ func startHTTPServer() {
 				}
 			}
 
+			debugLog.Printf("[/execute] reqMode=%q globalMode=%q effectiveMode=%q", reqMode, globalMode, effectiveMode)
+
 			fmt.Printf("STATUS: MODE:%s\n", effectiveMode)
 			os.Stdout.Sync()
 
@@ -1676,7 +1678,10 @@ func runInNewConsole(psScript, outFile string) error {
 func executeCommand(command string, mode string, conversationID string, modelName string) (string, string, error) {
 	var cmd *exec.Cmd
 
-	if strings.ToUpper(mode) == "AGENT" {
+	modeUpper := strings.ToUpper(mode)
+	// LOCAL = agy (local Gemini agent). AGENT = also agy (legacy name).
+	// Only SHELL = raw PowerShell. Empty string = default to agy.
+	if modeUpper == "AGENT" || modeUpper == "LOCAL" || modeUpper == "" {
 		prompt := command + "\n\n(CRITICAL SYSTEM NOTE: Keep your responses casual, brief, and conversational as if you are a friendly voice assistant. Address the user as 'boss'. Do not use overly formal language.\n\nCRITICAL SYSTEM NOTE: You are running inside an isolated background sandbox (`exebox` desktop). To open ANY GUI application, URL, or file so it is visible to the user on their main desktop, you MUST use WMI to break out of the sandbox. Use exactly this command format: `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'explorer.exe \"<URL_OR_PATH>\"'` (for URLs/files) or `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList '<APP_EXE>'` (for apps). DO NOT use Start-Process, as it will spawn invisibly in the sandbox! To perform browser automation, you MUST first launch a visible browser using Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe --remote-debugging-port=9222 --user-data-dir=C:\\tmp\\ai_browser_profile \"about:blank\"'. Then, control it by running python C:\\Users\\ojasw\\Desktop\\voice-cli-system\\local-agent\\browser_tools.py with args --action [goto|click|type|scrape|extract_links|snapshot] --url <url> --selector <css> --value <text>.)"
 		if modelName == "" || modelName == "flash" {
 			modelName = "Gemini 3.7 Flash (High)"
@@ -2038,6 +2043,8 @@ func executeTool(toolName string, argsJSON json.RawMessage) string {
 			return "error: command is required"
 		}
 
+		debugLog.Printf("[executeTool/run_terminal] actualCommand=%q", actualCommand)
+
 		// Use Base64 to safely pass the command to PowerShell
 		encodedCmd := base64.StdEncoding.EncodeToString([]byte(actualCommand))
 		
@@ -2074,8 +2081,10 @@ Write-Host 'Execution complete. Closing in 2 seconds...' -ForegroundColor DarkGr
 Start-Sleep -Seconds 2
 `, encodedCmd, tmpFile, tmpFile)
 
-		// runInNewConsole uses CREATE_NEW_CONSOLE — guaranteed visible window from headless parent
+		// runInNewConsole uses WScript.Shell.Run — always shows a visible window
+		debugLog.Printf("[executeTool/run_terminal] calling runInNewConsole, tmpFile=%s", tmpFile)
 		_ = runInNewConsole(wrapperPs, tmpFile)
+		debugLog.Printf("[executeTool/run_terminal] runInNewConsole returned")
 
 		// Read the captured output
 		outBytes, err := os.ReadFile(tmpFile)
@@ -2108,6 +2117,13 @@ func executeGroqCommand(command, apiKey, modelName string) (string, error) {
 		modelName = "llama3-70b-8192" // Groq free-tier default
 	}
 
+	// Mask key for logging (show last 4 chars only)
+	maskedKey := "***"
+	if len(apiKey) >= 4 {
+		maskedKey = "***" + apiKey[len(apiKey)-4:]
+	}
+	debugLog.Printf("[executeGroqCommand] ENTRY model=%q key=%s commandLen=%d", modelName, maskedKey, len(command))
+
 	systemPrompt := "You are Voila, a helpful AI voice assistant. Keep responses casual, conversational, and brief. Address the user as 'boss'."
 
 	// Maintain conversation as raw JSON-friendly messages
@@ -2120,6 +2136,7 @@ func executeGroqCommand(command, apiKey, modelName string) (string, error) {
 	const maxIter = 5
 
 	for iter := 0; iter < maxIter; iter++ {
+		debugLog.Printf("[executeGroqCommand] iter=%d messages=%d", iter, len(messages))
 		payload := map[string]interface{}{
 			"model":       modelName,
 			"messages":    messages,
@@ -2143,10 +2160,13 @@ func executeGroqCommand(command, apiKey, modelName string) (string, error) {
 
 		resp, err := client.Do(req)
 		if err != nil {
+			debugLog.Printf("[executeGroqCommand] iter=%d API request failed: %v", iter, err)
 			return "", fmt.Errorf("Groq API request failed: %w", err)
 		}
 		respBody, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
+
+		debugLog.Printf("[executeGroqCommand] iter=%d response status=%d responseLen=%d", iter, resp.StatusCode, len(respBody))
 
 		if resp.StatusCode != http.StatusOK {
 			return "", fmt.Errorf("Groq API error %d: %s", resp.StatusCode, string(respBody))
@@ -2186,8 +2206,11 @@ func executeGroqCommand(command, apiKey, modelName string) (string, error) {
 
 		// No tool calls — return the final text answer
 		if len(choice.Message.ToolCalls) == 0 {
+			debugLog.Printf("[executeGroqCommand] iter=%d final answer len=%d", iter, len(choice.Message.Content))
 			return strings.TrimSpace(choice.Message.Content), nil
 		}
+
+		debugLog.Printf("[executeGroqCommand] iter=%d toolCalls=%d", iter, len(choice.Message.ToolCalls))
 
 		// Append assistant message with tool_calls
 		assistantMsg := map[string]interface{}{
@@ -2199,8 +2222,10 @@ func executeGroqCommand(command, apiKey, modelName string) (string, error) {
 
 		// Execute each tool and collect results
 		for _, tc := range choice.Message.ToolCalls {
+			debugLog.Printf("[executeGroqCommand] iter=%d executing tool=%q", iter, tc.Function.Name)
 			argsBytes, _ := json.Marshal(tc.Function.Arguments)
 			toolResult := executeTool(tc.Function.Name, json.RawMessage(argsBytes))
+			debugLog.Printf("[executeGroqCommand] iter=%d tool=%q resultLen=%d", iter, tc.Function.Name, len(toolResult))
 			messages = append(messages, map[string]interface{}{
 				"role":         "tool",
 				"tool_call_id": tc.ID,
@@ -2209,6 +2234,7 @@ func executeGroqCommand(command, apiKey, modelName string) (string, error) {
 		}
 	}
 
+	debugLog.Printf("[executeGroqCommand] max iterations reached")
 	return "(max tool iterations reached)", nil
 }
 
@@ -2232,6 +2258,8 @@ func executeOllamaCommand(command, baseURL, modelName, apiKey string) (string, e
 	// Ollama uses the same OpenAI-compatible endpoint
 	apiURL := strings.TrimRight(baseURL, "/") + "/api/chat"
 
+	debugLog.Printf("[executeOllamaCommand] ENTRY baseURL=%q model=%q commandLen=%d", baseURL, modelName, len(command))
+
 	systemPrompt := "You are Voila, a helpful AI voice assistant. Keep responses casual, conversational, and brief. Address the user as 'boss'."
 
 	messages := []map[string]interface{}{
@@ -2243,6 +2271,7 @@ func executeOllamaCommand(command, baseURL, modelName, apiKey string) (string, e
 	const maxIter = 5
 
 	for iter := 0; iter < maxIter; iter++ {
+		debugLog.Printf("[executeOllamaCommand] iter=%d messages=%d", iter, len(messages))
 		payload := map[string]interface{}{
 			"model":    modelName,
 			"messages": messages,
@@ -2266,10 +2295,13 @@ func executeOllamaCommand(command, baseURL, modelName, apiKey string) (string, e
 
 		resp, err := client.Do(req)
 		if err != nil {
+			debugLog.Printf("[executeOllamaCommand] iter=%d request failed: %v", iter, err)
 			return "", fmt.Errorf("Ollama request failed: %w", err)
 		}
 		respBody, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
+
+		debugLog.Printf("[executeOllamaCommand] iter=%d response status=%d responseLen=%d", iter, resp.StatusCode, len(respBody))
 
 		if resp.StatusCode != http.StatusOK {
 			return "", fmt.Errorf("Ollama error %d: %s", resp.StatusCode, string(respBody))
@@ -2297,8 +2329,11 @@ func executeOllamaCommand(command, baseURL, modelName, apiKey string) (string, e
 
 		// No tool calls — return the final text answer
 		if len(result.Message.ToolCalls) == 0 {
+			debugLog.Printf("[executeOllamaCommand] iter=%d final answer len=%d", iter, len(result.Message.Content))
 			return strings.TrimSpace(result.Message.Content), nil
 		}
+
+		debugLog.Printf("[executeOllamaCommand] iter=%d toolCalls=%d", iter, len(result.Message.ToolCalls))
 
 		// Append assistant message
 		assistantMsg := map[string]interface{}{
@@ -2310,8 +2345,10 @@ func executeOllamaCommand(command, baseURL, modelName, apiKey string) (string, e
 
 		// Execute each tool and collect results
 		for _, tc := range result.Message.ToolCalls {
+			debugLog.Printf("[executeOllamaCommand] iter=%d executing tool=%q", iter, tc.Function.Name)
 			argsBytes, _ := json.Marshal(tc.Function.Arguments)
 			toolResult := executeTool(tc.Function.Name, json.RawMessage(argsBytes))
+			debugLog.Printf("[executeOllamaCommand] iter=%d tool=%q resultLen=%d", iter, tc.Function.Name, len(toolResult))
 			// Ollama tool result uses role "tool" same as OpenAI
 			messages = append(messages, map[string]interface{}{
 				"role":    "tool",
@@ -2320,6 +2357,7 @@ func executeOllamaCommand(command, baseURL, modelName, apiKey string) (string, e
 		}
 	}
 
+	debugLog.Printf("[executeOllamaCommand] max iterations reached")
 	return "(max tool iterations reached)", nil
 }
 

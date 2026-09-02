@@ -10,6 +10,17 @@ import random
 # Removed psutil import completely as per user request to drop overhead
 PSUTIL_AVAILABLE = False
 
+import logging as _logging
+_voila_log = _logging.getLogger('voila_py')
+_voila_log.setLevel(_logging.DEBUG)
+_voila_fh = _logging.FileHandler(
+    r'C:\Users\ojasw\Desktop\voice-cli-system\local-agent\voila_debug.log',
+    encoding='utf-8'
+)
+_voila_fh.setFormatter(_logging.Formatter('%(asctime)s [PY] %(message)s'))
+_voila_log.addHandler(_voila_fh)
+_voila_log.info(f'Python widget started PID={__import__("os").getpid()}')
+
 CREATE_NO_WINDOW = 0x08000000
 # Only kill the specific voila.exe instance we'll start, not all instances
 # Don't kill ngrok.exe as it might be used by other applications
