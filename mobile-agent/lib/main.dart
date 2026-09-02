@@ -1394,6 +1394,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
     
     if (confirmed == true) {
       await DeviceIdentity.clearAllSavedDevices();
+      if (!mounted) return;
       setState(() {
         _savedDevices = {};
         _devices = {};
@@ -1787,10 +1788,10 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                 onTap: () async {
                   Navigator.pop(context);
                   await _storage.delete(key: 'session_token');
-                  setState(() {
-                    _sessionToken = '';
-                  });
                   if (mounted) {
+                    setState(() {
+                      _sessionToken = '';
+                    });
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('Session locked. Token destroyed.')),
                     );

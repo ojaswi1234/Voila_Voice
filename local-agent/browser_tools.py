@@ -15,6 +15,7 @@ any filtering, plus a hard cap of 75 results.
 """
 
 import sys
+sys.stdout.reconfigure(encoding="utf-8")
 import os
 import json
 import time

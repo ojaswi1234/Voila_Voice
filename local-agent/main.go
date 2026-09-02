@@ -31,6 +31,7 @@ var (
 	cmdMu      sync.Mutex
 	currentCmd *exec.Cmd
 	currentConvID string
+	currentCancel context.CancelFunc
 	circuitMu  sync.Mutex
 	circuitOpen bool
 	execSemaphore chan struct{} // Limit concurrent executions
@@ -1097,6 +1098,9 @@ func startHTTPServer() {
 		}
 
 		cmdMu.Lock()
+		if currentCancel != nil {
+			currentCancel()
+		}
 		if currentCmd != nil && currentCmd.Process != nil {
 			if runtime.GOOS == "windows" {
 				exec.Command("taskkill", "/F", "/T", "/PID", fmt.Sprintf("%d", currentCmd.Process.Pid)).Run()
@@ -1227,7 +1231,7 @@ func startHTTPServer() {
 		w.Header().Set("Content-Type", "application/json")
 
 		connData, _ := loadConnectionData()
-		out, err := executeGroqCommand("Say hello in one word", connData.GroqAPIKey, "", nil)
+		out, err := executeGroqCommand(context.Background(), "Say hello in one word", connData.GroqAPIKey, "", nil)
 		if err != nil {
 			json.NewEncoder(w).Encode(map[string]string{"status": "error", "message": err.Error()})
 			return
@@ -1241,7 +1245,7 @@ func startHTTPServer() {
 		w.Header().Set("Content-Type", "application/json")
 
 		connData, _ := loadConnectionData()
-		out, err := executeOllamaCommand("Say hello in one word", connData.OllamaBaseURL, connData.OllamaModel, connData.OllamaAPIKey, nil)
+		out, err := executeOllamaCommand(context.Background(), "Say hello in one word", connData.OllamaBaseURL, connData.OllamaModel, connData.OllamaAPIKey, nil)
 		if err != nil {
 			json.NewEncoder(w).Encode(map[string]string{"status": "error", "message": err.Error()})
 			return
@@ -1283,6 +1287,16 @@ func startHTTPServer() {
 		}
 	})
 	mux.HandleFunc("/execute", func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cmdMu.Lock()
+		currentCancel = cancel
+		cmdMu.Unlock()
+		defer func() {
+			cmdMu.Lock()
+			currentCancel = nil
+			cmdMu.Unlock()
+			cancel()
+		}()
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -1379,7 +1393,7 @@ func startHTTPServer() {
 				}
 				_, f, cleanup := startTerminalViewer()
 				defer cleanup()
-				output, err = executeGroqCommand(command, connData.GroqAPIKey, m, f)
+				output, err = executeGroqCommand(ctx, command, connData.GroqAPIKey, m, f)
 				fmt.Println("STATUS: IDLE")
 				os.Stdout.Sync()
 				newConvID = conversationID
@@ -1392,7 +1406,7 @@ func startHTTPServer() {
 				}
 				_, f, cleanup := startTerminalViewer()
 				defer cleanup()
-				output, err = executeOllamaCommand(command, connData.OllamaBaseURL, ollamaModel, connData.OllamaAPIKey, f)
+				output, err = executeOllamaCommand(ctx, command, connData.OllamaBaseURL, ollamaModel, connData.OllamaAPIKey, f)
 				fmt.Println("STATUS: IDLE")
 				os.Stdout.Sync()
 				newConvID = conversationID
@@ -2474,7 +2488,7 @@ func executeToolInner(toolName string, argsJSON json.RawMessage, streamFileObj *
 // executeGroqCommand sends a prompt to the Groq cloud API and returns the response.
 // It uses the fast llama3-70b-8192 model by default, but respects modelName if provided.
 // Supports up to 5 tool-calling iterations using OpenAI-compatible tool_calls format.
-func executeGroqCommand(command, apiKey, modelName string, streamFileObj *os.File) (string, error) {
+func executeGroqCommand(ctx context.Context, command, apiKey, modelName string, streamFileObj *os.File) (string, error) {
 	if apiKey == "" {
 		return "", fmt.Errorf("Groq API key not set. Open the Voila dashboard → Settings to add your key")
 	}
@@ -2615,7 +2629,7 @@ func executeGroqCommand(command, apiKey, modelName string, streamFileObj *os.Fil
 // executeOllamaCommand sends a prompt to an Ollama-compatible endpoint.
 // Works for both local Ollama (http://localhost:11434) and Ollama Cloud (https://api.ollama.ai).
 // Supports up to 5 tool-calling iterations using the Ollama /api/chat tools field.
-func executeOllamaCommand(command, baseURL, modelName, apiKey string, streamFileObj *os.File) (string, error) {
+func executeOllamaCommand(ctx context.Context, command, baseURL, modelName, apiKey string, streamFileObj *os.File) (string, error) {
 	if baseURL == "" || baseURL == "http://localhost:11434" {
 		if apiKey != "" {
 			baseURL = "https://ollama.com"
