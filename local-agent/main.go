@@ -2588,7 +2588,14 @@ func executeGroqCommand(command, apiKey, modelName string, streamFileObj *os.Fil
 		// Execute each tool and collect results
 		for _, tc := range choice.Message.ToolCalls {
 			debugLog.Printf("[executeGroqCommand] iter=%d executing tool=%q", iter, tc.Function.Name)
-			argsBytes, _ := json.Marshal(tc.Function.Arguments)
+			var argsBytes []byte
+			if len(tc.Function.Arguments) > 0 && tc.Function.Arguments[0] == '"' {
+				var strArgs string
+				json.Unmarshal(tc.Function.Arguments, &strArgs)
+				argsBytes = []byte(strArgs)
+			} else {
+				argsBytes = []byte(tc.Function.Arguments)
+			}
 			toolResult := executeTool(tc.Function.Name, json.RawMessage(argsBytes), streamFileObj)
 			debugLog.Printf("[executeGroqCommand] iter=%d tool=%q resultLen=%d", iter, tc.Function.Name, len(toolResult))
 			messages = append(messages, map[string]interface{}{
@@ -2711,7 +2718,14 @@ func executeOllamaCommand(command, baseURL, modelName, apiKey string, streamFile
 		// Execute each tool and collect results
 		for _, tc := range result.Message.ToolCalls {
 			debugLog.Printf("[executeOllamaCommand] iter=%d executing tool=%q", iter, tc.Function.Name)
-			argsBytes, _ := json.Marshal(tc.Function.Arguments)
+			var argsBytes []byte
+			if len(tc.Function.Arguments) > 0 && tc.Function.Arguments[0] == '"' {
+				var strArgs string
+				json.Unmarshal(tc.Function.Arguments, &strArgs)
+				argsBytes = []byte(strArgs)
+			} else {
+				argsBytes = []byte(tc.Function.Arguments)
+			}
 			toolResult := executeTool(tc.Function.Name, json.RawMessage(argsBytes), streamFileObj)
 			debugLog.Printf("[executeOllamaCommand] iter=%d tool=%q resultLen=%d", iter, tc.Function.Name, len(toolResult))
 			// Ollama tool result uses role "tool" same as OpenAI
