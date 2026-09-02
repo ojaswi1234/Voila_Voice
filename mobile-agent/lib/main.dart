@@ -660,7 +660,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
 
               _messages.add({
                 'type': 'error',
-                'content': message.replace('ERROR: ', ''),
+                'content': message.replaceFirst('ERROR: ', ''),
                 'timestamp': DateTime.now().toString(),
               });
             } else {
