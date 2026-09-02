@@ -2060,9 +2060,85 @@ var availableTools = []toolDef{
 	},
 }
 
+
 // executeTool dispatches to the correct tool implementation and returns a result string.
-// It also emits a STATUS: TOOL:<name> line so the Python face can show per-tool states.
+// It also emits a STATUS: TOOL:<name> line so the Python face can show per-tool states,
+// and it emits stream-json events for ALL tools to visualize them seamlessly in the terminal.
 func executeTool(toolName string, argsJSON json.RawMessage, streamFileObj *os.File) string {
+	var args map[string]interface{}
+	if err := json.Unmarshal(argsJSON, &args); err == nil {
+		var pseudoCommand string
+		getString := func(key string) string {
+			if v, ok := args[key].(string); ok {
+				return v
+			}
+			return ""
+		}
+		switch toolName {
+		case "run_terminal":
+			pseudoCommand = getString("command")
+		case "read_file":
+			pseudoCommand = "cat " + getString("path")
+		case "write_file":
+			pseudoCommand = "echo '...' > " + getString("path")
+		case "list_dir":
+			pseudoCommand = "ls " + getString("path")
+		case "web_search":
+			pseudoCommand = "search "" + getString("query") + """
+		default:
+			pseudoCommand = toolName + " ..."
+		}
+
+		if streamFileObj != nil && pseudoCommand != "" {
+			event := map[string]interface{}{
+				"event": "step_update",
+				"step_update": map[string]interface{}{
+					"step_type": "tool",
+					"state": "RUNNING",
+					"tool_name": "run_command",
+					"tool_info": map[string]interface{}{
+						"parameters": map[string]interface{}{
+							"CommandLine": pseudoCommand,
+						},
+					},
+				},
+			}
+			jsonBytes, _ := json.Marshal(event)
+			streamFileObj.WriteString(string(jsonBytes) + "\n")
+			streamFileObj.Sync()
+		}
+
+		result := executeToolInner(toolName, argsJSON, streamFileObj)
+
+		if streamFileObj != nil && pseudoCommand != "" {
+			visualResult := result
+			if len(visualResult) > 2000 {
+				visualResult = visualResult[:2000] + "\n... (output truncated for viewer)"
+			}
+			event := map[string]interface{}{
+				"event": "step_update",
+				"step_update": map[string]interface{}{
+					"step_type": "tool",
+					"state": "DONE",
+					"tool_name": "run_command",
+					"tool_info": map[string]interface{}{
+						"parameters": map[string]interface{}{
+							"CommandLine": pseudoCommand,
+						},
+						"output": visualResult,
+					},
+				},
+			}
+			jsonBytes, _ := json.Marshal(event)
+			streamFileObj.WriteString(string(jsonBytes) + "\n")
+			streamFileObj.Sync()
+		}
+		return result
+	}
+	return executeToolInner(toolName, argsJSON, streamFileObj)
+}
+
+func executeToolInner(toolName string, argsJSON json.RawMessage, streamFileObj *os.File) string {
 	// Emit status so Python face knows which tool is running
 	fmt.Printf("STATUS: TOOL:%s\n", toolName)
 	os.Stdout.Sync()
@@ -2152,24 +2228,7 @@ func executeTool(toolName string, argsJSON json.RawMessage, streamFileObj *os.Fi
 
 		debugLog.Printf("[executeTool/run_terminal] actualCommand=%q", actualCommand)
 
-		if streamFileObj != nil {
-			event := map[string]interface{}{
-				"event": "step_update",
-				"step_update": map[string]interface{}{
-					"step_type": "tool",
-					"state": "RUNNING",
-					"tool_name": "run_command",
-					"tool_info": map[string]interface{}{
-						"parameters": map[string]interface{}{
-							"CommandLine": actualCommand,
-						},
-					},
-				},
-			}
-			jsonBytes, _ := json.Marshal(event)
-			streamFileObj.WriteString(string(jsonBytes) + "\n")
-			streamFileObj.Sync()
-		}
+		
 
 		cmdObj := exec.Command("powershell", "-Command", actualCommand)
 		outBytes, err := cmdObj.CombinedOutput()
@@ -2182,25 +2241,6 @@ func executeTool(toolName string, argsJSON json.RawMessage, streamFileObj *os.Fi
 			result = "(no output)"
 		}
 
-		if streamFileObj != nil {
-			event := map[string]interface{}{
-				"event": "step_update",
-				"step_update": map[string]interface{}{
-					"step_type": "tool",
-					"state": "DONE",
-					"tool_name": "run_command",
-					"tool_info": map[string]interface{}{
-						"parameters": map[string]interface{}{
-							"CommandLine": actualCommand,
-						},
-						"output": result,
-					},
-				},
-			}
-			jsonBytes, _ := json.Marshal(event)
-			streamFileObj.WriteString(string(jsonBytes) + "\n")
-			streamFileObj.Sync()
-		}
 
 		return result
 

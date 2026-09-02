@@ -1694,13 +1694,13 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
     // 2. Windows paths (e.g., C:\Users\desktop\file.txt -> "file file.txt")
     // Note: double escaping backslashes for Dart regex
     normalized = normalized.replaceAllMapped(
-      RegExp(r'[a-zA-Z]:\\(?:[^\s\\]+\\)+([^\s\\]+\.[a-zA-Z0-9]+)'),
+      RegExp(r'[a-zA-Z]:\\(?:[^\s\\]+\\)+([^\s\\]+)'),
       (match) => 'file ${match.group(1)}'
     );
     
     // 3. Unix/Relative paths with at least 2 slashes (e.g., src/components/button.tsx -> "file button.tsx")
     normalized = normalized.replaceAllMapped(
-      RegExp(r'(?:[a-zA-Z0-9_.-]+/){2,}([a-zA-Z0-9_.-]+\.[a-zA-Z0-9]+)'),
+      RegExp(r'(?:[a-zA-Z0-9_.-]+/){2,}([a-zA-Z0-9_.-]+)'),
       (match) => 'file ${match.group(1)}'
     );
     
