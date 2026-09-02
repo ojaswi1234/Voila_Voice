@@ -1227,7 +1227,7 @@ func startHTTPServer() {
 		w.Header().Set("Content-Type", "application/json")
 
 		connData, _ := loadConnectionData()
-		out, err := executeGroqCommand("Say hello in one word", connData.GroqAPIKey, "")
+		out, err := executeGroqCommand("Say hello in one word", connData.GroqAPIKey, "", nil)
 		if err != nil {
 			json.NewEncoder(w).Encode(map[string]string{"status": "error", "message": err.Error()})
 			return
@@ -1241,7 +1241,7 @@ func startHTTPServer() {
 		w.Header().Set("Content-Type", "application/json")
 
 		connData, _ := loadConnectionData()
-		out, err := executeOllamaCommand("Say hello in one word", connData.OllamaBaseURL, connData.OllamaModel, connData.OllamaAPIKey)
+		out, err := executeOllamaCommand("Say hello in one word", connData.OllamaBaseURL, connData.OllamaModel, connData.OllamaAPIKey, nil)
 		if err != nil {
 			json.NewEncoder(w).Encode(map[string]string{"status": "error", "message": err.Error()})
 			return
@@ -1377,7 +1377,9 @@ func startHTTPServer() {
 				if m == "" {
 					m = "llama3-70b-8192"
 				}
-				output, err = executeGroqCommand(command, connData.GroqAPIKey, m)
+				_, f, cleanup := startTerminalViewer()
+				defer cleanup()
+				output, err = executeGroqCommand(command, connData.GroqAPIKey, m, f)
 				fmt.Println("STATUS: IDLE")
 				os.Stdout.Sync()
 				newConvID = conversationID
@@ -1388,7 +1390,9 @@ func startHTTPServer() {
 				if ollamaModel == "" {
 					ollamaModel = "gemma4:31b"
 				}
-				output, err = executeOllamaCommand(command, connData.OllamaBaseURL, ollamaModel, connData.OllamaAPIKey)
+				_, f, cleanup := startTerminalViewer()
+				defer cleanup()
+				output, err = executeOllamaCommand(command, connData.OllamaBaseURL, ollamaModel, connData.OllamaAPIKey, f)
 				fmt.Println("STATUS: IDLE")
 				os.Stdout.Sync()
 				newConvID = conversationID
@@ -1420,7 +1424,7 @@ func startHTTPServer() {
 				"client_id": clientID,
 				"device_id": connData.DeviceID,
 				"secret_hash": secretHash,
-				"mode": mode,
+				"mode": effectiveMode,
 				"new_conversation_id": newConvID,
 			}
 			
@@ -1674,6 +1678,108 @@ func runInNewConsole(psScript, outFile string) error {
 	err := cmd.Run()
 	debugLog.Printf("[runInNewConsole] Launch finished, err=%v", err)
 	return err
+}
+
+
+func startTerminalViewer() (string, *os.File, func()) {
+	tmpStreamFile := filepath.Join(os.TempDir(), fmt.Sprintf("voila_stream_%d.jsonl", time.Now().UnixNano()))
+	os.WriteFile(tmpStreamFile, []byte{}, 0644)
+
+	viewerPs := fmt.Sprintf(`$ErrorActionPreference = 'Continue'
+$host.UI.RawUI.WindowTitle = 'Voila AI Agent'
+Clear-Host
+
+$streamFile = '%s'
+while (-not (Test-Path $streamFile)) { Start-Sleep -Milliseconds 100 }
+
+$reader = [System.IO.StreamReader]::new([System.IO.FileStream]::new($streamFile, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite))
+
+$promptColor = [ConsoleColor]::Green
+$cmdColor = [ConsoleColor]::Yellow
+$outColor = [ConsoleColor]::White
+
+while ($true) {
+    $line = $reader.ReadLine()
+    if ($null -eq $line) {
+        Start-Sleep -Milliseconds 100
+        continue
+    }
+    
+    if ($line -eq 'EOF') { break }
+    
+    if ($line -match '^{') {
+        try {
+            $data = $line | ConvertFrom-Json
+            if ($data.event -eq 'step_update' -and $data.step_update.step_type -eq 'tool') {
+                $state = $data.step_update.state.ToUpper()
+                $tool = $data.step_update.tool_name
+                
+                if ($state -eq 'RUNNING') {
+                    $cmd = ''
+                    if ($tool -eq 'run_command' -or $tool -eq 'run_terminal') {
+                        $cmd = $data.step_update.tool_info.parameters.CommandLine
+                    } elseif ($tool -eq 'list_dir') {
+                        $cmd = "ls " + $data.step_update.tool_info.parameters.DirectoryPath
+                    } elseif ($tool -eq 'view_file') {
+                        $cmd = "cat " + $data.step_update.tool_info.parameters.AbsolutePath
+                    } elseif ($tool -eq 'grep_search') {
+                        $cmd = "grep '" + $data.step_update.tool_info.parameters.Query + "' " + $data.step_update.tool_info.parameters.SearchPath
+                    } elseif ($tool -eq 'replace_file_content' -or $tool -eq 'write_to_file') {
+                        $cmd = "edit " + $data.step_update.tool_info.parameters.TargetFile
+                    } else {
+                        $cmd = "[Tool: $tool]"
+                    }
+                    
+                    $pwd = (Get-Location).Path
+                    Write-Host "PS $pwd> " -NoNewline -ForegroundColor $promptColor
+                    
+                    if ($null -ne $cmd) {
+                        foreach ($char in $cmd.ToCharArray()) {
+                            Write-Host $char -NoNewline -ForegroundColor $cmdColor
+                            Start-Sleep -Milliseconds 15
+                        }
+                    }
+                    Write-Host ''
+                }
+                
+                if ($state -eq 'DONE') {
+                    $out = $data.step_update.tool_info.output
+                    if ($null -ne $out -and $out -ne '') {
+                        if ($out.Length -gt 2000) {
+                            Write-Host $out.Substring(0, 2000) -ForegroundColor $outColor
+                            Write-Host '... (output truncated for display)' -ForegroundColor DarkGray
+                        } else {
+                            Write-Host $out -ForegroundColor $outColor
+                        }
+                    }
+                    Write-Host ''
+                }
+            }
+        } catch {}
+    }
+}
+$reader.Close()
+Write-Host 'Execution complete. Closing in 3 seconds...' -ForegroundColor DarkGray
+Start-Sleep -Seconds 3
+`, tmpStreamFile)
+
+	tmpViewerOut := filepath.Join(os.TempDir(), fmt.Sprintf("voila_viewer_out_%d.txt", time.Now().UnixNano()))
+	go func() {
+		_ = runInNewConsole(viewerPs, tmpViewerOut)
+		os.Remove(tmpViewerOut)
+		os.Remove(tmpStreamFile)
+	}()
+
+	f, _ := os.OpenFile(tmpStreamFile, os.O_APPEND|os.O_WRONLY, 0644)
+	
+	cleanup := func() {
+		if f != nil {
+			f.WriteString("EOF\n")
+			f.Close()
+		}
+	}
+
+	return tmpStreamFile, f, cleanup
 }
 
 func executeCommand(command string, mode string, conversationID string, modelName string) (string, string, error) {
@@ -1956,7 +2062,7 @@ var availableTools = []toolDef{
 
 // executeTool dispatches to the correct tool implementation and returns a result string.
 // It also emits a STATUS: TOOL:<name> line so the Python face can show per-tool states.
-func executeTool(toolName string, argsJSON json.RawMessage) string {
+func executeTool(toolName string, argsJSON json.RawMessage, streamFileObj *os.File) string {
 	// Emit status so Python face knows which tool is running
 	fmt.Printf("STATUS: TOOL:%s\n", toolName)
 	os.Stdout.Sync()
@@ -2039,63 +2145,63 @@ func executeTool(toolName string, argsJSON json.RawMessage) string {
 
 	case "run_terminal":
 		actualCommand := getString("command")
+
 		if actualCommand == "" {
 			return "error: command is required"
 		}
 
 		debugLog.Printf("[executeTool/run_terminal] actualCommand=%q", actualCommand)
 
-		// Use Base64 to safely pass the command to PowerShell
-		encodedCmd := base64.StdEncoding.EncodeToString([]byte(actualCommand))
-		
-		// Create a temp file to capture output
-		tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("voila_out_%d.txt", time.Now().UnixNano()))
-		
-		// Wrapper script: shows banner, types command like a robot, executes it, and Tees output
-		wrapperPs := fmt.Sprintf(`$ErrorActionPreference = 'Continue'
-Write-Host '======================================' -ForegroundColor Cyan
-Write-Host '  [AI] VOILA AI - CLOUD TERMINAL      ' -ForegroundColor Cyan
-Write-Host '  Model executing command...           ' -ForegroundColor Cyan
-Write-Host '======================================' -ForegroundColor Cyan
-Write-Host ''
+		if streamFileObj != nil {
+			event := map[string]interface{}{
+				"event": "step_update",
+				"step_update": map[string]interface{}{
+					"step_type": "tool",
+					"state": "RUNNING",
+					"tool_name": "run_command",
+					"tool_info": map[string]interface{}{
+						"parameters": map[string]interface{}{
+							"CommandLine": actualCommand,
+						},
+					},
+				},
+			}
+			jsonBytes, _ := json.Marshal(event)
+			streamFileObj.WriteString(string(jsonBytes) + "\n")
+			streamFileObj.Sync()
+		}
 
-$cmd = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('%s'))
-Write-Host 'PS > ' -NoNewline -ForegroundColor Green
-foreach ($char in $cmd.ToCharArray()) {
-    Write-Host $char -NoNewline -ForegroundColor Yellow
-    Start-Sleep -Milliseconds 15
-}
-Write-Host ''
-Write-Host '--------------------------------------' -ForegroundColor DarkGray
-
-try {
-    $sb = [scriptblock]::Create($cmd)
-    & $sb 2>&1 | Tee-Object -FilePath '%s'
-} catch {
-    $_.Exception.Message | Tee-Object -FilePath '%s' -Append
-}
-
-Write-Host '--------------------------------------' -ForegroundColor DarkGray
-Write-Host 'Execution complete. Closing in 2 seconds...' -ForegroundColor DarkGray
-Start-Sleep -Seconds 2
-`, encodedCmd, tmpFile, tmpFile)
-
-		// runInNewConsole uses WScript.Shell.Run — always shows a visible window
-		debugLog.Printf("[executeTool/run_terminal] calling runInNewConsole, tmpFile=%s", tmpFile)
-		_ = runInNewConsole(wrapperPs, tmpFile)
-		debugLog.Printf("[executeTool/run_terminal] runInNewConsole returned")
-
-		// Read the captured output
-		outBytes, err := os.ReadFile(tmpFile)
-		_ = os.Remove(tmpFile) // Clean up
+		cmdObj := exec.Command("powershell", "-Command", actualCommand)
+		outBytes, err := cmdObj.CombinedOutput()
 		
 		result := strings.TrimSpace(string(outBytes))
 		if err != nil {
-			result += "\n(Failed to read output transcript: " + err.Error() + ")"
+			result += "\n(Error: " + err.Error() + ")"
 		}
 		if result == "" {
 			result = "(no output)"
 		}
+
+		if streamFileObj != nil {
+			event := map[string]interface{}{
+				"event": "step_update",
+				"step_update": map[string]interface{}{
+					"step_type": "tool",
+					"state": "DONE",
+					"tool_name": "run_command",
+					"tool_info": map[string]interface{}{
+						"parameters": map[string]interface{}{
+							"CommandLine": actualCommand,
+						},
+						"output": result,
+					},
+				},
+			}
+			jsonBytes, _ := json.Marshal(event)
+			streamFileObj.WriteString(string(jsonBytes) + "\n")
+			streamFileObj.Sync()
+		}
+
 		return result
 
 	default:
@@ -2108,7 +2214,7 @@ Start-Sleep -Seconds 2
 // executeGroqCommand sends a prompt to the Groq cloud API and returns the response.
 // It uses the fast llama3-70b-8192 model by default, but respects modelName if provided.
 // Supports up to 5 tool-calling iterations using OpenAI-compatible tool_calls format.
-func executeGroqCommand(command, apiKey, modelName string) (string, error) {
+func executeGroqCommand(command, apiKey, modelName string, streamFileObj *os.File) (string, error) {
 	if apiKey == "" {
 		return "", fmt.Errorf("Groq API key not set. Open the Voila dashboard → Settings to add your key")
 	}
@@ -2223,7 +2329,7 @@ func executeGroqCommand(command, apiKey, modelName string) (string, error) {
 		for _, tc := range choice.Message.ToolCalls {
 			debugLog.Printf("[executeGroqCommand] iter=%d executing tool=%q", iter, tc.Function.Name)
 			argsBytes, _ := json.Marshal(tc.Function.Arguments)
-			toolResult := executeTool(tc.Function.Name, json.RawMessage(argsBytes))
+			toolResult := executeTool(tc.Function.Name, json.RawMessage(argsBytes), streamFileObj)
 			debugLog.Printf("[executeGroqCommand] iter=%d tool=%q resultLen=%d", iter, tc.Function.Name, len(toolResult))
 			messages = append(messages, map[string]interface{}{
 				"role":         "tool",
@@ -2242,7 +2348,7 @@ func executeGroqCommand(command, apiKey, modelName string) (string, error) {
 // executeOllamaCommand sends a prompt to an Ollama-compatible endpoint.
 // Works for both local Ollama (http://localhost:11434) and Ollama Cloud (https://api.ollama.ai).
 // Supports up to 5 tool-calling iterations using the Ollama /api/chat tools field.
-func executeOllamaCommand(command, baseURL, modelName, apiKey string) (string, error) {
+func executeOllamaCommand(command, baseURL, modelName, apiKey string, streamFileObj *os.File) (string, error) {
 	if baseURL == "" || baseURL == "http://localhost:11434" {
 		if apiKey != "" {
 			baseURL = "https://ollama.com"
@@ -2346,7 +2452,7 @@ func executeOllamaCommand(command, baseURL, modelName, apiKey string) (string, e
 		for _, tc := range result.Message.ToolCalls {
 			debugLog.Printf("[executeOllamaCommand] iter=%d executing tool=%q", iter, tc.Function.Name)
 			argsBytes, _ := json.Marshal(tc.Function.Arguments)
-			toolResult := executeTool(tc.Function.Name, json.RawMessage(argsBytes))
+			toolResult := executeTool(tc.Function.Name, json.RawMessage(argsBytes), streamFileObj)
 			debugLog.Printf("[executeOllamaCommand] iter=%d tool=%q resultLen=%d", iter, tc.Function.Name, len(toolResult))
 			// Ollama tool result uses role "tool" same as OpenAI
 			messages = append(messages, map[string]interface{}{

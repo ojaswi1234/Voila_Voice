@@ -937,7 +937,8 @@ func handleWebhookResult(b *Backend) http.HandlerFunc {
 				b.writeMessage(clientID, websocket.TextMessage, []byte("ERROR: "+errorMsg))
 			} else {
 				summary := ""
-				if strings.ToLower(mode) == "agent" {
+				lowerMode := strings.ToLower(mode)
+				if lowerMode == "agent" || lowerMode == "local" || lowerMode == "groq" || lowerMode == "ollama" {
 					summary = output
 				} else {
 					summary = b.generateTaskSummary("Command", output)
