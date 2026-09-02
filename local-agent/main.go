@@ -2058,6 +2058,127 @@ var availableTools = []toolDef{
 			},
 		},
 	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "create_pdf",
+			Description: "Create a PDF file with text content.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"path":    map[string]interface{}{"type": "string", "description": "Absolute path to save the PDF"},
+					"content": map[string]interface{}{"type": "string", "description": "Text content of the PDF"},
+				},
+				"required": []string{"path", "content"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "read_pdf",
+			Description: "Extract text from a PDF file.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"path": map[string]interface{}{"type": "string", "description": "Absolute path of the PDF"},
+				},
+				"required": []string{"path"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "create_ppt",
+			Description: "Create a basic PowerPoint presentation.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"path":   map[string]interface{}{"type": "string", "description": "Absolute path to save PPTX"},
+					"title":  map[string]interface{}{"type": "string", "description": "Title of the presentation"},
+					"slides": map[string]interface{}{"type": "string", "description": "JSON array string of slides: [{\"title\":\"Slide 1\",\"content\":\"text\"}]"},
+				},
+				"required": []string{"path", "title", "slides"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "create_excel",
+			Description: "Create an Excel file from data.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"path": map[string]interface{}{"type": "string", "description": "Absolute path to save XLSX"},
+					"data": map[string]interface{}{"type": "string", "description": "JSON string of array of objects representing rows"},
+				},
+				"required": []string{"path", "data"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "modify_excel",
+			Description: "Modify specific cells in an existing Excel file.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"path":       map[string]interface{}{"type": "string", "description": "Absolute path of XLSX"},
+					"sheet_name": map[string]interface{}{"type": "string", "description": "Name of the sheet to modify (optional)"},
+					"updates":    map[string]interface{}{"type": "string", "description": "JSON string of cell-to-value map, e.g. {\"A1\":\"Revenue\"}"},
+				},
+				"required": []string{"path", "updates"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "read_excel",
+			Description: "Read an Excel file as text.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"path":       map[string]interface{}{"type": "string", "description": "Absolute path of XLSX"},
+					"sheet_name": map[string]interface{}{"type": "string", "description": "Name of the sheet to read (optional)"},
+				},
+				"required": []string{"path"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "create_csv",
+			Description: "Create a CSV file.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"path": map[string]interface{}{"type": "string", "description": "Absolute path to save CSV"},
+					"data": map[string]interface{}{"type": "string", "description": "JSON array of objects or raw CSV string"},
+				},
+				"required": []string{"path", "data"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "read_csv",
+			Description: "Read a CSV file.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"path": map[string]interface{}{"type": "string", "description": "Absolute path of CSV"},
+				},
+				"required": []string{"path"},
+			},
+		},
+	},
+
 }
 
 
@@ -2085,6 +2206,10 @@ func executeTool(toolName string, argsJSON json.RawMessage, streamFileObj *os.Fi
 			pseudoCommand = "ls " + getString("path")
 		case "web_search":
 			pseudoCommand = "search \"" + getString("query") + "\""
+		case "create_pdf", "create_ppt", "create_excel", "create_csv", "modify_excel":
+			pseudoCommand = "write_doc " + getString("path")
+		case "read_pdf", "read_excel", "read_csv":
+			pseudoCommand = "read_doc " + getString("path")
 		default:
 			pseudoCommand = toolName + " ..."
 		}
@@ -2136,6 +2261,35 @@ func executeTool(toolName string, argsJSON json.RawMessage, streamFileObj *os.Fi
 		return result
 	}
 	return executeToolInner(toolName, argsJSON, streamFileObj)
+}
+
+
+func callPythonDocumentTool(toolName string, argsJSON json.RawMessage) string {
+	exeDir, err := os.Executable()
+	if err != nil {
+		return "error: could not find executable directory"
+	}
+	scriptPath := filepath.Join(filepath.Dir(exeDir), "document_tools.py")
+	
+	payload := map[string]interface{}{
+		"action": toolName,
+	}
+	
+	var args map[string]interface{}
+	if err := json.Unmarshal(argsJSON, &args); err == nil {
+		payload["kwargs"] = args
+	}
+	
+	payloadBytes, _ := json.Marshal(payload)
+	
+	cmd := exec.Command("python", scriptPath)
+	cmd.Stdin = bytes.NewReader(payloadBytes)
+	outBytes, err := cmd.CombinedOutput()
+	
+	if err != nil {
+		return fmt.Sprintf("Error executing python script: %v\nOutput: %s", err, string(outBytes))
+	}
+	return strings.TrimSpace(string(outBytes))
 }
 
 func executeToolInner(toolName string, argsJSON json.RawMessage, streamFileObj *os.File) string {
@@ -2244,6 +2398,9 @@ func executeToolInner(toolName string, argsJSON json.RawMessage, streamFileObj *
 
 		return result
 
+
+	case "create_pdf", "read_pdf", "create_ppt", "create_excel", "modify_excel", "read_excel", "create_csv", "read_csv":
+		return callPythonDocumentTool(toolName, argsJSON)
 	default:
 		return "error: unknown tool: " + toolName
 	}
