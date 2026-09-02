@@ -776,14 +776,18 @@ func (b *Backend) forwardCommand(deviceID, command, mode, clientID, conversation
 	}
 
 	urlStr := address + "/execute"
-	// The desktop badge (LOCAL/GROQ/OLLAMA toggle) is the SINGLE source of truth for
-	// execution mode. The mobile app only sends "agent" or "shell", both of which we
-	// normalize to "" so the local agent uses its badge setting.
-	// Only explicit GROQ or OLLAMA from mobile are forwarded as overrides.
+	// Mode forwarding rules (preserve original design intent):
+	//   "agent" from mobile → "" (desktop badge decides the AI engine)
+	//   "shell" from mobile → "SHELL" (direct raw PowerShell, no AI, no visible terminal)
+	//   "groq" / "ollama"  → forwarded as explicit cloud AI override
 	modeUp := strings.ToUpper(mode)
 	forwardMode := ""
-	if modeUp == "GROQ" || modeUp == "OLLAMA" {
-		forwardMode = modeUp // honour explicit cloud executor selection
+	switch modeUp {
+	case "SHELL":
+		forwardMode = "SHELL"
+	case "GROQ", "OLLAMA":
+		forwardMode = modeUp
+	// "AGENT" and anything else → "" → local agent uses desktop badge
 	}
 	payload := map[string]string{"command": optimizedCommand, "mode": forwardMode, "client_id": clientID, "conversation_id": conversationID}
 	jsonPayload, _ := json.Marshal(payload)

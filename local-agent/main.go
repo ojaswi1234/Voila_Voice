@@ -1720,32 +1720,31 @@ func executeCommand(command string, mode string, conversationID string, modelNam
 		// Short preview of the user's command for the window title (max 60 chars)
 		encodedPreview := base64.StdEncoding.EncodeToString([]byte(preview))
 
-		wrapperPs := fmt.Sprintf(`
-$ErrorActionPreference = 'Continue'
+		wrapperPs := fmt.Sprintf(`$ErrorActionPreference = 'Continue'
 $host.UI.RawUI.WindowTitle = 'Voila AI Agent'
 Clear-Host
-Write-Host '╔══════════════════════════════════════════════╗' -ForegroundColor Cyan
-Write-Host '║   🤖  VOILA AI — LOCAL AGENT TERMINAL        ║' -ForegroundColor Cyan
-Write-Host '║   Gemini is thinking and executing...        ║' -ForegroundColor Cyan
-Write-Host '╚══════════════════════════════════════════════╝' -ForegroundColor Cyan
+Write-Host '================================================' -ForegroundColor Cyan
+Write-Host '   [AI] VOILA AI - LOCAL AGENT TERMINAL        ' -ForegroundColor Cyan
+Write-Host '   Gemini is thinking and executing...         ' -ForegroundColor Cyan
+Write-Host '================================================' -ForegroundColor Cyan
 Write-Host ''
 $preview = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('%s'))
-Write-Host '📋 Task: ' -NoNewline -ForegroundColor DarkGray
+Write-Host '[Task]: ' -NoNewline -ForegroundColor DarkGray
 Write-Host $preview -ForegroundColor White
 Write-Host ''
-Write-Host '──────────────────────────────────────────────' -ForegroundColor DarkGray
+Write-Host '------------------------------------------------' -ForegroundColor DarkGray
 Write-Host ''
 
 %s
 if ($LASTEXITCODE -ne $null) {
 	if ($LASTEXITCODE -eq 0) {
-		Write-Host '' ; Write-Host '✅ Agent finished successfully.' -ForegroundColor Green
+		Write-Host '' ; Write-Host '[OK] Agent finished successfully.' -ForegroundColor Green
 	} else {
-		Write-Host '' ; Write-Host "⚠️  Agent exited with code $LASTEXITCODE" -ForegroundColor Yellow
+		Write-Host '' ; Write-Host "[WARN] Agent exited with code $LASTEXITCODE" -ForegroundColor Yellow
 	}
 }
 Write-Host ''
-Write-Host '──────────────────────────────────────────────' -ForegroundColor DarkGray
+Write-Host '------------------------------------------------' -ForegroundColor DarkGray
 Write-Host 'Window closes in 4 seconds...' -ForegroundColor DarkGray
 Start-Sleep -Seconds 4
 `, encodedPreview, agyCmd+" 2>&1 | Tee-Object -FilePath '"+tmpFile+"'")
@@ -2053,12 +2052,11 @@ func executeTool(toolName string, argsJSON json.RawMessage) string {
 		tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("voila_out_%d.txt", time.Now().UnixNano()))
 		
 		// Wrapper script: shows banner, types command like a robot, executes it, and Tees output
-		wrapperPs := fmt.Sprintf(`
-$ErrorActionPreference = 'Continue'
-Write-Host '╔══════════════════════════════════════╗' -ForegroundColor Cyan
-Write-Host '║  🤖 VOILA AI - CLOUD TERMINAL         ║' -ForegroundColor Cyan
-Write-Host '║  Model executing command...           ║' -ForegroundColor Cyan
-Write-Host '╚══════════════════════════════════════╝' -ForegroundColor Cyan
+		wrapperPs := fmt.Sprintf(`$ErrorActionPreference = 'Continue'
+Write-Host '======================================' -ForegroundColor Cyan
+Write-Host '  [AI] VOILA AI - CLOUD TERMINAL      ' -ForegroundColor Cyan
+Write-Host '  Model executing command...           ' -ForegroundColor Cyan
+Write-Host '======================================' -ForegroundColor Cyan
 Write-Host ''
 
 $cmd = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('%s'))
@@ -2068,7 +2066,7 @@ foreach ($char in $cmd.ToCharArray()) {
     Start-Sleep -Milliseconds 15
 }
 Write-Host ''
-Write-Host '----------------------------------------' -ForegroundColor DarkGray
+Write-Host '--------------------------------------' -ForegroundColor DarkGray
 
 try {
     $sb = [scriptblock]::Create($cmd)
@@ -2077,7 +2075,7 @@ try {
     $_.Exception.Message | Tee-Object -FilePath '%s' -Append
 }
 
-Write-Host '----------------------------------------' -ForegroundColor DarkGray
+Write-Host '--------------------------------------' -ForegroundColor DarkGray
 Write-Host 'Execution complete. Closing in 2 seconds...' -ForegroundColor DarkGray
 Start-Sleep -Seconds 2
 `, encodedCmd, tmpFile, tmpFile)
