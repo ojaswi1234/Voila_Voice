@@ -341,6 +341,23 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
     }
   }
 
+  String _normalizeGenZSlang(String text) {
+    String t = text;
+    // Fix common speech-to-text misrecognitions for Gen Z slang
+    t = t.replaceAll(RegExp(r'\b(riz|ris|wrist)\b', caseSensitive: false), 'rizz');
+    t = t.replaceAll(RegExp(r'\b(skip itty|skipity|skibbidy)\b', caseSensitive: false), 'skibidi');
+    t = t.replaceAll(RegExp(r'\b(gabum|guy at|gyat)\b', caseSensitive: false), 'gyatt');
+    t = t.replaceAll(RegExp(r'\b(no cab|know cap)\b', caseSensitive: false), 'no cap');
+    t = t.replaceAll(RegExp(r'\b(busting)\b', caseSensitive: false), 'bussin');
+    t = t.replaceAll(RegExp(r'\b(sauce|soos)\b', caseSensitive: false), 'sus');
+    t = t.replaceAll(RegExp(r'\b(loki)\b', caseSensitive: false), 'lowkey');
+    t = t.replaceAll(RegExp(r'\b(sail is)\b', caseSensitive: false), 'say less');
+    t = t.replaceAll(RegExp(r'\b(cap in)\b', caseSensitive: false), 'cappin');
+    t = t.replaceAll(RegExp(r'\b(fin a)\b', caseSensitive: false), 'finna');
+    t = t.replaceAll(RegExp(r'\b(dead as)\b', caseSensitive: false), 'deadass');
+    return t;
+  }
+
   Future<void> _startListening() async {
     final hasPermission = await _requestMicrophonePermission();
     if (!hasPermission) {
@@ -356,7 +373,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
         onResult: (result) {
           if (result.finalResult) {
             setState(() {
-              _controller.text = result.recognizedWords;
+              _controller.text = _normalizeGenZSlang(result.recognizedWords);
               _isListening = false;
             });
             
@@ -367,7 +384,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
           } else {
             // Partial result - update text field live
             setState(() {
-              _controller.text = result.recognizedWords;
+              _controller.text = _normalizeGenZSlang(result.recognizedWords);
             });
           }
         },
