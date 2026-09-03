@@ -79,12 +79,60 @@ type Device struct {
 	CircuitOpen bool // Circuit breaker state
 }
 
+
+// --- FIREBASE-STYLE WORKER QUEUE FOR MESSAGE DELIVERY ---
+type DeliveryJob struct {
+	ClientID    string
+	MessageType int
+	Payload     []byte
+}
+
+type DeliveryDispatcher struct {
+	JobQueue chan DeliveryJob
+	quit     chan bool
+}
+
+func NewDeliveryDispatcher(maxWorkers, maxQueueSize int, backend *Backend) *DeliveryDispatcher {
+	dispatcher := &DeliveryDispatcher{
+		JobQueue: make(chan DeliveryJob, maxQueueSize),
+		quit:     make(chan bool),
+	}
+
+	for i := 0; i < maxWorkers; i++ {
+		go func(workerID int) {
+			for {
+				select {
+				case job := <-dispatcher.JobQueue:
+					err := backend.writeMessage(job.ClientID, job.MessageType, job.Payload)
+					if err != nil {
+						// log.Printf("[Worker %d] Failed to deliver to %s: %v", workerID, job.ClientID, err)
+					}
+				case <-dispatcher.quit:
+					return
+				}
+			}
+		}(i)
+	}
+	return dispatcher
+}
+
+func (d *DeliveryDispatcher) Dispatch(clientID string, msgType int, payload []byte) {
+	select {
+	case d.JobQueue <- DeliveryJob{ClientID: clientID, MessageType: msgType, Payload: payload}:
+		// Successfully queued
+	default:
+		log.Printf("[Worker Queue] Warning: Queue full, dropping message for %s", clientID)
+	}
+}
+// ---------------------------------------------------------
+
 type Backend struct {
 	devices      map[string]*Device
 	activeDevice string
 	tokenCounter int
 	mu           sync.RWMutex
 	clients      map[string]*WebSocketClient
+	dispatcher   *DeliveryDispatcher
 	ipRateLimits map[string]int // IP -> failures
 	// Bug #17 Fix: True circular ring buffer - no O(N) reallocation
 	securityAlerts    [maxAlerts]SecurityAlert
@@ -113,6 +161,7 @@ func NewBackend() *Backend {
 	// Start presence ticker
 	go b.startPresenceTicker()
 	
+	b.dispatcher = NewDeliveryDispatcher(20, 1000, b)
 	return b
 }
 
@@ -218,16 +267,10 @@ func (b *Backend) broadcastDevices() {
 	}
 	jsonData, _ := json.Marshal(deviceList)
 
-	// Send concurrently so one slow/blocked client doesn't stall the rest
-	var wg sync.WaitGroup
+	// Send concurrently using the Dispatch worker queue
 	for _, clientID := range clientIDs {
-		wg.Add(1)
-		go func(cid string) {
-			defer wg.Done()
-			b.writeMessage(cid, websocket.TextMessage, jsonData)
-		}(clientID)
+		b.dispatcher.Dispatch(clientID, websocket.TextMessage, jsonData)
 	}
-	wg.Wait()
 }
 
 func (b *Backend) tripCircuitBreaker(deviceID string) {
@@ -937,7 +980,7 @@ func handleWebhookResult(b *Backend) http.HandlerFunc {
 					// Client disconnected/reconnected (bottleneck fix). Broadcast to all connected clients!
 					b.mu.RLock()
 					for cID := range b.clients {
-						go b.writeMessage(cID, websocket.TextMessage, jsonResponse)
+						b.dispatcher.Dispatch(cID, websocket.TextMessage, jsonResponse)
 					}
 					b.mu.RUnlock()
 				}
@@ -946,7 +989,7 @@ func handleWebhookResult(b *Backend) http.HandlerFunc {
 				if err != nil {
 					b.mu.RLock()
 					for cID := range b.clients {
-						go b.writeMessage(cID, websocket.TextMessage, []byte("ERROR: "+errorMsg))
+						b.dispatcher.Dispatch(cID, websocket.TextMessage, []byte("ERROR: "+errorMsg))
 					}
 					b.mu.RUnlock()
 				}
@@ -975,7 +1018,7 @@ func handleWebhookResult(b *Backend) http.HandlerFunc {
 				if err != nil {
 					b.mu.RLock()
 					for cID := range b.clients {
-						go b.writeMessage(cID, websocket.TextMessage, jsonResponse)
+						b.dispatcher.Dispatch(cID, websocket.TextMessage, jsonResponse)
 					}
 					b.mu.RUnlock()
 				}
