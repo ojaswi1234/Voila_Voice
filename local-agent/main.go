@@ -1342,7 +1342,9 @@ func startHTTPServer() {
 		graphifyEnabled := getBool("graphify_enabled")
 		
 		if graphifyEnabled {
-		    command = "System Directive (Graphify Mode Enabled): Break down the user's task and execute it using a team of models if it requires multi-step reasoning or combining tools (web_research + automate_0). \n\nUser Task: " + command
+			fmt.Printf("STATUS: GRAPHIFY\n")
+			os.Stdout.Sync()
+		    command = "GRAPHIFY MULTI-MODEL TEAM PROTOCOL INITIATED.\n\nYou are an orchestration engine hosting a collaborative workspace for a team of expert AI models. You must simulate a strict back-and-forth chat between the models before giving the final answer.\n\nREQUIRED WORKFLOW:\n1. [Researcher]: Analyzes the 'what, when, where, and how' and proposes an initial approach.\n2. [Reviewer]: Critiques the Researcher, aggressively points out flaws, wrong choices, or edge cases.\n3. [Orchestrator]: Resolves the debate, improves the approach as a team, and decides which tools to call.\n4. Execute tools and finalize.\n\nOutput this exact debate transcript before you execute any tools. \n\nUser Task: " + command
 		}
 		
 		// Check circuit breaker before executing

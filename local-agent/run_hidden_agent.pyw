@@ -1261,6 +1261,14 @@ def animation_loop():
                 canvas.itemconfig(pill, outline='#ffff55')
                 canvas.itemconfig(eye_l, fill='#ffff55')
                 canvas.itemconfig(eye_r, fill='#ffff55')
+            elif ai_state == "GRAPHIFY":
+                canvas.itemconfig(status_text, text=f"Team Sync{dots}", fill='#e879f9')
+                canvas.itemconfig(pill, outline='#c026d3')
+                # Make the eyes look connected (wide)
+                canvas.coords(eye_l, sx+15, sy+28, sx+35, sy+38)
+                canvas.coords(eye_r, sx+45, sy+28, sx+65, sy+38)
+                canvas.itemconfig(eye_l, fill='#e879f9')
+                canvas.itemconfig(eye_r, fill='#e879f9')
             elif ai_state == "SEARCH":
                 canvas.itemconfig(status_text, text=f"Search{dots}", fill='#aaffff')
                 canvas.itemconfig(pill, outline='#00aaff')
@@ -1341,6 +1349,10 @@ def parse_line(line):
         return
 
     # ── Authoritative STATUS: protocol ──────────────────────────────────────
+    if "STATUS: GRAPHIFY" in line:
+        ai_state = "GRAPHIFY"
+        return
+        
     if "STATUS: MOBILE_CLIENTS:" in line:
         count_str = line.split("STATUS: MOBILE_CLIENTS:")[1].strip()
         try:
