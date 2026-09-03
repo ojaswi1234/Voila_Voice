@@ -116,6 +116,21 @@ MODE_COLORS = {"LOCAL": "#6366F1", "GROQ": "#10B981", "OLLAMA": "#F59E0B"}
 MODE_LABELS = {"LOCAL": "⚡LOCAL", "GROQ": "☁ GROQ", "OLLAMA": "🦙OLLAMA"}
 current_mode = "LOCAL"
 
+# Fetch saved mode from Go backend on startup
+def _fetch_saved_mode():
+    global current_mode
+    try:
+        import urllib.request, json
+        req = urllib.request.Request("http://localhost:8088/api-keys")
+        with urllib.request.urlopen(req, timeout=1) as resp:
+            data = json.loads(resp.read().decode())
+            if data.get("active_mode"):
+                current_mode = data["active_mode"]
+    except Exception:
+        pass
+    
+_fetch_saved_mode()
+
 def _set_voila_mode(mode):
     def _do():
         try:

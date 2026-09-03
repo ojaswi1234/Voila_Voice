@@ -256,6 +256,7 @@ type ConnectionData struct {
 	OllamaBaseURL string `json:"ollama_base_url,omitempty"` // e.g. https://api.ollama.ai
 	OllamaAPIKey  string `json:"ollama_api_key,omitempty"`  // optional auth
 	OllamaModel   string `json:"ollama_model,omitempty"`    // e.g. llama3.2:1b
+	ActiveMode    string `json:"active_mode,omitempty"`
 }
 
 // Model
@@ -1171,6 +1172,7 @@ func startHTTPServer() {
 				"ollama_api_key_masked": ollamaMasked,
 				"ollama_api_key_set":    fmt.Sprintf("%v", connData.OllamaAPIKey != ""),
 				"ollama_model":        connData.OllamaModel,
+				"active_mode":         connData.ActiveMode,
 			}
 			json.NewEncoder(w).Encode(resp)
 
@@ -1526,6 +1528,12 @@ func startHTTPServer() {
 		currentModeMu.Lock()
 		currentMode = mode
 		currentModeMu.Unlock()
+		
+		if connData, err := loadConnectionData(); err == nil {
+			connData.ActiveMode = mode
+			saveConnectionData(connData)
+		}
+		
 		log.Printf("Mode switched to %s via widget toggle", mode)
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(map[string]string{"mode": mode})
