@@ -1478,7 +1478,33 @@ def _draw_teams_section(dc, w, h):
     dc.create_text(82, 357, text='+ New Team', fill='white', font=('Segoe UI', 10, 'bold'), tags='btn_add_team')
     
     dc.create_rectangle(150, 340, 270, 375, fill='#374151', outline='', tags='btn_edit_team')
+    
+    # Make buttons interactive and clickable
+    def on_btn_click(e):
+        import tkinter.messagebox as messagebox
+        messagebox.showinfo("Feature in Development", "Graphify Multi-Model Team editing (drag-and-drop nodes, custom provider routing) will be unlocked in the next major update!")
+        
+    dc.tag_bind('btn_add_team', '<Enter>', lambda e: dc.config(cursor='hand2'))
+    dc.tag_bind('btn_add_team', '<Leave>', lambda e: dc.config(cursor=''))
+    dc.tag_bind('btn_add_team', '<Button-1>', on_btn_click)
+    
+    dc.tag_bind('btn_edit_team', '<Enter>', lambda e: dc.config(cursor='hand2'))
+    dc.tag_bind('btn_edit_team', '<Leave>', lambda e: dc.config(cursor=''))
+    dc.tag_bind('btn_edit_team', '<Button-1>', on_btn_click)
     dc.create_text(210, 357, text='Edit Models', fill='white', font=('Segoe UI', 10, 'bold'), tags='btn_edit_team')
+    
+    # Make buttons interactive and clickable
+    def on_btn_click(e):
+        import tkinter.messagebox as messagebox
+        messagebox.showinfo("Feature in Development", "Graphify Multi-Model Team editing (drag-and-drop nodes, custom provider routing) will be unlocked in the next major update!")
+        
+    dc.tag_bind('btn_add_team', '<Enter>', lambda e: dc.config(cursor='hand2'))
+    dc.tag_bind('btn_add_team', '<Leave>', lambda e: dc.config(cursor=''))
+    dc.tag_bind('btn_add_team', '<Button-1>', on_btn_click)
+    
+    dc.tag_bind('btn_edit_team', '<Enter>', lambda e: dc.config(cursor='hand2'))
+    dc.tag_bind('btn_edit_team', '<Leave>', lambda e: dc.config(cursor=''))
+    dc.tag_bind('btn_edit_team', '<Button-1>', on_btn_click)
 
 
 root.mainloop()
