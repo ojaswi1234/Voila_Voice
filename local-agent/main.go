@@ -2003,8 +2003,8 @@ var availableTools = []toolDef{
 	{
 		Type: "function",
 		Function: toolFuncDef{
-			Name:        "browser_action",
-			Description: "Control a headless browser to scrape web pages, click elements, or extract links.",
+			Name:        "automate_0",
+			Description: "Control a headless browser. Use this to interact with a page. For simple information lookup, prefer web_research to save tokens. They can be used together.",
 			Parameters: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -2020,8 +2020,8 @@ var availableTools = []toolDef{
 	{
 		Type: "function",
 		Function: toolFuncDef{
-			Name:        "web_search",
-			Description: "Search the web for up-to-date information on any topic.",
+			Name:        "web_research",
+			Description: "Search the web. Highly token-efficient for simple lookups. If a result requires deep scraping or interaction, you can follow up with automate_0.",
 			Parameters: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -2240,13 +2240,13 @@ func executeTool(toolName string, argsJSON json.RawMessage, streamFileObj *os.Fi
 			pseudoCommand = "echo '...' > " + getString("path")
 		case "list_dir":
 			pseudoCommand = "ls " + getString("path")
-		case "web_search":
+		case "web_research":
 			pseudoCommand = "search \"" + getString("query") + "\""
 		case "create_pdf", "create_ppt", "create_excel", "create_csv", "modify_excel":
 			pseudoCommand = "write_doc " + getString("path")
 		case "read_pdf", "read_excel", "read_csv":
 			pseudoCommand = "read_doc " + getString("path")
-		case "browser_action":
+		case "automate_0":
 			pseudoCommand = "browser " + getString("action") + " " + getString("url") + getString("selector")
 		default:
 			pseudoCommand = toolName + " ..."
@@ -2353,7 +2353,7 @@ func executeToolInner(toolName string, argsJSON json.RawMessage, streamFileObj *
 	}
 
 	switch toolName {
-	case "web_search":
+	case "web_research":
 		query := getString("query")
 		if query == "" {
 			return "error: query is required"
@@ -2446,7 +2446,7 @@ func executeToolInner(toolName string, argsJSON json.RawMessage, streamFileObj *
 
 	case "create_pdf", "read_pdf", "create_ppt", "create_excel", "modify_excel", "read_excel", "create_csv", "read_csv":
 		return callPythonDocumentTool(toolName, argsJSON)
-	case "browser_action":
+	case "automate_0":
 		action := getString("action")
 		url := getString("url")
 		selector := getString("selector")
