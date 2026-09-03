@@ -897,7 +897,7 @@ def _draw_analytics_section(dc, w, h):
     if usage_stats['commands_executed'] > 0:
         success_rate = int((usage_stats['commands_successful'] / usage_stats['commands_executed']) * 100)
     session_duration = int((time.time() - usage_stats['session_start']) / 60)
-    commands_per_min = usage_stats['commands_executed'] // max(session_duration, 1) if session_duration > 0 else 0
+    commands_per_min = int(usage_stats['commands_executed'] / max(0.1, (time.time() - usage_stats['session_start']) / 60.0))
 
     # Stats cards row
     card_w = (w - 35) // 3
@@ -929,15 +929,29 @@ def _draw_analytics_section(dc, w, h):
     # Draw timeline bars from actual data
     timeline_data = usage_stats.get('timeline_data', [])
     if not timeline_data:
-        # Generate sample data if empty
-        timeline_data = [random.randint(20, 100) for _ in range(20)]
+        timeline_data = [0] * 20
     
     bar_count = min(len(timeline_data), 20)
     bar_w = (w - 40) // 20
+    
+    # Scale: max expected latency around 5000ms
+    max_expected_ms = 5000.0
+    
     for i in range(bar_count):
         if i < len(timeline_data):
-            height = min(timeline_h - 20, max(20, timeline_data[i]))
-            color = '#10B981' if height > timeline_h * 0.5 else '#6366F1'
+            # Scale milliseconds to pixels (max height = timeline_h - 20)
+            ms = timeline_data[i]
+            scaled_height = (ms / max_expected_ms) * (timeline_h - 20)
+            height = min(timeline_h - 20, max(4, scaled_height))
+            
+            # Color logic: Low latency (< 1500) = Green, Med (< 3000) = Orange, High = Red
+            if ms < 1500:
+                color = '#10B981' # Green
+            elif ms < 3000:
+                color = '#F59E0B' # Orange
+            else:
+                color = '#EF4444' # Red
+                
             x = 20 + i * bar_w
             y = timeline_y + 20 + timeline_h - height
             dc.create_rectangle(x, y, x + bar_w - 2, timeline_y + 20 + timeline_h, fill=color, outline='')
@@ -981,7 +995,7 @@ def _draw_dashboard_section(dc, w, h):
     if usage_stats['commands_executed'] > 0:
         success_rate = int((usage_stats['commands_successful'] / usage_stats['commands_executed']) * 100)
     session_duration = int((time.time() - usage_stats['session_start']) / 60)
-    commands_per_min = usage_stats['commands_executed'] // max(session_duration, 1) if session_duration > 0 else 0
+    commands_per_min = int(usage_stats['commands_executed'] / max(0.1, (time.time() - usage_stats['session_start']) / 60.0))
 
     radar_y = 100
     radar_size = min(160, w // 2 - 30)
@@ -994,7 +1008,7 @@ def _draw_dashboard_section(dc, w, h):
         success_rate / 100.0,
         min(1.0, commands_per_min / 10.0),
         0.8, 0.9,
-        min(1.0, max(0, (100 - usage_stats['avg_latency_ms']) / 100.0)),
+        max(0.0, 1.0 - (usage_stats['avg_latency_ms'] / 5000.0)),
         0.85,
     ]
     num_axes = 6
