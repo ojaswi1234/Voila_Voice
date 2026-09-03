@@ -254,6 +254,7 @@ canvas.tag_bind(pill, '<Leave>', on_leave_pill)
 
 ai_state = "IDLE"
 mobile_clients = 0
+backend_status = 'Active'
 anim_frame = 0
 glow_timer = None
 
@@ -883,7 +884,8 @@ def _draw_connections_section(dc, w, h):
     dc.create_text(w - 24, 72, text=str(mobile_clients), fill='#6B7280', font=('Segoe UI', 12), anchor='e')
     dc.create_rectangle(10, 126, w - 10, 216, fill='#1A1D23', outline='#2A2D35')
     dc.create_text(24, 148, text='Backend Relay', fill='#888888', font=('Segoe UI', 9), anchor='w')
-    dc.create_text(24, 178, text='Active', fill='#10B981', font=('Segoe UI', 20, 'bold'), anchor='w')
+    backend_color = '#10B981' if backend_status == 'Active' else '#EF4444'
+    dc.create_text(24, 178, text=backend_status, fill=backend_color, font=('Segoe UI', 20, 'bold'), anchor='w')
     dc.create_text(w - 24, 178, text=f"{usage_stats['avg_latency_ms']}ms", fill='#6B7280', font=('Segoe UI', 12), anchor='e')
 
     # Cloud AI Mode
@@ -988,7 +990,8 @@ def _draw_dashboard_section(dc, w, h):
 
     dc.create_rectangle(card_w + 15, 10, card_w * 2 + 15, 10 + card_h, fill='#1A1D23', outline='#2A2D35')
     dc.create_text(card_w + 27, 28, text='Backend', fill='#888888', font=('Segoe UI', 8), anchor='w')
-    dc.create_text(card_w + 27, 52, text='Active', fill='#10B981', font=('Segoe UI', 16, 'bold'), anchor='w')
+    backend_color = '#10B981' if backend_status == 'Active' else '#EF4444'
+    dc.create_text(card_w + 27, 52, text=backend_status, fill=backend_color, font=('Segoe UI', 16, 'bold'), anchor='w')
     dc.create_text(card_w * 2 + 3, 52, text=f"{usage_stats['avg_latency_ms']}ms", fill='#6B7280', font=('Segoe UI', 10), anchor='e')
 
     success_rate = 0
@@ -1336,7 +1339,7 @@ def reset_to_idle():
         update_expression()
 
 def parse_line(line):
-    global ai_state, mobile_clients, glow_timer, current_mode
+    global ai_state, mobile_clients, glow_timer, current_mode, backend_status
 
     if not line.startswith("STATUS:"):
         # Non-STATUS lines: use keyword sniffing ONLY as a soft hint, not authoritative
@@ -1353,6 +1356,16 @@ def parse_line(line):
         ai_state = "GRAPHIFY"
         return
         
+
+    if "STATUS: BACKEND:ONLINE" in line:
+        backend_status = "Active"
+        if dashboard_active: refresh_dashboard_content()
+        return
+    if "STATUS: BACKEND:OFFLINE" in line:
+        backend_status = "Offline"
+        if dashboard_active: refresh_dashboard_content()
+        return
+    
     if "STATUS: MOBILE_CLIENTS:" in line:
         count_str = line.split("STATUS: MOBILE_CLIENTS:")[1].strip()
         try:

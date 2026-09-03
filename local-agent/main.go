@@ -3121,15 +3121,20 @@ func runBackgroundMode() {
 					resp.Body.Close()
 					
 					log.Printf("Presence: Backend OK, Mobile clients: %d", healthData.MobileClients)
+					fmt.Printf("STATUS: BACKEND:ONLINE\n")
 					fmt.Printf("STATUS: MOBILE_CLIENTS:%d\n", healthData.MobileClients)
 					os.Stdout.Sync() // Force flush for real-time delivery
 				} else {
 					log.Printf("Presence: Backend unreachable")
+					fmt.Printf("STATUS: BACKEND:OFFLINE\n")
 					fmt.Printf("STATUS: MOBILE_CLIENTS:0\n")
 					os.Stdout.Sync() // Force flush for real-time delivery
 				}
 			} else {
 				log.Printf("Presence: Backend unreachable")
+				fmt.Printf("STATUS: BACKEND:OFFLINE\n")
+				fmt.Printf("STATUS: MOBILE_CLIENTS:0\n")
+				os.Stdout.Sync()
 			}
 		}
 	}()
@@ -3366,15 +3371,20 @@ func main() {
 						resp.Body.Close()
 						
 						log.Printf("Presence: Backend OK, Mobile clients: %d", healthData.MobileClients)
+						fmt.Printf("STATUS: BACKEND:ONLINE\n")
 						fmt.Printf("STATUS: MOBILE_CLIENTS:%d\n", healthData.MobileClients)
 						os.Stdout.Sync() // Force flush for real-time delivery
 					} else {
-						log.Printf("Presence: Backend unreachable")
+						log.Printf("Presence: Backend unreachable or error: %v", err)
+						fmt.Printf("STATUS: BACKEND:OFFLINE\n")
 						fmt.Printf("STATUS: MOBILE_CLIENTS:0\n")
-						os.Stdout.Sync() // Force flush for real-time delivery
+						os.Stdout.Sync()
 					}
 				} else {
-					log.Printf("Presence: Backend unreachable")
+					log.Printf("Presence: Request creation failed: %v", err)
+					fmt.Printf("STATUS: BACKEND:OFFLINE\n")
+					fmt.Printf("STATUS: MOBILE_CLIENTS:0\n")
+					os.Stdout.Sync()
 				}
 			}
 		}()
