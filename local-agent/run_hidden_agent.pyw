@@ -1440,8 +1440,6 @@ root.after(50, _drain_line_queue)
 
 update_expression()
 animation_loop()
-root.mainloop()
-
 
 def _draw_teams_section(dc, w, h):
     # Header
@@ -1481,4 +1479,8 @@ def _draw_teams_section(dc, w, h):
     
     dc.create_rectangle(150, 340, 270, 375, fill='#374151', outline='', tags='btn_edit_team')
     dc.create_text(210, 357, text='Edit Models', fill='white', font=('Segoe UI', 10, 'bold'), tags='btn_edit_team')
+
+
+root.mainloop()
+
 
