@@ -1414,9 +1414,7 @@ func startHTTPServer() {
 				if m == "" {
 					m = "llama3-70b-8192"
 				}
-				_, f, cleanup := startTerminalViewer()
-				defer cleanup()
-				output, err = executeGroqCommand(ctx, command, connData.GroqAPIKey, m, f)
+				output, err = executeGroqCommand(ctx, command, connData.GroqAPIKey, m, nil)
 				fmt.Println("STATUS: IDLE")
 				os.Stdout.Sync()
 				newConvID = conversationID
@@ -1427,9 +1425,7 @@ func startHTTPServer() {
 				if ollamaModel == "" {
 					ollamaModel = "gemma4:31b"
 				}
-				_, f, cleanup := startTerminalViewer()
-				defer cleanup()
-				output, err = executeOllamaCommand(ctx, command, connData.OllamaBaseURL, ollamaModel, connData.OllamaAPIKey, f)
+				output, err = executeOllamaCommand(ctx, command, connData.OllamaBaseURL, ollamaModel, connData.OllamaAPIKey, nil)
 				fmt.Println("STATUS: IDLE")
 				os.Stdout.Sync()
 				newConvID = conversationID
@@ -1866,44 +1862,15 @@ func executeCommand(command string, mode string, conversationID string, modelNam
 		tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("voila_agent_%d.txt", time.Now().UnixNano()))
 		debugLog.Printf("[executeCommand/AGENT] tmpFile=%s", tmpFile)
 
-		// Short preview of the user's command for the window title (max 60 chars)
-		encodedPreview := base64.StdEncoding.EncodeToString([]byte(preview))
-
-		wrapperPs := fmt.Sprintf(`$ErrorActionPreference = 'Continue'
-$host.UI.RawUI.WindowTitle = 'Voila AI Agent'
-Clear-Host
-Write-Host '================================================' -ForegroundColor Cyan
-Write-Host '   [AI] VOILA AI - LOCAL AGENT TERMINAL        ' -ForegroundColor Cyan
-Write-Host '   Gemini is thinking and executing...         ' -ForegroundColor Cyan
-Write-Host '================================================' -ForegroundColor Cyan
-Write-Host ''
-$preview = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('%s'))
-Write-Host '[Task]: ' -NoNewline -ForegroundColor DarkGray
-Write-Host $preview -ForegroundColor White
-Write-Host ''
-Write-Host '------------------------------------------------' -ForegroundColor DarkGray
-Write-Host ''
-
-%s
-if ($LASTEXITCODE -ne $null) {
-	if ($LASTEXITCODE -eq 0) {
-		Write-Host '' ; Write-Host '[OK] Agent finished successfully.' -ForegroundColor Green
-	} else {
-		Write-Host '' ; Write-Host "[WARN] Agent exited with code $LASTEXITCODE" -ForegroundColor Yellow
-	}
-}
-Write-Host ''
-Write-Host '------------------------------------------------' -ForegroundColor DarkGray
-Write-Host 'Window closes in 4 seconds...' -ForegroundColor DarkGray
-Start-Sleep -Seconds 4
-`, encodedPreview, agyCmd+" 2>&1 | Tee-Object -FilePath '"+tmpFile+"'")
-
-		if cwd != "" {
-			wrapperPs = fmt.Sprintf("Set-Location '%s'\n", strings.ReplaceAll(cwd, "'", "''")) + wrapperPs
-		}
-
-		debugLog.Printf("[executeCommand/AGENT] wrapperPs length=%d bytes", len(wrapperPs))
-
+		// Output the chat header to the main server console so the user can see it
+		fmt.Println("================================================")
+		fmt.Println("   [AI] VOILA AI - LOCAL AGENT TERMINAL        ")
+		fmt.Println("   Gemini is thinking and executing...         ")
+		fmt.Println("================================================")
+		fmt.Println("")
+		fmt.Printf("[Task]: %s\n\n", preview)
+		fmt.Println("------------------------------------------------")
+		
 		fmt.Println("STATUS: RUNNING")
 		os.Stdout.Sync()
 
@@ -1911,13 +1878,10 @@ Start-Sleep -Seconds 4
 		currentConvID = conversationID
 		cmdMu.Unlock()
 
-		// runInNewConsole uses CREATE_NEW_CONSOLE (Windows API) — guaranteed visible
-		// window even from a headless parent process. No -NoExit needed; the script
-		// ends naturally after the 4-second sleep.
-		debugLog.Printf("[executeCommand/AGENT] calling runInNewConsole")
-		err := runInNewConsole(wrapperPs, tmpFile)
-		debugLog.Printf("[executeCommand/AGENT] runInNewConsole returned err=%v", err)
-
+		// Execute agy silently in the background
+		cmdObj := exec.Command("powershell", "-Command", agyCmd)
+		outBytes, _ := cmdObj.CombinedOutput()
+		
 		cmdMu.Lock()
 		currentConvID = ""
 		cmdMu.Unlock()
@@ -1925,9 +1889,13 @@ Start-Sleep -Seconds 4
 		fmt.Println("STATUS: IDLE")
 		os.Stdout.Sync()
 
-		outBytes, _ := os.ReadFile(tmpFile)
-		_ = os.Remove(tmpFile)
 		outStr := strings.TrimSpace(string(outBytes))
+		
+		// Print the agent's response to the main server terminal as well
+		fmt.Println(outStr)
+		fmt.Println("------------------------------------------------")
+		fmt.Println("[OK] Agent finished successfully.")
+		
 		debugLog.Printf("[executeCommand/AGENT] outStr length=%d bytes", len(outStr))
 		if outStr == "" {
 			outStr = "(no output)"
@@ -2456,10 +2424,25 @@ func executeToolInner(toolName string, argsJSON json.RawMessage, streamFileObj *
 
 		debugLog.Printf("[executeTool/run_terminal] actualCommand=%q", actualCommand)
 
+		// Create a visible PowerShell script for the terminal tool
+		psScript := fmt.Sprintf(`$ErrorActionPreference = 'Continue'
+$host.UI.RawUI.WindowTitle = 'Voila AI - Terminal Tool'
+Clear-Host
+Write-Host '╔══════════════════════════════════════╗' -ForegroundColor Cyan
+Write-Host '║  🤖 VOILA AI - CLOUD TERMINAL        ║' -ForegroundColor Cyan
+Write-Host '║  Executing command...                ║' -ForegroundColor Cyan
+Write-Host '╚══════════════════════════════════════╝' -ForegroundColor Cyan
+Write-Host ''
+%s
+Write-Host ''
+Write-Host '[Finished] Closing in 5 seconds...' -ForegroundColor DarkGray
+Start-Sleep -Seconds 5
+`, actualCommand)
 		
-
-		cmdObj := exec.Command("powershell", "-Command", actualCommand)
-		outBytes, err := cmdObj.CombinedOutput()
+		tmpOut := filepath.Join(os.TempDir(), fmt.Sprintf("voila_term_%d.txt", time.Now().UnixNano()))
+		_ = runInNewConsole(psScript, tmpOut)
+		outBytes, err := os.ReadFile(tmpOut)
+		os.Remove(tmpOut)
 		
 		result := strings.TrimSpace(string(outBytes))
 		if err != nil {

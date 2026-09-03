@@ -932,9 +932,24 @@ func handleWebhookResult(b *Backend) http.HandlerFunc {
 					"new_conversation_id": newConvID,
 				}
 				jsonResponse, _ := json.Marshal(response)
-				b.writeMessage(clientID, websocket.TextMessage, jsonResponse)
+				err := b.writeMessage(clientID, websocket.TextMessage, jsonResponse)
+				if err != nil {
+					// Client disconnected/reconnected (bottleneck fix). Broadcast to all connected clients!
+					b.mu.RLock()
+					for cID := range b.clients {
+						go b.writeMessage(cID, websocket.TextMessage, jsonResponse)
+					}
+					b.mu.RUnlock()
+				}
 			} else if errorMsg != "" {
-				b.writeMessage(clientID, websocket.TextMessage, []byte("ERROR: "+errorMsg))
+				err := b.writeMessage(clientID, websocket.TextMessage, []byte("ERROR: "+errorMsg))
+				if err != nil {
+					b.mu.RLock()
+					for cID := range b.clients {
+						go b.writeMessage(cID, websocket.TextMessage, []byte("ERROR: "+errorMsg))
+					}
+					b.mu.RUnlock()
+				}
 			} else {
 				summary := ""
 				lowerMode := strings.ToLower(mode)
@@ -956,7 +971,14 @@ func handleWebhookResult(b *Backend) http.HandlerFunc {
 					"new_conversation_id": newConvID,
 				}
 				jsonResponse, _ := json.Marshal(response)
-				b.writeMessage(clientID, websocket.TextMessage, jsonResponse)
+				err := b.writeMessage(clientID, websocket.TextMessage, jsonResponse)
+				if err != nil {
+					b.mu.RLock()
+					for cID := range b.clients {
+						go b.writeMessage(cID, websocket.TextMessage, jsonResponse)
+					}
+					b.mu.RUnlock()
+				}
 			}
 		}
 		w.WriteHeader(http.StatusOK)
