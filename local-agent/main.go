@@ -2395,6 +2395,7 @@ func executeGroqCommand(ctx context.Context, command, apiKey, modelName string, 
 	const maxIter = 5
 
 	for iter := 0; iter < maxIter; iter++ {
+		if ctx.Err() != nil { return "Canceled by user", nil }
 		debugLog.Printf("[executeGroqCommand] iter=%d messages=%d", iter, len(messages))
 		payload := map[string]interface{}{
 			"model":       modelName,
@@ -2410,7 +2411,7 @@ func executeGroqCommand(ctx context.Context, command, apiKey, modelName string, 
 			return "", fmt.Errorf("failed to build Groq request: %w", err)
 		}
 
-		req, err := http.NewRequest("POST", "https://api.groq.com/openai/v1/chat/completions", bytes.NewBuffer(body))
+		req, err := http.NewRequestWithContext(ctx, "POST", "https://api.groq.com/openai/v1/chat/completions", bytes.NewBuffer(body))
 		if err != nil {
 			return "", err
 		}
@@ -2537,6 +2538,7 @@ func executeOllamaCommand(ctx context.Context, command, baseURL, modelName, apiK
 	const maxIter = 5
 
 	for iter := 0; iter < maxIter; iter++ {
+		if ctx.Err() != nil { return "Canceled by user", nil }
 		debugLog.Printf("[executeOllamaCommand] iter=%d messages=%d", iter, len(messages))
 		payload := map[string]interface{}{
 			"model":    modelName,
@@ -2550,7 +2552,7 @@ func executeOllamaCommand(ctx context.Context, command, baseURL, modelName, apiK
 			return "", fmt.Errorf("failed to build Ollama request: %w", err)
 		}
 
-		req, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(body))
+		req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewBuffer(body))
 		if err != nil {
 			return "", err
 		}
