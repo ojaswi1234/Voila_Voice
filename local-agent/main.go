@@ -2425,21 +2425,62 @@ func executeToolInner(toolName string, argsJSON json.RawMessage, streamFileObj *
 		debugLog.Printf("[executeTool/run_terminal] actualCommand=%q", actualCommand)
 
 		// Create a visible PowerShell script for the terminal tool
+		// Safely encode the command for the typing animation
+		encodedCmd := base64.StdEncoding.EncodeToString([]byte(actualCommand))
+		tmpOut := filepath.Join(os.TempDir(), fmt.Sprintf("voila_term_%d.txt", time.Now().UnixNano()))
+
+		// Create a visible PowerShell script for the terminal tool with typing animation, 
+		// QuickEdit disabler (to prevent freezing), and Tee-Object output capturing
 		psScript := fmt.Sprintf(`$ErrorActionPreference = 'Continue'
 $host.UI.RawUI.WindowTitle = 'Voila AI - Terminal Tool'
 Clear-Host
-Write-Host '╔══════════════════════════════════════╗' -ForegroundColor Cyan
-Write-Host '║  🤖 VOILA AI - CLOUD TERMINAL        ║' -ForegroundColor Cyan
-Write-Host '║  Executing command...                ║' -ForegroundColor Cyan
-Write-Host '╚══════════════════════════════════════╝' -ForegroundColor Cyan
+
+# Disable QuickEdit Mode to prevent the terminal from freezing midway if clicked
+$qeCode = @"
+using System;
+using System.Runtime.InteropServices;
+public class QEDisabler {
+    [DllImport("kernel32.dll")] static extern IntPtr GetStdHandle(int nStdHandle);
+    [DllImport("kernel32.dll")] static extern bool GetConsoleMode(IntPtr hConsoleHandle, out uint lpMode);
+    [DllImport("kernel32.dll")] static extern bool SetConsoleMode(IntPtr hConsoleHandle, uint dwMode);
+    public static void Disable() {
+        IntPtr h = GetStdHandle(-10);
+        uint m;
+        if (GetConsoleMode(h, out m)) { SetConsoleMode(h, m & ~0x0040U); }
+    }
+}
+"@
+try { Add-Type -TypeDefinition $qeCode; [QEDisabler]::Disable() } catch {}
+
+Write-Host '================================================' -ForegroundColor Magenta
+Write-Host '          [AI] EXECUTING COMMAND' -ForegroundColor Cyan
+Write-Host '================================================' -ForegroundColor Magenta
 Write-Host ''
+
+# Typing Animation
+$cmdText = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('%s'))
+Write-Host 'PS> ' -NoNewline -ForegroundColor Green
+foreach ($char in $cmdText.ToCharArray()) {
+    Write-Host $char -NoNewline -ForegroundColor Yellow
+    Start-Sleep -Milliseconds 2
+}
+Write-Host ''
+Write-Host '------------------------------------------------' -ForegroundColor DarkGray
+
+# Execute and Capture
+try {
+    Invoke-Command -ScriptBlock {
 %s
+    } *>&1 | Tee-Object -FilePath '%s'
+} catch {
+    Write-Output $_.Exception.Message | Tee-Object -FilePath '%s' -Append
+}
+
 Write-Host ''
-Write-Host '[Finished] Closing in 5 seconds...' -ForegroundColor DarkGray
-Start-Sleep -Seconds 5
-`, actualCommand)
+Write-Host '[Finished] Closing in 4 seconds...' -ForegroundColor DarkGray
+Start-Sleep -Seconds 4
+`, encodedCmd, actualCommand, tmpOut, tmpOut)
 		
-		tmpOut := filepath.Join(os.TempDir(), fmt.Sprintf("voila_term_%d.txt", time.Now().UnixNano()))
 		_ = runInNewConsole(psScript, tmpOut)
 		outBytes, err := os.ReadFile(tmpOut)
 		os.Remove(tmpOut)
