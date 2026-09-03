@@ -114,6 +114,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   bool _isDataDeparting = false;
   bool _isDataArriving = false;
   bool _willTalk = true;
+  bool _graphifyEnabled = false;
   FlutterTts flutterTts = FlutterTts();
   String _activeDevice = '';
   bool _isConnected = false;
@@ -1009,6 +1010,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
         'session_token': _sessionToken,
         'command': _controller.text,
         'mode': _currentMode,
+        'graphify_enabled': _graphifyEnabled,
         'idempotency_key': const Uuid().v4(),
         'client_timestamp': DateTime.now().millisecondsSinceEpoch,
       };
@@ -1777,6 +1779,17 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                 contentPadding: EdgeInsets.zero,
                 onChanged: (bool value) {
                   setState(() => _willTalk = value);
+                  Navigator.pop(context);
+                },
+              ),
+              SwitchListTile(
+                title: const Text('Graphify Multi-Model Teams', style: TextStyle(fontSize: 14)),
+                subtitle: const Text('Chain models to save tokens & boost reasoning', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                value: _graphifyEnabled,
+                activeColor: const Color(0xFF7C6CFF),
+                contentPadding: EdgeInsets.zero,
+                onChanged: (bool value) {
+                  setState(() => _graphifyEnabled = value);
                   Navigator.pop(context);
                 },
               ),

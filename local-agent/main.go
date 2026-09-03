@@ -1315,14 +1315,33 @@ func startHTTPServer() {
 			return
 		}
 
-				var req map[string]string
+				var req map[string]interface{}
 		json.NewDecoder(r.Body).Decode(&req)
 
-		command := req["command"]
-		mode := req["mode"]
-		clientID := req["client_id"]
-		conversationID := req["conversation_id"]
-		modelName := req["model"]
+		getString := func(k string) string {
+			if v, ok := req[k].(string); ok {
+				return v
+			}
+			return ""
+		}
+		
+		getBool := func(k string) bool {
+			if v, ok := req[k].(bool); ok {
+				return v
+			}
+			return false
+		}
+
+		command := getString("command")
+		mode := getString("mode")
+		clientID := getString("client_id")
+		conversationID := getString("conversation_id")
+		modelName := getString("model")
+		graphifyEnabled := getBool("graphify_enabled")
+		
+		if graphifyEnabled {
+		    command = "System Directive (Graphify Mode Enabled): Break down the user's task and execute it using a team of models if it requires multi-step reasoning or combining tools (web_research + automate_0). \n\nUser Task: " + command
+		}
 		
 		// Check circuit breaker before executing
 		if isCircuitOpen() {

@@ -449,6 +449,7 @@ NAV_ITEMS = [
     ('Connections', 'Connect'),
     ('Analytics', 'Analytics'),
     ('Settings', 'Settings'),
+    ('Teams', 'Teams'),
 ]
 
 def _style_nav_button(section):
@@ -852,6 +853,8 @@ def refresh_dashboard_content():
     elif current_section == 'Settings':
         _show_settings_widgets()
         return  # Settings are all widgets, not canvas drawing
+    elif current_section == 'Teams':
+        _draw_teams_section(dash_canvas, w, h)
     else:
         dash_canvas.create_text(w // 2, h // 2 - 12, text=current_section, fill='#E5E7EB', font=('Segoe UI', 16, 'bold'))
         dash_canvas.create_text(w // 2, h // 2 + 16, text='Coming soon', fill='#6B7280', font=('Segoe UI', 11))
@@ -1423,3 +1426,47 @@ root.after(50, _drain_line_queue)
 update_expression()
 animation_loop()
 root.mainloop()
+
+
+def _draw_teams_section(dc, w, h):
+    # Header
+    dc.create_text(24, 30, text='Graphify Teams (Multi-Model Collaboration)', fill='#E5E7EB', font=('Segoe UI', 16, 'bold'), anchor='w')
+    dc.create_text(24, 55, text='Chain multiple models together to save tokens and handle complex workflows.', fill='#9CA3AF', font=('Segoe UI', 10), anchor='w')
+    
+    # Background Box
+    dc.create_rectangle(20, 80, w - 20, 320, fill='#1A1D23', outline='#374151', width=1, tags='team_box')
+    
+    # Timeline Visualizer
+    # Line
+    dc.create_line(60, 200, w - 60, 200, fill='#4F46E5', width=3, dash=(4,4))
+    
+    # Node 1: Researcher (Fast/Cheap)
+    dc.create_oval(60-20, 200-20, 60+20, 200+20, fill='#2563EB', outline='#60A5FA', width=2)
+    dc.create_text(60, 200, text='1', fill='white', font=('Segoe UI', 12, 'bold'))
+    dc.create_text(60, 165, text='Researcher', fill='#D1D5DB', font=('Segoe UI', 10, 'bold'))
+    dc.create_text(60, 235, text='llama3-8b
+(Ollama)', fill='#9CA3AF', font=('Segoe UI', 9), justify='center')
+    
+    # Node 2: Coder (Large Model)
+    mid_x = w // 2
+    dc.create_oval(mid_x-25, 200-25, mid_x+25, 200+25, fill='#7C3AED', outline='#A78BFA', width=2)
+    dc.create_text(mid_x, 200, text='2', fill='white', font=('Segoe UI', 14, 'bold'))
+    dc.create_text(mid_x, 160, text='Orchestrator', fill='#D1D5DB', font=('Segoe UI', 11, 'bold'))
+    dc.create_text(mid_x, 240, text='llama3-70b
+(Groq)', fill='#9CA3AF', font=('Segoe UI', 9), justify='center')
+    
+    # Node 3: Reviewer (Fast)
+    end_x = w - 60
+    dc.create_oval(end_x-20, 200-20, end_x+20, 200+20, fill='#10B981', outline='#34D399', width=2)
+    dc.create_text(end_x, 200, text='3', fill='white', font=('Segoe UI', 12, 'bold'))
+    dc.create_text(end_x, 165, text='Reviewer', fill='#D1D5DB', font=('Segoe UI', 10, 'bold'))
+    dc.create_text(end_x, 235, text='gemma-2b
+(Ollama)', fill='#9CA3AF', font=('Segoe UI', 9), justify='center')
+    
+    # Team config button placeholders (drawn as rects since we aren't using Tkinter buttons here for simplicity, though we could)
+    dc.create_rectangle(24, 340, 140, 375, fill='#4F46E5', outline='', tags='btn_add_team')
+    dc.create_text(82, 357, text='+ New Team', fill='white', font=('Segoe UI', 10, 'bold'), tags='btn_add_team')
+    
+    dc.create_rectangle(150, 340, 270, 375, fill='#374151', outline='', tags='btn_edit_team')
+    dc.create_text(210, 357, text='Edit Models', fill='white', font=('Segoe UI', 10, 'bold'), tags='btn_edit_team')
+
