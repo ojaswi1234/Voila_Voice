@@ -1444,24 +1444,21 @@ def _draw_teams_section(dc, w, h):
     dc.create_oval(60-20, 200-20, 60+20, 200+20, fill='#2563EB', outline='#60A5FA', width=2)
     dc.create_text(60, 200, text='1', fill='white', font=('Segoe UI', 12, 'bold'))
     dc.create_text(60, 165, text='Researcher', fill='#D1D5DB', font=('Segoe UI', 10, 'bold'))
-    dc.create_text(60, 235, text='llama3-8b
-(Ollama)', fill='#9CA3AF', font=('Segoe UI', 9), justify='center')
+    dc.create_text(60, 235, text='llama3-8b\n(Ollama)', fill='#9CA3AF', font=('Segoe UI', 9), justify='center')
     
     # Node 2: Coder (Large Model)
     mid_x = w // 2
     dc.create_oval(mid_x-25, 200-25, mid_x+25, 200+25, fill='#7C3AED', outline='#A78BFA', width=2)
     dc.create_text(mid_x, 200, text='2', fill='white', font=('Segoe UI', 14, 'bold'))
     dc.create_text(mid_x, 160, text='Orchestrator', fill='#D1D5DB', font=('Segoe UI', 11, 'bold'))
-    dc.create_text(mid_x, 240, text='llama3-70b
-(Groq)', fill='#9CA3AF', font=('Segoe UI', 9), justify='center')
+    dc.create_text(mid_x, 240, text='llama3-70b\n(Groq)', fill='#9CA3AF', font=('Segoe UI', 9), justify='center')
     
     # Node 3: Reviewer (Fast)
     end_x = w - 60
     dc.create_oval(end_x-20, 200-20, end_x+20, 200+20, fill='#10B981', outline='#34D399', width=2)
     dc.create_text(end_x, 200, text='3', fill='white', font=('Segoe UI', 12, 'bold'))
     dc.create_text(end_x, 165, text='Reviewer', fill='#D1D5DB', font=('Segoe UI', 10, 'bold'))
-    dc.create_text(end_x, 235, text='gemma-2b
-(Ollama)', fill='#9CA3AF', font=('Segoe UI', 9), justify='center')
+    dc.create_text(end_x, 235, text='gemma-2b\n(Ollama)', fill='#9CA3AF', font=('Segoe UI', 9), justify='center')
     
     # Team config button placeholders (drawn as rects since we aren't using Tkinter buttons here for simplicity, though we could)
     dc.create_rectangle(24, 340, 140, 375, fill='#4F46E5', outline='', tags='btn_add_team')

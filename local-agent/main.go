@@ -2023,7 +2023,7 @@ var availableTools = []toolDef{
 		Type: "function",
 		Function: toolFuncDef{
 			Name:        "automate_0",
-			Description: "Control a headless browser. Use this to interact with a page. For simple information lookup, prefer web_research to save tokens. They can be used together.",
+			Description: "Control a visible, headful browser. Use this to interact with a page. For simple information lookup, prefer web_research to save tokens. They can be used together.",
 			Parameters: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{

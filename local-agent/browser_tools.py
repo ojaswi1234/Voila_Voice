@@ -46,7 +46,7 @@ def _run_daemon():
     with sync_playwright() as p:
         # Connect with retry
         browser = None
-        for _ in range(20):
+        for _ in range(3):
             try:
                 browser = p.chromium.connect_over_cdp(CDP_URL)
                 break
@@ -54,7 +54,8 @@ def _run_daemon():
                 time.sleep(0.5)
 
         if not browser:
-            sys.exit(1)
+            # Fallback: Auto-launch a visible (headful) Edge browser to promote trust and transparency!
+            browser = p.chromium.launch(channel="msedge", headless=False)
 
         server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
