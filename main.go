@@ -231,7 +231,7 @@ func (b *Backend) broadcastSecurityAlert(alert SecurityAlert) {
 	})
 	
 	for clientID := range b.clients {
-		b.writeMessage(clientID, websocket.TextMessage, alertBytes)
+		b.dispatcher.Dispatch(clientID, websocket.TextMessage, alertBytes)
 	}
 }
 
@@ -975,24 +975,18 @@ func handleWebhookResult(b *Backend) http.HandlerFunc {
 					"new_conversation_id": newConvID,
 				}
 				jsonResponse, _ := json.Marshal(response)
-				err := b.writeMessage(clientID, websocket.TextMessage, jsonResponse)
-				if err != nil {
-					// Client disconnected/reconnected (bottleneck fix). Broadcast to all connected clients!
-					b.mu.RLock()
-					for cID := range b.clients {
-						b.dispatcher.Dispatch(cID, websocket.TextMessage, jsonResponse)
-					}
-					b.mu.RUnlock()
+				// Directly push to the FCM worker queue for all active clients (handles reconnections naturally)
+				b.mu.RLock()
+				for cID := range b.clients {
+					b.dispatcher.Dispatch(cID, websocket.TextMessage, jsonResponse)
 				}
+				b.mu.RUnlock()
 			} else if errorMsg != "" {
-				err := b.writeMessage(clientID, websocket.TextMessage, []byte("ERROR: "+errorMsg))
-				if err != nil {
-					b.mu.RLock()
-					for cID := range b.clients {
-						b.dispatcher.Dispatch(cID, websocket.TextMessage, []byte("ERROR: "+errorMsg))
-					}
-					b.mu.RUnlock()
+				b.mu.RLock()
+				for cID := range b.clients {
+					b.dispatcher.Dispatch(cID, websocket.TextMessage, []byte("ERROR: "+errorMsg))
 				}
+				b.mu.RUnlock()
 			} else {
 				summary := ""
 				lowerMode := strings.ToLower(mode)
@@ -1014,14 +1008,11 @@ func handleWebhookResult(b *Backend) http.HandlerFunc {
 					"new_conversation_id": newConvID,
 				}
 				jsonResponse, _ := json.Marshal(response)
-				err := b.writeMessage(clientID, websocket.TextMessage, jsonResponse)
-				if err != nil {
-					b.mu.RLock()
-					for cID := range b.clients {
-						b.dispatcher.Dispatch(cID, websocket.TextMessage, jsonResponse)
-					}
-					b.mu.RUnlock()
+				b.mu.RLock()
+				for cID := range b.clients {
+					b.dispatcher.Dispatch(cID, websocket.TextMessage, jsonResponse)
 				}
+				b.mu.RUnlock()
 			}
 		}
 		w.WriteHeader(http.StatusOK)
@@ -1097,7 +1088,7 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 
 			var msg map[string]interface{}
 			if err := json.Unmarshal(message, &msg); err != nil {
-				b.writeMessage(clientID, messageType, []byte("ERROR: Invalid message format"))
+				b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: Invalid message format"))
 				continue
 			}
 
@@ -1120,14 +1111,14 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				// For clear_all, if token is valid for ANY device, we might let it through, or require the phrase inside the msg as before.
 				// For now, if no token, fail. If command/lock and token invalid, fail.
 				if msgType != "clear_all_devices" && !verifySessionToken(sessionToken, targetDeviceID) {
-					b.writeMessage(clientID, messageType, []byte("ERROR: Unauthorized (missing, invalid, or expired session_token)"))
+					b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: Unauthorized (missing, invalid, or expired session_token)"))
 					continue
 				}
 			}
 
 			switch msgType {
 			case "ping":
-				b.writeMessage(clientID, messageType, []byte(`{"type":"pong"}`))
+				b.dispatcher.Dispatch(clientID, messageType, []byte(`{"type":"pong"}`))
 				continue
 			case "unlock":
 				phrase, _ := msg["security_phrase"].(string)
@@ -1136,7 +1127,7 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 					cID = clientID
 				}
 				if deviceID == "" {
-					b.writeMessage(clientID, messageType, []byte("ERROR: device_id required"))
+					b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: device_id required"))
 					continue
 				}
 
@@ -1145,7 +1136,7 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				if failures > 5 {
 					b.mu.Unlock()
 					b.addSecurityAlert("rate_limit", clientIP, deviceID, cID, "Unlock rate limit exceeded", "medium")
-					b.writeMessage(clientID, messageType, []byte("ERROR: Rate limited"))
+					b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: Rate limited"))
 					continue
 				}
 				device, exists := b.devices[deviceID]
@@ -1153,7 +1144,7 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 					b.ipRateLimits[clientIP]++
 					b.mu.Unlock()
 					b.addSecurityAlert("auth_fail", clientIP, deviceID, cID, "Unlock attempt on non-existent device", "medium")
-					b.writeMessage(clientID, messageType, []byte("ERROR: Invalid device"))
+					b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: Invalid device"))
 					continue
 				}
 				
@@ -1174,12 +1165,12 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 						"ttl_sec": ttlSec,
 					}
 					jResp, _ := json.Marshal(resp)
-					b.writeMessage(clientID, messageType, jResp)
+					b.dispatcher.Dispatch(clientID, messageType, jResp)
 				} else {
 					b.ipRateLimits[clientIP]++
 					b.mu.Unlock()
 					b.addSecurityAlert("auth_fail", clientIP, deviceID, cID, "Invalid security phrase", "high")
-					b.writeMessage(clientID, messageType, []byte("ERROR: Invalid security phrase"))
+					b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: Invalid security phrase"))
 				}
 
 			case "get_models":
@@ -1188,7 +1179,7 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 					if device != nil && device.Active {
 						deviceID = device.ID
 					} else {
-						b.writeMessage(clientID, messageType, []byte("ERROR: No active online desktop device"))
+						b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: No active online desktop device"))
 						continue
 					}
 				}
@@ -1198,7 +1189,7 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				b.mu.RUnlock()
 				
 				if !exists || !device.Active {
-					b.writeMessage(clientID, messageType, []byte("ERROR: device not found or offline"))
+					b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: device not found or offline"))
 					continue
 				}
 				
@@ -1206,14 +1197,14 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 					client := safeHTTPClient()
 					req, err := http.NewRequest("GET", addr+"/models", nil)
 					if err != nil {
-						b.writeMessage(cID, msgType, []byte("ERROR: Failed to create models request"))
+						b.dispatcher.Dispatch(cID, msgType, []byte("ERROR: Failed to create models request"))
 						return
 					}
 					req.Header.Set("X-Exec-Secret", hash)
 					
 					resp, err := client.Do(req)
 					if err != nil {
-						b.writeMessage(cID, msgType, []byte("ERROR: Failed to fetch models"))
+						b.dispatcher.Dispatch(cID, msgType, []byte("ERROR: Failed to fetch models"))
 						return
 					}
 					defer resp.Body.Close()
@@ -1226,9 +1217,9 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 								"models": models,
 							}
 							responseBytes, _ := json.Marshal(response)
-							b.writeMessage(cID, msgType, responseBytes)
+							b.dispatcher.Dispatch(cID, msgType, responseBytes)
 						} else {
-							b.writeMessage(cID, msgType, []byte("ERROR: Failed to parse models"))
+							b.dispatcher.Dispatch(cID, msgType, []byte("ERROR: Failed to parse models"))
 						}
 					}
 				}(deviceID, clientID, device.Address, device.SecurityPhraseHash, messageType)
@@ -1238,7 +1229,7 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 					if device != nil && device.Active {
 						deviceID = device.ID
 					} else {
-						b.writeMessage(clientID, messageType, []byte("ERROR: No active online desktop device"))
+						b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: No active online desktop device"))
 						continue
 					}
 				}
@@ -1248,7 +1239,7 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				b.mu.RUnlock()
 				
 				if !exists || !device.Active {
-					b.writeMessage(clientID, messageType, []byte("ERROR: device not found or offline"))
+					b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: device not found or offline"))
 					continue
 				}
 				
@@ -1268,11 +1259,11 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 								"data": json.RawMessage(body),
 							}
 							respJson, _ := json.Marshal(respObj)
-							b.writeMessage(cID, msgType, respJson)
+							b.dispatcher.Dispatch(cID, msgType, respJson)
 							return
 						}
 					}
-					b.writeMessage(cID, msgType, []byte("ERROR: failed to fetch conversations"))
+					b.dispatcher.Dispatch(cID, msgType, []byte("ERROR: failed to fetch conversations"))
 				}(deviceID, clientID, device.Address, device.SecurityPhraseHash, messageType)
 				
 			case "command":
@@ -1284,7 +1275,7 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 					if device != nil && device.Active {
 						deviceID = device.ID
 					} else {
-						b.writeMessage(clientID, messageType, []byte("ERROR: No active online desktop device"))
+						b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: No active online desktop device"))
 						continue
 					}
 				}
@@ -1296,19 +1287,19 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				b.mu.RUnlock()
 				
 				if !exists {
-					b.writeMessage(clientID, messageType, []byte("ERROR: device not found"))
+					b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: device not found"))
 					continue
 				}
 				if !isOnline {
-					b.writeMessage(clientID, messageType, []byte("ERROR: device offline"))
+					b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: device offline"))
 					continue
 				}
 				if circuitOpen {
-					b.writeMessage(clientID, messageType, []byte("ERROR: Circuit breaker open - device locked"))
+					b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: Circuit breaker open - device locked"))
 					continue
 				}
 				if b.isDeviceLocked(deviceID, clientID) {
-					b.writeMessage(clientID, messageType, []byte("ERROR: Device locked by another mobile device"))
+					b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: Device locked by another mobile device"))
 					continue
 				}
 				
@@ -1332,7 +1323,7 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 					go func(cmd string, mt int, cid string) {
 						time.Sleep(time.Duration(50 + time.Now().UnixNano()%250) * time.Millisecond) // 50-300ms delay
 						mockResp := b.generateMockResponse(cmd)
-						b.writeMessage(cid, mt, []byte(mockResp))
+						b.dispatcher.Dispatch(cid, mt, []byte(mockResp))
 					}(command, messageType, clientID)
 					continue
 				}
@@ -1345,7 +1336,7 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 					
 					if err != nil {
 						b.unlockDevice(dID, cID)
-						b.writeMessage(cID, msgType, []byte("ERROR: "+err.Error()))
+						b.dispatcher.Dispatch(cID, msgType, []byte("ERROR: "+err.Error()))
 						return
 					}
 					
@@ -1356,7 +1347,7 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 					}
 					
 					b.unlockDevice(dID, cID)
-					b.writeMessage(cID, msgType, []byte(result))
+					b.dispatcher.Dispatch(cID, msgType, []byte(result))
 				}(deviceID, command, mode, messageType, clientID, conversationID)
 				
 
@@ -1366,33 +1357,33 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				b.unlockDevice(deviceID, clientID)
 				
 				if err != nil {
-					b.writeMessage(clientID, messageType, []byte("ERROR: "+err.Error()))
+					b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: "+err.Error()))
 				} else {
-					b.writeMessage(clientID, messageType, []byte("OK: "+result))
+					b.dispatcher.Dispatch(clientID, messageType, []byte("OK: "+result))
 				}
 
 			case "switch_device":
 				err := b.setActiveDevice(deviceID)
 				if err != nil {
-					b.writeMessage(clientID, messageType, []byte("ERROR: "+err.Error()))
+					b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: "+err.Error()))
 				} else {
-					b.writeMessage(clientID, messageType, []byte("OK: Device switched"))
+					b.dispatcher.Dispatch(clientID, messageType, []byte("OK: Device switched"))
 				}
 				
 			case "lock_device":
 				err := b.lockDevice(deviceID, clientID)
 				if err != nil {
-					b.writeMessage(clientID, messageType, []byte("ERROR: "+err.Error()))
+					b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: "+err.Error()))
 				} else {
-					b.writeMessage(clientID, messageType, []byte("OK: Device locked"))
+					b.dispatcher.Dispatch(clientID, messageType, []byte("OK: Device locked"))
 				}
 				
 			case "unlock_device":
 				err := b.unlockDevice(deviceID, clientID)
 				if err != nil {
-					b.writeMessage(clientID, messageType, []byte("ERROR: "+err.Error()))
+					b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: "+err.Error()))
 				} else {
-					b.writeMessage(clientID, messageType, []byte("OK: Device unlocked"))
+					b.dispatcher.Dispatch(clientID, messageType, []byte("OK: Device unlocked"))
 				}
 				
 			case "get_devices":
@@ -1415,7 +1406,7 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 					})
 				}
 				jsonData, _ := json.Marshal(deviceList)
-				b.writeMessage(clientID, messageType, jsonData)
+				b.dispatcher.Dispatch(clientID, messageType, jsonData)
 				
 			case "get_stats":
 				b.mu.RLock()
@@ -1426,12 +1417,12 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				}
 				b.mu.RUnlock()
 				jsonData, _ := json.Marshal(stats)
-				b.writeMessage(clientID, messageType, jsonData)
+				b.dispatcher.Dispatch(clientID, messageType, jsonData)
 				
 			case "get_security_alerts":
 				// Require valid session token
 				if !verifySessionToken(sessionToken, deviceID) {
-					b.writeMessage(clientID, messageType, []byte("ERROR: Unauthorized"))
+					b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: Unauthorized"))
 					continue
 				}
 				
@@ -1447,12 +1438,12 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 					"type": "security_alerts_list",
 					"alerts": alertsCopy,
 				})
-				b.writeMessage(clientID, messageType, jsonData)
+				b.dispatcher.Dispatch(clientID, messageType, jsonData)
 				
 			case "circuit_reset":
 				// Require valid session token + security phrase re-check
 				if !verifySessionToken(sessionToken, deviceID) {
-					b.writeMessage(clientID, messageType, []byte("ERROR: Unauthorized"))
+					b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: Unauthorized"))
 					continue
 				}
 				
@@ -1462,7 +1453,7 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				b.mu.RUnlock()
 				
 				if !exists {
-					b.writeMessage(clientID, messageType, []byte("ERROR: Device not found"))
+					b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: Device not found"))
 					continue
 				}
 				
@@ -1471,12 +1462,12 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				
 				if expectedHash != "" && gotHash == expectedHash {
 					if b.resetCircuitBreaker(deviceID) {
-						b.writeMessage(clientID, messageType, []byte("OK: Circuit breaker reset"))
+						b.dispatcher.Dispatch(clientID, messageType, []byte("OK: Circuit breaker reset"))
 					} else {
-						b.writeMessage(clientID, messageType, []byte("OK: Circuit breaker already closed"))
+						b.dispatcher.Dispatch(clientID, messageType, []byte("OK: Circuit breaker already closed"))
 					}
 				} else {
-					b.writeMessage(clientID, messageType, []byte("ERROR: Invalid security phrase"))
+					b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: Invalid security phrase"))
 				}
 				
 			case "clear_all_devices":
@@ -1486,14 +1477,14 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				if err := json.Unmarshal(message, &req); err == nil {
 					phrase := strings.TrimSpace(req.SecurityPhrase)
 					if phrase == "" {
-						b.writeMessage(clientID, messageType, []byte("ERROR: Security phrase required"))
+						b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: Security phrase required"))
 						continue
 					}
 					
 					adminSecret := os.Getenv("CLEAR_DATA_SECRET")
 					if adminSecret != "" && phrase == adminSecret {
 						b.clearAllDevices()
-						b.writeMessage(clientID, messageType, []byte("OK: All devices cleared (admin)"))
+						b.dispatcher.Dispatch(clientID, messageType, []byte("OK: All devices cleared (admin)"))
 						continue
 					}
 					
@@ -1501,12 +1492,12 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 					failures := b.ipRateLimits[clientIP]
 					if failures > 5 {
 						b.mu.Unlock()
-						b.writeMessage(clientID, messageType, []byte("ERROR: Rate limited"))
+						b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: Rate limited"))
 						continue
 					}
 					if len(b.devices) == 0 {
 						b.mu.Unlock()
-						b.writeMessage(clientID, messageType, []byte("ERROR: No registered devices to verify phrase"))
+						b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: No registered devices to verify phrase"))
 						continue
 					}
 					
@@ -1521,15 +1512,15 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 						b.ipRateLimits[clientIP] = 0
 						b.mu.Unlock()
 						b.clearAllDevices()
-						b.writeMessage(clientID, messageType, []byte("OK: All devices cleared"))
+						b.dispatcher.Dispatch(clientID, messageType, []byte("OK: All devices cleared"))
 					} else {
 						b.ipRateLimits[clientIP]++
 						b.mu.Unlock()
-						b.writeMessage(clientID, messageType, []byte("ERROR: Invalid security phrase"))
+						b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: Invalid security phrase"))
 					}
 				}
 			default:
-				b.writeMessage(clientID, messageType, message)
+				b.dispatcher.Dispatch(clientID, messageType, message)
 			}
 		}
 		
