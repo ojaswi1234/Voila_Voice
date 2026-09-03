@@ -19,6 +19,7 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+	"syscall"
 	"sync"
 	"time"
 
@@ -1683,143 +1684,10 @@ func listConversationsHandler(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(conversations)
 	}
 }
-// runInNewConsole writes psScript to a temp .ps1 file and launches PowerShell
-// in a brand-new visible console window (CREATE_NEW_CONSOLE Windows API flag).
-// This works even when voila.exe itself has no console (headless/background).
-// It blocks until the window is closed and returns the content of outFile.
-func runInNewConsole(psScript, outFile string) error {
-	// Step 1: Write the PowerShell script to a temp .ps1 file
-	scriptFile := filepath.Join(os.TempDir(), fmt.Sprintf("voila_ps_%d.ps1", time.Now().UnixNano()))
-	if err := os.WriteFile(scriptFile, []byte(psScript), 0600); err != nil {
-		debugLog.Printf("[runInNewConsole] ERROR writing .ps1: %v", err)
-		return err
-	}
-	debugLog.Printf("[runInNewConsole] PS script: %s (%d bytes)", scriptFile, len(psScript))
-	defer os.Remove(scriptFile)
-
-	// Step 2: Write a tiny .bat launcher that calls PowerShell.
-	// .bat files opened via "cmd /c start" ALWAYS get their own new visible console
-	// window on Windows — completely independent of the parent process's console flags.
-	// This bypasses the CREATE_NO_WINDOW inheritance from Python's subprocess.Popen.
-	batContent := "@echo off\r\npowershell.exe -NoLogo -ExecutionPolicy Bypass -File \"" + scriptFile + "\"\r\n"
-	batFile := filepath.Join(os.TempDir(), fmt.Sprintf("voila_launch_%d.bat", time.Now().UnixNano()))
-	if err := os.WriteFile(batFile, []byte(batContent), 0600); err != nil {
-		debugLog.Printf("[runInNewConsole] ERROR writing .bat: %v", err)
-		return err
-	}
-	debugLog.Printf("[runInNewConsole] BAT launcher: %s", batFile)
-	defer os.Remove(batFile)
-
-	// Step 3: Launch. "start" with an empty title "" + "/wait" opens the .bat in a
-	// new visible cmd.exe window and blocks until the batch/PS finishes.
-	debugLog.Printf("[runInNewConsole] Launching: cmd /c start \"\" /wait %s", batFile)
-	cmd := exec.Command("cmd", "/c", "start", "", "/wait", batFile)
-	err := cmd.Run()
-	debugLog.Printf("[runInNewConsole] Launch finished, err=%v", err)
-	return err
-}
 
 
-func startTerminalViewer() (string, *os.File, func()) {
-	tmpStreamFile := filepath.Join(os.TempDir(), fmt.Sprintf("voila_stream_%d.jsonl", time.Now().UnixNano()))
-	os.WriteFile(tmpStreamFile, []byte{}, 0644)
 
-	viewerPs := fmt.Sprintf(`$ErrorActionPreference = 'Continue'
-$host.UI.RawUI.WindowTitle = 'Voila AI Agent'
-Clear-Host
 
-$streamFile = '%s'
-while (-not (Test-Path $streamFile)) { Start-Sleep -Milliseconds 100 }
-
-$reader = [System.IO.StreamReader]::new([System.IO.FileStream]::new($streamFile, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite))
-
-$promptColor = [ConsoleColor]::Green
-$cmdColor = [ConsoleColor]::Yellow
-$outColor = [ConsoleColor]::White
-
-while ($true) {
-    $line = $reader.ReadLine()
-    if ($null -eq $line) {
-        Start-Sleep -Milliseconds 100
-        continue
-    }
-    
-    if ($line -eq 'EOF') { break }
-    
-    if ($line -match '^{') {
-        try {
-            $data = $line | ConvertFrom-Json
-            if ($data.event -eq 'step_update' -and $data.step_update.step_type -eq 'tool') {
-                $state = $data.step_update.state.ToUpper()
-                $tool = $data.step_update.tool_name
-                
-                if ($state -eq 'RUNNING') {
-                    $cmd = ''
-                    if ($tool -eq 'run_command' -or $tool -eq 'run_terminal') {
-                        $cmd = $data.step_update.tool_info.parameters.CommandLine
-                    } elseif ($tool -eq 'list_dir') {
-                        $cmd = "ls " + $data.step_update.tool_info.parameters.DirectoryPath
-                    } elseif ($tool -eq 'view_file') {
-                        $cmd = "cat " + $data.step_update.tool_info.parameters.AbsolutePath
-                    } elseif ($tool -eq 'grep_search') {
-                        $cmd = "grep '" + $data.step_update.tool_info.parameters.Query + "' " + $data.step_update.tool_info.parameters.SearchPath
-                    } elseif ($tool -eq 'replace_file_content' -or $tool -eq 'write_to_file') {
-                        $cmd = "edit " + $data.step_update.tool_info.parameters.TargetFile
-                    } else {
-                        $cmd = "[Tool: $tool]"
-                    }
-                    
-                    $pwd = (Get-Location).Path
-                    Write-Host "PS $pwd> " -NoNewline -ForegroundColor $promptColor
-                    
-                    if ($null -ne $cmd) {
-                        foreach ($char in $cmd.ToCharArray()) {
-                            Write-Host $char -NoNewline -ForegroundColor $cmdColor
-                            Start-Sleep -Milliseconds 15
-                        }
-                    }
-                    Write-Host ''
-                }
-                
-                if ($state -eq 'DONE') {
-                    $out = $data.step_update.tool_info.output
-                    if ($null -ne $out -and $out -ne '') {
-                        if ($out.Length -gt 2000) {
-                            Write-Host $out.Substring(0, 2000) -ForegroundColor $outColor
-                            Write-Host '... (output truncated for display)' -ForegroundColor DarkGray
-                        } else {
-                            Write-Host $out -ForegroundColor $outColor
-                        }
-                    }
-                    Write-Host ''
-                }
-            }
-        } catch {}
-    }
-}
-$reader.Close()
-Write-Host 'Execution complete. Closing in 3 seconds...' -ForegroundColor DarkGray
-Start-Sleep -Seconds 3
-`, tmpStreamFile)
-
-	tmpViewerOut := filepath.Join(os.TempDir(), fmt.Sprintf("voila_viewer_out_%d.txt", time.Now().UnixNano()))
-	go func() {
-		_ = runInNewConsole(viewerPs, tmpViewerOut)
-		os.Remove(tmpViewerOut)
-		os.Remove(tmpStreamFile)
-	}()
-
-	f, _ := os.OpenFile(tmpStreamFile, os.O_APPEND|os.O_WRONLY, 0644)
-	
-	cleanup := func() {
-		if f != nil {
-			f.WriteString("EOF\n")
-			f.Close()
-		}
-	}
-
-	return tmpStreamFile, f, cleanup
-}
 
 func executeCommand(command string, mode string, conversationID string, modelName string) (string, string, error) {
 	var cmd *exec.Cmd
@@ -2424,64 +2292,21 @@ func executeToolInner(toolName string, argsJSON json.RawMessage, streamFileObj *
 
 		debugLog.Printf("[executeTool/run_terminal] actualCommand=%q", actualCommand)
 
-		// Create a visible PowerShell script for the terminal tool
-		// Safely encode the command for the typing animation
 		encodedCmd := base64.StdEncoding.EncodeToString([]byte(actualCommand))
 		tmpOut := filepath.Join(os.TempDir(), fmt.Sprintf("voila_term_%d.txt", time.Now().UnixNano()))
 
-		// Create a visible PowerShell script for the terminal tool with typing animation, 
-		// QuickEdit disabler (to prevent freezing), and Tee-Object output capturing
-		psScript := fmt.Sprintf(`$ErrorActionPreference = 'Continue'
-$host.UI.RawUI.WindowTitle = 'Voila AI - Terminal Tool'
-Clear-Host
-
-# Disable QuickEdit Mode to prevent the terminal from freezing midway if clicked
-$qeCode = @"
-using System;
-using System.Runtime.InteropServices;
-public class QEDisabler {
-    [DllImport("kernel32.dll")] static extern IntPtr GetStdHandle(int nStdHandle);
-    [DllImport("kernel32.dll")] static extern bool GetConsoleMode(IntPtr hConsoleHandle, out uint lpMode);
-    [DllImport("kernel32.dll")] static extern bool SetConsoleMode(IntPtr hConsoleHandle, uint dwMode);
-    public static void Disable() {
-        IntPtr h = GetStdHandle(-10);
-        uint m;
-        if (GetConsoleMode(h, out m)) { SetConsoleMode(h, m & ~0x0040U); }
-    }
-}
-"@
-try { Add-Type -TypeDefinition $qeCode; [QEDisabler]::Disable() } catch {}
-
-Write-Host '================================================' -ForegroundColor Magenta
-Write-Host '          [AI] EXECUTING COMMAND' -ForegroundColor Cyan
-Write-Host '================================================' -ForegroundColor Magenta
-Write-Host ''
-
-# Typing Animation
-$cmdText = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('%s'))
-Write-Host 'PS> ' -NoNewline -ForegroundColor Green
-foreach ($char in $cmdText.ToCharArray()) {
-    Write-Host $char -NoNewline -ForegroundColor Yellow
-    Start-Sleep -Milliseconds 2
-}
-Write-Host ''
-Write-Host '------------------------------------------------' -ForegroundColor DarkGray
-
-# Execute and Capture
-try {
-    Invoke-Command -ScriptBlock {
-%s
-    } *>&1 | Tee-Object -FilePath '%s'
-} catch {
-    Write-Output $_.Exception.Message | Tee-Object -FilePath '%s' -Append
-}
-
-Write-Host ''
-Write-Host '[Finished] Closing in 4 seconds...' -ForegroundColor DarkGray
-Start-Sleep -Seconds 4
-`, encodedCmd, actualCommand, tmpOut, tmpOut)
-		
-		_ = runInNewConsole(psScript, tmpOut)
+		exePath := filepath.Join(currentWorkingDir, "VoilaTerminal.exe")
+		if _, err := os.Stat(exePath); err == nil {
+			// Run the dedicated, lightning-fast C# terminal window
+			cmdObj := exec.Command(exePath, encodedCmd, tmpOut)
+			cmdObj.SysProcAttr = &syscall.SysProcAttr{CreationFlags: 0x00000010} // CREATE_NEW_CONSOLE
+			_ = cmdObj.Run()
+		} else {
+			// Fallback if the exe is somehow missing
+			debugLog.Printf("[executeTool/run_terminal] C# Terminal missing, fallback to shell")
+			cmdObj := exec.Command("cmd", "/c", "start", "/wait", "cmd", "/c", actualCommand+" > "+tmpOut)
+			_ = cmdObj.Run()
+		}
 		outBytes, err := os.ReadFile(tmpOut)
 		os.Remove(tmpOut)
 		
