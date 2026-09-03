@@ -2295,7 +2295,9 @@ func executeToolInner(toolName string, argsJSON json.RawMessage, streamFileObj *
 		encodedCmd := base64.StdEncoding.EncodeToString([]byte(actualCommand))
 		tmpOut := filepath.Join(os.TempDir(), fmt.Sprintf("voila_term_%d.txt", time.Now().UnixNano()))
 
-		exePath := filepath.Join(currentWorkingDir, "VoilaTerminal.exe")
+		exePathFull, _ := os.Executable()
+		exeDir := filepath.Dir(exePathFull)
+		exePath := filepath.Join(exeDir, "VoilaTerminal.exe")
 		if _, err := os.Stat(exePath); err == nil {
 			// Run the dedicated, lightning-fast C# terminal window
 			cmdObj := exec.Command(exePath, encodedCmd, tmpOut)
