@@ -2536,12 +2536,15 @@ CRITICAL: You are running inside a Windows PowerShell environment. You MUST use 
 - Use 'Get-ChildItem' or 'ls' (without bash flags like -la). Do NOT use 'ls -la'.
 - Use 'Select-String' or 'findstr', NOT 'grep'.
 - Use 'Get-Content' or 'cat' (no bash flags).
-- In PowerShell, 'where' is an alias for 'Where-Object' (used for filtering arrays). To find the path of an installed executable (like Unix 'which'), you MUST use 'where.exe <command>' or 'Get-Command <command>'.
-- The user has winget, choco, pip, and npm installed. You are HIGHLY ENCOURAGED to use these package managers to install dependencies, update tools, or scan for packages when needed.
+- In PowerShell, 'where' is an alias for 'Where-Object'. To find an executable path, use 'where.exe <command>' or 'Get-Command <command>'.
 - Paths use backslashes (\) on Windows.
 
-CRITICAL: When using the run_terminal tool, DO NOT issue multiple short commands. Write comprehensive, long-form PowerShell scripts that accomplish the entire goal in 1-2 steps. Use variables, loops, and conditional logic.
-You have a maximum of 8 tool iterations. Be highly efficient! Review your recent message history and reuse successful PowerShell commands if performing a similar task.`
+CRITICAL - DOCUMENT ANALYSIS: 
+If the user asks you to read, analyze, or process a PDF file, you MUST use the 'read_pdf' tool! Do NOT try to read PDFs using PowerShell's Get-Content, as they are binary files and it will fail. First find the file, then call 'read_pdf' on the absolute path.
+
+CRITICAL - TOOL EFFICENCY:
+When using run_terminal, DO NOT issue multiple short commands. Write comprehensive, long-form PowerShell scripts that accomplish the entire goal in 1-2 steps. Use variables, loops, and conditional logic.
+You have a maximum of 8 tool iterations. Be highly efficient! Review your message history and reuse successful commands if performing a similar task.`
 
 	// Maintain conversation as raw JSON-friendly messages
 	messages := []map[string]interface{}{
@@ -2708,12 +2711,15 @@ CRITICAL: You are running inside a Windows PowerShell environment. You MUST use 
 - Use 'Get-ChildItem' or 'ls' (without bash flags like -la). Do NOT use 'ls -la'.
 - Use 'Select-String' or 'findstr', NOT 'grep'.
 - Use 'Get-Content' or 'cat' (no bash flags).
-- In PowerShell, 'where' is an alias for 'Where-Object' (used for filtering arrays). To find the path of an installed executable (like Unix 'which'), you MUST use 'where.exe <command>' or 'Get-Command <command>'.
-- The user has winget, choco, pip, and npm installed. You are HIGHLY ENCOURAGED to use these package managers to install dependencies, update tools, or scan for packages when needed.
+- In PowerShell, 'where' is an alias for 'Where-Object'. To find an executable path, use 'where.exe <command>' or 'Get-Command <command>'.
 - Paths use backslashes (\) on Windows.
 
-CRITICAL: When using the run_terminal tool, DO NOT issue multiple short commands. Write comprehensive, long-form PowerShell scripts that accomplish the entire goal in 1-2 steps. Use variables, loops, and conditional logic.
-You have a maximum of 8 tool iterations. Be highly efficient! Review your recent message history and reuse successful PowerShell commands if performing a similar task.`
+CRITICAL - DOCUMENT ANALYSIS: 
+If the user asks you to read, analyze, or process a PDF file, you MUST use the 'read_pdf' tool! Do NOT try to read PDFs using PowerShell's Get-Content, as they are binary files and it will fail. First find the file, then call 'read_pdf' on the absolute path.
+
+CRITICAL - TOOL EFFICENCY:
+When using run_terminal, DO NOT issue multiple short commands. Write comprehensive, long-form PowerShell scripts that accomplish the entire goal in 1-2 steps. Use variables, loops, and conditional logic.
+You have a maximum of 8 tool iterations. Be highly efficient! Review your message history and reuse successful commands if performing a similar task.`
 
 	messages := []map[string]interface{}{
 		{"role": "system", "content": systemPrompt},
