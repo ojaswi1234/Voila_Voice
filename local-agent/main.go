@@ -2229,8 +2229,14 @@ Write-Host '================================================' -ForegroundColor M
 $cmdFile = '%s'
 $outFile = '%s'
 $doneFile = '%s'
+$parentPid = %d
 
 while ($true) {
+	if (-not (Get-Process -Id $parentPid -ErrorAction SilentlyContinue)) {
+		Write-Host "Parent process died. Closing terminal..." -ForegroundColor Red
+		Start-Sleep -Seconds 2
+		break
+	}
 	if (Test-Path $cmdFile) {
 		$b64 = Get-Content $cmdFile -Raw
 		if ($b64.Trim() -eq "EXIT") {
@@ -2268,7 +2274,7 @@ while ($true) {
 }
 Write-Host 'Session closing...' -ForegroundColor DarkGray
 Start-Sleep -Seconds 2
-`, terminalPidFile, terminalCmdFile, terminalOutFile, terminalDoneFile)
+`, terminalPidFile, terminalCmdFile, terminalOutFile, terminalDoneFile, os.Getpid())
 
 	os.WriteFile(psWrapperFile, []byte(psCode), 0644)
 
