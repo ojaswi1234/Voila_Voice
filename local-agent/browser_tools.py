@@ -1,4 +1,4 @@
-﻿"""
+"""
 browser_tools.py - Playwright CDP browser automation tool.
 
 Bug #11 Fix: The original script cold-booted Python + Playwright + a CDP WebSocket
@@ -108,7 +108,14 @@ def _get_page(browser):
     pages   = context.pages
     if not pages:
         return context.new_page()
-    page = pages[0]
+    # Filter out extension onboarding / installation tabs
+    filtered = [p for p in pages if not any(x in p.url for x in ["petasittek.com", "simplycodes.com", "edge://extensions"])]
+    if filtered:
+        # Prefer page with youtube if available or the last opened relevant page
+        yt_pages = [p for p in filtered if "youtube.com" in p.url]
+        page = yt_pages[-1] if yt_pages else filtered[-1]
+    else:
+        page = pages[-1]
     try:
         page.bring_to_front()
     except Exception:
@@ -183,6 +190,11 @@ def _handle_action(browser, args: dict) -> dict:
         page.screenshot(path=path)
         result["snapshot_path"] = os.path.abspath(path)
 
+    elif action == "eval":
+        val = args.get("value")
+        res = page.evaluate(val)
+        result["result"] = res
+
     else:
         raise ValueError(f"Unknown action: {action}")
 
@@ -234,7 +246,7 @@ def main():
     parser = argparse.ArgumentParser(description="Browser Automation Tool (persistent session)")
     parser.add_argument("--url",       type=str)
     parser.add_argument("--action",    type=str,
-                        choices=["goto", "click", "type", "scrape", "snapshot", "extract_links"],
+                        choices=["goto", "click", "type", "scrape", "snapshot", "extract_links", "eval"],
                         required=True)
     parser.add_argument("--selector",  type=str)
     parser.add_argument("--value",     type=str)
