@@ -40,7 +40,12 @@ var (
 	resilienceManager *ResilienceManager
 )
 
+var initialDir string
 var debugLog *log.Logger
+
+func init() {
+	initialDir, _ = os.Getwd()
+}
 
 func initDebugLog() {
 	logPath := filepath.Join(filepath.Dir(os.Args[0]), "voila_debug.log")
@@ -2299,8 +2304,13 @@ func executeToolInner(toolName string, argsJSON json.RawMessage, streamFileObj *
 
 		exePathFull, _ := os.Executable()
 		exeDir := filepath.Dir(exePathFull)
-		exePath := filepath.Join(exeDir, "VoilaTerminal.exe")
-		if _, err := os.Stat(exePath); err == nil {
+		exePath := filepath.Join(initialDir, "VoilaTerminal.exe")
+		if _, err := os.Stat(exePath); os.IsNotExist(err) {
+			exePath = filepath.Join(exeDir, "VoilaTerminal.exe")
+		}
+		_, errStat := os.Stat(exePath)
+		debugLog.Printf("[executeTool/run_terminal] Checking C# terminal at: %s (err=%v)", exePath, errStat)
+		if errStat == nil {
 			// Run the dedicated, lightning-fast C# terminal window
 			cmdObj := exec.Command(exePath, encodedCmd, tmpOut)
 			cmdObj.SysProcAttr = &syscall.SysProcAttr{CreationFlags: 0x00000010} // CREATE_NEW_CONSOLE
@@ -2536,7 +2546,7 @@ func executeOllamaCommand(ctx context.Context, command, baseURL, modelName, apiK
 		{"role": "user", "content": command},
 	}
 
-	client := &http.Client{Timeout: 120 * time.Second}
+	client := &http.Client{Timeout: 300 * time.Second}
 	const maxIter = 5
 
 	for iter := 0; iter < maxIter; iter++ {
