@@ -69,7 +69,7 @@ class VoiceCliApp extends StatelessWidget {
       title: 'Voice CLI',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        scaffoldBackgroundColor: const Color(0xFF0F0F12),
+        scaffoldBackgroundColor: Colors.transparent,
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF7C6CFF),
           primary: const Color(0xFF7C6CFF),
@@ -294,6 +294,13 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
           const SnackBar(content: Text('Speech recognition not available on this device')),
         );
       }
+    } else {
+      // AUTO-LISTEN TRIGGER ON LAUNCH
+      Future.delayed(const Duration(milliseconds: 600), () {
+        if (mounted) {
+           _toggleLiveSession();
+        }
+      });
     }
   }
 
@@ -1618,50 +1625,78 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
     
     return Scaffold(
       drawer: _buildDrawer(),
-      backgroundColor: const Color(0xFF0F0F12),
-      appBar: AppBar(
-        title: const Text(
-          'Voila Voice',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: -0.5),
-        ),
-        centerTitle: false,
-        elevation: 0,
-        actions: [
-          if (_currentMode.toUpperCase() == 'AGENT')
-            IconButton(
-              icon: Icon(Icons.auto_awesome, size: 22, color: _selectedModel.isNotEmpty ? colorScheme.secondary : colorScheme.onSurface.withOpacity(0.7)),
-              onPressed: _showModelSelector,
-            ),
-          GestureDetector(
-            onTap: () => _showDeviceSelector(context),
-            child: Container(
-              margin: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1A1A1F),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.white.withOpacity(0.1)),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.computer, size: 14, color: colorScheme.secondary),
-                  const SizedBox(width: 6),
-                  Text(
-                    _activeDevice.isEmpty ? 'Select Device' : (_devices[_activeDevice]?['name'] ?? 'Desktop'),
-                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-                  ),
-                  const SizedBox(width: 4),
-                  const Icon(Icons.keyboard_arrow_down, size: 14, color: Colors.white54),
-                ],
-              ),
-            ),
+      backgroundColor: Colors.transparent,
+      body: Align(
+        alignment: Alignment.bottomCenter,
+        child: Container(
+          height: MediaQuery.of(context).size.height * 0.75, // 75% modal
+          decoration: BoxDecoration(
+            color: const Color(0xFF0F0F12),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.8),
+                blurRadius: 30,
+                spreadRadius: 5,
+              )
+            ],
           ),
-          const SizedBox(width: 4),
-        ],
-      ),
-      body: Column(
-        children: [
+          child: Column(
+            children: [
+              // Custom Modal Header
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  border: Border(bottom: BorderSide(color: Colors.white.withOpacity(0.05))),
+                ),
+                child: Row(
+                  children: [
+                    Builder(
+                      builder: (BuildContext ctx) => IconButton(
+                        icon: const Icon(Icons.menu, size: 22),
+                        onPressed: () => Scaffold.of(ctx).openDrawer(),
+                      ),
+                    ),
+                    const Text(
+                      'Voila Voice',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: -0.5),
+                    ),
+                    const Spacer(),
+                    if (_currentMode.toUpperCase() == 'AGENT')
+                      IconButton(
+                        icon: Icon(Icons.auto_awesome, size: 22, color: _selectedModel.isNotEmpty ? colorScheme.secondary : colorScheme.onSurface.withOpacity(0.7)),
+                        onPressed: _showModelSelector,
+                      ),
+                    GestureDetector(
+                      onTap: () => _showDeviceSelector(context),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF1A1A1F),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: Colors.white.withOpacity(0.1)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.computer, size: 14, color: colorScheme.secondary),
+                            const SizedBox(width: 6),
+                            Text(
+                              _activeDevice.isEmpty ? 'Select Device' : (_devices[_activeDevice]?['name'] ?? 'Desktop'),
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                            ),
+                            const SizedBox(width: 4),
+                            const Icon(Icons.keyboard_arrow_down, size: 14, color: Colors.white54),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: Column(
+                  children: [
           ConnectionFlowchart(
             isBackendConnected: _isHealthy,
             isLocalAgentConnected: _localAgentConnected,
