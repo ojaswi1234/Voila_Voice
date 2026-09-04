@@ -2302,29 +2302,93 @@ func executeToolInner(toolName string, argsJSON json.RawMessage, streamFileObj *
 		encodedCmd := base64.StdEncoding.EncodeToString([]byte(actualCommand))
 		tmpOut := filepath.Join(os.TempDir(), fmt.Sprintf("voila_term_%d.txt", time.Now().UnixNano()))
 
-		exePathFull, _ := os.Executable()
-		exeDir := filepath.Dir(exePathFull)
-		exePath := filepath.Join(initialDir, "VoilaTerminal.exe")
-		if _, err := os.Stat(exePath); os.IsNotExist(err) {
-			exePath = filepath.Join(exeDir, "VoilaTerminal.exe")
-		}
-		_, errStat := os.Stat(exePath)
-		debugLog.Printf("[executeTool/run_terminal] Checking C# terminal at: %s (err=%v)", exePath, errStat)
-		if errStat == nil {
-			// Run the dedicated, lightning-fast C# terminal window
-			cmdObj := exec.Command(exePath, encodedCmd, tmpOut)
-			cmdObj.SysProcAttr = &syscall.SysProcAttr{CreationFlags: 0x00000010} // CREATE_NEW_CONSOLE
-			_ = cmdObj.Run()
-		} else {
-			// Fallback if the exe is somehow missing
-			debugLog.Printf("[executeTool/run_terminal] C# Terminal missing, fallback to shell")
-			cmdObj := exec.Command("cmd", "/c", "start", "/wait", "cmd", "/c", actualCommand+" > "+tmpOut)
-			_ = cmdObj.Run()
-		}
+		// Instead of C# parsing cmd.exe, we use a pristine native PowerShell wrapper script.
+		// This automates a REAL PowerShell console window with typing and captures all native streams.
+		psWrapperFile := filepath.Join(os.TempDir(), fmt.Sprintf("voila_wrapper_%d.ps1", time.Now().UnixNano()))
+		psWrapperCode := fmt.Sprintf(`$ErrorActionPreference = 'Continue'
+$host.UI.RawUI.WindowTitle = 'Voila AI - Native Terminal'
+Clear-Host
+Write-Host '================================================' -ForegroundColor Magenta
+Write-Host '          [AI] EXECUTING COMMAND' -ForegroundColor Cyan
+Write-Host '================================================' -ForegroundColor Magenta
+Write-Host ''
+
+# Disable QuickEdit to prevent freezing
+$qeCode = @"
+using System;
+using System.Runtime.InteropServices;
+public class QEDisabler {
+    [DllImport("kernel32.dll")] static extern IntPtr GetStdHandle(int nStdHandle);
+    [DllImport("kernel32.dll")] static extern bool GetConsoleMode(IntPtr hConsoleHandle, out uint lpMode);
+    [DllImport("kernel32.dll")] static extern bool SetConsoleMode(IntPtr hConsoleHandle, uint dwMode);
+    public static void Disable() {
+        IntPtr h = GetStdHandle(-10);
+        uint m;
+        if (GetConsoleMode(h, out m)) { SetConsoleMode(h, m & ~0x0040U); }
+    }
+}
+"@
+try { Add-Type -TypeDefinition $qeCode; [QEDisabler]::Disable() } catch {}
+
+# Decoding the command securely
+$b64 = '%s'
+$cmdText = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($b64))
+
+Write-Host 'PS> ' -NoNewline -ForegroundColor Green
+foreach ($char in $cmdText.ToCharArray()) {
+    Write-Host $char -NoNewline -ForegroundColor Yellow
+    Start-Sleep -Milliseconds 2
+}
+Write-Host ''
+Write-Host '------------------------------------------------' -ForegroundColor DarkGray
+
+# Start Transcript to capture native PS output
+Start-Transcript -Path '%s' -Append -Force | Out-Null
+
+try {
+    # Run securely in current scope
+    Invoke-Expression $cmdText
+} catch {
+    Write-Error $_
+}
+
+Stop-Transcript | Out-Null
+
+# Clean UI closing
+Write-Host '------------------------------------------------' -ForegroundColor DarkGray
+Write-Host '[Finished] Closing in 4 seconds...' -ForegroundColor DarkGray
+Start-Sleep -Seconds 4
+`, encodedCmd, tmpOut)
+		
+		os.WriteFile(psWrapperFile, []byte(psWrapperCode), 0644)
+		
+		debugLog.Printf("[executeTool/run_terminal] Launching Native PowerShell Wrapper")
+		cmdObj := exec.Command("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", psWrapperFile)
+		cmdObj.SysProcAttr = &syscall.SysProcAttr{CreationFlags: 0x00000010} // CREATE_NEW_CONSOLE
+		_ = cmdObj.Run()
+		os.Remove(psWrapperFile)
+
 		outBytes, err := os.ReadFile(tmpOut)
 		os.Remove(tmpOut)
 		
-		result := strings.TrimSpace(string(outBytes))
+		// Clean up PowerShell Transcript headers/footers
+		outStr := string(outBytes)
+		lines := strings.Split(outStr, "\n")
+		var cleanLines []string
+		inTranscriptHeader := false
+		for _, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if strings.HasPrefix(trimmed, "**********************") {
+				inTranscriptHeader = !inTranscriptHeader
+				continue
+			}
+			if inTranscriptHeader {
+				continue // skip all header/footer lines
+			}
+			cleanLines = append(cleanLines, trimmed)
+		}
+		
+		result := strings.TrimSpace(strings.Join(cleanLines, "\n"))
 		if err != nil {
 			result += "\n(Error: " + err.Error() + ")"
 		}
