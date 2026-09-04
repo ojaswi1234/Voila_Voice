@@ -1290,16 +1290,7 @@ func startHTTPServer() {
 		}
 	})
 	mux.HandleFunc("/execute", func(w http.ResponseWriter, r *http.Request) {
-		ctx, cancel := context.WithCancel(context.Background())
-		cmdMu.Lock()
-		currentCancel = cancel
-		cmdMu.Unlock()
-		defer func() {
-			cmdMu.Lock()
-			currentCancel = nil
-			cmdMu.Unlock()
-			cancel()
-		}()
+
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -1366,10 +1357,21 @@ func startHTTPServer() {
 			return
 		}
 		
+		ctx, cancel := context.WithCancel(context.Background())
+		cmdMu.Lock()
+		currentCancel = cancel
+		cmdMu.Unlock()
+
 		w.WriteHeader(http.StatusAccepted)
 		
 		go func() {
-			defer func() { <-execSemaphore }() // Release semaphore when done
+			defer func() {
+				<-execSemaphore // Release semaphore when done
+				cmdMu.Lock()
+				currentCancel = nil
+				cmdMu.Unlock()
+				cancel()
+			}()
 			wakeScreen()
 
 			var output string
