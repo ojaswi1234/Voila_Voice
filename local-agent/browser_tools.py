@@ -131,14 +131,26 @@ def _inject_ad_skipper(page):
                 if (!window._ytAdSkipperInjected) {
                     window._ytAdSkipperInjected = true;
                     setInterval(() => {
+                        // 1. Click skip buttons if they exist
                         const skipBtn = document.querySelector('.ytp-ad-skip-button-modern, .ytp-ad-skip-button, .ytp-skip-ad-button, .ytp-ad-skip-button-text');
                         if (skipBtn) {
                             skipBtn.click();
-                            console.log("Auto-skipped YouTube ad!");
                         }
+                        
+                        // 2. Click overlay banners
                         const overlayCloseBtn = document.querySelector('.ytp-ad-overlay-close-button');
                         if (overlayCloseBtn) {
                             overlayCloseBtn.click();
+                        }
+                        
+                        // 3. Ultimate unskippable ad killer: Fast forward the video if an ad is playing
+                        const isAdShowing = document.querySelector('.ad-showing, .ad-interrupting, .ytp-ad-player-overlay');
+                        const video = document.querySelector('video');
+                        if (isAdShowing && video && !isNaN(video.duration)) {
+                            video.currentTime = video.duration;
+                            // Sometimes setting currentTime isn't enough, we also need to click skip if it appears after fast forward
+                            const skipAfter = document.querySelector('.ytp-ad-skip-button-modern');
+                            if (skipAfter) skipAfter.click();
                         }
                     }, 500);
                 }
