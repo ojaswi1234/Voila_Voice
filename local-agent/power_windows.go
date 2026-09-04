@@ -4,6 +4,7 @@
 package main
 
 import (
+	"runtime"
 	"syscall"
 	"time"
 )
@@ -20,12 +21,18 @@ const (
 )
 
 func keepSystemAwake() {
-	procSetThreadExecutionState.Call(uintptr(esContinuous | esSystemRequired))
+	go func() {
+		// SetThreadExecutionState applies to the calling thread. 
+		// If the thread dies, Windows revokes the awake state.
+		// We lock this OS thread and keep it alive forever to prevent sleep.
+		runtime.LockOSThread()
+		procSetThreadExecutionState.Call(uintptr(esContinuous | esSystemRequired))
+		select {} // Block forever
+	}()
 }
 
 func wakeScreen() {
-	procSetThreadExecutionState.Call(uintptr(esContinuous | esSystemRequired | esDisplayRequired))
-	time.AfterFunc(2*time.Second, func() {
-		procSetThreadExecutionState.Call(uintptr(esContinuous | esSystemRequired))
-	})
+	// To merely wake the screen / reset the idle timer, we do NOT use esContinuous.
+	// Calling it without esContinuous simulates user activity instantly.
+	procSetThreadExecutionState.Call(uintptr(esSystemRequired | esDisplayRequired))
 }
