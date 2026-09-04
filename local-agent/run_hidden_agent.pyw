@@ -119,15 +119,20 @@ current_mode = "LOCAL"
 # Fetch saved mode from Go backend on startup
 def _fetch_saved_mode():
     global current_mode
-    try:
-        import urllib.request, json
-        req = urllib.request.Request("http://localhost:8088/api-keys")
-        with urllib.request.urlopen(req, timeout=1) as resp:
-            data = json.loads(resp.read().decode())
-            if data.get("active_mode"):
-                current_mode = data["active_mode"]
-    except Exception:
-        pass
+    import urllib.request, json, time, threading
+    def _do():
+        for _ in range(10): # retry for 5 seconds
+            try:
+                req = urllib.request.Request("http://localhost:8088/api-keys")
+                with urllib.request.urlopen(req, timeout=1) as resp:
+                    data = json.loads(resp.read().decode())
+                    if data.get("active_mode"):
+                        global current_mode
+                        current_mode = data["active_mode"]
+                    break # success, exit loop
+            except Exception:
+                time.sleep(0.5)
+    threading.Thread(target=_do, daemon=True).start()
     
 _fetch_saved_mode()
 

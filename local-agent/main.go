@@ -1090,6 +1090,12 @@ func startHTTPServer() {
 	if serverRunning {
 		return
 	}
+	// Restore saved mode
+	if connData, err := loadConnectionData(); err == nil && connData.ActiveMode != "" {
+		currentModeMu.Lock()
+		currentMode = connData.ActiveMode
+		currentModeMu.Unlock()
+	}
 
 	mux := http.NewServeMux()
 
@@ -1539,9 +1545,14 @@ func startHTTPServer() {
 			http.Error(w, "Invalid mode; must be LOCAL, GROQ, or OLLAMA", http.StatusBadRequest)
 			return
 		}
-		currentModeMu.Lock()
+				currentModeMu.Lock()
 		currentMode = mode
 		currentModeMu.Unlock()
+		
+		if connData, err := loadConnectionData(); err == nil {
+			connData.ActiveMode = mode
+			saveConnectionData(connData)
+		}
 		
 		if connData, err := loadConnectionData(); err == nil {
 			connData.ActiveMode = mode
