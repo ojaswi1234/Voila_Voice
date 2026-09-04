@@ -2305,30 +2305,15 @@ func executeToolInner(toolName string, argsJSON json.RawMessage, streamFileObj *
 		// Instead of C# parsing cmd.exe, we use a pristine native PowerShell wrapper script.
 		// This automates a REAL PowerShell console window with typing and captures all native streams.
 		psWrapperFile := filepath.Join(os.TempDir(), fmt.Sprintf("voila_wrapper_%d.ps1", time.Now().UnixNano()))
+		pidFile := filepath.Join(os.TempDir(), fmt.Sprintf("voila_pid_%d.txt", time.Now().UnixNano()))
 		psWrapperCode := fmt.Sprintf(`$ErrorActionPreference = 'Continue'
 $host.UI.RawUI.WindowTitle = 'Voila AI - Native Terminal'
+[System.IO.File]::WriteAllText('%s', $PID.ToString())
 Clear-Host
 Write-Host '================================================' -ForegroundColor Magenta
 Write-Host '          [AI] EXECUTING COMMAND' -ForegroundColor Cyan
 Write-Host '================================================' -ForegroundColor Magenta
 Write-Host ''
-
-# Disable QuickEdit to prevent freezing
-$qeCode = @"
-using System;
-using System.Runtime.InteropServices;
-public class QEDisabler {
-    [DllImport("kernel32.dll")] static extern IntPtr GetStdHandle(int nStdHandle);
-    [DllImport("kernel32.dll")] static extern bool GetConsoleMode(IntPtr hConsoleHandle, out uint lpMode);
-    [DllImport("kernel32.dll")] static extern bool SetConsoleMode(IntPtr hConsoleHandle, uint dwMode);
-    public static void Disable() {
-        IntPtr h = GetStdHandle(-10);
-        uint m;
-        if (GetConsoleMode(h, out m)) { SetConsoleMode(h, m & ~0x0040U); }
-    }
-}
-"@
-try { Add-Type -TypeDefinition $qeCode; [QEDisabler]::Disable() } catch {}
 
 # Decoding the command securely
 $b64 = '%s'
@@ -2358,14 +2343,50 @@ Stop-Transcript | Out-Null
 Write-Host '------------------------------------------------' -ForegroundColor DarkGray
 Write-Host '[Finished] Closing in 4 seconds...' -ForegroundColor DarkGray
 Start-Sleep -Seconds 4
-`, encodedCmd, tmpOut)
+`, pidFile, encodedCmd, tmpOut)
 		
 		os.WriteFile(psWrapperFile, []byte(psWrapperCode), 0644)
 		
-		debugLog.Printf("[executeTool/run_terminal] Launching Native PowerShell Wrapper")
-		cmdObj := exec.Command("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", psWrapperFile)
-		cmdObj.SysProcAttr = &syscall.SysProcAttr{CreationFlags: 0x00000010} // CREATE_NEW_CONSOLE
-		_ = cmdObj.Run()
+		debugLog.Printf("[executeTool/run_terminal] Launching Native PowerShell Wrapper via Windows Terminal")
+		
+		// 1. Try launching with Windows Terminal (wt)
+		cmdObj := exec.Command("wt", "-w", "new-window", "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", psWrapperFile)
+		errStart := cmdObj.Start()
+		
+		// 2. Fallback to standard console if wt is not installed
+		if errStart != nil {
+			debugLog.Printf("[executeTool/run_terminal] wt not found, falling back to standard powershell")
+			cmdObj = exec.Command("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", psWrapperFile)
+			cmdObj.SysProcAttr = &syscall.SysProcAttr{CreationFlags: 0x00000010} // CREATE_NEW_CONSOLE
+			cmdObj.Start()
+		}
+
+		// Wait for PID file to be created (timeout 10s)
+		var targetPid string
+		for i := 0; i < 20; i++ {
+			if b, err := os.ReadFile(pidFile); err == nil && len(b) > 0 {
+				targetPid = strings.TrimSpace(string(b))
+				break
+			}
+			time.Sleep(500 * time.Millisecond)
+		}
+		os.Remove(pidFile)
+
+		// Wait for the powershell process to exit (timeout 5 mins)
+		if targetPid != "" {
+			debugLog.Printf("[executeTool/run_terminal] Monitoring PS PID: %s", targetPid)
+			for i := 0; i < 300; i++ {
+				out, err := exec.Command("tasklist", "/FI", "PID eq "+targetPid, "/NH").Output()
+				if err != nil || !strings.Contains(string(out), targetPid) {
+					break // Process is gone
+				}
+				time.Sleep(1 * time.Second)
+			}
+		} else {
+			debugLog.Printf("[executeTool/run_terminal] Failed to get PID, falling back to static wait")
+			time.Sleep(5 * time.Second)
+		}
+
 		os.Remove(psWrapperFile)
 
 		outBytes, err := os.ReadFile(tmpOut)
@@ -2389,6 +2410,8 @@ Start-Sleep -Seconds 4
 		}
 		
 		result := strings.TrimSpace(strings.Join(cleanLines, "\n"))
+		debugLog.Printf("[executeTool/run_terminal] raw outBytes len=%d", len(outBytes))
+		debugLog.Printf("[executeTool/run_terminal] result:\n%s", result)
 		if err != nil {
 			result += "\n(Error: " + err.Error() + ")"
 		}
