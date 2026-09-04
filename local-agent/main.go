@@ -2389,6 +2389,8 @@ func executeToolInner(toolName string, argsJSON json.RawMessage, streamFileObj *
 
 	case "run_terminal":
 		actualCommand := getString("command")
+		// Fix LLM JSON escaping hallucinations where it outputs \" instead of "
+		actualCommand = strings.ReplaceAll(actualCommand, "\\\"", "\"")
 
 		if actualCommand == "" {
 			return "error: command is required"
