@@ -29,6 +29,14 @@ import (
 
 // Styles
 var (
+	terminalSessionMu sync.Mutex
+	terminalCmdFile   = filepath.Join(os.TempDir(), "voila_ipc_cmd.txt")
+	terminalOutFile   = filepath.Join(os.TempDir(), "voila_ipc_out.txt")
+	terminalDoneFile  = filepath.Join(os.TempDir(), "voila_ipc_done.txt")
+	terminalPidFile   = filepath.Join(os.TempDir(), "voila_ipc_pid.txt")
+	terminalActive    = false
+	terminalPid       = ""
+
 	cmdMu      sync.Mutex
 	currentCmd *exec.Cmd
 	currentConvID string
@@ -2202,6 +2210,95 @@ func callPythonDocumentTool(toolName string, argsJSON json.RawMessage) string {
 	return strings.TrimSpace(string(outBytes))
 }
 
+
+func startTerminalSession() {
+	os.Remove(terminalCmdFile)
+	os.Remove(terminalOutFile)
+	os.Remove(terminalDoneFile)
+	os.Remove(terminalPidFile)
+
+	psWrapperFile := filepath.Join(os.TempDir(), "voila_ipc_server.ps1")
+	psCode := fmt.Sprintf(`$ErrorActionPreference = 'Continue'
+$host.UI.RawUI.WindowTitle = 'Voila AI - Agent Session'
+[System.IO.File]::WriteAllText('%s', $PID.ToString())
+Clear-Host
+Write-Host '================================================' -ForegroundColor Magenta
+Write-Host '          [AI] PERSISTENT SESSION ACTIVE' -ForegroundColor Cyan
+Write-Host '================================================' -ForegroundColor Magenta
+
+$cmdFile = '%s'
+$outFile = '%s'
+$doneFile = '%s'
+
+while ($true) {
+	if (Test-Path $cmdFile) {
+		$b64 = Get-Content $cmdFile -Raw
+		if ($b64.Trim() -eq "EXIT") {
+			break
+		}
+		$cmdText = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($b64))
+
+		Write-Host ''
+		Write-Host 'PS> ' -NoNewline -ForegroundColor Green
+		foreach ($char in $cmdText.ToCharArray()) {
+			Write-Host $char -NoNewline -ForegroundColor Yellow
+			Start-Sleep -Milliseconds 2
+		}
+		Write-Host ''
+		Write-Host '------------------------------------------------' -ForegroundColor DarkGray
+
+		if (Test-Path $outFile) { Remove-Item $outFile -Force }
+		Start-Transcript -Path $outFile -Append -Force | Out-Null
+		try {
+			Invoke-Expression $cmdText
+		} catch {
+			Write-Error $_
+		}
+		Stop-Transcript | Out-Null
+		
+		Write-Host '------------------------------------------------' -ForegroundColor DarkGray
+		"DONE" | Out-File -FilePath $doneFile -Encoding ASCII
+
+		while (Test-Path $cmdFile) {
+			Start-Sleep -Milliseconds 100
+		}
+	} else {
+		Start-Sleep -Milliseconds 200
+	}
+}
+Write-Host 'Session closing...' -ForegroundColor DarkGray
+Start-Sleep -Seconds 2
+`, terminalPidFile, terminalCmdFile, terminalOutFile, terminalDoneFile)
+
+	os.WriteFile(psWrapperFile, []byte(psCode), 0644)
+
+	cmdObj := exec.Command("wt", "-w", "new-window", "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", psWrapperFile)
+	errStart := cmdObj.Start()
+	if errStart != nil {
+		cmdObj = exec.Command("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", psWrapperFile)
+		cmdObj.SysProcAttr = &syscall.SysProcAttr{CreationFlags: 0x00000010}
+		cmdObj.Start()
+	}
+
+	for i := 0; i < 20; i++ {
+		if b, err := os.ReadFile(terminalPidFile); err == nil && len(b) > 0 {
+			terminalPid = strings.TrimSpace(string(b))
+			terminalActive = true
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
+func cleanupTerminalSession() {
+	terminalSessionMu.Lock()
+	defer terminalSessionMu.Unlock()
+	if terminalActive {
+		os.WriteFile(terminalCmdFile, []byte("EXIT"), 0644)
+		terminalActive = false
+		terminalPid = ""
+	}
+}
 func executeToolInner(toolName string, argsJSON json.RawMessage, streamFileObj *os.File) string {
 	// Emit status so Python face knows which tool is running
 	fmt.Printf("STATUS: TOOL:%s\n", toolName)
@@ -2300,97 +2397,46 @@ func executeToolInner(toolName string, argsJSON json.RawMessage, streamFileObj *
 		debugLog.Printf("[executeTool/run_terminal] actualCommand=%q", actualCommand)
 
 		encodedCmd := base64.StdEncoding.EncodeToString([]byte(actualCommand))
-		tmpOut := filepath.Join(os.TempDir(), fmt.Sprintf("voila_term_%d.txt", time.Now().UnixNano()))
+		// tmpOut no longer needed due to IPC
 
-		// Instead of C# parsing cmd.exe, we use a pristine native PowerShell wrapper script.
-		// This automates a REAL PowerShell console window with typing and captures all native streams.
-		psWrapperFile := filepath.Join(os.TempDir(), fmt.Sprintf("voila_wrapper_%d.ps1", time.Now().UnixNano()))
-		pidFile := filepath.Join(os.TempDir(), fmt.Sprintf("voila_pid_%d.txt", time.Now().UnixNano()))
-		psWrapperCode := fmt.Sprintf(`$ErrorActionPreference = 'Continue'
-$host.UI.RawUI.WindowTitle = 'Voila AI - Native Terminal'
-[System.IO.File]::WriteAllText('%s', $PID.ToString())
-Clear-Host
-Write-Host '================================================' -ForegroundColor Magenta
-Write-Host '          [AI] EXECUTING COMMAND' -ForegroundColor Cyan
-Write-Host '================================================' -ForegroundColor Magenta
-Write-Host ''
-
-# Decoding the command securely
-$b64 = '%s'
-$cmdText = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($b64))
-
-Write-Host 'PS> ' -NoNewline -ForegroundColor Green
-foreach ($char in $cmdText.ToCharArray()) {
-    Write-Host $char -NoNewline -ForegroundColor Yellow
-    Start-Sleep -Milliseconds 2
-}
-Write-Host ''
-Write-Host '------------------------------------------------' -ForegroundColor DarkGray
-
-# Start Transcript to capture native PS output
-Start-Transcript -Path '%s' -Append -Force | Out-Null
-
-try {
-    # Run securely in current scope
-    Invoke-Expression $cmdText
-} catch {
-    Write-Error $_
-}
-
-Stop-Transcript | Out-Null
-
-# Clean UI closing
-Write-Host '------------------------------------------------' -ForegroundColor DarkGray
-Write-Host '[Finished] Closing in 4 seconds...' -ForegroundColor DarkGray
-Start-Sleep -Seconds 4
-`, pidFile, encodedCmd, tmpOut)
+		terminalSessionMu.Lock()
 		
-		os.WriteFile(psWrapperFile, []byte(psWrapperCode), 0644)
-		
-		debugLog.Printf("[executeTool/run_terminal] Launching Native PowerShell Wrapper via Windows Terminal")
-		
-		// 1. Try launching with Windows Terminal (wt)
-		cmdObj := exec.Command("wt", "-w", "new-window", "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", psWrapperFile)
-		errStart := cmdObj.Start()
-		
-		// 2. Fallback to standard console if wt is not installed
-		if errStart != nil {
-			debugLog.Printf("[executeTool/run_terminal] wt not found, falling back to standard powershell")
-			cmdObj = exec.Command("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", psWrapperFile)
-			cmdObj.SysProcAttr = &syscall.SysProcAttr{CreationFlags: 0x00000010} // CREATE_NEW_CONSOLE
-			cmdObj.Start()
+		// Check if terminal is active and process is actually alive
+		if terminalActive && terminalPid != "" {
+			out, err := exec.Command("tasklist", "/FI", "PID eq "+terminalPid, "/NH").Output()
+			if err != nil || !strings.Contains(string(out), terminalPid) {
+				terminalActive = false
+			}
 		}
 
-		// Wait for PID file to be created (timeout 10s)
-		var targetPid string
-		for i := 0; i < 20; i++ {
-			if b, err := os.ReadFile(pidFile); err == nil && len(b) > 0 {
-				targetPid = strings.TrimSpace(string(b))
+		if !terminalActive {
+			debugLog.Printf("[executeTool/run_terminal] Starting Persistent Terminal Session")
+			startTerminalSession()
+		}
+
+		// Write command to the IPC file
+		os.WriteFile(terminalCmdFile, []byte(encodedCmd), 0644)
+		
+		// Wait for done file (timeout 5 mins)
+		debugLog.Printf("[executeTool/run_terminal] Waiting for execution to finish...")
+		var outBytes []byte
+		var err error
+		for i := 0; i < 3000; i++ { // 3000 * 100ms = 5 mins
+			if _, errStat := os.Stat(terminalDoneFile); errStat == nil {
+				// Execution finished! Read output.
+				time.Sleep(100 * time.Millisecond) // small buffer for OS write flush
+				outBytes, err = os.ReadFile(terminalOutFile)
+				os.Remove(terminalDoneFile)
+				os.Remove(terminalOutFile)
+				os.Remove(terminalCmdFile) // signal PS to continue
 				break
 			}
-			time.Sleep(500 * time.Millisecond)
+			time.Sleep(100 * time.Millisecond)
 		}
-		os.Remove(pidFile)
+		
+		terminalSessionMu.Unlock()
 
-		// Wait for the powershell process to exit (timeout 5 mins)
-		if targetPid != "" {
-			debugLog.Printf("[executeTool/run_terminal] Monitoring PS PID: %s", targetPid)
-			for i := 0; i < 300; i++ {
-				out, err := exec.Command("tasklist", "/FI", "PID eq "+targetPid, "/NH").Output()
-				if err != nil || !strings.Contains(string(out), targetPid) {
-					break // Process is gone
-				}
-				time.Sleep(1 * time.Second)
-			}
-		} else {
-			debugLog.Printf("[executeTool/run_terminal] Failed to get PID, falling back to static wait")
-			time.Sleep(5 * time.Second)
-		}
-
-		os.Remove(psWrapperFile)
-
-		outBytes, err := os.ReadFile(tmpOut)
-		os.Remove(tmpOut)
+		// outBytes and err are already populated by IPC logic
 		
 		// Clean up PowerShell Transcript headers/footers
 		outStr := string(outBytes)
@@ -2468,6 +2514,7 @@ Start-Sleep -Seconds 4
 // It uses the fast llama3-70b-8192 model by default, but respects modelName if provided.
 // Supports up to 5 tool-calling iterations using OpenAI-compatible tool_calls format.
 func executeGroqCommand(ctx context.Context, command, apiKey, modelName string, streamFileObj *os.File) (string, error) {
+	defer cleanupTerminalSession()
 	if apiKey == "" {
 		return "", fmt.Errorf("Groq API key not set. Open the Voila dashboard → Settings to add your key")
 	}
@@ -2482,7 +2529,7 @@ func executeGroqCommand(ctx context.Context, command, apiKey, modelName string, 
 	}
 	debugLog.Printf("[executeGroqCommand] ENTRY model=%q key=%s commandLen=%d", modelName, maskedKey, len(command))
 
-	systemPrompt := "You are Voila, a helpful AI voice assistant. Keep responses casual, conversational, and brief. Address the user as 'boss'."
+	systemPrompt := "You are Voila, a helpful AI voice assistant. Keep responses casual, conversational, and brief. Address the user as 'boss'. CRITICAL: When using the run_terminal tool, DO NOT issue multiple short, trivial commands one by one. Instead, write comprehensive, long-form PowerShell scripts that accomplish the entire goal in 1-2 steps. Use variables, loops, and conditional logic. Gather all necessary information and format it cleanly so you have everything you need in a single output. You only have a maximum of 5 tool iterations, so you must be highly efficient!"
 
 	// Maintain conversation as raw JSON-friendly messages
 	messages := []map[string]interface{}{
@@ -2622,6 +2669,7 @@ func executeGroqCommand(ctx context.Context, command, apiKey, modelName string, 
 // Works for both local Ollama (http://localhost:11434) and Ollama Cloud (https://api.ollama.ai).
 // Supports up to 5 tool-calling iterations using the Ollama /api/chat tools field.
 func executeOllamaCommand(ctx context.Context, command, baseURL, modelName, apiKey string, streamFileObj *os.File) (string, error) {
+	defer cleanupTerminalSession()
 	if baseURL == "" || baseURL == "http://localhost:11434" {
 		if apiKey != "" {
 			baseURL = "https://ollama.com"
@@ -2643,7 +2691,7 @@ func executeOllamaCommand(ctx context.Context, command, baseURL, modelName, apiK
 	debugLog.Printf("[DEBUG_LIFECYCLE: OLLAMA] Prompt: %q", command)
 	debugLog.Printf("[DEBUG_LIFECYCLE: OLLAMA] Model: %s", modelName)
 
-	systemPrompt := "You are Voila, a helpful AI voice assistant. Keep responses casual, conversational, and brief. Address the user as 'boss'."
+	systemPrompt := "You are Voila, a helpful AI voice assistant. Keep responses casual, conversational, and brief. Address the user as 'boss'. CRITICAL: When using the run_terminal tool, DO NOT issue multiple short, trivial commands one by one. Instead, write comprehensive, long-form PowerShell scripts that accomplish the entire goal in 1-2 steps. Use variables, loops, and conditional logic. Gather all necessary information and format it cleanly so you have everything you need in a single output. You only have a maximum of 5 tool iterations, so you must be highly efficient!"
 
 	messages := []map[string]interface{}{
 		{"role": "system", "content": systemPrompt},
