@@ -2534,7 +2534,8 @@ CRITICAL: You are running inside a Windows PowerShell environment. You MUST use 
 - Use 'Get-ChildItem' or 'ls' (without bash flags like -la). Do NOT use 'ls -la'.
 - Use 'Select-String' or 'findstr', NOT 'grep'.
 - Use 'Get-Content' or 'cat' (no bash flags).
-- Use 'Where-Object' instead of 'where' for filtering objects, or use 'where.exe' to find executables.
+- In PowerShell, 'where' is an alias for 'Where-Object' (used for filtering arrays). To find the path of an installed executable (like Unix 'which'), you MUST use 'where.exe <command>' or 'Get-Command <command>'.
+- The user has winget, choco, pip, and npm installed. You are HIGHLY ENCOURAGED to use these package managers to install dependencies, update tools, or scan for packages when needed.
 - Paths use backslashes (\) on Windows.
 
 CRITICAL: When using the run_terminal tool, DO NOT issue multiple short commands. Write comprehensive, long-form PowerShell scripts that accomplish the entire goal in 1-2 steps. Use variables, loops, and conditional logic.
@@ -2705,7 +2706,8 @@ CRITICAL: You are running inside a Windows PowerShell environment. You MUST use 
 - Use 'Get-ChildItem' or 'ls' (without bash flags like -la). Do NOT use 'ls -la'.
 - Use 'Select-String' or 'findstr', NOT 'grep'.
 - Use 'Get-Content' or 'cat' (no bash flags).
-- Use 'Where-Object' instead of 'where' for filtering objects, or use 'where.exe' to find executables.
+- In PowerShell, 'where' is an alias for 'Where-Object' (used for filtering arrays). To find the path of an installed executable (like Unix 'which'), you MUST use 'where.exe <command>' or 'Get-Command <command>'.
+- The user has winget, choco, pip, and npm installed. You are HIGHLY ENCOURAGED to use these package managers to install dependencies, update tools, or scan for packages when needed.
 - Paths use backslashes (\) on Windows.
 
 CRITICAL: When using the run_terminal tool, DO NOT issue multiple short commands. Write comprehensive, long-form PowerShell scripts that accomplish the entire goal in 1-2 steps. Use variables, loops, and conditional logic.
