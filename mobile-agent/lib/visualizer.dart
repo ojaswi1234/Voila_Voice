@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 
 class AudioVisualizer extends StatefulWidget {
@@ -19,36 +20,12 @@ class AudioVisualizer extends StatefulWidget {
 
 class _AudioVisualizerState extends State<AudioVisualizer> with SingleTickerProviderStateMixin {
   late AnimationController _controller;
-  final List<double> _heights = List.generate(5, (index) => 0.0);
-  final Random _random = Random();
-
+  
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 100))..repeat();
-    _controller.addListener(() {
-      if (widget.isListening || widget.isSpeaking) {
-        setState(() {
-          for (int i = 0; i < _heights.length; i++) {
-            // Base fluctuation + soundLevel impact
-            double base = 10.0 + _random.nextDouble() * 20.0;
-            double boost = widget.soundLevel > 0 ? (widget.soundLevel * 10 * _random.nextDouble()) : 0;
-            if (widget.isSpeaking) {
-                // If AI is speaking and we don't have exact sound levels, simulate it
-                boost = 20.0 + _random.nextDouble() * 40.0;
-            }
-            _heights[i] = base + boost;
-            if (_heights[i] > 100.0) _heights[i] = 100.0;
-          }
-        });
-      } else {
-        setState(() {
-          for (int i = 0; i < _heights.length; i++) {
-             _heights[i] = 4.0; // Flat line when inactive
-          }
-        });
-      }
-    });
+    // 4 second rotation for the smooth liquid gleaming effect
+    _controller = AnimationController(vsync: this, duration: const Duration(seconds: 4))..repeat();
   }
 
   @override
@@ -59,32 +36,118 @@ class _AudioVisualizerState extends State<AudioVisualizer> with SingleTickerProv
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 120,
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: List.generate(_heights.length, (index) {
-          return AnimatedContainer(
-            duration: const Duration(milliseconds: 100),
-            margin: const EdgeInsets.symmetric(horizontal: 4),
-            width: 8,
-            height: _heights[index],
-            decoration: BoxDecoration(
-              color: widget.isSpeaking ? Colors.blueAccent : (widget.isListening ? Colors.redAccent : Colors.grey),
-              borderRadius: BorderRadius.circular(4),
-              boxShadow: [
-                 if (widget.isSpeaking || widget.isListening)
-                   BoxShadow(
-                     color: (widget.isSpeaking ? Colors.blueAccent : Colors.redAccent).withOpacity(0.5),
-                     blurRadius: 10,
-                     spreadRadius: 2,
-                   )
+    bool isActive = widget.isListening || widget.isSpeaking;
+    
+    // Scale intensity based on sound level or AI speaking state
+    double intensity = 1.0;
+    if (widget.isSpeaking) {
+      intensity = 1.5 + (sin(_controller.value * 2 * pi * 10) * 0.5); // Pulse effect for AI speaking
+    } else if (widget.isListening) {
+      intensity = 1.0 + (widget.soundLevel * 2.0); // Mic level impact
+    } else {
+      intensity = 0.3; // Idle state
+    }
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      height: 100,
+      width: double.infinity,
+      child: Center(
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (context, child) {
+            return Stack(
+              alignment: Alignment.center,
+              children: [
+                // Base dark pill for contrast
+                Container(
+                  width: 180,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.4),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                ),
+                
+                // The Liquid Glowing Mesh Layer (BackdropFilter for mesh blending)
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(30),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+                    child: Container(
+                      width: 220,
+                      height: 60,
+                      color: Colors.transparent,
+                      child: Stack(
+                        children: [
+                          // Orb 1 (Cyan/Blue)
+                          Positioned(
+                            left: 50 + sin(_controller.value * 2 * pi) * 40 * intensity,
+                            top: 10 + cos(_controller.value * 2 * pi) * 10 * intensity,
+                            child: _buildGlowingOrb(
+                                color: const Color(0xFF00E5FF).withOpacity(isActive ? 0.8 : 0.0), 
+                                size: 35 * intensity),
+                          ),
+                          // Orb 2 (Purple/Magenta)
+                          Positioned(
+                            right: 50 + cos(_controller.value * 2 * pi) * 40 * intensity,
+                            bottom: 10 + sin(_controller.value * 2 * pi) * 10 * intensity,
+                            child: _buildGlowingOrb(
+                                color: const Color(0xFFD500F9).withOpacity(isActive ? 0.8 : 0.0), 
+                                size: 45 * intensity),
+                          ),
+                          // Orb 3 (Deep Blue/Indigo)
+                          Positioned(
+                            left: 90 + cos(_controller.value * 2 * pi + pi) * 20 * intensity,
+                            top: 15 + sin(_controller.value * 2 * pi + pi) * 10 * intensity,
+                            child: _buildGlowingOrb(
+                                color: const Color(0xFF2962FF).withOpacity(isActive ? 0.8 : 0.0), 
+                                size: 40 * intensity),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                
+                // Overlay sharp gleaming line (acts as the core waveform)
+                Opacity(
+                  opacity: isActive ? 1.0 : 0.2,
+                  child: Container(
+                    width: isActive ? (140 * (intensity.clamp(0.5, 2.0) / 2.0)) : 40,
+                    height: isActive ? 2 : 1,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      boxShadow: [
+                        if (isActive)
+                          BoxShadow(color: Colors.white.withOpacity(0.9), blurRadius: 6, spreadRadius: 2)
+                      ],
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
               ],
-            ),
-          );
-        }),
+            );
+          }
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGlowingOrb({required Color color, required double size}) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: color,
+        boxShadow: [
+          BoxShadow(
+            color: color,
+            blurRadius: size * 1.5,
+            spreadRadius: size,
+          )
+        ],
       ),
     );
   }
