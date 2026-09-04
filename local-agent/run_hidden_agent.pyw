@@ -1012,7 +1012,6 @@ def _draw_dashboard_section(dc, w, h):
     radar_r = max(30, radar_size // 2 - 16)
 
     dc.create_text(0, radar_y, text='Performance Radar', fill='#888888', font=('Segoe UI', 10, 'bold'), anchor='w')
-    import math, time
     t_val = time.time()
     val_stability = 0.75 + math.sin(t_val) * 0.15
     val_reliability = 0.8 + math.cos(t_val * 0.7) * 0.1
@@ -1092,7 +1091,6 @@ def close_dashboard():
 
 def ensure_heatmap_cache():
     global heatmap_cache
-    import math, time, random
     # Animate smoothly without full random flicker
     cache = []
     t = time.time()
