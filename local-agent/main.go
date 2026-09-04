@@ -2565,6 +2565,11 @@ func executeGroqCommand(ctx context.Context, command, apiKey, modelName string, 
 
 		// No tool calls — return the final text answer
 		if len(choice.Message.ToolCalls) == 0 {
+			debugLog.Printf("================================================================")
+			debugLog.Printf("[DEBUG_LIFECYCLE: GROQ] 4. SUMMARY PREPARATION & TRANSFERRING")
+			debugLog.Printf("[DEBUG_LIFECYCLE: GROQ] Final Output Length: %d", len(choice.Message.Content))
+			debugLog.Printf("[DEBUG_LIFECYCLE: GROQ] Returning output back to backend webhook...")
+			debugLog.Printf("================================================================")
 			debugLog.Printf("[executeGroqCommand] iter=%d final answer len=%d", iter, len(choice.Message.Content))
 			return strings.TrimSpace(choice.Message.Content), nil
 		}
@@ -2581,6 +2586,9 @@ func executeGroqCommand(ctx context.Context, command, apiKey, modelName string, 
 
 		// Execute each tool and collect results
 		for _, tc := range choice.Message.ToolCalls {
+			debugLog.Printf("================================================================")
+			debugLog.Printf("[DEBUG_LIFECYCLE: GROQ] 2. TOOL EXECUTION PHASE")
+			debugLog.Printf("[DEBUG_LIFECYCLE: GROQ] AI requested tool: %q with args: %s", tc.Function.Name, tc.Function.Arguments)
 			debugLog.Printf("[executeGroqCommand] iter=%d executing tool=%q", iter, tc.Function.Name)
 			var argsBytes []byte
 			if len(tc.Function.Arguments) > 0 && tc.Function.Arguments[0] == '"' {
@@ -2591,6 +2599,10 @@ func executeGroqCommand(ctx context.Context, command, apiKey, modelName string, 
 				argsBytes = []byte(tc.Function.Arguments)
 			}
 			toolResult := executeTool(tc.Function.Name, json.RawMessage(argsBytes), streamFileObj)
+			debugLog.Printf("[DEBUG_LIFECYCLE: GROQ] 3. TOOL EXECUTION FINISHED")
+			debugLog.Printf("[DEBUG_LIFECYCLE: GROQ] Result Length: %d", len(toolResult))
+			debugLog.Printf("[DEBUG_LIFECYCLE: GROQ] Result Content Preview (max 200 chars):\n%.200s", toolResult)
+			debugLog.Printf("================================================================")
 			debugLog.Printf("[executeGroqCommand] iter=%d tool=%q resultLen=%d", iter, tc.Function.Name, len(toolResult))
 			messages = append(messages, map[string]interface{}{
 				"role":         "tool",
@@ -2625,6 +2637,11 @@ func executeOllamaCommand(ctx context.Context, command, baseURL, modelName, apiK
 	apiURL := strings.TrimRight(baseURL, "/") + "/api/chat"
 
 	debugLog.Printf("[executeOllamaCommand] ENTRY baseURL=%q model=%q commandLen=%d", baseURL, modelName, len(command))
+
+	debugLog.Printf("================================================================")
+	debugLog.Printf("[DEBUG_LIFECYCLE: OLLAMA] 1. THINKING PHASE STARTED")
+	debugLog.Printf("[DEBUG_LIFECYCLE: OLLAMA] Prompt: %q", command)
+	debugLog.Printf("[DEBUG_LIFECYCLE: OLLAMA] Model: %s", modelName)
 
 	systemPrompt := "You are Voila, a helpful AI voice assistant. Keep responses casual, conversational, and brief. Address the user as 'boss'."
 
@@ -2696,6 +2713,11 @@ func executeOllamaCommand(ctx context.Context, command, baseURL, modelName, apiK
 
 		// No tool calls — return the final text answer
 		if len(result.Message.ToolCalls) == 0 {
+			debugLog.Printf("================================================================")
+			debugLog.Printf("[DEBUG_LIFECYCLE: OLLAMA] 4. SUMMARY PREPARATION & TRANSFERRING")
+			debugLog.Printf("[DEBUG_LIFECYCLE: OLLAMA] Final Output Length: %d", len(result.Message.Content))
+			debugLog.Printf("[DEBUG_LIFECYCLE: OLLAMA] Returning output back to backend webhook...")
+			debugLog.Printf("================================================================")
 			debugLog.Printf("[executeOllamaCommand] iter=%d final answer len=%d", iter, len(result.Message.Content))
 			return strings.TrimSpace(result.Message.Content), nil
 		}
@@ -2712,6 +2734,9 @@ func executeOllamaCommand(ctx context.Context, command, baseURL, modelName, apiK
 
 		// Execute each tool and collect results
 		for _, tc := range result.Message.ToolCalls {
+			debugLog.Printf("================================================================")
+			debugLog.Printf("[DEBUG_LIFECYCLE: OLLAMA] 2. TOOL EXECUTION PHASE")
+			debugLog.Printf("[DEBUG_LIFECYCLE: OLLAMA] AI requested tool: %q with args: %s", tc.Function.Name, tc.Function.Arguments)
 			debugLog.Printf("[executeOllamaCommand] iter=%d executing tool=%q", iter, tc.Function.Name)
 			var argsBytes []byte
 			if len(tc.Function.Arguments) > 0 && tc.Function.Arguments[0] == '"' {
@@ -2722,6 +2747,10 @@ func executeOllamaCommand(ctx context.Context, command, baseURL, modelName, apiK
 				argsBytes = []byte(tc.Function.Arguments)
 			}
 			toolResult := executeTool(tc.Function.Name, json.RawMessage(argsBytes), streamFileObj)
+			debugLog.Printf("[DEBUG_LIFECYCLE: OLLAMA] 3. TOOL EXECUTION FINISHED")
+			debugLog.Printf("[DEBUG_LIFECYCLE: OLLAMA] Result Length: %d", len(toolResult))
+			debugLog.Printf("[DEBUG_LIFECYCLE: OLLAMA] Result Content Preview (max 200 chars):\n%.200s", toolResult)
+			debugLog.Printf("================================================================")
 			debugLog.Printf("[executeOllamaCommand] iter=%d tool=%q resultLen=%d", iter, tc.Function.Name, len(toolResult))
 			// Ollama tool result uses role "tool" same as OpenAI
 			messages = append(messages, map[string]interface{}{
