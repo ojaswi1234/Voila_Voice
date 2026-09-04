@@ -298,7 +298,8 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
       // AUTO-LISTEN TRIGGER ON LAUNCH
       Future.delayed(const Duration(milliseconds: 600), () {
         if (mounted) {
-           _toggleLiveSession();
+           setState(() => _isLiveSession = true);
+           _startListening();
         }
       });
     }
@@ -1713,7 +1714,12 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
           else
             const Spacer(),
           _buildInputArea(colorScheme),
-        ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
