@@ -123,12 +123,36 @@ def _get_page(browser):
     return page
 
 
+
+def _inject_ad_skipper(page):
+    try:
+        if "youtube.com" in page.url:
+            page.evaluate('''() => {
+                if (!window._ytAdSkipperInjected) {
+                    window._ytAdSkipperInjected = true;
+                    setInterval(() => {
+                        const skipBtn = document.querySelector('.ytp-ad-skip-button-modern, .ytp-ad-skip-button, .ytp-skip-ad-button, .ytp-ad-skip-button-text');
+                        if (skipBtn) {
+                            skipBtn.click();
+                            console.log("Auto-skipped YouTube ad!");
+                        }
+                        const overlayCloseBtn = document.querySelector('.ytp-ad-overlay-close-button');
+                        if (overlayCloseBtn) {
+                            overlayCloseBtn.click();
+                        }
+                    }, 500);
+                }
+            }''')
+    except Exception:
+        pass
+
 def _handle_action(browser, args: dict) -> dict:
     """Execute one browser action and return a result dict."""
     action = args.get("action", "")
     result = {"status": "success", "action": action}
 
     page = _get_page(browser)
+    _inject_ad_skipper(page)
 
     if action == "goto":
         url = args.get("url", "")
@@ -198,6 +222,7 @@ def _handle_action(browser, args: dict) -> dict:
     else:
         raise ValueError(f"Unknown action: {action}")
 
+    _inject_ad_skipper(page)
     return result
 
 
