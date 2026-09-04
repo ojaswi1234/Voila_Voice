@@ -6,7 +6,6 @@ package main
 import (
 	"runtime"
 	"syscall"
-	"time"
 )
 
 var (
