@@ -395,6 +395,7 @@ current_section = "Dashboard"  # Current active section
 heatmap_cache = None
 DASHBOARD_W = 920
 DASHBOARD_H = 620
+simulated_dash_time = 0.0
 
 def hide_mini_popup_elements():
     """Hide mini widget canvas while dashboard is shown."""
@@ -846,7 +847,9 @@ def _show_settings_widgets():
 
 def refresh_dashboard_content():
 
-    global dash_canvas
+    global dash_canvas, simulated_dash_time
+    if mobile_clients > 0:
+        simulated_dash_time += 0.2
     if not dashboard_active or dash_canvas is None:
         return
 
@@ -1012,7 +1015,7 @@ def _draw_dashboard_section(dc, w, h):
     radar_r = max(30, radar_size // 2 - 16)
 
     dc.create_text(0, radar_y, text='Performance Radar', fill='#888888', font=('Segoe UI', 10, 'bold'), anchor='w')
-    t_val = time.time()
+    t_val = simulated_dash_time
     val_stability = 0.75 + math.sin(t_val) * 0.15
     val_reliability = 0.8 + math.cos(t_val * 0.7) * 0.1
     val_quality = 0.85 + math.sin(t_val * 1.3) * 0.1
@@ -1093,7 +1096,7 @@ def ensure_heatmap_cache():
     global heatmap_cache
     # Animate smoothly without full random flicker
     cache = []
-    t = time.time()
+    t = simulated_dash_time
     for d in range(7):
         row = []
         for h in range(5):
