@@ -1673,14 +1673,15 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                         icon: Icon(Icons.auto_awesome, size: 22, color: _selectedModel.isNotEmpty ? colorScheme.secondary : colorScheme.onSurface.withOpacity(0.7)),
                         onPressed: _showModelSelector,
                       ),
-                    IconButton(
-                      icon: const Icon(Icons.camera_alt_outlined, size: 22, color: Colors.white70),
-                      tooltip: 'Get Desktop Screenshot',
-                      onPressed: () {
-                        _controller.text = "__SCREENSHOT__";
-                        _sendMessage();
-                      },
-                    ),
+                    if (_currentMode.toUpperCase() == 'AGENT')
+                      IconButton(
+                        icon: const Icon(Icons.camera_alt_outlined, size: 22, color: Colors.white70),
+                        tooltip: 'Get Desktop Screenshot',
+                        onPressed: () {
+                          _controller.text = "__SCREENSHOT__";
+                          _sendMessage();
+                        },
+                      ),
                     GestureDetector(
                       onTap: () => _showDeviceSelector(context),
                       child: Container(
