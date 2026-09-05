@@ -104,6 +104,8 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   late WebSocketChannel channel;
   static const platform = MethodChannel('com.voila/intent');
   bool _isAssistant = false;
+  String? _temporaryAssistantImage;
+  Timer? _assistantImageTimer;
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final _storage = const FlutterSecureStorage();
@@ -659,9 +661,11 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                 }
               }
 
+              final contentStr = jsonResponse['output'] ?? message;
+              _interceptImageForAssistant(contentStr);
               _messages.add({
                 'type': 'response',
-                'content': jsonResponse['output'] ?? message,
+                'content': contentStr,
                 'summary': jsonResponse['summary'],
                 'status': jsonResponse['status'],
                 'mode': jsonResponse['mode'],
@@ -863,8 +867,27 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
     });
   }
 
+
+  void _interceptImageForAssistant(String content) {
+    if (content.startsWith('__IMAGE__:') && _isAssistant) {
+      String base64Str = content.substring(10).replaceAll(RegExp(r'\s+'), '');
+      setState(() {
+        _temporaryAssistantImage = base64Str;
+      });
+      _assistantImageTimer?.cancel();
+      _assistantImageTimer = Timer(const Duration(seconds: 30), () {
+        if (mounted) {
+          setState(() {
+            _temporaryAssistantImage = null;
+          });
+        }
+      });
+    }
+  }
+  
   @override
   void dispose() {
+
     _healthCheckTimer?.cancel();
     channel.sink.close();
     _controller.dispose();
@@ -1693,6 +1716,59 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
       return Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (_temporaryAssistantImage != null)
+            GestureDetector(
+              onTap: () {
+                showDialog(
+                  context: context,
+                  builder: (context) => Dialog(
+                    backgroundColor: Colors.transparent,
+                    insetPadding: EdgeInsets.zero,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        InteractiveViewer(
+                          panEnabled: true,
+                          boundaryMargin: const EdgeInsets.all(20),
+                          minScale: 0.5,
+                          maxScale: 4,
+                          child: Image.memory(
+                            base64Decode(_temporaryAssistantImage!),
+                            fit: BoxFit.contain,
+                          ),
+                        ),
+                        Positioned(
+                          top: 40,
+                          right: 20,
+                          child: IconButton(
+                            icon: const Icon(Icons.close, color: Colors.white, size: 30),
+                            onPressed: () => Navigator.pop(context),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 16, top: 8),
+                padding: const EdgeInsets.all(8),
+                constraints: const BoxConstraints(maxHeight: 250),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0F0F12).withOpacity(0.85),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: Colors.white.withOpacity(0.05)),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: Image.memory(
+                    base64Decode(_temporaryAssistantImage!),
+                    fit: BoxFit.contain,
+                    errorBuilder: (c, e, s) => const Text('Image Error', style: TextStyle(color: Colors.red)),
+                  ),
+                ),
+              ),
+            ),
           // Flowchart with a subtle dark background pill for readability over random desktop walls
           Container(
             margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
