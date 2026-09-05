@@ -1,4 +1,3 @@
-﻿import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:siri_wave/siri_wave.dart';
 
@@ -19,12 +18,12 @@ class AudioVisualizer extends StatefulWidget {
 }
 
 class _AudioVisualizerState extends State<AudioVisualizer> {
-  late SiriWaveController _controller;
+  late IOS9SiriWaveformController _controller;
 
   @override
   void initState() {
     super.initState();
-    _controller = SiriWaveController(
+    _controller = IOS9SiriWaveformController(
       amplitude: 0.05,
       speed: 0.05,
     );
@@ -34,16 +33,17 @@ class _AudioVisualizerState extends State<AudioVisualizer> {
   void didUpdateWidget(AudioVisualizer oldWidget) {
     super.didUpdateWidget(oldWidget);
     
-    dynamic ctrl = _controller;
-    
     // Smoothly adjust amplitude and speed based on state
     if (widget.isSpeaking) {
-      try { ctrl.amplitude = 0.7; ctrl.speed = 0.12; } catch(e) { try { ctrl.setAmplitude(0.7); ctrl.setSpeed(0.12); } catch(e2) {} }
+      _controller.amplitude = 0.7; 
+      _controller.speed = 0.12; 
     } else if (widget.isListening) {
       double targetAmp = 0.1 + (widget.soundLevel * 1.5).clamp(0.0, 1.0);
-      try { ctrl.amplitude = targetAmp; ctrl.speed = 0.1; } catch(e) { try { ctrl.setAmplitude(targetAmp); ctrl.setSpeed(0.1); } catch(e2) {} }
+      _controller.amplitude = targetAmp; 
+      _controller.speed = 0.1;
     } else {
-      try { ctrl.amplitude = 0.05; ctrl.speed = 0.03; } catch(e) { try { ctrl.setAmplitude(0.05); ctrl.setSpeed(0.03); } catch(e2) {} }
+      _controller.amplitude = 0.05; 
+      _controller.speed = 0.03; 
     }
   }
 
@@ -53,10 +53,9 @@ class _AudioVisualizerState extends State<AudioVisualizer> {
       height: 60,
       width: double.infinity,
       alignment: Alignment.center,
-      child: SiriWave(
+      child: SiriWaveform.ios9(
         controller: _controller,
-        style: SiriWaveStyle.ios_9, 
       ),
     );
   }
-}
+}

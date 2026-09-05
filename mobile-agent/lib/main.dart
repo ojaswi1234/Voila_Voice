@@ -1751,7 +1751,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                 );
               },
               child: Container(
-                margin: const EdgeInsets.symmetric(horizontal: 16, top: 8),
+                margin: const EdgeInsets.only(left: 16, right: 16, top: 8),
                 padding: const EdgeInsets.all(8),
                 constraints: const BoxConstraints(maxHeight: 250),
                 decoration: BoxDecoration(
