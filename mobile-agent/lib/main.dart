@@ -1151,10 +1151,18 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
       return 'Session expired';
     }
     if (remaining < 60) {
-      return 'Unlocked · ${remaining}s left';
+      return 'Unlocked • ${remaining}s left';
     }
     final minutes = remaining ~/ 60;
-    return 'Unlocked · ${minutes}m left';
+    if (minutes < 60) {
+      return 'Unlocked • ${minutes}m left';
+    }
+    final hours = minutes ~/ 60;
+    if (hours < 24) {
+      return 'Unlocked • ${hours}h left';
+    }
+    final days = hours ~/ 24;
+    return 'Unlocked • ${days}d left';
   }
 
   bool _isSessionExpiringSoon() {
