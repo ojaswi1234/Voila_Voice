@@ -1382,12 +1382,14 @@ def parse_line(line):
         
 
     if "STATUS: BACKEND:ONLINE" in line:
-        backend_status = "Active"
-        if dashboard_active: refresh_dashboard_content()
+        if backend_status != "Active":
+            backend_status = "Active"
+            if dashboard_active and current_section != 'Settings': refresh_dashboard_content()
         return
     if "STATUS: BACKEND:OFFLINE" in line:
-        backend_status = "Offline"
-        if dashboard_active: refresh_dashboard_content()
+        if backend_status != "Offline":
+            backend_status = "Offline"
+            if dashboard_active and current_section != 'Settings': refresh_dashboard_content()
         return
     
     if "STATUS: MOBILE_CLIENTS:" in line:
