@@ -2239,7 +2239,7 @@ var availableTools = []toolDef{
 // executeTool dispatches to the correct tool implementation and returns a result string.
 // It also emits a STATUS: TOOL:<name> line so the Python face can show per-tool states,
 // and it emits stream-json events for ALL tools to visualize them seamlessly in the terminal.
-func executeTool(toolName string, argsJSON json.RawMessage, streamFileObj *os.File) string {
+func executeTool(ctx context.Context, toolName string, argsJSON json.RawMessage, streamFileObj *os.File) string {
 	var args map[string]interface{}
 	if err := json.Unmarshal(argsJSON, &args); err == nil {
 		var pseudoCommand string
@@ -2294,7 +2294,7 @@ func executeTool(toolName string, argsJSON json.RawMessage, streamFileObj *os.Fi
 			streamFileObj.Sync()
 		}
 
-		result := executeToolInner(toolName, argsJSON, streamFileObj)
+		result := executeToolInner(ctx, toolName, argsJSON, streamFileObj)
 
 		if streamFileObj != nil && pseudoCommand != "" {
 			visualResult := result
@@ -2321,7 +2321,7 @@ func executeTool(toolName string, argsJSON json.RawMessage, streamFileObj *os.Fi
 		}
 		return result
 	}
-	return executeToolInner(toolName, argsJSON, streamFileObj)
+	return executeToolInner(ctx, toolName, argsJSON, streamFileObj)
 }
 
 
@@ -2448,7 +2448,7 @@ func cleanupTerminalSession() {
 		terminalPid = ""
 	}
 }
-func executeToolInner(toolName string, argsJSON json.RawMessage, streamFileObj *os.File) string {
+func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMessage, streamFileObj *os.File) string {
 	// Emit status so Python face knows which tool is running
 	fmt.Printf("STATUS: TOOL:%s\n", toolName)
 	os.Stdout.Sync()
@@ -2573,6 +2573,12 @@ func executeToolInner(toolName string, argsJSON json.RawMessage, streamFileObj *
 		var outBytes []byte
 		var err error
 		for i := 0; i < 3000; i++ { // 3000 * 100ms = 5 mins
+			select {
+			case <-ctx.Done():
+				cleanupTerminalSession()
+				return "error: execution cancelled by user"
+			default:
+			}
 			if _, errStat := os.Stat(terminalDoneFile); errStat == nil {
 				// Execution finished! Read output.
 				time.Sleep(100 * time.Millisecond) // small buffer for OS write flush
@@ -2690,6 +2696,12 @@ CRITICAL: You are running inside a Windows PowerShell environment. You MUST use 
 
 CRITICAL - DOCUMENT ANALYSIS: 
 If the user asks you to read, analyze, or process a PDF file, you MUST use the 'read_pdf' tool! Do NOT try to read PDFs using PowerShell's Get-Content, as they are binary files and it will fail. First find the file, then call 'read_pdf' on the absolute path.
+
+CRITICAL - FAST FILE SEARCHING (0 BUGS POLICY):
+When asked to find, scan, or search for a specific file, folder, or project by name (e.g., 'mandate_guard'), NEVER use slow PowerShell commands like Get-ChildItem. You MUST use the highly optimized native CMD search wrapper inside your terminal tool:
+'cmd.exe /c "dir /s /b /a:d C:\Users\ojasw\Desktop\*mandate*"' (for directories) or '/a:-d' (for files).
+Always wrap the search term in asterisks like '*name*' to handle fuzzy matching for nested subfolders.
+If you need to find content INSIDE files, use: 'findstr /s /i "search_term" C:\path\*.txt'
 
 CRITICAL - TOOL EFFICENCY:
 When using run_terminal, DO NOT issue multiple short commands. Write comprehensive, long-form PowerShell scripts that accomplish the entire goal in 1-2 steps. Use variables, loops, and conditional logic.
@@ -2827,7 +2839,7 @@ You have a maximum of 8 tool iterations. Be highly efficient! Review your messag
 			} else {
 				argsBytes = []byte(tc.Function.Arguments)
 			}
-			toolResult := executeTool(tc.Function.Name, json.RawMessage(argsBytes), streamFileObj)
+			toolResult := executeTool(ctx, tc.Function.Name, json.RawMessage(argsBytes), streamFileObj)
 			debugLog.Printf("[DEBUG_LIFECYCLE: GROQ] 3. TOOL EXECUTION FINISHED")
 			debugLog.Printf("[DEBUG_LIFECYCLE: GROQ] Result Length: %d", len(toolResult))
 			debugLog.Printf("[DEBUG_LIFECYCLE: GROQ] Result Content Preview (max 200 chars):\n%.200s", toolResult)
@@ -2883,6 +2895,12 @@ CRITICAL: You are running inside a Windows PowerShell environment. You MUST use 
 
 CRITICAL - DOCUMENT ANALYSIS: 
 If the user asks you to read, analyze, or process a PDF file, you MUST use the 'read_pdf' tool! Do NOT try to read PDFs using PowerShell's Get-Content, as they are binary files and it will fail. First find the file, then call 'read_pdf' on the absolute path.
+
+CRITICAL - FAST FILE SEARCHING (0 BUGS POLICY):
+When asked to find, scan, or search for a specific file, folder, or project by name (e.g., 'mandate_guard'), NEVER use slow PowerShell commands like Get-ChildItem. You MUST use the highly optimized native CMD search wrapper inside your terminal tool:
+'cmd.exe /c "dir /s /b /a:d C:\Users\ojasw\Desktop\*mandate*"' (for directories) or '/a:-d' (for files).
+Always wrap the search term in asterisks like '*name*' to handle fuzzy matching for nested subfolders.
+If you need to find content INSIDE files, use: 'findstr /s /i "search_term" C:\path\*.txt'
 
 CRITICAL - TOOL EFFICENCY:
 When using run_terminal, DO NOT issue multiple short commands. Write comprehensive, long-form PowerShell scripts that accomplish the entire goal in 1-2 steps. Use variables, loops, and conditional logic.
@@ -3007,7 +3025,7 @@ You have a maximum of 8 tool iterations. Be highly efficient! Review your messag
 			} else {
 				argsBytes = []byte(tc.Function.Arguments)
 			}
-			toolResult := executeTool(tc.Function.Name, json.RawMessage(argsBytes), streamFileObj)
+			toolResult := executeTool(ctx, tc.Function.Name, json.RawMessage(argsBytes), streamFileObj)
 			debugLog.Printf("[DEBUG_LIFECYCLE: OLLAMA] 3. TOOL EXECUTION FINISHED")
 			debugLog.Printf("[DEBUG_LIFECYCLE: OLLAMA] Result Length: %d", len(toolResult))
 			debugLog.Printf("[DEBUG_LIFECYCLE: OLLAMA] Result Content Preview (max 200 chars):\n%.200s", toolResult)
