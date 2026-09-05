@@ -111,6 +111,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   final List<Map<String, dynamic>> _messagesAgent = [];
   List<Map<String, dynamic>> get _messages => _currentMode.toUpperCase() == 'AGENT' ? _messagesAgent : _messagesShell;
   bool _isThinking = false;
+  String _currentStatus = 'Processing...';
   bool _isDataDeparting = false;
   bool _isDataArriving = false;
   bool _willTalk = true;
@@ -519,6 +520,10 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                     _devices[deviceId] = device;
                     if (deviceId == _activeDevice && deviceOnline && deviceReachable) {
                       _localAgentConnected = true;
+                    }
+                    if (deviceId == _activeDevice && device['locked'] == true) {
+                      _isThinking = true;
+                      _triggerDataDeparting();
                     }
                     // Track first online desktop for auto-selection
                     if (deviceOnline && firstOnlineDesktop == null) {
@@ -2040,7 +2045,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
             child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF7C6CFF)),
           ),
           const SizedBox(width: 12),
-          Text('Processing...', style: TextStyle(fontSize: 13, color: Colors.white.withOpacity(0.6))),
+          Text(_currentStatus, style: TextStyle(fontSize: 13, color: Colors.white.withOpacity(0.6))),
         ],
       ),
     );
@@ -2186,7 +2191,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                const SizedBox(height: 12),
                Text(
                  _isLiveSession 
-                    ? (_isAiSpeaking ? 'AI is speaking...' : (_isListening ? 'Listening...' : 'Processing...')) 
+                    ? (_isAiSpeaking ? 'AI is speaking...' : (_isListening ? 'Listening...' : _currentStatus)) 
                     : 'Tap to start Voila Live',
                  style: const TextStyle(color: Colors.white54, fontSize: 13, fontWeight: FontWeight.w500),
                ),
@@ -2261,7 +2266,23 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                 ),
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: () {
+                _controller.text = "__SCREENSHOT__";
+                _sendMessage();
+              },
+              child: Container(
+                padding: const EdgeInsets.all(14),
+                margin: const EdgeInsets.only(bottom: 2),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.camera_alt_rounded, color: Colors.white70, size: 20),
+              ),
+            ),
+            const SizedBox(width: 8),
             GestureDetector(
               onTap: _sendMessage,
               child: Container(

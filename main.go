@@ -931,6 +931,46 @@ func (b *Backend) writeMessage(clientID string, messageType int, data []byte) er
 }
 
 
+func handleWebhookStatus(b *Backend) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var req map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Bad request", http.StatusBadRequest)
+			return
+		}
+		deviceID, _ := req["device_id"].(string)
+		status, _ := req["status"].(string)
+		secretHash, _ := req["secret_hash"].(string)
+
+		b.mu.RLock()
+		device, exists := b.devices[deviceID]
+		b.mu.RUnlock()
+
+		if !exists || subtle.ConstantTimeCompare([]byte(device.SecurityPhraseHash), []byte(secretHash)) != 1 {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		if status != "" {
+			resp := map[string]string{
+				"type": "status_update",
+				"status": status,
+			}
+			jsonResponse, _ := json.Marshal(resp)
+			b.mu.RLock()
+			for cID := range b.clients {
+				b.dispatcher.Dispatch(cID, websocket.TextMessage, jsonResponse)
+			}
+			b.mu.RUnlock()
+		}
+		w.WriteHeader(http.StatusOK)
+	}
+}
+
 func handleWebhookResult(b *Backend) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -944,6 +984,7 @@ func handleWebhookResult(b *Backend) http.HandlerFunc {
 			return
 		}
 
+		_, _ = req["client_id"].(string)
 		clientID, _ := req["client_id"].(string)
 		deviceID, _ := req["device_id"].(string)
 		output, _ := req["output"].(string)
@@ -1580,6 +1621,7 @@ func main() {
 
 	http.HandleFunc("/ws", handleWebSocket(backend))
 	http.HandleFunc("/webhook/result", handleWebhookResult(backend))
+	http.HandleFunc("/webhook/status", handleWebhookStatus(backend))
 	http.HandleFunc("/test_optimize", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -1917,3 +1959,5 @@ func getNgrokURL() (string, error) {
 	
 	return "", fmt.Errorf("no ngrok tunnels found")
 }
+
+

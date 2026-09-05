@@ -1253,7 +1253,7 @@ func startHTTPServer() {
 		w.Header().Set("Content-Type", "application/json")
 
 		connData, _ := loadConnectionData()
-		out, err := executeGroqCommand(context.Background(), "Say hello in one word", connData.GroqAPIKey, "", nil)
+		out, err := executeGroqCommand(context.Background(), "Say hello in one word", connData.GroqAPIKey, "", "", nil)
 		if err != nil {
 			json.NewEncoder(w).Encode(map[string]string{"status": "error", "message": err.Error()})
 			return
@@ -1471,7 +1471,7 @@ Write-Output $base64
 				if m == "" {
 					m = "llama3-70b-8192"
 				}
-				output, err = executeGroqCommand(ctx, command, connData.GroqAPIKey, m, nil)
+				output, err = executeGroqCommand(ctx, command, connData.GroqAPIKey, m, clientID, nil)
 				fmt.Println("STATUS: IDLE")
 				os.Stdout.Sync()
 				newConvID = conversationID
@@ -2567,7 +2567,7 @@ func executeToolInner(toolName string, argsJSON json.RawMessage, streamFileObj *
 // executeGroqCommand sends a prompt to the Groq cloud API and returns the response.
 // It uses the fast llama3-70b-8192 model by default, but respects modelName if provided.
 // Supports up to 5 tool-calling iterations using OpenAI-compatible tool_calls format.
-func executeGroqCommand(ctx context.Context, command, apiKey, modelName string, streamFileObj *os.File) (string, error) {
+func executeGroqCommand(ctx context.Context, command, apiKey, modelName, clientID string, streamFileObj *os.File) (string, error) {
 	defer cleanupTerminalSession()
 	if apiKey == "" {
 		return "", fmt.Errorf("Groq API key not set. Open the Voila dashboard → Settings to add your key")
