@@ -44,9 +44,24 @@ var (
 	circuitMu  sync.Mutex
 	circuitOpen bool
 	execSemaphore chan struct{} // Limit concurrent executions
-	maxConcurrentExecs = 2 // Maximum concurrent AI executions
+	maxConcurrentExecs = 3 // Maximum concurrent AI executions
 	resilienceManager *ResilienceManager
+
+	// Protect local models from VRAM crashes
+	ollamaSemaphore = make(chan struct{}, 1)
+
+	// Inter-Agent IPC
+	agentRegistryMu sync.RWMutex
+	activeAgents = make(map[string]*AgentTask)
 )
+
+type AgentTask struct {
+	TaskID  string
+	Command string
+	Mode    string
+	Inbox   chan string
+}
+
 
 var initialDir string
 var debugLog *log.Logger
@@ -1253,7 +1268,7 @@ func startHTTPServer() {
 		w.Header().Set("Content-Type", "application/json")
 
 		connData, _ := loadConnectionData()
-		out, err := executeGroqCommand(context.Background(), "Say hello in one word", connData.GroqAPIKey, "", "", nil)
+		out, err := executeGroqCommand(context.Background(), "Say hello in one word", connData.GroqAPIKey, connData.GroqModel, connData.DeviceID, nil, "verify")
 		if err != nil {
 			json.NewEncoder(w).Encode(map[string]string{"status": "error", "message": err.Error()})
 			return
@@ -1267,7 +1282,7 @@ func startHTTPServer() {
 		w.Header().Set("Content-Type", "application/json")
 
 		connData, _ := loadConnectionData()
-		out, err := executeOllamaCommand(context.Background(), "Say hello in one word", connData.OllamaBaseURL, connData.OllamaModel, connData.OllamaAPIKey, nil)
+		out, err := executeOllamaCommand(context.Background(), "Say hello in one word", connData.OllamaBaseURL, connData.OllamaModel, connData.OllamaAPIKey, nil, "verify")
 		if err != nil {
 			json.NewEncoder(w).Encode(map[string]string{"status": "error", "message": err.Error()})
 			return
@@ -1418,6 +1433,7 @@ Write-Output $base64
 
 		w.WriteHeader(http.StatusAccepted)
 		
+		
 		go func() {
 			defer func() {
 				<-execSemaphore // Release semaphore when done
@@ -1457,6 +1473,24 @@ Write-Output $base64
 
 			debugLog.Printf("[/execute] reqMode=%q globalMode=%q effectiveMode=%q", reqMode, globalMode, effectiveMode)
 
+
+			taskID := fmt.Sprintf("Agent-%x", time.Now().UnixNano()%0xFFFF)
+			myTask := &AgentTask{
+				TaskID:  taskID,
+				Command: command,
+				Mode:    effectiveMode,
+				Inbox:   make(chan string, 100),
+			}
+			agentRegistryMu.Lock()
+			activeAgents[taskID] = myTask
+			agentRegistryMu.Unlock()
+
+			defer func() {
+				agentRegistryMu.Lock()
+				delete(activeAgents, taskID)
+				agentRegistryMu.Unlock()
+			}()
+
 			fmt.Printf("STATUS: MODE:%s\n", effectiveMode)
 			os.Stdout.Sync()
 
@@ -1471,7 +1505,7 @@ Write-Output $base64
 				if m == "" {
 					m = "llama3-70b-8192"
 				}
-				output, err = executeGroqCommand(ctx, command, connData.GroqAPIKey, m, clientID, nil)
+				output, err = executeGroqCommand(ctx, command, connData.GroqAPIKey, m, clientID, nil, taskID)
 				fmt.Println("STATUS: IDLE")
 				os.Stdout.Sync()
 				newConvID = conversationID
@@ -1482,7 +1516,9 @@ Write-Output $base64
 				if ollamaModel == "" {
 					ollamaModel = "gemma4:31b"
 				}
-				output, err = executeOllamaCommand(ctx, command, connData.OllamaBaseURL, ollamaModel, connData.OllamaAPIKey, nil)
+				ollamaSemaphore <- struct{}{}
+				output, err = executeOllamaCommand(ctx, command, connData.OllamaBaseURL, ollamaModel, connData.OllamaAPIKey, nil, taskID)
+				<-ollamaSemaphore
 				fmt.Println("STATUS: IDLE")
 				os.Stdout.Sync()
 				newConvID = conversationID
@@ -1928,6 +1964,28 @@ type toolFuncDef struct {
 
 // availableTools is the standard list of tools sent with every cloud API request.
 var availableTools = []toolDef{
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "send_message",
+			Description: "Send a message to another concurrently running agent. Use this if you are in a multi-agent scenario.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"target_agent_id": map[string]interface{}{
+						"type":        "string",
+						"description": "The Task ID of the target agent",
+					},
+					"message": map[string]interface{}{
+						"type":        "string",
+						"description": "The message to send",
+					},
+				},
+				"required": []string{"target_agent_id", "message"},
+			},
+		},
+	},
+
 	{
 		Type: "function",
 		Function: toolFuncDef{
@@ -2569,7 +2627,7 @@ func executeToolInner(toolName string, argsJSON json.RawMessage, streamFileObj *
 // executeGroqCommand sends a prompt to the Groq cloud API and returns the response.
 // It uses the fast llama3-70b-8192 model by default, but respects modelName if provided.
 // Supports up to 5 tool-calling iterations using OpenAI-compatible tool_calls format.
-func executeGroqCommand(ctx context.Context, command, apiKey, modelName, clientID string, streamFileObj *os.File) (string, error) {
+func executeGroqCommand(ctx context.Context, command, apiKey, modelName, clientID string, streamFileObj *os.File, taskID string) (string, error) {
 	defer cleanupTerminalSession()
 	if apiKey == "" {
 		return "", fmt.Errorf("Groq API key not set. Open the Voila dashboard → Settings to add your key")
@@ -2610,6 +2668,24 @@ You have a maximum of 8 tool iterations. Be highly efficient! Review your messag
 	const maxIter = 8
 
 	for iter := 0; iter < maxIter; iter++ {
+
+		agentRegistryMu.RLock()
+		myTask, myTaskExists := activeAgents[taskID]
+		agentRegistryMu.RUnlock()
+		if myTaskExists {
+		DrainLoop:
+			for {
+				select {
+				case msg := <-myTask.Inbox:
+					messages = append(messages, map[string]interface{}{
+						"role":    "system",
+						"content": "[INBOX] " + msg,
+					})
+				default:
+					break DrainLoop
+				}
+			}
+		}
 		if ctx.Err() != nil { return "Canceled by user", nil }
 		debugLog.Printf("[executeGroqCommand] iter=%d messages=%d", iter, len(messages))
 		payload := map[string]interface{}{
@@ -2737,7 +2813,7 @@ You have a maximum of 8 tool iterations. Be highly efficient! Review your messag
 // executeOllamaCommand sends a prompt to an Ollama-compatible endpoint.
 // Works for both local Ollama (http://localhost:11434) and Ollama Cloud (https://api.ollama.ai).
 // Supports up to 5 tool-calling iterations using the Ollama /api/chat tools field.
-func executeOllamaCommand(ctx context.Context, command, baseURL, modelName, apiKey string, streamFileObj *os.File) (string, error) {
+func executeOllamaCommand(ctx context.Context, command, baseURL, modelName, apiKey string, streamFileObj *os.File, taskID string) (string, error) {
 	defer cleanupTerminalSession()
 	if baseURL == "" || baseURL == "http://localhost:11434" {
 		if apiKey != "" {
@@ -2784,6 +2860,24 @@ You have a maximum of 8 tool iterations. Be highly efficient! Review your messag
 	const maxIter = 8
 
 	for iter := 0; iter < maxIter; iter++ {
+
+		agentRegistryMu.RLock()
+		myTask, myTaskExists := activeAgents[taskID]
+		agentRegistryMu.RUnlock()
+		if myTaskExists {
+		DrainLoop:
+			for {
+				select {
+				case msg := <-myTask.Inbox:
+					messages = append(messages, map[string]interface{}{
+						"role":    "system",
+						"content": "[INBOX] " + msg,
+					})
+				default:
+					break DrainLoop
+				}
+			}
+		}
 		if ctx.Err() != nil { return "Canceled by user", nil }
 		debugLog.Printf("[executeOllamaCommand] iter=%d messages=%d", iter, len(messages))
 		payload := map[string]interface{}{
