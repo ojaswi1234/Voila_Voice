@@ -1506,42 +1506,90 @@ animation_loop()
 
 
 # --- GRAPHIFY TEAMS STATE ---
-if 'graphify_nodes' not in globals():
-    graphify_nodes = [
-        {"id": "node1", "role": "Researcher", "model": "llama3-8b\n(Ollama)", "x": 60, "y": 200, "color": "#2563EB", "outline": "#60A5FA", "r": 20},
-        {"id": "node2", "role": "Orchestrator", "model": "llama3-70b\n(Groq)", "x": 400, "y": 200, "color": "#7C3AED", "outline": "#A78BFA", "r": 25},
-        {"id": "node3", "role": "Reviewer", "model": "gemma-2b\n(Ollama)", "x": 740, "y": 200, "color": "#10B981", "outline": "#34D399", "r": 20}
-    ]
-    drag_data = {"node_idx": -1, "last_x": 0, "last_y": 0}
+import math
+import os
+
+if 'graph_state' not in globals():
+    graph_state = {
+        "nodes": [
+            {"id": "node1", "role": "Researcher", "model": "llama3-8b\n(Ollama)", "prompt": "Analyze the request and propose an initial approach.", "x": 60, "y": 200, "color": "#2563EB", "outline": "#60A5FA", "r": 20},
+            {"id": "node2", "role": "Orchestrator", "model": "llama3-70b\n(Groq)", "prompt": "Resolve the debate and improve the approach.", "x": 400, "y": 200, "color": "#7C3AED", "outline": "#A78BFA", "r": 25},
+            {"id": "node3", "role": "Reviewer", "model": "gemma-2b\n(Ollama)", "prompt": "Critique the approach and point out flaws.", "x": 740, "y": 200, "color": "#10B981", "outline": "#34D399", "r": 20}
+        ],
+        "edges": [
+            ("node1", "node2"),
+            ("node2", "node3")
+        ]
+    }
+    drag_data = {"node_id": None, "last_x": 0, "last_y": 0}
+    interaction_state = {"selected_node": None}
+
+def export_graphify_prompt():
+    prompt_path = "graphify_prompt.txt"
+    nodes = graph_state["nodes"]
+    edges = graph_state["edges"]
+    
+    prompt = "GRAPHIFY MULTI-MODEL TEAM PROTOCOL INITIATED.\n\n"
+    prompt += "You are an orchestration engine hosting a collaborative workspace for a team of expert AI models. Simulate a strict back-and-forth chat before giving the final answer.\n\n"
+    prompt += "REQUIRED WORKFLOW:\n"
+    
+    node_map = {n['id']: n for n in nodes}
+    for i, n in enumerate(nodes):
+        prompt += f"{i+1}. [{n['role']}]: {n.get('prompt', '')}\n"
+        
+    prompt += f"{len(nodes)+1}. [Chunker]: Breaks the final approach down into small, sequential, discrete chunks/steps to prevent failures.\n"
+    prompt += f"{len(nodes)+2}. Execute tools step-by-step according to the chunks and finalize.\n\n"
+    
+    prompt += "DATA FLOW (Follow this strictly):\n"
+    if not edges:
+        prompt += "- Independent parallel execution.\n"
+    for src_id, tgt_id in edges:
+        if src_id in node_map and tgt_id in node_map:
+            prompt += f"- [{node_map[src_id]['role']}] passes output to [{node_map[tgt_id]['role']}]\n"
+            
+    prompt += "\nOutput this exact debate transcript before you execute any tools.\n"
+    
+    try:
+        with open(prompt_path, "w", encoding="utf-8") as f:
+            f.write(prompt)
+    except Exception as e:
+        print("Failed to write prompt:", e)
 
 def _draw_teams_section(dc, w, h):
     dc.delete('team_element')
     
     # Header
     dc.create_text(24, 30, text='Graphify Teams (Multi-Model Collaboration)', fill='#E5E7EB', font=('Segoe UI', 16, 'bold'), anchor='w', tags='team_element')
-    dc.create_text(24, 55, text='Drag and drop nodes to organize your chain. Edit or create new teams below.', fill='#9CA3AF', font=('Segoe UI', 10), anchor='w', tags='team_element')
+    dc.create_text(24, 55, text='Drag & drop nodes. Click two nodes to connect/disconnect. Drop on line to split.', fill='#9CA3AF', font=('Segoe UI', 10), anchor='w', tags='team_element')
     
     # Background Box
     dc.create_rectangle(20, 80, w - 20, 320, fill='#1A1D23', outline='#374151', width=1, tags='team_element')
     
-    # Draw connections (lines)
-    for i in range(len(graphify_nodes) - 1):
-        n1 = graphify_nodes[i]
-        n2 = graphify_nodes[i+1]
-        dc.create_line(n1['x'], n1['y'], n2['x'], n2['y'], fill='#4F46E5', width=3, dash=(4,4), tags='team_element')
-        
+    node_map = {n['id']: n for n in graph_state['nodes']}
+    
+    # Draw edges
+    for src, tgt in graph_state['edges']:
+        if src in node_map and tgt in node_map:
+            n1 = node_map[src]
+            n2 = node_map[tgt]
+            tag = f'edge_{src}_{tgt}'
+            dc.create_line(n1['x'], n1['y'], n2['x'], n2['y'], fill='#4F46E5', width=3, dash=(4,4), tags=('team_element', tag, 'edge_line'))
+            
     # Draw nodes
-    for i, n in enumerate(graphify_nodes):
+    for i, n in enumerate(graph_state['nodes']):
         x, y, r = n['x'], n['y'], n['r']
-        tag = f'node_{i}'
+        nid = n['id']
+        outline_color = "#FBBF24" if interaction_state["selected_node"] == nid else n['outline']
+        outline_width = 4 if interaction_state["selected_node"] == nid else 2
+        
         # Node Oval
-        dc.create_oval(x-r, y-r, x+r, y+r, fill=n['color'], outline=n['outline'], width=2, tags=('team_element', tag, 'draggable'))
+        dc.create_oval(x-r, y-r, x+r, y+r, fill=n['color'], outline=outline_color, width=outline_width, tags=('team_element', f'node_{nid}', f'circle_{nid}', 'draggable'))
         # Number inside
-        dc.create_text(x, y, text=str(i+1), fill='white', font=('Segoe UI', max(10, r-8), 'bold'), tags=('team_element', tag, 'draggable'))
+        dc.create_text(x, y, text=str(i+1), fill='white', font=('Segoe UI', max(10, r-8), 'bold'), tags=('team_element', f'node_{nid}', f'text1_{nid}', 'draggable'))
         # Role Label
-        dc.create_text(x, y - r - 15, text=n['role'], fill='#D1D5DB', font=('Segoe UI', 10, 'bold'), tags=('team_element', tag, 'draggable'))
+        dc.create_text(x, y - r - 15, text=n['role'], fill='#D1D5DB', font=('Segoe UI', 10, 'bold'), tags=('team_element', f'node_{nid}', f'text2_{nid}', 'draggable'))
         # Model Label
-        dc.create_text(x, y + r + 15, text=n['model'], fill='#9CA3AF', font=('Segoe UI', 9), justify='center', tags=('team_element', tag, 'draggable'))
+        dc.create_text(x, y + r + 15, text=n['model'], fill='#9CA3AF', font=('Segoe UI', 9), justify='center', tags=('team_element', f'node_{nid}', f'text3_{nid}', 'draggable'))
         
     # Button: New Team
     dc.create_rectangle(24, 340, 140, 375, fill='#4F46E5', outline='', tags=('team_element', 'btn_add_team'))
@@ -1553,41 +1601,117 @@ def _draw_teams_section(dc, w, h):
 
     # --- Interaction Logic ---
     
+    def on_node_click(e):
+        items = dc.find_withtag("current")
+        if not items: return
+        tags = dc.gettags(items[0])
+        clicked_id = None
+        for tag in tags:
+            if tag.startswith('node_'):
+                clicked_id = tag.replace('node_', '')
+                break
+                
+        if clicked_id:
+            sel = interaction_state["selected_node"]
+            if sel is None:
+                interaction_state["selected_node"] = clicked_id
+                _draw_teams_section(dc, w, h)
+            elif sel == clicked_id:
+                interaction_state["selected_node"] = None
+                _draw_teams_section(dc, w, h)
+            else:
+                # Toggle edge
+                edge1 = (sel, clicked_id)
+                if edge1 in graph_state['edges']:
+                    graph_state['edges'].remove(edge1)
+                else:
+                    graph_state['edges'].append(edge1)
+                interaction_state["selected_node"] = None
+                export_graphify_prompt()
+                _draw_teams_section(dc, w, h)
+                
     def on_drag_start(e):
         items = dc.find_withtag("current")
         if not items: return
         tags = dc.gettags(items[0])
         for tag in tags:
             if tag.startswith('node_'):
-                idx = int(tag.split('_')[1])
-                drag_data['node_idx'] = idx
+                nid = tag.replace('node_', '')
+                drag_data['node_id'] = nid
                 drag_data['last_x'] = e.x
                 drag_data['last_y'] = e.y
                 break
 
     def on_drag_motion(e):
-        idx = drag_data['node_idx']
-        if idx >= 0 and idx < len(graphify_nodes):
+        nid = drag_data['node_id']
+        if nid:
             dx = e.x - drag_data['last_x']
             dy = e.y - drag_data['last_y']
             
-            # Constrain to bounding box
-            new_x = min(max(graphify_nodes[idx]['x'] + dx, 40), w - 40)
-            new_y = min(max(graphify_nodes[idx]['y'] + dy, 120), 280)
-            
-            graphify_nodes[idx]['x'] = new_x
-            graphify_nodes[idx]['y'] = new_y
-            
+            node = next((n for n in graph_state['nodes'] if n['id'] == nid), None)
+            if node:
+                # Constrain
+                new_x = min(max(node['x'] + dx, 40), w - 40)
+                new_y = min(max(node['y'] + dy, 120), 280)
+                
+                actual_dx = new_x - node['x']
+                actual_dy = new_y - node['y']
+                
+                node['x'] = new_x
+                node['y'] = new_y
+                
+                # Move visual elements efficiently
+                dc.move(f'circle_{nid}', actual_dx, actual_dy)
+                dc.move(f'text1_{nid}', actual_dx, actual_dy)
+                dc.move(f'text2_{nid}', actual_dx, actual_dy)
+                dc.move(f'text3_{nid}', actual_dx, actual_dy)
+                
+                # Update connected lines
+                node_map = {n['id']: n for n in graph_state['nodes']}
+                for src, tgt in graph_state['edges']:
+                    if src == nid or tgt == nid:
+                        if src in node_map and tgt in node_map:
+                            dc.coords(f'edge_{src}_{tgt}', node_map[src]['x'], node_map[src]['y'], node_map[tgt]['x'], node_map[tgt]['y'])
+                
             drag_data['last_x'] = e.x
             drag_data['last_y'] = e.y
-            
-            # Fast redraw just the team section
-            _draw_teams_section(dc, w, h)
+
+    def pt_line_dist(px, py, x1, y1, x2, y2):
+        l2 = (x2 - x1)**2 + (y2 - y1)**2
+        if l2 == 0: return math.hypot(px - x1, py - y1)
+        t = max(0, min(1, ((px - x1) * (x2 - x1) + (py - y1) * (y2 - y1)) / l2))
+        proj_x = x1 + t * (x2 - x1)
+        proj_y = y1 + t * (y2 - y1)
+        return math.hypot(px - proj_x, py - proj_y)
 
     def on_drag_stop(e):
-        drag_data['node_idx'] = -1
+        nid = drag_data['node_id']
+        drag_data['node_id'] = None
+        if not nid: return
         
-    dc.tag_bind('draggable', '<ButtonPress-1>', on_drag_start)
+        node = next((n for n in graph_state['nodes'] if n['id'] == nid), None)
+        if not node: return
+        
+        # Edge Splitting Logic
+        node_map = {n['id']: n for n in graph_state['nodes']}
+        split_edge = None
+        for edge in graph_state['edges']:
+            src, tgt = edge
+            if src == nid or tgt == nid: continue
+            if src in node_map and tgt in node_map:
+                d = pt_line_dist(node['x'], node['y'], node_map[src]['x'], node_map[src]['y'], node_map[tgt]['x'], node_map[tgt]['y'])
+                if d < 20: # Drop tolerance
+                    split_edge = edge
+                    break
+                    
+        if split_edge:
+            graph_state['edges'].remove(split_edge)
+            graph_state['edges'].append((split_edge[0], nid))
+            graph_state['edges'].append((nid, split_edge[1]))
+            export_graphify_prompt()
+            _draw_teams_section(dc, w, h)
+
+    dc.tag_bind('draggable', '<Button-1>', on_node_click)
     dc.tag_bind('draggable', '<B1-Motion>', on_drag_motion)
     dc.tag_bind('draggable', '<ButtonRelease-1>', on_drag_stop)
     dc.tag_bind('draggable', '<Enter>', lambda e: dc.config(cursor='hand2'))
@@ -1597,49 +1721,80 @@ def _draw_teams_section(dc, w, h):
     def on_edit_team(e):
         top = tk.Toplevel()
         top.title("Edit Graphify Team")
-        top.geometry("450x350")
+        top.geometry("500x550")
         top.configure(bg='#0F1115')
         top.attributes('-topmost', True)
         
-        tk.Label(top, text="Configure Model Chain", bg='#0F1115', fg='white', font=('Segoe UI', 14, 'bold')).pack(pady=10)
+        tk.Label(top, text="Configure Model Chain & Prompts", bg='#0F1115', fg='white', font=('Segoe UI', 14, 'bold')).pack(pady=10)
         
         frame = tk.Frame(top, bg='#0F1115')
         frame.pack(fill='both', expand=True, padx=20)
         
+        # Add scrollbar for larger lists
+        canvas = tk.Canvas(frame, bg='#0F1115', highlightthickness=0)
+        scrollbar = tk.Scrollbar(frame, orient="vertical", command=canvas.yview)
+        scrollable_frame = tk.Frame(canvas, bg='#0F1115')
+        
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
         entries = []
-        for i, n in enumerate(graphify_nodes):
-            row = tk.Frame(frame, bg='#0F1115')
-            row.pack(fill='x', pady=5)
-            tk.Label(row, text=f"Node {i+1} Role:", bg='#0F1115', fg='#D1D5DB').pack(side='left')
-            role_entry = tk.Entry(row, width=15, bg='#1A1D23', fg='white', insertbackground='white')
+        for i, n in enumerate(graph_state['nodes']):
+            row = tk.Frame(scrollable_frame, bg='#1A1D23', bd=1, relief='solid', pady=5, padx=5)
+            row.pack(fill='x', pady=5, padx=5)
+            
+            top_row = tk.Frame(row, bg='#1A1D23')
+            top_row.pack(fill='x')
+            tk.Label(top_row, text=f"Node {i+1} Role:", bg='#1A1D23', fg='#D1D5DB').pack(side='left')
+            role_entry = tk.Entry(top_row, width=15, bg='#374151', fg='white', insertbackground='white')
             role_entry.insert(0, n['role'])
             role_entry.pack(side='left', padx=5)
             
-            tk.Label(row, text="Model:", bg='#0F1115', fg='#D1D5DB').pack(side='left')
-            model_entry = tk.Entry(row, width=20, bg='#1A1D23', fg='white', insertbackground='white')
+            tk.Label(top_row, text="Model:", bg='#1A1D23', fg='#D1D5DB').pack(side='left')
+            model_entry = tk.Entry(top_row, width=20, bg='#374151', fg='white', insertbackground='white')
             model_entry.insert(0, n['model'].replace('\n', ' '))
             model_entry.pack(side='left', padx=5)
-            entries.append((role_entry, model_entry))
+            
+            bot_row = tk.Frame(row, bg='#1A1D23')
+            bot_row.pack(fill='x', pady=5)
+            tk.Label(bot_row, text="Prompt:", bg='#1A1D23', fg='#D1D5DB').pack(side='left', anchor='n')
+            prompt_text = tk.Text(bot_row, height=3, width=45, bg='#374151', fg='white', insertbackground='white')
+            prompt_text.insert('1.0', n.get('prompt', ''))
+            prompt_text.pack(side='left', padx=5)
+            
+            entries.append((role_entry, model_entry, prompt_text))
             
         def save_changes():
-            for i, (r_ent, m_ent) in enumerate(entries):
-                graphify_nodes[i]['role'] = r_ent.get()
-                graphify_nodes[i]['model'] = m_ent.get().replace(' ', '\n', 1)
+            for i, (r_ent, m_ent, p_txt) in enumerate(entries):
+                graph_state['nodes'][i]['role'] = r_ent.get()
+                graph_state['nodes'][i]['model'] = m_ent.get().replace(' ', '\n', 1)
+                graph_state['nodes'][i]['prompt'] = p_txt.get('1.0', 'end').strip()
+            export_graphify_prompt()
             _draw_teams_section(dc, w, h)
             top.destroy()
             
         tk.Button(top, text="Save & Update", command=save_changes, bg='#10B981', fg='white', relief='flat').pack(pady=15)
         
     def on_new_team(e):
-        # Reset to a fresh blank team
-        global graphify_nodes
-        graphify_nodes = [
-            {"id": "node1", "role": "Analyzer", "model": "gemma-2b\n(Ollama)", "x": 100, "y": 200, "color": "#F59E0B", "outline": "#FCD34D", "r": 20},
-            {"id": "node2", "role": "Writer", "model": "llama3-8b\n(Groq)", "x": w//2, "y": 200, "color": "#3B82F6", "outline": "#93C5FD", "r": 20},
-        ]
+        global graph_state
+        graph_state = {
+            "nodes": [
+                {"id": "node1", "role": "Analyzer", "model": "gemma-2b\n(Ollama)", "prompt": "Analyze", "x": 100, "y": 200, "color": "#F59E0B", "outline": "#FCD34D", "r": 20},
+                {"id": "node2", "role": "Writer", "model": "llama3-8b\n(Groq)", "prompt": "Write", "x": w//2, "y": 200, "color": "#3B82F6", "outline": "#93C5FD", "r": 20},
+            ],
+            "edges": []
+        }
+        interaction_state["selected_node"] = None
+        export_graphify_prompt()
         _draw_teams_section(dc, w, h)
 
-    # Bind buttons
     dc.tag_bind('btn_edit_team', '<Enter>', lambda e: dc.config(cursor='hand2'))
     dc.tag_bind('btn_edit_team', '<Leave>', lambda e: dc.config(cursor=''))
     dc.tag_bind('btn_edit_team', '<Button-1>', on_edit_team)
@@ -1648,6 +1803,7 @@ def _draw_teams_section(dc, w, h):
     dc.tag_bind('btn_add_team', '<Leave>', lambda e: dc.config(cursor=''))
     dc.tag_bind('btn_add_team', '<Button-1>', on_new_team)
 
+# Write initial prompt file if not exists
+export_graphify_prompt()
+
 root.mainloop()
-
-

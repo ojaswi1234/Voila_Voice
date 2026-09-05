@@ -1405,7 +1405,12 @@ Write-Output $base64
 		}
 
 		if graphifyEnabled {
-		    command = "GRAPHIFY MULTI-MODEL TEAM PROTOCOL INITIATED.\n\nYou are an orchestration engine hosting a collaborative workspace for a team of expert AI models. You must simulate a strict back-and-forth chat between the models before giving the final answer.\n\nREQUIRED WORKFLOW:\n1. [Researcher]: Analyzes the 'what, when, where, and how' and proposes an initial approach.\n2. [Reviewer]: Critiques the Researcher, aggressively points out flaws, wrong choices, or edge cases.\n3. [Orchestrator]: Resolves the debate and improves the approach as a team.\n4. [Chunker]: Breaks the final approach down into small, sequential, discrete chunks/steps to prevent failures.\n5. Execute tools step-by-step according to the chunks and finalize.\n\nOutput this exact debate transcript before you execute any tools. \n\nUser Task: " + command
+			promptData, err := os.ReadFile("graphify_prompt.txt")
+			if err == nil && len(promptData) > 0 {
+				command = string(promptData) + "\n\nUser Task: " + command
+			} else {
+				command = "GRAPHIFY MULTI-MODEL TEAM PROTOCOL INITIATED.\n\nYou are an orchestration engine hosting a collaborative workspace for a team of expert AI models. You must simulate a strict back-and-forth chat between the models before giving the final answer.\n\nREQUIRED WORKFLOW:\n1. [Researcher]: Analyzes the 'what, when, where, and how' and proposes an initial approach.\n2. [Reviewer]: Critiques the Researcher, aggressively points out flaws, wrong choices, or edge cases.\n3. [Orchestrator]: Resolves the debate and improves the approach as a team.\n4. [Chunker]: Breaks the final approach down into small, sequential, discrete chunks/steps to prevent failures.\n5. Execute tools step-by-step according to the chunks and finalize.\n\nOutput this exact debate transcript before you execute any tools. \n\nUser Task: " + command
+			}
 		}
 		
 		// Check circuit breaker before executing
