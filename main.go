@@ -710,6 +710,7 @@ func (b *Backend) lockDevice(deviceID, clientID string) error {
 	device.LockedBy = clientID
 	device.LockedAt = time.Now()
 	log.Printf("Device %s locked by client %s", deviceID, clientID)
+	go b.broadcastDevices()
 	return nil
 }
 
@@ -1526,13 +1527,18 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 		
 		b.mu.Lock()
 		delete(b.clients, clientID)
+		needsBroadcast := false
 		for _, device := range b.devices {
 			if device.LockedBy == clientID {
 				device.LockedBy = ""
 				device.LockedAt = time.Time{}
+				needsBroadcast = true
 			}
 		}
 		b.mu.Unlock()
+		if needsBroadcast {
+			go b.broadcastDevices()
+		}
 	}
 }
 

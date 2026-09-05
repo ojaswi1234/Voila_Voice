@@ -1352,9 +1352,44 @@ func startHTTPServer() {
 		modelName := getString("model")
 		graphifyEnabled := getBool("graphify_enabled")
 		
+		if command == "__SCREENSHOT__" {
+			w.WriteHeader(http.StatusAccepted)
+			go func() {
+				psCode := `
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+$bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+$bitmap = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height
+$graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+$graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+$stream = New-Object System.IO.MemoryStream
+$bitmap.Save($stream, [System.Drawing.Imaging.ImageFormat]::Jpeg)
+$bytes = $stream.ToArray()
+$base64 = [Convert]::ToBase64String($bytes)
+$graphics.Dispose()
+$bitmap.Dispose()
+$stream.Dispose()
+Write-Output $base64
+`
+				out, err := exec.Command("powershell", "-NoProfile", "-Command", psCode).CombinedOutput()
+				var result string
+				if err != nil {
+					result = "Screenshot failed: " + err.Error()
+				} else {
+					result = "__IMAGE__:" + strings.TrimSpace(string(out))
+				}
+				webhookPayload, _ := json.Marshal(map[string]string{
+					"client_id":   clientID,
+					"device_id":   connData.DeviceID,
+					"secret_hash": hashPhrase(connData.SecurityPhrase, connData.DeviceID),
+					"output":      result,
+				})
+				http.Post(connData.BackendURL+"/webhook/result", "application/json", bytes.NewBuffer(webhookPayload))
+			}()
+			return
+		}
+
 		if graphifyEnabled {
-			fmt.Printf("STATUS: GRAPHIFY\n")
-			os.Stdout.Sync()
 		    command = "GRAPHIFY MULTI-MODEL TEAM PROTOCOL INITIATED.\n\nYou are an orchestration engine hosting a collaborative workspace for a team of expert AI models. You must simulate a strict back-and-forth chat between the models before giving the final answer.\n\nREQUIRED WORKFLOW:\n1. [Researcher]: Analyzes the 'what, when, where, and how' and proposes an initial approach.\n2. [Reviewer]: Critiques the Researcher, aggressively points out flaws, wrong choices, or edge cases.\n3. [Orchestrator]: Resolves the debate, improves the approach as a team, and decides which tools to call.\n4. Execute tools and finalize.\n\nOutput this exact debate transcript before you execute any tools. \n\nUser Task: " + command
 		}
 		

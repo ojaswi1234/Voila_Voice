@@ -2103,6 +2103,16 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                     ],
                   ),
                   const SizedBox(height: 8),
+                  if (content.startsWith('__IMAGE__:'))
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.memory(
+                        base64Decode(content.substring(10)),
+                        fit: BoxFit.contain,
+                        errorBuilder: (context, error, stackTrace) => const Text('Invalid image data', style: TextStyle(color: Colors.red)),
+                      ),
+                    )
+                  else
                   CollapsibleOutput(
                     text: content,
                     style: TextStyle(
