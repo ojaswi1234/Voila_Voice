@@ -100,7 +100,7 @@ class VoiceHomePage extends StatefulWidget {
   State<VoiceHomePage> createState() => _VoiceHomePageState();
 }
 
-class _VoiceHomePageState extends State<VoiceHomePage> {
+class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserver {
   late WebSocketChannel channel;
   static const platform = MethodChannel('com.voila/intent');
   bool _isAssistant = false;
@@ -171,6 +171,18 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    
+    // Listen for intent changes (e.g. from onNewIntent)
+    platform.setMethodCallHandler((call) async {
+      if (call.method == 'onIntentChanged') {
+        final bool isAssistant = call.arguments as bool;
+        setState(() {
+          _isAssistant = isAssistant;
+        });
+      }
+    });
+
     _checkIntent();
     _initBackground();
     _initTts();
@@ -887,6 +899,8 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _assistantImageTimer?.cancel();
 
     _healthCheckTimer?.cancel();
     channel.sink.close();
@@ -896,6 +910,13 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
       _speechToText.stop();
     }
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _checkIntent();
+    }
   }
 
 
@@ -2097,7 +2118,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   }
 
   Widget _buildModeToggle(ColorScheme colorScheme) {
-    final isAgent = _currentMode == 'agent';
+    final isAgent = _currentMode == 'agent' || _isAssistant;
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
       padding: const EdgeInsets.all(4),
@@ -2315,7 +2336,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   }
 
   Widget _buildInputArea(ColorScheme colorScheme) {
-    final isAgent = _currentMode == 'agent';
+    final isAgent = _currentMode == 'agent' || _isAssistant;
 
     if (isAgent) {
       return Stack(
