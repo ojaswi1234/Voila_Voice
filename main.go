@@ -375,7 +375,7 @@ func getSessionSigningKey() []byte {
 
 func createSessionToken(deviceID, clientID string) (string, int64) {
 	secret := getSessionSigningKey()
-	expiryTime := time.Now().Add(30 * 24 * time.Hour)
+	expiryTime := time.Now().Add(24 * time.Hour)
 	payload := map[string]interface{}{
 		"sid": fmt.Sprintf("sess-%d", time.Now().UnixNano()),
 		"device_id": deviceID,
@@ -1198,7 +1198,7 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 					b.mu.Unlock()
 					
 					token, expiresAt := createSessionToken(deviceID, cID)
-					ttlSec := int64(30 * 24 * 60 * 60) // 900 seconds (was incorrectly dividing by time.Second)
+					ttlSec := int64(24 * 60 * 60) // 900 seconds (was incorrectly dividing by time.Second)
 					resp := map[string]interface{}{
 						"type": "session",
 						"session_token": token,
