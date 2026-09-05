@@ -1601,36 +1601,7 @@ def _draw_teams_section(dc, w, h):
 
     # --- Interaction Logic ---
     
-    def on_node_click(e):
-        items = dc.find_withtag("current")
-        if not items: return
-        tags = dc.gettags(items[0])
-        clicked_id = None
-        for tag in tags:
-            if tag.startswith('node_'):
-                clicked_id = tag.replace('node_', '')
-                break
-                
-        if clicked_id:
-            sel = interaction_state["selected_node"]
-            if sel is None:
-                interaction_state["selected_node"] = clicked_id
-                _draw_teams_section(dc, w, h)
-            elif sel == clicked_id:
-                interaction_state["selected_node"] = None
-                _draw_teams_section(dc, w, h)
-            else:
-                # Toggle edge
-                edge1 = (sel, clicked_id)
-                if edge1 in graph_state['edges']:
-                    graph_state['edges'].remove(edge1)
-                else:
-                    graph_state['edges'].append(edge1)
-                interaction_state["selected_node"] = None
-                export_graphify_prompt()
-                _draw_teams_section(dc, w, h)
-                
-    def on_drag_start(e):
+    def on_node_press(e):
         items = dc.find_withtag("current")
         if not items: return
         tags = dc.gettags(items[0])
@@ -1640,17 +1611,23 @@ def _draw_teams_section(dc, w, h):
                 drag_data['node_id'] = nid
                 drag_data['last_x'] = e.x
                 drag_data['last_y'] = e.y
+                drag_data['start_x'] = e.x
+                drag_data['start_y'] = e.y
+                drag_data['dragged'] = False
                 break
 
     def on_drag_motion(e):
-        nid = drag_data['node_id']
+        nid = drag_data.get('node_id')
         if nid:
+            if not drag_data.get('dragged'):
+                if abs(e.x - drag_data.get('start_x', e.x)) > 3 or abs(e.y - drag_data.get('start_y', e.y)) > 3:
+                    drag_data['dragged'] = True
+                    
             dx = e.x - drag_data['last_x']
             dy = e.y - drag_data['last_y']
             
             node = next((n for n in graph_state['nodes'] if n['id'] == nid), None)
             if node:
-                # Constrain
                 new_x = min(max(node['x'] + dx, 40), w - 40)
                 new_y = min(max(node['y'] + dy, 120), 280)
                 
@@ -1660,13 +1637,11 @@ def _draw_teams_section(dc, w, h):
                 node['x'] = new_x
                 node['y'] = new_y
                 
-                # Move visual elements efficiently
                 dc.move(f'circle_{nid}', actual_dx, actual_dy)
                 dc.move(f'text1_{nid}', actual_dx, actual_dy)
                 dc.move(f'text2_{nid}', actual_dx, actual_dy)
                 dc.move(f'text3_{nid}', actual_dx, actual_dy)
                 
-                # Update connected lines
                 node_map = {n['id']: n for n in graph_state['nodes']}
                 for src, tgt in graph_state['edges']:
                     if src == nid or tgt == nid:
@@ -1685,33 +1660,59 @@ def _draw_teams_section(dc, w, h):
         return math.hypot(px - proj_x, py - proj_y)
 
     def on_drag_stop(e):
-        nid = drag_data['node_id']
+        nid = drag_data.get('node_id')
+        dragged = drag_data.get('dragged', False)
         drag_data['node_id'] = None
+        
         if not nid: return
         
-        node = next((n for n in graph_state['nodes'] if n['id'] == nid), None)
-        if not node: return
-        
-        # Edge Splitting Logic
-        node_map = {n['id']: n for n in graph_state['nodes']}
-        split_edge = None
-        for edge in graph_state['edges']:
-            src, tgt = edge
-            if src == nid or tgt == nid: continue
-            if src in node_map and tgt in node_map:
-                d = pt_line_dist(node['x'], node['y'], node_map[src]['x'], node_map[src]['y'], node_map[tgt]['x'], node_map[tgt]['y'])
-                if d < 20: # Drop tolerance
-                    split_edge = edge
-                    break
-                    
-        if split_edge:
-            graph_state['edges'].remove(split_edge)
-            graph_state['edges'].append((split_edge[0], nid))
-            graph_state['edges'].append((nid, split_edge[1]))
-            export_graphify_prompt()
-            _draw_teams_section(dc, w, h)
+        if not dragged:
+            # PURE CLICK -> Selection / Connection logic
+            sel = interaction_state["selected_node"]
+            if sel is None:
+                interaction_state["selected_node"] = nid
+                _draw_teams_section(dc, w, h)
+            elif sel == nid:
+                interaction_state["selected_node"] = None
+                _draw_teams_section(dc, w, h)
+            else:
+                edge1 = (sel, nid)
+                if edge1 in graph_state['edges']:
+                    graph_state['edges'].remove(edge1)
+                else:
+                    graph_state['edges'].append(edge1)
+                interaction_state["selected_node"] = None
+                export_graphify_prompt()
+                _draw_teams_section(dc, w, h)
+        else:
+            # DROP -> Edge Splitting logic
+            node = next((n for n in graph_state['nodes'] if n['id'] == nid), None)
+            if not node: return
+            
+            node_map = {n['id']: n for n in graph_state['nodes']}
+            split_edge = None
+            for edge in graph_state['edges']:
+                src, tgt = edge
+                if src == nid or tgt == nid: continue
+                if src in node_map and tgt in node_map:
+                    d = pt_line_dist(node['x'], node['y'], node_map[src]['x'], node_map[src]['y'], node_map[tgt]['x'], node_map[tgt]['y'])
+                    if d < 35: # Generous drop tolerance
+                        min_x = min(node_map[src]['x'], node_map[tgt]['x']) - 35
+                        max_x = max(node_map[src]['x'], node_map[tgt]['x']) + 35
+                        min_y = min(node_map[src]['y'], node_map[tgt]['y']) - 35
+                        max_y = max(node_map[src]['y'], node_map[tgt]['y']) + 35
+                        if min_x <= node['x'] <= max_x and min_y <= node['y'] <= max_y:
+                            split_edge = edge
+                            break
+                            
+            if split_edge:
+                graph_state['edges'].remove(split_edge)
+                graph_state['edges'].append((split_edge[0], nid))
+                graph_state['edges'].append((nid, split_edge[1]))
+                export_graphify_prompt()
+                _draw_teams_section(dc, w, h)
 
-    dc.tag_bind('draggable', '<Button-1>', on_node_click)
+    dc.tag_bind('draggable', '<ButtonPress-1>', on_node_press)
     dc.tag_bind('draggable', '<B1-Motion>', on_drag_motion)
     dc.tag_bind('draggable', '<ButtonRelease-1>', on_drag_stop)
     dc.tag_bind('draggable', '<Enter>', lambda e: dc.config(cursor='hand2'))
