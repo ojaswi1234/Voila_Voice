@@ -2110,12 +2110,46 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                   ),
                   const SizedBox(height: 8),
                   if (content.startsWith('__IMAGE__:'))
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: Image.memory(
-                        base64Decode(content.substring(10)),
-                        fit: BoxFit.contain,
-                        errorBuilder: (context, error, stackTrace) => const Text('Invalid image data', style: TextStyle(color: Colors.red)),
+                    GestureDetector(
+                      onTap: () {
+                        showDialog(
+                          context: context,
+                          builder: (context) => Dialog(
+                            backgroundColor: Colors.transparent,
+                            insetPadding: EdgeInsets.zero,
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                InteractiveViewer(
+                                  panEnabled: true,
+                                  boundaryMargin: const EdgeInsets.all(20),
+                                  minScale: 0.5,
+                                  maxScale: 4,
+                                  child: Image.memory(
+                                    base64Decode(content.substring(10).replaceAll(RegExp(r'\s+'), '')),
+                                    fit: BoxFit.contain,
+                                  ),
+                                ),
+                                Positioned(
+                                  top: 40,
+                                  right: 20,
+                                  child: IconButton(
+                                    icon: const Icon(Icons.close, color: Colors.white, size: 30),
+                                    onPressed: () => Navigator.of(context).pop(),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.memory(
+                          base64Decode(content.substring(10).replaceAll(RegExp(r'\s+'), '')),
+                          fit: BoxFit.contain,
+                          errorBuilder: (context, error, stackTrace) => const Text('Invalid image data', style: TextStyle(color: Colors.red)),
+                        ),
                       ),
                     )
                   else
@@ -2283,6 +2317,22 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
               ),
             ),
 
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: () {
+                _controller.text = "__SCREENSHOT__";
+                _sendMessage();
+              },
+              child: Container(
+                padding: const EdgeInsets.all(14),
+                margin: const EdgeInsets.only(bottom: 2),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.camera_alt_outlined, color: Colors.white70, size: 20),
+              ),
+            ),
             const SizedBox(width: 8),
             GestureDetector(
               onTap: _sendMessage,
