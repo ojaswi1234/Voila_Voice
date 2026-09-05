@@ -1673,15 +1673,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                         icon: Icon(Icons.auto_awesome, size: 22, color: _selectedModel.isNotEmpty ? colorScheme.secondary : colorScheme.onSurface.withOpacity(0.7)),
                         onPressed: _showModelSelector,
                       ),
-                    if (_currentMode.toUpperCase() == 'AGENT')
-                      IconButton(
-                        icon: const Icon(Icons.camera_alt_outlined, size: 22, color: Colors.white70),
-                        tooltip: 'Get Desktop Screenshot',
-                        onPressed: () {
-                          _controller.text = "__SCREENSHOT__";
-                          _sendMessage();
-                        },
-                      ),
+
                     GestureDetector(
                       onTap: () => _showDeviceSelector(context),
                       child: Container(
@@ -2168,9 +2160,13 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                if (_isLiveSession || _isAiSpeaking) 
                  const SizedBox(height: 16),
                
-               GestureDetector(
-                 onTap: () {
-                   if (_isLiveSession) {
+               Row(
+                 mainAxisAlignment: MainAxisAlignment.center,
+                 children: [
+                   const SizedBox(width: 56), // Balance for centering
+                   GestureDetector(
+                     onTap: () {
+                       if (_isLiveSession) {
                      _stopListening();
                      flutterTts.stop();
                      setState(() => _isAiSpeaking = false);
@@ -2197,7 +2193,18 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                    ),
                  ),
                ),
-               const SizedBox(height: 12),
+               const SizedBox(width: 16),
+               IconButton(
+                 icon: const Icon(Icons.camera_alt_outlined, size: 24, color: Colors.white54),
+                 tooltip: 'Get Desktop Screenshot',
+                 onPressed: () {
+                   _controller.text = "__SCREENSHOT__";
+                   _sendMessage();
+                 },
+               ),
+             ],
+           ),
+           const SizedBox(height: 12),
                Text(
                  _isLiveSession 
                     ? (_isAiSpeaking ? 'AI is speaking...' : (_isListening ? 'Listening...' : _currentStatus)) 
@@ -2275,22 +2282,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                 ),
               ),
             ),
-            const SizedBox(width: 8),
-            GestureDetector(
-              onTap: () {
-                _controller.text = "__SCREENSHOT__";
-                _sendMessage();
-              },
-              child: Container(
-                padding: const EdgeInsets.all(14),
-                margin: const EdgeInsets.only(bottom: 2),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(Icons.camera_alt_rounded, color: Colors.white70, size: 20),
-              ),
-            ),
+
             const SizedBox(width: 8),
             GestureDetector(
               onTap: _sendMessage,
