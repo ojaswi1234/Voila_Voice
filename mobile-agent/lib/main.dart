@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart'; // For compute()
 import 'package:flutter/material.dart';
+import 'dart:ui';
 import 'crypto.dart';
 import 'package:http/http.dart' as http;
 import 'package:web_socket_channel/web_socket_channel.dart';
@@ -2175,82 +2176,148 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
     final isAgent = _currentMode == 'agent';
 
     if (isAgent) {
-      return Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: const Color(0xFF0F0F12),
-          border: Border(top: BorderSide(color: Colors.white.withOpacity(0.05))),
-        ),
-        child: SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-               if (_isLiveSession || _isAiSpeaking) 
-                 AudioVisualizer(
-                   isListening: _isListening,
-                   isSpeaking: _isAiSpeaking,
-                   soundLevel: _currentSoundLevel,
-                 ),
-               if (_isLiveSession || _isAiSpeaking) 
-                 const SizedBox(height: 16),
-               
-               Row(
-                 mainAxisAlignment: MainAxisAlignment.center,
-                 children: [
-                   const SizedBox(width: 56), // Balance for centering
-                   GestureDetector(
-                     onTap: () {
-                       if (_isLiveSession) {
-                     _stopListening();
-                     flutterTts.stop();
-                     setState(() => _isAiSpeaking = false);
-                     _cancelBackendTask();
-                   } else {
-                     setState(() => _isLiveSession = true);
-                     _startListening();
-                   }
-                 },
-                 child: Container(
-                   padding: const EdgeInsets.all(20),
-                   decoration: BoxDecoration(
-                     color: _isLiveSession ? Colors.redAccent.withOpacity(0.15) : colorScheme.primary.withOpacity(0.15),
-                     shape: BoxShape.circle,
-                     border: Border.all(
-                       color: _isLiveSession ? Colors.redAccent : colorScheme.primary,
-                       width: 2,
-                     ),
-                   ),
-                   child: Icon(
-                     _isLiveSession ? Icons.stop_rounded : Icons.mic_rounded,
-                     color: _isLiveSession ? Colors.redAccent : colorScheme.primary,
-                     size: 36,
-                   ),
-                 ),
-               ),
-               const SizedBox(width: 16),
-               IconButton(
-                 icon: const Icon(Icons.camera_alt_outlined, size: 24, color: Colors.white54),
-                 tooltip: 'Get Desktop Screenshot',
-                 onPressed: () {
-                   _controller.text = "__SCREENSHOT__";
-                   _sendMessage();
-                 },
-               ),
-             ],
-           ),
-           const SizedBox(height: 12),
-               Text(
-                 _isLiveSession 
-                    ? (_isAiSpeaking ? 'AI is speaking...' : (_isListening ? 'Listening...' : _currentStatus)) 
-                    : 'Tap to start Voila Live',
-                 style: const TextStyle(color: Colors.white54, fontSize: 13, fontWeight: FontWeight.w500),
-               ),
-            ],
+      return Stack(
+        alignment: Alignment.bottomCenter,
+        children: [
+          // If live, we show a translucent glassmorphic bar just like Gemini Live
+          ClipRRect(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+              child: Container(
+                padding: const EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 24),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF13151A).withOpacity(0.75),
+                  border: Border(top: BorderSide(color: Colors.white.withOpacity(0.1))),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Dot indicators (dummy visual for Gemini styling)
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: List.generate(5, (index) => Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 4),
+                        width: index == 0 ? 8 : 6,
+                        height: index == 0 ? 8 : 6,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: index == 0 ? Colors.white70 : Colors.white24,
+                        ),
+                      )),
+                    ),
+                    const SizedBox(height: 20),
+                    
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        // LEFT: Camera & Upload (Upload is dummy for Gemini look)
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            GestureDetector(
+                              onTap: () {
+                                _controller.text = "__SCREENSHOT__";
+                                _sendMessage();
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: const BoxDecoration(
+                                  color: Color(0xFF1E1E24),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(Icons.camera_alt_outlined, color: Colors.white, size: 22),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            GestureDetector(
+                              onTap: () {},
+                              child: Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: colorScheme.secondary.withOpacity(0.2),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(Icons.arrow_upward_rounded, color: colorScheme.secondary, size: 22),
+                              ),
+                            ),
+                          ],
+                        ),
+                        
+                        // CENTER: Glowing Pill
+                        Expanded(
+                          child: Container(
+                            height: 56,
+                            margin: const EdgeInsets.symmetric(horizontal: 16),
+                            child: AudioVisualizer(
+                              isListening: _isListening,
+                              isSpeaking: _isAiSpeaking,
+                              soundLevel: _currentSoundLevel,
+                            ),
+                          ),
+                        ),
+                        
+                        // RIGHT: Mic & Close
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            GestureDetector(
+                              onTap: () {
+                                if (_isLiveSession) {
+                                  _stopListening();
+                                  flutterTts.stop();
+                                  setState(() => _isAiSpeaking = false);
+                                  _cancelBackendTask();
+                                } else {
+                                  setState(() => _isLiveSession = true);
+                                  _startListening();
+                                }
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: const BoxDecoration(
+                                  color: Color(0xFF1E1E24),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(_isLiveSession ? Icons.mic_rounded : Icons.mic_off_rounded, color: Colors.white, size: 22),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            GestureDetector(
+                              onTap: () {
+                                _stopListening();
+                                flutterTts.stop();
+                                setState(() { _isAiSpeaking = false; _isLiveSession = false; });
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: const BoxDecoration(
+                                  color: Color(0xFF1E1E24),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(Icons.close_rounded, color: Colors.white, size: 22),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      _isLiveSession 
+                        ? (_isAiSpeaking ? 'AI is speaking...' : (_isListening ? 'Listening...' : _currentStatus)) 
+                        : 'Tap mic to start',
+                      style: const TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.w500),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
-        ),
+        ],
       );
     }
-
+    
     // SHELL mode - standard text input
     return Container(
       padding: const EdgeInsets.all(16),
