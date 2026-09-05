@@ -1503,6 +1503,8 @@ Write-Output $base64
 
 			// Post the result back to backend
 			backendURL := strings.TrimRight(connData.BackendURL, "/") + "/webhook/result"
+			backendURL = strings.Replace(backendURL, "wss://", "https://", 1)
+			backendURL = strings.Replace(backendURL, "ws://", "http://", 1)
 			
 			// Calculate security hash to authenticate webhook
 			h := sha256.New()
