@@ -1770,8 +1770,7 @@ def _draw_teams_section(dc, w, h):
                 
                 tk.Label(top_row, text="Model:", bg='#1A1D23', fg='#D1D5DB').pack(side='left')
                 model_entry = tk.Entry(top_row, width=15, bg='#374151', fg='white', insertbackground='white', relief='flat')
-                model_entry.insert(0, n.get('model', '').replace('
-', ' '))
+                model_entry.insert(0, n.get('model', '').replace('\n', ' '))
                 model_entry.pack(side='left', padx=5)
                 
                 def make_deleter(idx=i):
@@ -1791,16 +1790,14 @@ def _draw_teams_section(dc, w, h):
         def sync_entries():
             for i, (r_ent, m_ent, p_txt) in enumerate(entries):
                 editor_nodes[i]['role'] = r_ent.get()
-                editor_nodes[i]['model'] = m_ent.get().replace(' ', '
-', 1)
+                editor_nodes[i]['model'] = m_ent.get().replace(' ', '\n', 1)
                 editor_nodes[i]['prompt'] = p_txt.get('1.0', 'end').strip()
                 
         def add_node():
             sync_entries()
             new_id = f"node{int(_time.time()*1000)}"
             editor_nodes.append({
-                "id": new_id, "role": "Agent", "model": "llama3-8b
-(Groq)", 
+                "id": new_id, "role": "Agent", "model": "llama3-8b\n(Groq)", 
                 "prompt": "", "x": w//2, "y": 200, "color": "#10B981", "outline": "#34D399", "r": 20
             })
             render_nodes()
