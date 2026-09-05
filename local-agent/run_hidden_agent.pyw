@@ -1773,10 +1773,7 @@ def _draw_teams_section(dc, w, h):
                 model_entry.insert(0, n.get('model', '').replace('\n', ' '))
                 model_entry.pack(side='left', padx=5)
                 
-                def make_deleter(idx=i):
-                    return lambda: delete_node(idx)
-                    
-                tk.Button(top_row, text="X", bg='#EF4444', fg='white', relief='flat', command=make_deleter).pack(side='right', padx=5)
+                tk.Button(top_row, text="X", bg='#EF4444', fg='white', relief='flat', command=lambda idx=i: delete_node(idx)).pack(side='right', padx=5)
                 
                 bot_row = tk.Frame(row, bg='#1A1D23')
                 bot_row.pack(fill='x', pady=5)
