@@ -1554,6 +1554,10 @@ def export_graphify_prompt():
     try:
         with open(prompt_path, "w", encoding="utf-8") as f:
             f.write(prompt)
+            
+        import json as _json
+        with open("graphify_state.json", "w", encoding="utf-8") as f:
+            _json.dump(graph_state, f, indent=2)
     except Exception as e:
         print("Failed to write prompt:", e)
 

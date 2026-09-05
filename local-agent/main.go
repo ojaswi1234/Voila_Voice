@@ -1405,12 +1405,44 @@ Write-Output $base64
 		}
 
 		if graphifyEnabled {
-			promptData, err := os.ReadFile("graphify_prompt.txt")
-			if err == nil && len(promptData) > 0 {
-				command = string(promptData) + "\n\nUser Task: " + command
-			} else {
-				command = "GRAPHIFY MULTI-MODEL TEAM PROTOCOL INITIATED.\n\nYou are an orchestration engine hosting a collaborative workspace for a team of expert AI models. You must simulate a strict back-and-forth chat between the models before giving the final answer.\n\nREQUIRED WORKFLOW:\n1. [Researcher]: Analyzes the 'what, when, where, and how' and proposes an initial approach.\n2. [Reviewer]: Critiques the Researcher, aggressively points out flaws, wrong choices, or edge cases.\n3. [Orchestrator]: Resolves the debate and improves the approach as a team.\n4. [Chunker]: Breaks the final approach down into small, sequential, discrete chunks/steps to prevent failures.\n5. Execute tools step-by-step according to the chunks and finalize.\n\nOutput this exact debate transcript before you execute any tools. \n\nUser Task: " + command
-			}
+			w.WriteHeader(http.StatusAccepted)
+			
+			go func() {
+				output, err := executeGraphifyDAG(context.Background(), command)
+				
+				backendURL := strings.TrimRight(connData.BackendURL, "/") + "/webhook/result"
+				backendURL = strings.Replace(backendURL, "wss://", "https://", 1)
+				backendURL = strings.Replace(backendURL, "ws://", "http://", 1)
+				
+				h := sha256.New()
+				h.Write([]byte(connData.SecurityPhrase + ":" + connData.DeviceID))
+				secretHash := hex.EncodeToString(h.Sum(nil))
+				
+				resultPayload := map[string]string{
+					"client_id":           clientID,
+					"device_id":           connData.DeviceID,
+					"secret_hash":         secretHash,
+					"mode":                mode,
+					"new_conversation_id": conversationID,
+				}
+				
+				if err != nil {
+					resultPayload["error"] = "DAG Execution Failed:\n" + err.Error()
+				} else {
+					resultPayload["output"] = output
+				}
+				
+				webhookPayload, _ := json.Marshal(resultPayload)
+				resp, postErr := http.Post(backendURL, "application/json", bytes.NewBuffer(webhookPayload))
+				if postErr == nil && resp != nil {
+					resp.Body.Close()
+				}
+				
+				fmt.Println("STATUS: IDLE")
+				os.Stdout.Sync()
+			}()
+			
+			return
 		}
 		
 		// Check circuit breaker before executing
