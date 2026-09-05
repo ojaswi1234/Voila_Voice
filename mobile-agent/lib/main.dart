@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart'; // For compute()
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'dart:ui';
 import 'crypto.dart';
 import 'package:http/http.dart' as http;
@@ -101,6 +102,8 @@ class VoiceHomePage extends StatefulWidget {
 
 class _VoiceHomePageState extends State<VoiceHomePage> {
   late WebSocketChannel channel;
+  static const platform = MethodChannel('com.voila/intent');
+  bool _isAssistant = false;
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final _storage = const FlutterSecureStorage();
@@ -166,12 +169,24 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   @override
   void initState() {
     super.initState();
+    _checkIntent();
     _initBackground();
     _initTts();
     _loadSession();
     _storage.read(key: 'security_phrase').then((val) => _cachedSecurityPhrase = val ?? '');
     _setupWebSocket();
     _initializeSpeech();
+  }
+
+  Future<void> _checkIntent() async {
+    try {
+      final bool isAssistant = await platform.invokeMethod('isAssistantIntent');
+      setState(() {
+        _isAssistant = isAssistant;
+      });
+    } catch (e) {
+      debugPrint("Failed to get intent: $e");
+    }
   }
 
   Future<void> _initBackground() async {
@@ -953,6 +968,11 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
             'timestamp': DateTime.now().toString(),
           });
         });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('⚠️ Please connect your Desktop to use Voila AI.')),
+          );
+        }
         _controller.clear();
         _scrollToBottom();
         return;
@@ -1638,23 +1658,37 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
     
     return Scaffold(
       drawer: _buildDrawer(),
-      backgroundColor: Colors.transparent,
-      body: Align(
-        alignment: Alignment.bottomCenter,
-        child: Container(
-          height: MediaQuery.of(context).size.height * 0.75, // 75% modal
-          decoration: BoxDecoration(
-            color: const Color(0xFF0F0F12),
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.8),
-                blurRadius: 30,
-                spreadRadius: 5,
-              )
-            ],
+      backgroundColor: _isAssistant ? Colors.transparent : const Color(0xFF0F0F12),
+      body: _isAssistant
+        ? Align(
+            alignment: Alignment.bottomCenter,
+            child: Container(
+              height: MediaQuery.of(context).size.height * 0.75, // 75% modal when assistant
+              decoration: BoxDecoration(
+                color: const Color(0xFF0F0F12),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.8),
+                    blurRadius: 30,
+                    spreadRadius: 5,
+                  )
+                ],
+              ),
+              child: _buildMainContent(colorScheme),
+            ),
+          )
+        : SafeArea(
+            child: Container(
+              color: const Color(0xFF0F0F12),
+              child: _buildMainContent(colorScheme),
+            ),
           ),
-          child: Column(
+    );
+  }
+
+  Widget _buildMainContent(ColorScheme colorScheme) {
+    return Column(
             children: [
               // Custom Modal Header
               Container(
