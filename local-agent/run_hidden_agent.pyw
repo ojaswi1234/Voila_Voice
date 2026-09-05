@@ -1733,7 +1733,6 @@ def _draw_teams_section(dc, w, h):
         frame = tk.Frame(top, bg='#0F1115')
         frame.pack(fill='both', expand=True, padx=20)
         
-        # Add scrollbar for larger lists
         canvas = tk.Canvas(frame, bg='#0F1115', highlightthickness=0)
         scrollbar = tk.Scrollbar(frame, orient="vertical", command=canvas.yview)
         scrollable_frame = tk.Frame(canvas, bg='#0F1115')
@@ -1748,42 +1747,89 @@ def _draw_teams_section(dc, w, h):
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
         
+        import copy
+        import time as _time
+        editor_nodes = copy.deepcopy(graph_state['nodes'])
         entries = []
-        for i, n in enumerate(graph_state['nodes']):
-            row = tk.Frame(scrollable_frame, bg='#1A1D23', bd=1, relief='solid', pady=5, padx=5)
-            row.pack(fill='x', pady=5, padx=5)
+        
+        def render_nodes():
+            for widget in scrollable_frame.winfo_children():
+                widget.destroy()
+            entries.clear()
             
-            top_row = tk.Frame(row, bg='#1A1D23')
-            top_row.pack(fill='x')
-            tk.Label(top_row, text=f"Node {i+1} Role:", bg='#1A1D23', fg='#D1D5DB').pack(side='left')
-            role_entry = tk.Entry(top_row, width=15, bg='#374151', fg='white', insertbackground='white')
-            role_entry.insert(0, n['role'])
-            role_entry.pack(side='left', padx=5)
-            
-            tk.Label(top_row, text="Model:", bg='#1A1D23', fg='#D1D5DB').pack(side='left')
-            model_entry = tk.Entry(top_row, width=20, bg='#374151', fg='white', insertbackground='white')
-            model_entry.insert(0, n['model'].replace('\n', ' '))
-            model_entry.pack(side='left', padx=5)
-            
-            bot_row = tk.Frame(row, bg='#1A1D23')
-            bot_row.pack(fill='x', pady=5)
-            tk.Label(bot_row, text="Prompt:", bg='#1A1D23', fg='#D1D5DB').pack(side='left', anchor='n')
-            prompt_text = tk.Text(bot_row, height=3, width=45, bg='#374151', fg='white', insertbackground='white')
-            prompt_text.insert('1.0', n.get('prompt', ''))
-            prompt_text.pack(side='left', padx=5)
-            
-            entries.append((role_entry, model_entry, prompt_text))
-            
-        def save_changes():
+            for i, n in enumerate(editor_nodes):
+                row = tk.Frame(scrollable_frame, bg='#1A1D23', bd=1, relief='solid', pady=5, padx=5)
+                row.pack(fill='x', pady=5, padx=5)
+                
+                top_row = tk.Frame(row, bg='#1A1D23')
+                top_row.pack(fill='x')
+                tk.Label(top_row, text=f"Node {i+1} Role:", bg='#1A1D23', fg='#D1D5DB').pack(side='left')
+                role_entry = tk.Entry(top_row, width=15, bg='#374151', fg='white', insertbackground='white', relief='flat')
+                role_entry.insert(0, n.get('role', ''))
+                role_entry.pack(side='left', padx=5)
+                
+                tk.Label(top_row, text="Model:", bg='#1A1D23', fg='#D1D5DB').pack(side='left')
+                model_entry = tk.Entry(top_row, width=15, bg='#374151', fg='white', insertbackground='white', relief='flat')
+                model_entry.insert(0, n.get('model', '').replace('
+', ' '))
+                model_entry.pack(side='left', padx=5)
+                
+                def make_deleter(idx=i):
+                    return lambda: delete_node(idx)
+                    
+                tk.Button(top_row, text="X", bg='#EF4444', fg='white', relief='flat', command=make_deleter).pack(side='right', padx=5)
+                
+                bot_row = tk.Frame(row, bg='#1A1D23')
+                bot_row.pack(fill='x', pady=5)
+                tk.Label(bot_row, text="Prompt:", bg='#1A1D23', fg='#D1D5DB').pack(side='left', anchor='n')
+                prompt_text = tk.Text(bot_row, height=3, width=45, bg='#374151', fg='white', insertbackground='white', relief='flat')
+                prompt_text.insert('1.0', n.get('prompt', ''))
+                prompt_text.pack(side='left', padx=5)
+                
+                entries.append((role_entry, model_entry, prompt_text))
+                
+        def sync_entries():
             for i, (r_ent, m_ent, p_txt) in enumerate(entries):
-                graph_state['nodes'][i]['role'] = r_ent.get()
-                graph_state['nodes'][i]['model'] = m_ent.get().replace(' ', '\n', 1)
-                graph_state['nodes'][i]['prompt'] = p_txt.get('1.0', 'end').strip()
+                editor_nodes[i]['role'] = r_ent.get()
+                editor_nodes[i]['model'] = m_ent.get().replace(' ', '
+', 1)
+                editor_nodes[i]['prompt'] = p_txt.get('1.0', 'end').strip()
+                
+        def add_node():
+            sync_entries()
+            new_id = f"node{int(_time.time()*1000)}"
+            editor_nodes.append({
+                "id": new_id, "role": "Agent", "model": "llama3-8b
+(Groq)", 
+                "prompt": "", "x": w//2, "y": 200, "color": "#10B981", "outline": "#34D399", "r": 20
+            })
+            render_nodes()
+            
+        def delete_node(idx):
+            sync_entries()
+            if len(editor_nodes) > 0:
+                editor_nodes.pop(idx)
+                render_nodes()
+                
+        render_nodes()
+        
+        btn_frame = tk.Frame(top, bg='#0F1115')
+        btn_frame.pack(fill='x', pady=10)
+        
+        tk.Button(btn_frame, text="+ Add Node", command=add_node, bg='#4F46E5', fg='white', relief='flat').pack(side='left', padx=20)
+        
+        def save_changes():
+            sync_entries()
+            graph_state['nodes'] = editor_nodes
+            
+            valid_ids = {n['id'] for n in editor_nodes}
+            graph_state['edges'] = [e for e in graph_state['edges'] if e[0] in valid_ids and e[1] in valid_ids]
+            
             export_graphify_prompt()
             _draw_teams_section(dc, w, h)
             top.destroy()
             
-        tk.Button(top, text="Save & Update", command=save_changes, bg='#10B981', fg='white', relief='flat').pack(pady=15)
+        tk.Button(btn_frame, text="Save & Update", command=save_changes, bg='#10B981', fg='white', relief='flat').pack(side='right', padx=20)
         
     def on_new_team(e):
         global graph_state
