@@ -1525,6 +1525,12 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
                   Navigator.pop(context);
                   _showSettingsSheet(context);
                 }),
+                _buildDrawerItem(Icons.no_photography_outlined, 'Clear Screenshots', () {
+                  setState(() {
+                    _messages.removeWhere((m) => (m['content'] as String? ?? '').startsWith('__IMAGE__:'));
+                  });
+                  Navigator.pop(context);
+                }),
                 
                 const Padding(
                   padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
