@@ -1714,7 +1714,7 @@ def _draw_teams_section(dc, w, h):
                 export_graphify_prompt()
                 _draw_teams_section(dc, w, h)
 
-        dc.tag_bind('draggable', '<ButtonPress-1>', on_node_press)
+    dc.tag_bind('draggable', '<ButtonPress-1>', on_node_press)
     dc.bind('<B1-Motion>', on_drag_motion)
     dc.bind('<ButtonRelease-1>', on_drag_stop)
     dc.tag_bind('draggable', '<Enter>', lambda e: dc.config(cursor='hand2'))
