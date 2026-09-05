@@ -1663,23 +1663,15 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
         ? Align(
             alignment: Alignment.bottomCenter,
             child: Container(
-              height: MediaQuery.of(context).size.height * 0.75, // 75% modal when assistant
-              decoration: BoxDecoration(
-                color: const Color(0xFF0F0F12),
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.8),
-                    blurRadius: 30,
-                    spreadRadius: 5,
-                  )
-                ],
-              ),
+              width: double.infinity,
+              color: Colors.transparent, // Completely transparent container, elements inside provide their own backgrounds
               child: _buildMainContent(colorScheme),
             ),
           )
         : SafeArea(
             child: Container(
+              width: double.infinity,
+              height: double.infinity,
               color: const Color(0xFF0F0F12),
               child: _buildMainContent(colorScheme),
             ),
@@ -1688,89 +1680,115 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   }
 
   Widget _buildMainContent(ColorScheme colorScheme) {
-    return Column(
-            children: [
-              // Custom Modal Header
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: BoxDecoration(
-                  border: Border(bottom: BorderSide(color: Colors.white.withOpacity(0.05))),
-                ),
-                child: Row(
-                  children: [
-                    Builder(
-                      builder: (BuildContext ctx) => IconButton(
-                        icon: const Icon(Icons.menu, size: 22),
-                        onPressed: () => Scaffold.of(ctx).openDrawer(),
-                      ),
-                    ),
-                    const Text(
-                      'Voila Voice',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: -0.5),
-                    ),
-                    const Spacer(),
-                    if (_currentMode.toUpperCase() == 'AGENT')
-                      IconButton(
-                        icon: Icon(Icons.auto_awesome, size: 22, color: _selectedModel.isNotEmpty ? colorScheme.secondary : colorScheme.onSurface.withOpacity(0.7)),
-                        onPressed: _showModelSelector,
-                      ),
+    if (_isAssistant) {
+      // Sleek minimal overlay for Assistant Mode
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Flowchart with a subtle dark background pill for readability over random desktop walls
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0F0F12).withOpacity(0.85),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: Colors.white.withOpacity(0.05)),
+            ),
+            child: ConnectionFlowchart(
+              isBackendConnected: _isHealthy,
+              isLocalAgentConnected: _localAgentConnected,
+              isWebSocketConnected: _isConnected,
+              isDataDeparting: _isDataDeparting,
+              isDataArriving: _isDataArriving,
+              activeDeviceName: _activeDevice.isNotEmpty ? (_devices[_activeDevice]?['name'] ?? 'Desktop') : null,
+            ),
+          ),
+          // We ensure _currentMode is forced to agent in Assistant view, but it should be default
+          _buildInputArea(colorScheme),
+        ],
+      );
+    }
 
-                    GestureDetector(
-                      onTap: () => _showDeviceSelector(context),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF1A1A1F),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: Colors.white.withOpacity(0.1)),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.computer, size: 14, color: colorScheme.secondary),
-                            const SizedBox(width: 6),
-                            Text(
-                              _activeDevice.isEmpty ? 'Select Device' : (_devices[_activeDevice]?['name'] ?? 'Desktop'),
-                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-                            ),
-                            const SizedBox(width: 4),
-                            const Icon(Icons.keyboard_arrow_down, size: 14, color: Colors.white54),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
+    // Full layout for normal App Mode
+    return Column(
+      children: [
+        // Custom Modal Header
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            border: Border(bottom: BorderSide(color: Colors.white.withOpacity(0.05))),
+          ),
+          child: Row(
+            children: [
+              Builder(
+                builder: (BuildContext ctx) => IconButton(
+                  icon: const Icon(Icons.menu, size: 22),
+                  onPressed: () => Scaffold.of(ctx).openDrawer(),
                 ),
               ),
-              Expanded(
-                child: Column(
-                  children: [
-          ConnectionFlowchart(
-            isBackendConnected: _isHealthy,
-            isLocalAgentConnected: _localAgentConnected,
-            isWebSocketConnected: _isConnected,
-            isDataDeparting: _isDataDeparting,
-            isDataArriving: _isDataArriving,
-            activeDeviceName: _activeDevice.isNotEmpty ? (_devices[_activeDevice]?['name'] ?? 'Desktop') : null,
-          ),
-          const SizedBox(height: 12),
-          _buildModeToggle(colorScheme),
-          const SizedBox(height: 16),
-          if (_currentMode != 'agent')
-            Expanded(child: _buildMessagesList(colorScheme))
-          else
-            const Spacer(),
-          _buildInputArea(colorScheme),
-                  ],
+              const Text(
+                'Voila Voice',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: -0.5),
+              ),
+              const Spacer(),
+              if (_currentMode.toUpperCase() == 'AGENT')
+                IconButton(
+                  icon: Icon(Icons.auto_awesome, size: 22, color: _selectedModel.isNotEmpty ? colorScheme.secondary : colorScheme.onSurface.withOpacity(0.7)),
+                  onPressed: _showModelSelector,
+                ),
+
+              GestureDetector(
+                onTap: () => _showDeviceSelector(context),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1A1A1F),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.white.withOpacity(0.1)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.computer, size: 14, color: colorScheme.secondary),
+                      const SizedBox(width: 6),
+                      Text(
+                        _activeDevice.isEmpty ? 'Select Device' : (_devices[_activeDevice]?['name'] ?? 'Desktop'),
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                      ),
+                      const SizedBox(width: 4),
+                      const Icon(Icons.keyboard_arrow_down, size: 14, color: Colors.white54),
+                    ],
+                  ),
                 ),
               ),
             ],
           ),
         ),
-      ),
+        Expanded(
+          child: Column(
+            children: [
+              ConnectionFlowchart(
+                isBackendConnected: _isHealthy,
+                isLocalAgentConnected: _localAgentConnected,
+                isWebSocketConnected: _isConnected,
+                isDataDeparting: _isDataDeparting,
+                isDataArriving: _isDataArriving,
+                activeDeviceName: _activeDevice.isNotEmpty ? (_devices[_activeDevice]?['name'] ?? 'Desktop') : null,
+              ),
+              const SizedBox(height: 12),
+              _buildModeToggle(colorScheme),
+              const SizedBox(height: 16),
+              if (_currentMode != 'agent')
+                Expanded(child: _buildMessagesList(colorScheme))
+              else
+                const Spacer(),
+              _buildInputArea(colorScheme),
+            ],
+          ),
+        ),
+      ],
     );
   }
-
 
   String _normalizeForSpeech(String text) {
     String normalized = text;
