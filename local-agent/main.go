@@ -2771,7 +2771,7 @@ NEVER read or explore inside node_modules, .venv, vendor, .m2, .gradle, target, 
 CRITICAL - TOOL EFFICIENCY & LOOP AVOIDANCE:
 1. HISTORY REUSE (SAVE TOKENS): Before generating a new command, ALWAYS review your message history. If you previously executed a successful command for a similar task, REUSE exactly that command to save tokens and reasoning time. Only think of new commands if the known one fails.
 2. ONE-AND-DONE EXECUTION: When using run_terminal, write ONE comprehensive PowerShell script that accomplishes the entire goal. DO NOT issue multiple short commands.
-3. IMMEDIATE TERMINATION (NO LOOPING): Once a command successfully executes and returns the requested information (like CPU usage), YOUR GOAL IS ACHIEVED. You MUST STOP calling tools immediately. DO NOT re-verify. DO NOT run the command again. Output your final text answer to the user and exit the tool loop instantly.`
+3. IMMEDIATE TERMINATION (NO LOOPING): Once a command successfully executes and returns the requested data or completes the requested action, YOUR GOAL IS ACHIEVED. You MUST STOP calling tools immediately. DO NOT re-verify. DO NOT run the command again. Output your final text answer to the user and exit the tool loop instantly.`
 
 	// Maintain conversation as raw JSON-friendly messages
 	messages := []map[string]interface{}{
@@ -2975,7 +2975,7 @@ NEVER read or explore inside node_modules, .venv, vendor, .m2, .gradle, target, 
 CRITICAL - TOOL EFFICIENCY & LOOP AVOIDANCE:
 1. HISTORY REUSE (SAVE TOKENS): Before generating a new command, ALWAYS review your message history. If you previously executed a successful command for a similar task, REUSE exactly that command to save tokens and reasoning time. Only think of new commands if the known one fails.
 2. ONE-AND-DONE EXECUTION: When using run_terminal, write ONE comprehensive PowerShell script that accomplishes the entire goal. DO NOT issue multiple short commands.
-3. IMMEDIATE TERMINATION (NO LOOPING): Once a command successfully executes and returns the requested information (like CPU usage), YOUR GOAL IS ACHIEVED. You MUST STOP calling tools immediately. DO NOT re-verify. DO NOT run the command again. Output your final text answer to the user and exit the tool loop instantly.`
+3. IMMEDIATE TERMINATION (NO LOOPING): Once a command successfully executes and returns the requested data or completes the requested action, YOUR GOAL IS ACHIEVED. You MUST STOP calling tools immediately. DO NOT re-verify. DO NOT run the command again. Output your final text answer to the user and exit the tool loop instantly.`
 
 	messages := []map[string]interface{}{
 		{"role": "system", "content": systemPrompt},
