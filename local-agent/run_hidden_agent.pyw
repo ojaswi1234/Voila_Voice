@@ -897,6 +897,20 @@ def _show_settings_widgets():
         row=5, column=0, columnspan=4, padx=12, pady=(0, 10), sticky='w')
 
     # ─── Info footer ─────────────────────────────────────────────────────────
+
+    # --- FLUSH MEMORY ---
+    def flush_memory():
+        try:
+            _api_call('POST', '/flush_memory', {})
+            tk.messagebox.showinfo("Memory Flushed", "Command memory has been successfully cleared.")
+        except Exception as e:
+            tk.messagebox.showerror("Error", str(e))
+            
+    mem_frame = tk.Frame(inner, bg='#1A1D23', highlightbackground='#2A2D35', highlightthickness=1)
+    mem_frame.grid(row=8, column=0, columnspan=4, sticky='ew', padx=16, pady=12)
+    tk.Label(mem_frame, text='Command Memory Database', bg='#1A1D23', fg='#E5E7EB', font=('Segoe UI', 11, 'bold')).pack(side='left', padx=12, pady=12)
+    tk.Button(mem_frame, text='Flush Data', command=flush_memory, bg='#EF4444', fg='white', font=('Segoe UI', 9, 'bold'), relief='flat', padx=10, pady=2, cursor='hand2').pack(side='right', padx=12, pady=12)
+    
     info = tk.Frame(inner, bg='#0F1115')
     info.grid(row=3, column=0, columnspan=4, padx=16, pady=12, sticky='ew')
     tk.Label(info, text='Version: 1.0.0  |  Platform: Windows  |  Build: Stable',
