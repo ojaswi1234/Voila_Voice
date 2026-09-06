@@ -661,8 +661,14 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
               setState(() {
                 _isThinking = false; _triggerDataArriving();
               });
+              
+              String summaryToSpeak = jsonResponse['summary'];
+              if (jsonResponse['delayed'] == true) {
+                summaryToSpeak = "Hey boss, last task that you gave me before you got disconnected, is now completed. " + summaryToSpeak;
+              }
+              
               if (_willTalk) {
-                _speak(jsonResponse['summary']);
+                _speak(summaryToSpeak);
               }
               
               if (jsonResponse.containsKey('new_conversation_id') && jsonResponse['new_conversation_id'] != null) {
@@ -678,7 +684,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
               _messages.add({
                 'type': 'response',
                 'content': contentStr,
-                'summary': jsonResponse['summary'],
+                'summary': summaryToSpeak,
                 'status': jsonResponse['status'],
                 'mode': jsonResponse['mode'],
                 'timestamp': DateTime.now().toString(),
@@ -2257,13 +2263,27 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        isUser ? 'You' : (isSystem ? 'System' : 'Agent'),
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: isUser ? Colors.white70 : (isError ? Colors.redAccent : colorScheme.primary),
-                        ),
+                      Row(
+                        children: [
+                          Text(
+                            isUser ? 'You' : (isSystem ? 'System' : 'Agent'),
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: isUser ? Colors.white70 : (isError ? Colors.redAccent : colorScheme.primary),
+                            ),
+                          ),
+                          if (!isUser && !isSystem && message['summary'] != null) ...[
+                            const SizedBox(width: 8),
+                            GestureDetector(
+                              onTap: () async {
+                                String cleanText = _normalizeForSpeech(message['summary']);
+                                await flutterTts.speak(cleanText);
+                              },
+                              child: Icon(Icons.volume_up, size: 16, color: colorScheme.primary.withOpacity(0.8)),
+                            ),
+                          ]
+                        ]
                       ),
                       if (message['timestamp'] != null)
                         Text(

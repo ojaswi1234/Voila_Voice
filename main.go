@@ -126,6 +126,12 @@ func (d *DeliveryDispatcher) Dispatch(clientID string, msgType int, payload []by
 }
 // ---------------------------------------------------------
 
+
+type QueuedMessage struct {
+	Payload   []byte
+	ExpiresAt time.Time
+}
+
 type Backend struct {
 	devices      map[string]*Device
 	activeDevice string
@@ -139,6 +145,8 @@ type Backend struct {
 	alertHead         int // index of oldest alert
 	alertCount        int // how many slots are filled
 	mockCommandCounts map[string]int // deviceID -> count
+	offlineQueue      map[string][]QueuedMessage
+	queueMu           sync.Mutex
 }
 
 type WebSocketClient struct {
@@ -156,6 +164,7 @@ func NewBackend() *Backend {
 		clients:           make(map[string]*WebSocketClient),
 		ipRateLimits:      make(map[string]int),
 		mockCommandCounts: make(map[string]int),
+		offlineQueue:      make(map[string][]QueuedMessage),
 	}
 	
 	// Start presence ticker
@@ -1051,8 +1060,18 @@ func handleWebhookResult(b *Backend) http.HandlerFunc {
 				}
 				jsonResponse, _ := json.Marshal(response)
 				b.mu.RLock()
-				for cID := range b.clients {
-					b.dispatcher.Dispatch(cID, websocket.TextMessage, jsonResponse)
+				clientCount := len(b.clients)
+				if clientCount > 0 {
+					for cID := range b.clients {
+						b.dispatcher.Dispatch(cID, websocket.TextMessage, jsonResponse)
+					}
+				} else {
+					b.queueMu.Lock()
+					b.offlineQueue[deviceID] = append(b.offlineQueue[deviceID], QueuedMessage{
+						Payload:   jsonResponse,
+						ExpiresAt: time.Now().Add(1 * time.Hour),
+					})
+					b.queueMu.Unlock()
 				}
 				b.mu.RUnlock()
 			}
@@ -1208,6 +1227,25 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 					}
 					jResp, _ := json.Marshal(resp)
 					b.dispatcher.Dispatch(clientID, messageType, jResp)
+					
+					// Flush offline queue
+					b.queueMu.Lock()
+					if msgs, ok := b.offlineQueue[deviceID]; ok && len(msgs) > 0 {
+						for _, msg := range msgs {
+							if time.Now().Before(msg.ExpiresAt) {
+								// Inject "delayed": true into the JSON payload
+								var pMap map[string]interface{}
+								if err := json.Unmarshal(msg.Payload, &pMap); err == nil {
+									pMap["delayed"] = true
+									if newPayload, err := json.Marshal(pMap); err == nil {
+										b.dispatcher.Dispatch(clientID, websocket.TextMessage, newPayload)
+									}
+								}
+							}
+						}
+						delete(b.offlineQueue, deviceID)
+					}
+					b.queueMu.Unlock()
 				} else {
 					b.ipRateLimits[clientIP]++
 					b.mu.Unlock()
@@ -1450,6 +1488,26 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				}
 				jsonData, _ := json.Marshal(deviceList)
 				b.dispatcher.Dispatch(clientID, messageType, jsonData)
+				
+				// Flush any pending offline messages
+				b.queueMu.Lock()
+				for dID, msgs := range b.offlineQueue {
+					if len(msgs) > 0 {
+						for _, msg := range msgs {
+							if time.Now().Before(msg.ExpiresAt) {
+								var pMap map[string]interface{}
+								if err := json.Unmarshal(msg.Payload, &pMap); err == nil {
+									pMap["delayed"] = true
+									if newPayload, err := json.Marshal(pMap); err == nil {
+										b.dispatcher.Dispatch(clientID, websocket.TextMessage, newPayload)
+									}
+								}
+							}
+						}
+						delete(b.offlineQueue, dID)
+					}
+				}
+				b.queueMu.Unlock()
 				
 			case "get_stats":
 				b.mu.RLock()
