@@ -1893,7 +1893,7 @@ func executeCommand(ctx context.Context, command string, mode string, conversati
 	// LOCAL = agy (local Gemini agent). AGENT = also agy (legacy name).
 	// Only SHELL = raw PowerShell. Empty string = default to agy.
 	if modeUpper == "AGENT" || modeUpper == "LOCAL" || modeUpper == "" {
-		prompt := command + "\n\n(CRITICAL SYSTEM NOTE: Keep your responses casual, brief, and conversational as if you are a friendly voice assistant.\n\nCRITICAL OS GUARDRAIL: You MUST NEVER modify, delete, or touch Windows system files, System32, Program Files, the Registry, or any critical OS configuration. You must refuse commands that could harm or break the OS. Address the user as 'boss'. Do not use overly formal language.\n\nCRITICAL SYSTEM NOTE: You are running inside an isolated background sandbox (`exebox` desktop). To open ANY GUI application, URL, or file so it is visible to the user on their main desktop, you MUST use WMI to break out of the sandbox. Use exactly this command format: `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'explorer.exe \"<URL_OR_PATH>\"'` (for URLs/files) or `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList '<APP_EXE>'` (for apps). DO NOT use Start-Process, as it will spawn invisibly in the sandbox! To perform browser automation, you MUST first launch a visible browser using Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe --remote-debugging-port=9222 --user-data-dir=C:\\tmp\\ai_browser_profile \"about:blank\"'. Then, control it by running python C:\\Users\\ojasw\\Desktop\\voice-cli-system\\local-agent\\browser_tools.py with args --action [goto|click|type|scrape|extract_links|snapshot] --url <url> --selector <css> --value <text>.\n\nCRITICAL - .AIIGNORE & DEPENDENCY OVERHEAD (0 BUGS POLICY):\nWhen exploring projects, NEVER search or read inside dependency folders (node_modules, .venv, venv, vendor, .m2, .gradle, target, packages, .cargo/registry). They contain massive overhead that breaks your context limits.\nTo understand dependencies, ONLY read blueprint files (package.json, pyproject.toml, requirements.txt, go.mod, pom.xml, build.gradle, composer.json, Gemfile, Cargo.toml, *.csproj). Also NEVER read standard '.env' files; if you need environment context, ONLY look at '.env.example' or '.env.local'. Also NEVER read standard '.env' files; if you need environment context, ONLY look at '.env.example' or '.env.local'.\nWhen searching for files, enforce this .aiignore policy by using findstr to pipe out junk:\n'cmd.exe /c \"dir /s /b /a:-d C:\\path\\*name* | findstr /V /I \"\\node_modules\\ \\.venv\\ \\venv\\ \\vendor\\ \\.git\\ \\target\\ \\.gradle\\ \\.m2\\ \\packages\\\"\"')"
+		prompt := command + "\n\nCRITICAL - COMMAND MEMORY:\nHere are your highly compressed, previously successful PowerShell techniques:\n" + loadMemory() + "\nWhen asked to do a task, FIRST check if a command in this memory perfectly satisfies the purpose. If yes, RUN IT EXACTLY AS-IS from memory (unless the user explicitly requests a new/specific method). If you invent a NEW successful technique, you MUST immediately call the 'save_command_memory' tool to permanently memorize it.\n\n(CRITICAL SYSTEM NOTE: Keep your responses casual, brief, and conversational as if you are a friendly voice assistant.\n\nCRITICAL OS GUARDRAIL: You MUST NEVER modify, delete, or touch Windows system files, System32, Program Files, the Registry, or any critical OS configuration. You must refuse commands that could harm or break the OS. Address the user as 'boss'. Do not use overly formal language.\n\nCRITICAL SYSTEM NOTE: You are running inside an isolated background sandbox (`exebox` desktop). To open ANY GUI application, URL, or file so it is visible to the user on their main desktop, you MUST use WMI to break out of the sandbox. Use exactly this command format: `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'explorer.exe \"<URL_OR_PATH>\"'` (for URLs/files) or `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList '<APP_EXE>'` (for apps). DO NOT use Start-Process, as it will spawn invisibly in the sandbox! To perform browser automation, you MUST first launch a visible browser using Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe --remote-debugging-port=9222 --user-data-dir=C:\\tmp\\ai_browser_profile \"about:blank\"'. Then, control it by running python C:\\Users\\ojasw\\Desktop\\voice-cli-system\\local-agent\\browser_tools.py with args --action [goto|click|type|scrape|extract_links|snapshot] --url <url> --selector <css> --value <text>.\n\nCRITICAL - .AIIGNORE & DEPENDENCY OVERHEAD (0 BUGS POLICY):\nWhen exploring projects, NEVER search or read inside dependency folders (node_modules, .venv, venv, vendor, .m2, .gradle, target, packages, .cargo/registry). They contain massive overhead that breaks your context limits.\nTo understand dependencies, ONLY read blueprint files (package.json, pyproject.toml, requirements.txt, go.mod, pom.xml, build.gradle, composer.json, Gemfile, Cargo.toml, *.csproj). Also NEVER read standard '.env' files; if you need environment context, ONLY look at '.env.example' or '.env.local'. Also NEVER read standard '.env' files; if you need environment context, ONLY look at '.env.example' or '.env.local'.\nWhen searching for files, enforce this .aiignore policy by using findstr to pipe out junk:\n'cmd.exe /c \"dir /s /b /a:-d C:\\path\\*name* | findstr /V /I \"\\node_modules\\ \\.venv\\ \\venv\\ \\vendor\\ \\.git\\ \\target\\ \\.gradle\\ \\.m2\\ \\packages\\\"\"')"
 		if modelName == "" || modelName == "flash" {
 			modelName = "Gemini 3.7 Flash (High)"
 		}
@@ -2316,6 +2316,8 @@ func executeTool(ctx context.Context, toolName string, argsJSON json.RawMessage,
 			return ""
 		}
 		switch toolName {
+	case "save_command_memory":
+		return saveMemory(getString("purpose"), getString("command"))
 		case "run_terminal":
 			pseudoCommand = getString("command")
 		case "read_file":
@@ -2532,6 +2534,8 @@ func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMes
 	}
 
 	switch toolName {
+	case "save_command_memory":
+		return saveMemory(getString("purpose"), getString("command"))
 	case "web_research":
 		query := getString("query")
 		if query == "" {
@@ -2748,6 +2752,12 @@ func executeGroqCommand(ctx context.Context, command, apiKey, modelName, clientI
 	debugLog.Printf("[executeGroqCommand] ENTRY model=%q key=%s commandLen=%d", modelName, maskedKey, len(command))
 
 	systemPrompt := `You are Voila, a helpful AI voice assistant executing on a Windows Desktop. Keep responses casual, conversational, and brief. Address the user as 'boss'.
+
+CRITICAL - COMMAND MEMORY:
+Here are your highly compressed, previously successful PowerShell techniques:
+` + loadMemory() + `
+When asked to do a task, FIRST check if a command in this memory perfectly satisfies the purpose. If yes, RUN IT EXACTLY AS-IS from memory (unless the user explicitly requests a new/specific method). If you invent a NEW successful technique, you MUST immediately call the 'save_command_memory' tool to permanently memorize it.
+
 CRITICAL OS GUARDRAIL: You MUST NEVER modify, delete, or touch Windows system files, System32, Program Files, the Registry, or any critical OS configuration. You must refuse commands that could harm or break the OS.
 
 CRITICAL: You are running inside a Windows PowerShell environment. You MUST use PowerShell syntax, NOT Bash!
@@ -2952,6 +2962,12 @@ func executeOllamaCommand(ctx context.Context, command, baseURL, modelName, apiK
 	debugLog.Printf("[DEBUG_LIFECYCLE: OLLAMA] Model: %s", modelName)
 
 	systemPrompt := `You are Voila, a helpful AI voice assistant executing on a Windows Desktop. Keep responses casual, conversational, and brief. Address the user as 'boss'.
+
+CRITICAL - COMMAND MEMORY:
+Here are your highly compressed, previously successful PowerShell techniques:
+` + loadMemory() + `
+When asked to do a task, FIRST check if a command in this memory perfectly satisfies the purpose. If yes, RUN IT EXACTLY AS-IS from memory (unless the user explicitly requests a new/specific method). If you invent a NEW successful technique, you MUST immediately call the 'save_command_memory' tool to permanently memorize it.
+
 CRITICAL OS GUARDRAIL: You MUST NEVER modify, delete, or touch Windows system files, System32, Program Files, the Registry, or any critical OS configuration. You must refuse commands that could harm or break the OS.
 
 CRITICAL: You are running inside a Windows PowerShell environment. You MUST use PowerShell syntax, NOT Bash!
@@ -3587,6 +3603,35 @@ func (m model) resetCircuitBreakerWithPhrase(phrase string) tea.Cmd {
 		
 		return errorMsg{"Invalid security phrase"}
 	}
+}
+
+
+// --- MEMORY SYSTEM ---
+func getMemoryFilePath() string {
+	exe, _ := os.Executable()
+	return filepath.Join(filepath.Dir(exe), "cmd_memory.json")
+}
+
+func loadMemory() string {
+	data, err := os.ReadFile(getMemoryFilePath())
+	if err != nil || len(data) == 0 {
+		return "{}"
+	}
+	return string(data)
+}
+
+func saveMemory(purpose, command string) string {
+	mem := make(map[string]string)
+	data, _ := os.ReadFile(getMemoryFilePath())
+	json.Unmarshal(data, &mem)
+	mem[purpose] = command
+	b, _ := json.MarshalIndent(mem, "", "  ")
+	os.WriteFile(getMemoryFilePath(), b, 0644)
+	return "Memory successfully updated with technique."
+}
+
+func flushMemory() {
+	os.WriteFile(getMemoryFilePath(), []byte("{}"), 0644)
 }
 
 func main() {
