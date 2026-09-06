@@ -6,7 +6,24 @@ import os
 import re
 import traceback
 
+
+def read_pdf(kwargs):
+    import PyPDF2
+    path = kwargs.get('path')
+    if not path: return "Error: path is required"
+    try:
+        text = []
+        with open(path, 'rb') as f:
+            reader = PyPDF2.PdfReader(f)
+            for page in reader.pages:
+                extracted = page.extract_text()
+                if extracted: text.append(extracted)
+        return "\n".join(text) if text else "No text found in PDF."
+    except Exception as e:
+        return f"Error reading PDF: {e}"
+
 # --- HELPERS ---
+
 def _strip_markdown(text):
     text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)
     text = re.sub(r'\*(.*?)\*', r'\1', text)

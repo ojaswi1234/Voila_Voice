@@ -2460,12 +2460,13 @@ while ($true) {
 		Write-Host '------------------------------------------------' -ForegroundColor DarkGray
 
 		if (Test-Path $outFile) { Remove-Item $outFile -Force }
-		$outStr = ""
+		$outVar = $null
 		try {
-			$outStr = Invoke-Expression $cmdText *>&1 | Out-String
+			Invoke-Expression $cmdText *>&1 | Tee-Object -Variable outVar
 		} catch {
-			$outStr = $_ | Out-String
+			$_ | Tee-Object -Variable outVar
 		}
+		$outStr = $outVar | Out-String
 		[System.IO.File]::WriteAllText($outFile, $outStr)
 		
 		Write-Host '------------------------------------------------' -ForegroundColor DarkGray
