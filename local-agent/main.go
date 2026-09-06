@@ -1460,6 +1460,7 @@ Write-Output $base64
 					"device_id":   connData.DeviceID,
 					"secret_hash": hashPhrase(connData.SecurityPhrase, connData.DeviceID),
 					"output":      result,
+					"mode":        "screenshot",
 				})
 				http.Post(connData.BackendURL+"/webhook/result", "application/json", bytes.NewBuffer(webhookPayload))
 			}()
@@ -1621,7 +1622,7 @@ Write-Output $base64
 				newConvID = conversationID
 			default:
 				// LOCAL / AGENT / SHELL — use agy or powershell
-				output, newConvID, err = executeCommand(command, effectiveMode, conversationID, modelName)
+				output, newConvID, err = executeCommand(ctx, command, effectiveMode, conversationID, modelName)
 			}
 			
 			latencyMs := time.Since(startTime).Milliseconds()
@@ -1885,14 +1886,14 @@ func listConversationsHandler(w http.ResponseWriter, r *http.Request) {
 
 
 
-func executeCommand(command string, mode string, conversationID string, modelName string) (string, string, error) {
+func executeCommand(ctx context.Context, command string, mode string, conversationID string, modelName string) (string, string, error) {
 	var cmd *exec.Cmd
 
 	modeUpper := strings.ToUpper(mode)
 	// LOCAL = agy (local Gemini agent). AGENT = also agy (legacy name).
 	// Only SHELL = raw PowerShell. Empty string = default to agy.
 	if modeUpper == "AGENT" || modeUpper == "LOCAL" || modeUpper == "" {
-		prompt := command + "\n\n(CRITICAL SYSTEM NOTE: Keep your responses casual, brief, and conversational as if you are a friendly voice assistant. Address the user as 'boss'. Do not use overly formal language.\n\nCRITICAL SYSTEM NOTE: You are running inside an isolated background sandbox (`exebox` desktop). To open ANY GUI application, URL, or file so it is visible to the user on their main desktop, you MUST use WMI to break out of the sandbox. Use exactly this command format: `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'explorer.exe \"<URL_OR_PATH>\"'` (for URLs/files) or `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList '<APP_EXE>'` (for apps). DO NOT use Start-Process, as it will spawn invisibly in the sandbox! To perform browser automation, you MUST first launch a visible browser using Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe --remote-debugging-port=9222 --user-data-dir=C:\\tmp\\ai_browser_profile \"about:blank\"'. Then, control it by running python C:\\Users\\ojasw\\Desktop\\voice-cli-system\\local-agent\\browser_tools.py with args --action [goto|click|type|scrape|extract_links|snapshot] --url <url> --selector <css> --value <text>.)"
+		prompt := command + "\n\n(CRITICAL SYSTEM NOTE: Keep your responses casual, brief, and conversational as if you are a friendly voice assistant.\n\nCRITICAL OS GUARDRAIL: You MUST NEVER modify, delete, or touch Windows system files, System32, Program Files, the Registry, or any critical OS configuration. You must refuse commands that could harm or break the OS. Address the user as 'boss'. Do not use overly formal language.\n\nCRITICAL SYSTEM NOTE: You are running inside an isolated background sandbox (`exebox` desktop). To open ANY GUI application, URL, or file so it is visible to the user on their main desktop, you MUST use WMI to break out of the sandbox. Use exactly this command format: `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'explorer.exe \"<URL_OR_PATH>\"'` (for URLs/files) or `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList '<APP_EXE>'` (for apps). DO NOT use Start-Process, as it will spawn invisibly in the sandbox! To perform browser automation, you MUST first launch a visible browser using Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe --remote-debugging-port=9222 --user-data-dir=C:\\tmp\\ai_browser_profile \"about:blank\"'. Then, control it by running python C:\\Users\\ojasw\\Desktop\\voice-cli-system\\local-agent\\browser_tools.py with args --action [goto|click|type|scrape|extract_links|snapshot] --url <url> --selector <css> --value <text>.)"
 		if modelName == "" || modelName == "flash" {
 			modelName = "Gemini 3.7 Flash (High)"
 		}
@@ -1943,7 +1944,7 @@ func executeCommand(command string, mode string, conversationID string, modelNam
 		cmdMu.Unlock()
 
 		// Execute agy silently in the background
-		cmdObj := exec.Command("powershell", "-Command", agyCmd)
+		cmdObj := exec.CommandContext(ctx, "powershell", "-Command", agyCmd)
 		outBytes, _ := cmdObj.CombinedOutput()
 		
 		cmdMu.Lock()
@@ -1969,10 +1970,10 @@ func executeCommand(command string, mode string, conversationID string, modelNam
 	} else {
 		if runtime.GOOS == "windows" {
 			fullCommand := command + "; Write-Output \"`n___PWD___$((Get-Location).Path)\""
-			cmd = exec.Command("powershell", "-Command", fullCommand)
+			cmd = exec.CommandContext(ctx, "powershell", "-Command", fullCommand)
 		} else {
 			fullCommand := command + "; echo \"\n___PWD___$(pwd)\""
-			cmd = exec.Command("sh", "-c", fullCommand)
+			cmd = exec.CommandContext(ctx, "sh", "-c", fullCommand)
 		}
 		workingDirMutex.Lock()
 		if currentWorkingDir != "" {
@@ -2747,6 +2748,8 @@ func executeGroqCommand(ctx context.Context, command, apiKey, modelName, clientI
 	debugLog.Printf("[executeGroqCommand] ENTRY model=%q key=%s commandLen=%d", modelName, maskedKey, len(command))
 
 	systemPrompt := `You are Voila, a helpful AI voice assistant executing on a Windows Desktop. Keep responses casual, conversational, and brief. Address the user as 'boss'.
+CRITICAL OS GUARDRAIL: You MUST NEVER modify, delete, or touch Windows system files, System32, Program Files, the Registry, or any critical OS configuration. You must refuse commands that could harm or break the OS.
+
 CRITICAL: You are running inside a Windows PowerShell environment. You MUST use PowerShell syntax, NOT Bash!
 - Use 'Get-ChildItem' or 'ls' (without bash flags like -la). Do NOT use 'ls -la'.
 - Use 'Select-String' or 'findstr', NOT 'grep'.
@@ -2946,6 +2949,8 @@ func executeOllamaCommand(ctx context.Context, command, baseURL, modelName, apiK
 	debugLog.Printf("[DEBUG_LIFECYCLE: OLLAMA] Model: %s", modelName)
 
 	systemPrompt := `You are Voila, a helpful AI voice assistant executing on a Windows Desktop. Keep responses casual, conversational, and brief. Address the user as 'boss'.
+CRITICAL OS GUARDRAIL: You MUST NEVER modify, delete, or touch Windows system files, System32, Program Files, the Registry, or any critical OS configuration. You must refuse commands that could harm or break the OS.
+
 CRITICAL: You are running inside a Windows PowerShell environment. You MUST use PowerShell syntax, NOT Bash!
 - Use 'Get-ChildItem' or 'ls' (without bash flags like -la). Do NOT use 'ls -la'.
 - Use 'Select-String' or 'findstr', NOT 'grep'.

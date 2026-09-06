@@ -658,9 +658,13 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
               // Task queued! Keep loader spinning.
               return;
             } else if (jsonResponse is Map && jsonResponse.containsKey('summary')) {
-              setState(() {
-                _isThinking = false; _triggerDataArriving();
-              });
+              if (jsonResponse['mode'] != 'screenshot') {
+                setState(() {
+                  _isThinking = false; _triggerDataArriving();
+                });
+              } else {
+                setState(() { _triggerDataArriving(); });
+              }
               
               String summaryToSpeak = jsonResponse['summary'];
               if (jsonResponse['delayed'] == true) {
@@ -2263,27 +2267,13 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Row(
-                        children: [
-                          Text(
-                            isUser ? 'You' : (isSystem ? 'System' : 'Agent'),
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: isUser ? Colors.white70 : (isError ? Colors.redAccent : colorScheme.primary),
-                            ),
-                          ),
-                          if (!isUser && !isSystem && message['summary'] != null) ...[
-                            const SizedBox(width: 8),
-                            GestureDetector(
-                              onTap: () async {
-                                String cleanText = _normalizeForSpeech(message['summary']);
-                                await flutterTts.speak(cleanText);
-                              },
-                              child: Icon(Icons.volume_up, size: 16, color: colorScheme.primary.withOpacity(0.8)),
-                            ),
-                          ]
-                        ]
+                      Text(
+                        isUser ? 'You' : (isSystem ? 'System' : 'Agent'),
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: isUser ? Colors.white70 : (isError ? Colors.redAccent : colorScheme.primary),
+                        ),
                       ),
                       if (message['timestamp'] != null)
                         Text(
@@ -2346,6 +2336,27 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                       color: isError ? Colors.red.shade200 : Colors.white.withOpacity(0.9),
                     ),
                   ),
+                  if (!isUser && !isSystem && message['summary'] != null && message['summary'].toString().isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Divider(color: Colors.white.withOpacity(0.05), height: 1),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        icon: Icon(Icons.replay_circle_filled, size: 18, color: colorScheme.primary),
+                        label: Text('Repeat Audio', style: TextStyle(color: colorScheme.primary, fontSize: 12)),
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        onPressed: () async {
+                          String cleanText = _normalizeForSpeech(message['summary']);
+                          await flutterTts.speak(cleanText);
+                        },
+                      ),
+                    ),
+                  ]
                 ],
               ),
             ),
