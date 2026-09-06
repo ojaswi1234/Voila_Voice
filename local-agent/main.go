@@ -2761,10 +2761,11 @@ When asked to find, scan, or search for a specific file, folder, or project by n
 CRITICAL - DEPENDENCY OVERHEAD AVOIDANCE:
 NEVER read or explore inside node_modules, .venv, vendor, .m2, .gradle, target, packages, or .cargo. To understand what packages/dependencies are installed, ONLY read the blueprint files (package.json, pyproject.toml, requirements.txt, go.mod, pom.xml, build.gradle, composer.json, Gemfile, Cargo.toml, *.csproj). Also NEVER read standard '.env' files; if you need environment context, ONLY look at '.env.example' or '.env.local'.
 
-CRITICAL - TOOL EFFICIENCY & LOOP AVOIDANCE:
-1. HISTORY REUSE (SAVE TOKENS): Before generating a new command, ALWAYS review your message history. If you previously executed a successful command for a similar task, REUSE exactly that command to save tokens and reasoning time. Only think of new commands if the known one fails.
-2. ONE-AND-DONE EXECUTION: When using run_terminal, write ONE comprehensive PowerShell script that accomplishes the entire goal. DO NOT issue multiple short commands.
-3. IMMEDIATE TERMINATION (NO LOOPING): Once a command successfully executes and returns the requested data or completes the requested action, YOUR GOAL IS ACHIEVED. You MUST STOP calling tools immediately. DO NOT re-verify. DO NOT run the command again. Output your final text answer to the user and exit the tool loop instantly.`
+CRITICAL - TOOL EFFICIENCY & LOOP AVOIDANCE (0 BUGS POLICY):
+1. HISTORY REUSE: ALWAYS check message history. If a previously successful command satisfies the purpose, REUSE IT EXACTLY to save tokens.
+2. DO NOT FORMAT TERMINAL OUTPUT: Do NOT write complex scripts to make the terminal output look pretty or formatted for the user. Just dump the raw data (e.g. 'Get-WmiObject Win32_Processor | Select LoadPercentage'). You will format the final answer in your spoken voice response.
+3. IMMEDIATE TERMINATION (NO LOOPING): The absolute split-second a command returns the raw data you need, YOUR GOAL IS ACHIEVED. You MUST STOP calling tools. Do NOT re-verify. Do NOT try to clean up the output with another command.
+4. HOW TO STOP: To exit the loop and speak to the user, you MUST return a normal text message and completely OMIT the tool calls. If you call a tool, you are trapped in the loop.`
 
 	// Maintain conversation as raw JSON-friendly messages
 	messages := []map[string]interface{}{
@@ -2971,10 +2972,11 @@ When asked to find, scan, or search for a specific file, folder, or project by n
 CRITICAL - DEPENDENCY OVERHEAD AVOIDANCE:
 NEVER read or explore inside node_modules, .venv, vendor, .m2, .gradle, target, packages, or .cargo. To understand what packages/dependencies are installed, ONLY read the blueprint files (package.json, pyproject.toml, requirements.txt, go.mod, pom.xml, build.gradle, composer.json, Gemfile, Cargo.toml, *.csproj). Also NEVER read standard '.env' files; if you need environment context, ONLY look at '.env.example' or '.env.local'.
 
-CRITICAL - TOOL EFFICIENCY & LOOP AVOIDANCE:
-1. HISTORY REUSE (SAVE TOKENS): Before generating a new command, ALWAYS review your message history. If you previously executed a successful command for a similar task, REUSE exactly that command to save tokens and reasoning time. Only think of new commands if the known one fails.
-2. ONE-AND-DONE EXECUTION: When using run_terminal, write ONE comprehensive PowerShell script that accomplishes the entire goal. DO NOT issue multiple short commands.
-3. IMMEDIATE TERMINATION (NO LOOPING): Once a command successfully executes and returns the requested data or completes the requested action, YOUR GOAL IS ACHIEVED. You MUST STOP calling tools immediately. DO NOT re-verify. DO NOT run the command again. Output your final text answer to the user and exit the tool loop instantly.`
+CRITICAL - TOOL EFFICIENCY & LOOP AVOIDANCE (0 BUGS POLICY):
+1. HISTORY REUSE: ALWAYS check message history. If a previously successful command satisfies the purpose, REUSE IT EXACTLY to save tokens.
+2. DO NOT FORMAT TERMINAL OUTPUT: Do NOT write complex scripts to make the terminal output look pretty or formatted for the user. Just dump the raw data (e.g. 'Get-WmiObject Win32_Processor | Select LoadPercentage'). You will format the final answer in your spoken voice response.
+3. IMMEDIATE TERMINATION (NO LOOPING): The absolute split-second a command returns the raw data you need, YOUR GOAL IS ACHIEVED. You MUST STOP calling tools. Do NOT re-verify. Do NOT try to clean up the output with another command.
+4. HOW TO STOP: To exit the loop and speak to the user, you MUST return a normal text message and completely OMIT the tool calls. If you call a tool, you are trapped in the loop.`
 
 	messages := []map[string]interface{}{
 		{"role": "system", "content": systemPrompt},
