@@ -2460,13 +2460,13 @@ while ($true) {
 		Write-Host '------------------------------------------------' -ForegroundColor DarkGray
 
 		if (Test-Path $outFile) { Remove-Item $outFile -Force }
-		Start-Transcript -Path $outFile -Append -Force | Out-Null
+		$outStr = ""
 		try {
-			Invoke-Expression $cmdText
+			$outStr = Invoke-Expression $cmdText *>&1 | Out-String
 		} catch {
-			Write-Error $_
+			$outStr = $_ | Out-String
 		}
-		Stop-Transcript | Out-Null
+		[System.IO.File]::WriteAllText($outFile, $outStr)
 		
 		Write-Host '------------------------------------------------' -ForegroundColor DarkGray
 		"DONE" | Out-File -FilePath $doneFile -Encoding ASCII
@@ -2660,24 +2660,7 @@ func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMes
 
 		// outBytes and err are already populated by IPC logic
 		
-		// Clean up PowerShell Transcript headers/footers
-		outStr := string(outBytes)
-		lines := strings.Split(outStr, "\n")
-		var cleanLines []string
-		inTranscriptHeader := false
-		for _, line := range lines {
-			trimmed := strings.TrimSpace(line)
-			if strings.HasPrefix(trimmed, "**********************") {
-				inTranscriptHeader = !inTranscriptHeader
-				continue
-			}
-			if inTranscriptHeader {
-				continue // skip all header/footer lines
-			}
-			cleanLines = append(cleanLines, trimmed)
-		}
-		
-		result := strings.TrimSpace(strings.Join(cleanLines, "\n"))
+		result := strings.TrimSpace(string(outBytes))
 		debugLog.Printf("[executeTool/run_terminal] raw outBytes len=%d", len(outBytes))
 		debugLog.Printf("[executeTool/run_terminal] result:\n%s", result)
 		if err != nil {
