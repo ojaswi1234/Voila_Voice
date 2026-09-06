@@ -7,6 +7,18 @@ import time
 import math
 import random
 
+import ctypes
+
+# Prevent Windows Screen/System sleep (like a YouTube video)
+try:
+    ES_CONTINUOUS = 0x80000000
+    ES_SYSTEM_REQUIRED = 0x00000001
+    ES_DISPLAY_REQUIRED = 0x00000002
+    ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS | ES_DISPLAY_REQUIRED | ES_SYSTEM_REQUIRED)
+except Exception:
+    pass
+
+
 # Removed psutil import completely as per user request to drop overhead
 PSUTIL_AVAILABLE = False
 
