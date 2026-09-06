@@ -2326,7 +2326,7 @@ func executeTool(ctx context.Context, toolName string, argsJSON json.RawMessage,
 			pseudoCommand = "ls " + getString("path")
 		case "web_research":
 			pseudoCommand = "search \"" + getString("query") + "\""
-		case "create_pdf", "create_ppt", "create_excel", "create_csv", "modify_excel":
+		case "create_pdf", "create_doc", "create_ppt", "create_excel", "create_csv", "modify_excel":
 			pseudoCommand = "write_doc " + getString("path")
 		case "read_pdf", "read_excel", "read_csv":
 			pseudoCommand = "read_doc " + getString("path")
@@ -2687,7 +2687,7 @@ func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMes
 		return result
 
 
-	case "create_pdf", "read_pdf", "create_ppt", "create_excel", "modify_excel", "read_excel", "create_csv", "read_csv":
+	case "create_pdf", "create_doc", "read_pdf", "create_ppt", "create_excel", "modify_excel", "read_excel", "create_csv", "read_csv":
 		return callPythonDocumentTool(toolName, argsJSON)
 	case "automate_0":
 		action := getString("action")
