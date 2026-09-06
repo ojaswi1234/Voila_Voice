@@ -9,6 +9,49 @@ import random
 
 import ctypes
 
+import ctypes
+
+_job_handle = None
+
+def _assign_process_to_job(pid):
+    global _job_handle
+    try:
+        kernel32 = ctypes.windll.kernel32
+        
+        # Create Job Object if not exists
+        if _job_handle is None:
+            _job_handle = kernel32.CreateJobObjectW(None, None)
+            
+            # Setup limits
+            class JOBOBJECT_BASIC_LIMIT_INFORMATION(ctypes.Structure):
+                _fields_ = [('PerProcessUserTimeLimit', ctypes.c_int64), ('PerJobUserTimeLimit', ctypes.c_int64),
+                            ('LimitFlags', ctypes.c_uint32), ('MinimumWorkingSetSize', ctypes.c_size_t),
+                            ('MaximumWorkingSetSize', ctypes.c_size_t), ('ActiveProcessLimit', ctypes.c_uint32),
+                            ('Affinity', ctypes.c_size_t), ('PriorityClass', ctypes.c_uint32),
+                            ('SchedulingClass', ctypes.c_uint32)]
+            class IO_COUNTERS(ctypes.Structure):
+                _fields_ = [('ReadOperationCount', ctypes.c_uint64), ('WriteOperationCount', ctypes.c_uint64),
+                            ('OtherOperationCount', ctypes.c_uint64), ('ReadTransferCount', ctypes.c_uint64),
+                            ('WriteTransferCount', ctypes.c_uint64), ('OtherTransferCount', ctypes.c_uint64)]
+            class JOBOBJECT_EXTENDED_LIMIT_INFORMATION(ctypes.Structure):
+                _fields_ = [('BasicLimitInformation', JOBOBJECT_BASIC_LIMIT_INFORMATION), ('IoInfo', IO_COUNTERS),
+                            ('ProcessMemoryLimit', ctypes.c_size_t), ('JobMemoryLimit', ctypes.c_size_t),
+                            ('PeakProcessMemoryUsed', ctypes.c_size_t), ('PeakJobMemoryUsed', ctypes.c_size_t)]
+            
+            info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
+            info.BasicLimitInformation.LimitFlags = 0x2000 # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+            
+            kernel32.SetInformationJobObject(_job_handle, 9, ctypes.byref(info), ctypes.sizeof(info))
+        
+        # Assign process
+        process = kernel32.OpenProcess(0x0100 | 0x0001, False, pid) # PROCESS_SET_QUOTA | PROCESS_TERMINATE
+        if process:
+            kernel32.AssignProcessToJobObject(_job_handle, process)
+            kernel32.CloseHandle(process)
+    except Exception as e:
+        print("Job object assignment failed:", e)
+
+
 # Prevent Windows Screen/System sleep (like a YouTube video)
 try:
     ES_CONTINUOUS = 0x80000000
@@ -178,6 +221,7 @@ agent_process = subprocess.Popen(
     env=_agent_env,
     creationflags=CREATE_NO_WINDOW
 )
+_assign_process_to_job(agent_process.pid)
 
 import atexit
 

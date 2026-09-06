@@ -1,6 +1,8 @@
 package main
 
 import (
+	"unsafe"
+
 	"bufio"
 	"bytes"
 	"context"
@@ -26,6 +28,66 @@ import (
 	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
+// --- ZERO ORPHAN PROCESS MANAGEMENT ---
+
+type JOBOBJECT_BASIC_LIMIT_INFORMATION struct {
+	PerProcessUserTimeLimit int64
+	PerJobUserTimeLimit     int64
+	LimitFlags              uint32
+	MinimumWorkingSetSize   uintptr
+	MaximumWorkingSetSize   uintptr
+	ActiveProcessLimit      uint32
+	Affinity                uintptr
+	PriorityClass           uint32
+	SchedulingClass         uint32
+}
+
+type IO_COUNTERS struct {
+	ReadOperationCount  uint64
+	WriteOperationCount uint64
+	OtherOperationCount uint64
+	ReadTransferCount   uint64
+	WriteTransferCount  uint64
+	OtherTransferCount  uint64
+}
+
+type JOBOBJECT_EXTENDED_LIMIT_INFORMATION struct {
+	BasicLimitInformation JOBOBJECT_BASIC_LIMIT_INFORMATION
+	IoInfo                IO_COUNTERS
+	ProcessMemoryLimit    uintptr
+	JobMemoryLimit        uintptr
+	PeakProcessMemoryUsed uintptr
+	PeakJobMemoryUsed     uintptr
+}
+
+var _globalJobHandle syscall.Handle
+
+func initZeroOrphanJobObject() {
+	kernel32 := syscall.NewLazyDLL("kernel32.dll")
+	createJobObject := kernel32.NewProc("CreateJobObjectW")
+	setInformationJobObject := kernel32.NewProc("SetInformationJobObject")
+	assignProcessToJobObject := kernel32.NewProc("AssignProcessToJobObject")
+
+	job, _, _ := createJobObject.Call(0, 0)
+	if job == 0 {
+		return
+	}
+	_globalJobHandle = syscall.Handle(job)
+
+	info := JOBOBJECT_EXTENDED_LIMIT_INFORMATION{}
+	info.BasicLimitInformation.LimitFlags = 0x2000 // JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+
+	setInformationJobObject.Call(
+		job,
+		9, // JobObjectExtendedLimitInformation
+		uintptr(unsafe.Pointer(&info)),
+		uintptr(unsafe.Sizeof(info)),
+	)
+
+	currentProcess, _ := syscall.GetCurrentProcess()
+	assignProcessToJobObject.Call(job, uintptr(currentProcess))
+}
+
 
 // Styles
 var (
@@ -3519,6 +3581,7 @@ func (m model) resetCircuitBreakerWithPhrase(phrase string) tea.Cmd {
 }
 
 func main() {
+	initZeroOrphanJobObject()
 	initDebugLog()
 	// Load circuit state on startup
 	loadCircuitState()
