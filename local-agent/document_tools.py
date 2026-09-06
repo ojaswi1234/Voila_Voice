@@ -54,9 +54,11 @@ def create_csv(kwargs):
         with open(path, 'w', encoding='utf-8') as f: f.write(data)
     else:
         if not data: return "No data provided."
-        keys = data[0].keys()
         with open(path, 'w', encoding='utf-8', newline='') as f:
-            writer = csv.DictWriter(f, fieldnames=keys); writer.writeheader(); writer.writerows(data)
+            if isinstance(data[0], dict):
+                writer = csv.DictWriter(f, fieldnames=data[0].keys()); writer.writeheader(); writer.writerows(data)
+            elif isinstance(data[0], list):
+                writer = csv.writer(f); writer.writerows(data)
     return f"Successfully created CSV at {path}"
 
 def read_excel(kwargs):
