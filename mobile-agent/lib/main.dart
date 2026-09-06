@@ -1108,11 +1108,13 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       
       channel.sink.add(jsonEncode(message));
       setState(() {
-        _isThinking = true;
-        _triggerDataDeparting();
+        if (_controller.text != '__SCREENSHOT__') {
+          _isThinking = true;
+          _triggerDataDeparting();
+        }
         _messages.add({
           'type': 'user',
-          'content': _controller.text,
+          'content': _controller.text == '__SCREENSHOT__' ? '📸 Taking screenshot...' : _controller.text,
           'timestamp': DateTime.now().toString(),
         });
       });
