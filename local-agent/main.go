@@ -2799,12 +2799,13 @@ CRITICAL - TOOL EFFICIENCY & LOOP AVOIDANCE (0 BUGS POLICY):
 		if ctx.Err() != nil { return "Canceled by user", nil }
 		debugLog.Printf("[executeGroqCommand] iter=%d messages=%d", iter, len(messages))
 		payload := map[string]interface{}{
-			"model":       modelName,
-			"messages":    messages,
-			"temperature": 0.7,
-			"max_tokens":  2048,
-			"stream":      false,
-			"tools":       availableTools,
+			"model":               modelName,
+			"messages":            messages,
+			"temperature":         0.7,
+			"max_tokens":          2048,
+			"stream":              false,
+			"tools":               availableTools,
+			"parallel_tool_calls": false, // Disable AI blindly firing multiple tools at once
 		}
 
 		body, err := json.Marshal(payload)
@@ -2877,6 +2878,11 @@ CRITICAL - TOOL EFFICIENCY & LOOP AVOIDANCE (0 BUGS POLICY):
 		}
 
 		debugLog.Printf("[executeGroqCommand] iter=%d toolCalls=%d", iter, len(choice.Message.ToolCalls))
+
+		// ENFORCE STRICT SEQUENTIAL EXECUTION: If AI tries to blindly parallelize tool calls, truncate to the first one!
+		if len(choice.Message.ToolCalls) > 1 {
+			choice.Message.ToolCalls = choice.Message.ToolCalls[:1]
+		}
 
 		// Append assistant message with tool_calls
 		assistantMsg := map[string]interface{}{
@@ -3075,6 +3081,11 @@ CRITICAL - TOOL EFFICIENCY & LOOP AVOIDANCE (0 BUGS POLICY):
 		}
 
 		debugLog.Printf("[executeOllamaCommand] iter=%d toolCalls=%d", iter, len(result.Message.ToolCalls))
+
+		// ENFORCE STRICT SEQUENTIAL EXECUTION: If AI tries to blindly parallelize tool calls, truncate to the first one!
+		if len(result.Message.ToolCalls) > 1 {
+			result.Message.ToolCalls = result.Message.ToolCalls[:1]
+		}
 
 		// Append assistant message
 		assistantMsg := map[string]interface{}{
