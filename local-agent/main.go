@@ -1466,6 +1466,22 @@ Write-Output $base64
 			return
 		}
 
+		currentModeMu.Lock()
+		globalMode := strings.ToUpper(currentMode)
+		currentModeMu.Unlock()
+
+		reqMode := strings.ToUpper(mode)
+		var effectiveMode string
+		switch reqMode {
+		case "GROQ", "OLLAMA", "SHELL":
+			effectiveMode = reqMode
+		default:
+			effectiveMode = globalMode
+			if effectiveMode == "" {
+				effectiveMode = "LOCAL"
+			}
+		}
+
 		if graphifyEnabled {
 			w.WriteHeader(http.StatusAccepted)
 			
@@ -1484,7 +1500,7 @@ Write-Output $base64
 					"client_id":           clientID,
 					"device_id":           connData.DeviceID,
 					"secret_hash":         secretHash,
-					"mode":                mode,
+					"mode":                effectiveMode,
 					"new_conversation_id": conversationID,
 				}
 				
@@ -1552,24 +1568,6 @@ Write-Output $base64
 			// Determine effective mode.
 			// Priority: explicit GROQ/OLLAMA/SHELL in request body > global badge (currentMode) > LOCAL fallback.
 			// The mobile app always sends mode="AGENT", so we must prefer the badge-set global mode.
-			currentModeMu.Lock()
-			globalMode := strings.ToUpper(currentMode)
-			currentModeMu.Unlock()
-
-			reqMode := strings.ToUpper(mode)
-			var effectiveMode string
-			switch reqMode {
-			case "GROQ", "OLLAMA", "SHELL":
-				// Caller explicitly chose a specific executor — honour it
-				effectiveMode = reqMode
-			default:
-				// "AGENT", "", or anything else — use whatever the badge is set to
-				effectiveMode = globalMode
-				if effectiveMode == "" {
-					effectiveMode = "LOCAL"
-				}
-			}
-
 			debugLog.Printf("[/execute] reqMode=%q globalMode=%q effectiveMode=%q", reqMode, globalMode, effectiveMode)
 
 

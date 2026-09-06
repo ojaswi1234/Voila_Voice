@@ -795,7 +795,7 @@ func (b *Backend) stopCommand(deviceID string) (string, error) {
 	return "Command stopped", nil
 }
 
-func (b *Backend) forwardCommand(deviceID, command, mode, clientID, conversationID string) (string, error) {
+func (b *Backend) forwardCommand(deviceID, command, mode, clientID, conversationID string, graphifyEnabled bool) (string, error) {
 	b.mu.RLock()
 	device, exists := b.devices[deviceID]
 	if !exists {
@@ -833,7 +833,7 @@ func (b *Backend) forwardCommand(deviceID, command, mode, clientID, conversation
 		forwardMode = modeUp
 	// "AGENT" and anything else → "" → local agent uses desktop badge
 	}
-	payload := map[string]string{"command": optimizedCommand, "mode": forwardMode, "client_id": clientID, "conversation_id": conversationID}
+	payload := map[string]interface{}{"command": optimizedCommand, "mode": forwardMode, "client_id": clientID, "conversation_id": conversationID, "graphify_enabled": graphifyEnabled}
 	jsonPayload, _ := json.Marshal(payload)
 
 	client := safeHTTPClient()
@@ -1312,6 +1312,7 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				command, _ := msg["command"].(string)
 				mode, _ := msg["mode"].(string)
 				conversationID, _ := msg["conversation_id"].(string)
+				graphifyEnabled, _ := msg["graphify_enabled"].(bool)
 				if deviceID == "" {
 					device := b.getActiveDevice()
 					if device != nil && device.Active {
@@ -1372,9 +1373,9 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				
 				// REAL path - valid token
 				// Run in goroutine to not block websocket read loop (and pings)
-				go func(dID, cmd, m string, msgType int, cID string, convID string) {
+				go func(dID, cmd, m string, msgType int, cID string, convID string, graphify bool) {
 					b.lockDevice(dID, cID)
-					result, err := b.forwardCommand(dID, cmd, m, cID, convID)
+					result, err := b.forwardCommand(dID, cmd, m, cID, convID, graphify)
 					
 					if err != nil {
 						b.unlockDevice(dID, cID)
@@ -1390,7 +1391,7 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 					
 					b.unlockDevice(dID, cID)
 					b.dispatcher.Dispatch(cID, msgType, []byte(result))
-				}(deviceID, command, mode, messageType, clientID, conversationID)
+				}(deviceID, command, mode, messageType, clientID, conversationID, graphifyEnabled)
 				
 
 			case "stop_command":
