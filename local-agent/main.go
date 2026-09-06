@@ -2768,10 +2768,10 @@ When asked to find, scan, or search for a specific file, folder, or project by n
 CRITICAL - DEPENDENCY OVERHEAD AVOIDANCE:
 NEVER read or explore inside node_modules, .venv, vendor, .m2, .gradle, target, packages, or .cargo. To understand what packages/dependencies are installed, ONLY read the blueprint files (package.json, pyproject.toml, requirements.txt, go.mod, pom.xml, build.gradle, composer.json, Gemfile, Cargo.toml, *.csproj). Also NEVER read standard '.env' files; if you need environment context, ONLY look at '.env.example' or '.env.local'.
 
-CRITICAL - LOOP AVOIDANCE & TERMINATION (0 BUGS POLICY):
-1. When using run_terminal, DO NOT issue multiple short commands. Write ONE comprehensive PowerShell script that accomplishes the entire goal.
-2. ONCE YOU HAVE OBTAINED THE REQUESTED INFORMATION (e.g. you successfully ran a command and got CPU/Mem usage, or searched and found a file), YOU MUST STOP CALLING TOOLS IMMEDIATELY.
-3. DO NOT repeat the same or similar commands just to verify. DO NOT loop. As soon as you see the correct output in the tool response, output your final text answer to the user and exit.`
+CRITICAL - TOOL EFFICIENCY & LOOP AVOIDANCE:
+1. HISTORY REUSE (SAVE TOKENS): Before generating a new command, ALWAYS review your message history. If you previously executed a successful command for a similar task, REUSE exactly that command to save tokens and reasoning time. Only think of new commands if the known one fails.
+2. ONE-AND-DONE EXECUTION: When using run_terminal, write ONE comprehensive PowerShell script that accomplishes the entire goal. DO NOT issue multiple short commands.
+3. IMMEDIATE TERMINATION (NO LOOPING): Once a command successfully executes and returns the requested information (like CPU usage), YOUR GOAL IS ACHIEVED. You MUST STOP calling tools immediately. DO NOT re-verify. DO NOT run the command again. Output your final text answer to the user and exit the tool loop instantly.`
 
 	// Maintain conversation as raw JSON-friendly messages
 	messages := []map[string]interface{}{
@@ -2972,10 +2972,10 @@ When asked to find, scan, or search for a specific file, folder, or project by n
 CRITICAL - DEPENDENCY OVERHEAD AVOIDANCE:
 NEVER read or explore inside node_modules, .venv, vendor, .m2, .gradle, target, packages, or .cargo. To understand what packages/dependencies are installed, ONLY read the blueprint files (package.json, pyproject.toml, requirements.txt, go.mod, pom.xml, build.gradle, composer.json, Gemfile, Cargo.toml, *.csproj). Also NEVER read standard '.env' files; if you need environment context, ONLY look at '.env.example' or '.env.local'.
 
-CRITICAL - LOOP AVOIDANCE & TERMINATION (0 BUGS POLICY):
-1. When using run_terminal, DO NOT issue multiple short commands. Write ONE comprehensive PowerShell script that accomplishes the entire goal.
-2. ONCE YOU HAVE OBTAINED THE REQUESTED INFORMATION (e.g. you successfully ran a command and got CPU/Mem usage, or searched and found a file), YOU MUST STOP CALLING TOOLS IMMEDIATELY.
-3. DO NOT repeat the same or similar commands just to verify. DO NOT loop. As soon as you see the correct output in the tool response, output your final text answer to the user and exit.`
+CRITICAL - TOOL EFFICIENCY & LOOP AVOIDANCE:
+1. HISTORY REUSE (SAVE TOKENS): Before generating a new command, ALWAYS review your message history. If you previously executed a successful command for a similar task, REUSE exactly that command to save tokens and reasoning time. Only think of new commands if the known one fails.
+2. ONE-AND-DONE EXECUTION: When using run_terminal, write ONE comprehensive PowerShell script that accomplishes the entire goal. DO NOT issue multiple short commands.
+3. IMMEDIATE TERMINATION (NO LOOPING): Once a command successfully executes and returns the requested information (like CPU usage), YOUR GOAL IS ACHIEVED. You MUST STOP calling tools immediately. DO NOT re-verify. DO NOT run the command again. Output your final text answer to the user and exit the tool loop instantly.`
 
 	messages := []map[string]interface{}{
 		{"role": "system", "content": systemPrompt},
