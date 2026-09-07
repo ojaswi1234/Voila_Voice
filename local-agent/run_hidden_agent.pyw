@@ -1,4 +1,4 @@
-import tkinter as tk
+﻿import tkinter as tk
 import tkinter.messagebox
 from tkinter import ttk
 import subprocess
@@ -70,7 +70,7 @@ import logging as _logging
 _voila_log = _logging.getLogger('voila_py')
 _voila_log.setLevel(_logging.DEBUG)
 _voila_fh = _logging.FileHandler(
-    r'C:\Users\ojasw\Desktop\voice-cli-system\local-agent\voila_debug.log',
+    r'C:\Users\ojasw\Desktop\Voila_Voice\local-agent\voila_debug.log',
     encoding='utf-8'
 )
 _voila_fh.setFormatter(_logging.Formatter('%(asctime)s [PY] %(message)s'))
@@ -164,12 +164,12 @@ status_text = canvas.create_text(cx+55, cy+25, text="Standing by...", fill="#888
 
 # Close Button - larger clickable area for better hit detection
 close_btn_bg = canvas.create_oval(245, 25, 295, 65, fill="", outline="", width=0, state='hidden')
-close_btn = canvas.create_text(270, 45, text="✕", fill="#888888", font=("Segoe UI", 20, "bold"), anchor="center")
+close_btn = canvas.create_text(270, 45, text="âœ•", fill="#888888", font=("Segoe UI", 20, "bold"), anchor="center")
 
-# ── LOCAL/CLOUD mode toggle  ───────────────────────────────────────────
+# â”€â”€ LOCAL/CLOUD mode toggle  â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 MODES = ["LOCAL", "GROQ", "OLLAMA"]
 MODE_COLORS = {"LOCAL": "#6366F1", "GROQ": "#10B981", "OLLAMA": "#F59E0B"}
-MODE_LABELS = {"LOCAL": "⚡LOCAL", "GROQ": "☁ GROQ", "OLLAMA": "🦙OLLAMA"}
+MODE_LABELS = {"LOCAL": "âš¡LOCAL", "GROQ": "â˜ GROQ", "OLLAMA": "ðŸ¦™OLLAMA"}
 current_mode = "LOCAL"
 
 # Fetch saved mode from Go backend on startup
@@ -356,7 +356,7 @@ def update_expression():
             alert_msg = alert_state["message"]
             apps = alert_state["apps"]
             if apps:
-                alert_msg += "\n• " + "\n• ".join(apps)
+                alert_msg += "\nâ€¢ " + "\nâ€¢ ".join(apps)
             canvas.itemconfig(status_text, state='normal', text=alert_msg, fill='#ff5555', font=("Segoe UI", 9, "bold"))
             canvas.itemconfig(pill, outline='#ff5555', fill='#2a1a1a')
             
@@ -402,7 +402,7 @@ def update_expression():
             alert_msg = alert_state["message"]
             apps = alert_state["apps"]
             if apps:
-                alert_msg += "\n• " + "\n• ".join(apps)
+                alert_msg += "\nâ€¢ " + "\nâ€¢ ".join(apps)
             canvas.itemconfig(status_text, state='normal', text=alert_msg, fill='#ff5555', font=("Segoe UI", 9, "bold"))
             canvas.itemconfig(pill, outline='#ff5555', fill='#2a1a1a')
             
@@ -553,13 +553,13 @@ def build_dashboard_ui():
     tk.Label(header, textvariable=dash_session_var, bg='#0F1115', fg='#6B7280', font=('Segoe UI', 10)).pack(side='right')
 
     close_dash = tk.Button(
-        header, text='✕', command=toggle_dashboard,
+        header, text='âœ•', command=toggle_dashboard,
         bg='#EF4444', fg='#FFFFFF', activebackground='#DC2626', activeforeground='#FFFFFF',
         relief='flat', bd=0, width=3, font=('Segoe UI', 12, 'bold'), cursor='hand2',
     )
     close_dash.pack(side='right', padx=(0, 8))
 
-    # ── Mode Toggle Pill (in dashboard header) ──────────────────────────────
+    # â”€â”€ Mode Toggle Pill (in dashboard header) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     _mode_toggle_frame = tk.Frame(header, bg='#1A1D23', bd=0, relief='flat')
     _mode_toggle_frame.pack(side='right', padx=(0, 16))
 
@@ -594,7 +594,7 @@ def build_dashboard_ui():
     dash_sidebar.pack(side='left', fill='y')
     dash_content.pack(side='left', fill='both', expand=True, padx=(12, 16), pady=(0, 12))
 
-    tk.Label(dash_sidebar, text='⚡', bg='#16171C', fg='#FFFFFF', font=('Segoe UI', 18)).pack(pady=(16, 0))
+    tk.Label(dash_sidebar, text='âš¡', bg='#16171C', fg='#FFFFFF', font=('Segoe UI', 18)).pack(pady=(16, 0))
     tk.Label(dash_sidebar, text='Voila', bg='#16171C', fg='#FFFFFF', font=('Segoe UI', 12, 'bold')).pack(pady=(0, 16))
 
     nav_wrap = tk.Frame(dash_sidebar, bg='#16171C')
@@ -618,7 +618,7 @@ def build_dashboard_ui():
 import urllib.request as _urllib_req
 import json as _json_mod
 
-# ── Settings widget state ────────────────────────────────────────────────────
+# â”€â”€ Settings widget state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 _settings_frame_widget = None
 
 def _make_btn(parent, text, cmd, bg='#374151', fg='#E5E7EB', width=8):
@@ -658,7 +658,7 @@ def _show_settings_widgets():
     frame.place(x=0, y=0, relwidth=1.0, relheight=1.0)
     _settings_frame_widget = frame
 
-    # ── Scrollable container ─────────────────────────────────────────────────
+    # â”€â”€ Scrollable container â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     canvas_s = tk.Canvas(frame, bg='#0F1115', highlightthickness=0)
     scrollbar = tk.Scrollbar(frame, orient='vertical', command=canvas_s.yview)
     canvas_s.configure(yscrollcommand=scrollbar.set)
@@ -677,12 +677,12 @@ def _show_settings_widgets():
 
     PAD = dict(padx=16, pady=6, sticky='w')
 
-    # ─── Title ───────────────────────────────────────────────────────────────
-    tk.Label(inner, text='⚙  API Keys & Cloud Settings', bg='#0F1115', fg='#E5E7EB',
+    # â”€â”€â”€ Title â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    tk.Label(inner, text='âš™  API Keys & Cloud Settings', bg='#0F1115', fg='#E5E7EB',
              font=('Segoe UI', 14, 'bold')).grid(row=0, column=0, columnspan=4, padx=16, pady=(16, 4), sticky='w')
 
-    # ─── GROQ SECTION ────────────────────────────────────────────────────────
-    groq_frame = tk.LabelFrame(inner, text=' Groq Cloud (Free tier — llama3-70b, mixtral) ',
+    # â”€â”€â”€ GROQ SECTION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    groq_frame = tk.LabelFrame(inner, text=' Groq Cloud (Free tier â€” llama3-70b, mixtral) ',
                                bg='#1A1D23', fg='#6366F1', font=('Segoe UI', 10, 'bold'),
                                bd=1, relief='solid', labelanchor='nw')
     groq_frame.grid(row=1, column=0, columnspan=4, padx=16, pady=(12, 6), sticky='ew')
@@ -691,17 +691,17 @@ def _show_settings_widgets():
         row=0, column=0, padx=12, pady=8, sticky='w')
 
     groq_key_var = tk.StringVar()
-    groq_status_var = tk.StringVar(value='● Set' if data.get('groq_api_key_set') == 'true' else '○ Not set')
+    groq_status_var = tk.StringVar(value='â— Set' if data.get('groq_api_key_set') == 'true' else 'â—‹ Not set')
     groq_status_color = '#10B981' if data.get('groq_api_key_set') == 'true' else '#6B7280'
     groq_entry = tk.Entry(groq_frame, textvariable=groq_key_var, bg='#2D3039', fg='#E5E7EB',
                           insertbackground='#E5E7EB', relief='flat', font=('Segoe UI', 9),
-                          width=40, show='●')
+                          width=40, show='â—')
     groq_entry.grid(row=0, column=1, padx=6, pady=8, sticky='ew')
 
     # Show/hide toggle
     groq_show_var = tk.BooleanVar(value=False)
     def toggle_groq_show():
-        groq_entry.config(show='' if groq_show_var.get() else '●')
+        groq_entry.config(show='' if groq_show_var.get() else 'â—')
     tk.Checkbutton(groq_frame, text='Show', variable=groq_show_var, command=toggle_groq_show,
                    bg='#1A1D23', fg='#9CA3AF', selectcolor='#2D3039',
                    activebackground='#1A1D23', font=('Segoe UI', 8)).grid(row=0, column=2, padx=4)
@@ -738,53 +738,53 @@ def _show_settings_widgets():
         key = groq_key_var.get().strip()
         model = groq_model_var.get().strip()
         if not key:
-            groq_status_var.set('⚠️ Enter a key first')
+            groq_status_var.set('âš ï¸ Enter a key first')
             groq_status_lbl.config(fg='#F59E0B')
             return
         res = _api_call('POST', '/api-keys', {'groq_api_key': key, 'groq_model': model, 'action': 'save'})
         if 'error' in res:
-            groq_status_var.set(f'❌ {res["error"][:40]}')
+            groq_status_var.set(f'âŒ {res["error"][:40]}')
             groq_status_lbl.config(fg='#EF4444')
         else:
-            groq_status_var.set('✅ Saved')
+            groq_status_var.set('âœ… Saved')
             groq_status_lbl.config(fg='#10B981')
             groq_key_var.set('')
 
     def on_groq_verify():
-        groq_status_var.set('⏳ Verifying...')
+        groq_status_var.set('â³ Verifying...')
         groq_status_lbl.config(fg='#F59E0B')
         frame.update_idletasks()
 
         def _do():
             res = _api_call('GET', '/verify-groq')
             if res.get('status') == 'ok':
-                groq_status_var.set(f'✓ OK: {res.get("response","")[:30]}')
+                groq_status_var.set(f'âœ“ OK: {res.get("response","")[:30]}')
                 groq_status_lbl.config(fg='#10B981')
             else:
-                groq_status_var.set(f'✗ {res.get("message", res.get("error","Unknown"))[:40]}')
+                groq_status_var.set(f'âœ— {res.get("message", res.get("error","Unknown"))[:40]}')
                 groq_status_lbl.config(fg='#EF4444')
         threading.Thread(target=_do, daemon=True).start()
 
     def on_groq_delete():
         res = _api_call('POST', '/api-keys', {'action': 'delete_groq'})
         if 'error' in res:
-            groq_status_var.set(f'✗ {res["error"][:40]}')
+            groq_status_var.set(f'âœ— {res["error"][:40]}')
             groq_status_lbl.config(fg='#EF4444')
         else:
-            groq_status_var.set('○ Deleted')
+            groq_status_var.set('â—‹ Deleted')
             groq_status_lbl.config(fg='#6B7280')
 
     btn_row = tk.Frame(groq_frame, bg='#1A1D23')
     btn_row.grid(row=2, column=0, columnspan=4, padx=12, pady=(0, 10), sticky='w')
-    _make_btn(btn_row, '💾 Save', on_groq_save, bg='#6366F1', width=9).pack(side='left', padx=(0, 6))
-    _make_btn(btn_row, '✓ Verify', on_groq_verify, bg='#10B981', width=9).pack(side='left', padx=(0, 6))
-    _make_btn(btn_row, '🗑 Delete', on_groq_delete, bg='#DC2626', width=9).pack(side='left')
+    _make_btn(btn_row, 'ðŸ’¾ Save', on_groq_save, bg='#6366F1', width=9).pack(side='left', padx=(0, 6))
+    _make_btn(btn_row, 'âœ“ Verify', on_groq_verify, bg='#10B981', width=9).pack(side='left', padx=(0, 6))
+    _make_btn(btn_row, 'ðŸ—‘ Delete', on_groq_delete, bg='#DC2626', width=9).pack(side='left')
 
     tk.Label(groq_frame, text='Free models: llama3-70b-8192, llama3-8b-8192, mixtral-8x7b-32768, gemma2-9b-it',
              bg='#1A1D23', fg='#4B5563', font=('Segoe UI', 8, 'italic')).grid(
         row=3, column=0, columnspan=4, padx=12, pady=(0, 10), sticky='w')
 
-    # ─── OLLAMA SECTION ──────────────────────────────────────────────────────
+    # â”€â”€â”€ OLLAMA SECTION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     ollama_frame = tk.LabelFrame(inner, text=' Ollama (Local / Ollama Cloud free tier) ',
                                  bg='#1A1D23', fg='#F59E0B', font=('Segoe UI', 10, 'bold'),
                                  bd=1, relief='solid', labelanchor='nw')
@@ -843,19 +843,19 @@ def _show_settings_widgets():
         key = ollama_key_var.get().strip()
         if key == '********': key = '' # Don't resave placeholder
         if not url:
-            ollama_status_var.set('⚠️ Enter Base URL first')
+            ollama_status_var.set('âš ï¸ Enter Base URL first')
             ollama_status_lbl.config(fg='#F59E0B')
             return
         res = _api_call('POST', '/api-keys', {'ollama_base_url': url, 'ollama_model': model, 'ollama_api_key': key, 'action': 'save'})
         if 'error' in res:
-            ollama_status_var.set(f'❌ {res["error"][:40]}')
+            ollama_status_var.set(f'âŒ {res["error"][:40]}')
             ollama_status_lbl.config(fg='#EF4444')
         else:
-            ollama_status_var.set('● Saved')
+            ollama_status_var.set('â— Saved')
             ollama_status_lbl.config(fg='#10B981')
 
     def on_ollama_verify():
-        ollama_status_var.set('⏳ Verifying...')
+        ollama_status_var.set('â³ Verifying...')
         ollama_status_lbl.config(fg='#F59E0B')
         frame.update_idletasks()
 
@@ -868,35 +868,35 @@ def _show_settings_widgets():
             })
             res = _api_call('GET', '/verify-ollama')
             if res.get('status') == 'ok':
-                ollama_status_var.set(f'✓ OK: {res.get("response","")[:30]}')
+                ollama_status_var.set(f'âœ“ OK: {res.get("response","")[:30]}')
                 ollama_status_lbl.config(fg='#10B981')
             else:
-                ollama_status_var.set(f'✗ {res.get("message", res.get("error","Unknown"))[:50]}')
+                ollama_status_var.set(f'âœ— {res.get("message", res.get("error","Unknown"))[:50]}')
                 ollama_status_lbl.config(fg='#EF4444')
         threading.Thread(target=_do, daemon=True).start()
 
     def on_ollama_delete():
         res = _api_call('POST', '/api-keys', {'action': 'delete_ollama'})
         if 'error' in res:
-            ollama_status_var.set(f'✗ {res["error"][:40]}')
+            ollama_status_var.set(f'âœ— {res["error"][:40]}')
             ollama_status_lbl.config(fg='#EF4444')
         else:
             ollama_url_var.set('http://localhost:11434')
             ollama_model_var.set('llama3.2:1b')
-            ollama_status_var.set('○ Cleared')
+            ollama_status_var.set('â—‹ Cleared')
             ollama_status_lbl.config(fg='#6B7280')
 
     obtn_row = tk.Frame(ollama_frame, bg='#1A1D23')
     obtn_row.grid(row=4, column=0, columnspan=4, padx=12, pady=(0, 10), sticky='w')
-    _make_btn(obtn_row, '💾 Save', on_ollama_save, bg='#D97706', width=9).pack(side='left', padx=(0, 6))
-    _make_btn(obtn_row, '✓ Verify', on_ollama_verify, bg='#10B981', width=9).pack(side='left', padx=(0, 6))
-    _make_btn(obtn_row, '🗑 Delete', on_ollama_delete, bg='#DC2626', width=9).pack(side='left')
+    _make_btn(obtn_row, 'ðŸ’¾ Save', on_ollama_save, bg='#D97706', width=9).pack(side='left', padx=(0, 6))
+    _make_btn(obtn_row, 'âœ“ Verify', on_ollama_verify, bg='#10B981', width=9).pack(side='left', padx=(0, 6))
+    _make_btn(obtn_row, 'ðŸ—‘ Delete', on_ollama_delete, bg='#DC2626', width=9).pack(side='left')
 
     tk.Label(ollama_frame, text='Ollama Cloud free models: gemma4:31b, gpt-oss:120b, nemotron-3-nano:30b, ...',
              bg='#1A1D23', fg='#4B5563', font=('Segoe UI', 8, 'italic')).grid(
         row=5, column=0, columnspan=4, padx=12, pady=(0, 10), sticky='w')
 
-    # ─── Info footer ─────────────────────────────────────────────────────────
+    # â”€â”€â”€ Info footer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     # --- FLUSH MEMORY ---
     def flush_memory():
@@ -1420,7 +1420,7 @@ def animation_loop():
                 canvas.coords(eye_r_shine, er_cx + px_offset - 1.5, er_cy + py_offset - 1.5, er_cx + px_offset + 1.5, er_cy + py_offset + 1.5)
 
     elif dashboard_active and anim_frame % 10 == 0:
-        # Don't refresh Settings section — it's widget-based and self-managed.
+        # Don't refresh Settings section â€” it's widget-based and self-managed.
         # Refreshing it would destroy all typed API keys every 18 seconds.
         if current_section != 'Settings':
             refresh_dashboard_content()
@@ -1446,7 +1446,7 @@ def parse_line(line):
             elif "read" in l or "write" in l or "file" in l: ai_state = "FILE"
         return
 
-    # ── Authoritative STATUS: protocol ──────────────────────────────────────
+    # â”€â”€ Authoritative STATUS: protocol â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if "STATUS: GRAPHIFY" in line:
         ai_state = "GRAPHIFY"
         return
@@ -1514,7 +1514,7 @@ def parse_line(line):
 
     # Tool-specific face states (from cloud AI tool calls)
     if "STATUS: MODE:" in line:
-        # Go confirmed the actual mode used — keep Python in sync
+        # Go confirmed the actual mode used â€” keep Python in sync
         confirmed_mode = line.split("STATUS: MODE:")[1].strip().upper()
         if confirmed_mode in MODE_LABELS and confirmed_mode != current_mode:
             current_mode = confirmed_mode

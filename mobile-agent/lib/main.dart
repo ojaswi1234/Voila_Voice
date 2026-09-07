@@ -391,7 +391,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     
     // SMART ML-LIKE HEURISTICS: Silence and Noise Detection (No AI required)
     _silenceTimer?.cancel();
-    _silenceTimer = Timer.periodic(const Duration(seconds: 4), (timer) {
+    _silenceTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
       if (!_isListening) {
         timer.cancel();
         return;
@@ -403,7 +403,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
         if (_currentSoundLevel < -20.0 || _currentSoundLevel == 0.0) {
            // Silence condition
            _silenceWarningCount++;
-           if (_silenceWarningCount >= 3) {
+           if (_silenceWarningCount >= 2) {
              _speak("Boss.......BOSS......Are you there ??");
              _stopListening();
              timer.cancel();
@@ -442,9 +442,8 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
           _lastWordCount = currentWords;
           _lastSpeechTime = now;
 
-          // Aggressively catch "Mute" even with punctuation, embedded in short phrases, or misheard from a distance
-          bool isMuteCommand = text.contains("MUTE") || 
-                               (text.split(' ').length <= 2 && RegExp(r'\b(MOOT|NEWT|MEAT|MEET|MUT|MUD)\b').hasMatch(text));
+          // Use a highly specific trigger word to prevent accidental UX degradation
+          bool isMuteCommand = text.contains("VMUTE") || text.contains("V MUTE");
           if (isMuteCommand) {
              _stopListening();
              flutterTts.stop();

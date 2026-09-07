@@ -89,6 +89,8 @@ local-agent/start_agent.sh
 
 backend.exe
 
+*.exe
+
 # Keep important JSON files
 !mobile-agent/pubspec.yaml
 !mobile-agent/android/app/build.gradle\n*.py\n*.cs\nconv*.txt\nout*.txt\n
