@@ -442,7 +442,10 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
           _lastWordCount = currentWords;
           _lastSpeechTime = now;
 
-          if (text == "MUTE" || text == "MUTE.") {
+          // Aggressively catch "Mute" even with punctuation, embedded in short phrases, or misheard from a distance
+          bool isMuteCommand = text.contains("MUTE") || 
+                               (text.split(' ').length <= 2 && RegExp(r'\b(MOOT|NEWT|MEAT|MEET|MUT|MUD)\b').hasMatch(text));
+          if (isMuteCommand) {
              _stopListening();
              flutterTts.stop();
              setState(() {
