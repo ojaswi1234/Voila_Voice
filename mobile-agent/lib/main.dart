@@ -130,6 +130,9 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   String _currentAiSubtitle = "";
   Timer? _silenceTimer;
   int _silenceWarningCount = 0;
+  int _lastWordCount = 0;
+  DateTime _lastSpeechTime = DateTime.now();
+  int _overlapTriggers = 0;
   double _currentSoundLevel = 0.0;
 
   void _triggerDataDeparting() {
@@ -453,6 +456,24 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       await _speechToText.listen(
         onResult: (result) {
           final text = result.recognizedWords.trim().toUpperCase();
+          
+          // SMART HEURISTIC: 2 Person / Overlapping Voice Detection
+          // If word count jumps massively in a fraction of a second, it often means multiple voices are overlapping
+          int currentWords = result.recognizedWords.split(' ').length;
+          DateTime now = DateTime.now();
+          if (currentWords > _lastWordCount + 4 && now.difference(_lastSpeechTime).inMilliseconds < 500) {
+            _overlapTriggers++;
+            if (_overlapTriggers == 2) {
+               _speak("boss, is any one there with you?");
+               _overlapTriggers = 0; // reset
+            }
+          } else {
+            // Decay the trigger if normal speech pacing
+            if (now.difference(_lastSpeechTime).inSeconds > 2) _overlapTriggers = 0; 
+          }
+          _lastWordCount = currentWords;
+          _lastSpeechTime = now;
+
           if (text == "MUTE" || text == "MUTE.") {
              _stopListening();
              flutterTts.stop();
