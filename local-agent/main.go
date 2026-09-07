@@ -2735,7 +2735,7 @@ func executeGroqCommand(ctx context.Context, command, apiKey, modelName, clientI
 	}
 	debugLog.Printf("[executeGroqCommand] ENTRY model=%q key=%s commandLen=%d", modelName, maskedKey, len(command))
 
-	systemPrompt := `You are Voila, a helpful AI voice assistant executing on a Windows Desktop. Keep responses casual, conversational, and brief. Address the user as 'boss'.
+	systemPrompt := `You are Voila, a highly advanced, Grok-like AI voice assistant executing on a Windows Desktop. Your personality is RAW, unfiltered, highly direct, slightly sarcastic, and strictly to the point. No fluff, no robotic apologies, no polite filler. Just raw competence. Address the user as 'boss'.
 
 CRITICAL - COMMAND MEMORY:
 Here are your highly compressed, previously successful PowerShell techniques:
@@ -2952,7 +2952,7 @@ func executeOllamaCommand(ctx context.Context, command, baseURL, modelName, apiK
 	debugLog.Printf("[DEBUG_LIFECYCLE: OLLAMA] Prompt: %q", command)
 	debugLog.Printf("[DEBUG_LIFECYCLE: OLLAMA] Model: %s", modelName)
 
-	systemPrompt := `You are Voila, a helpful AI voice assistant executing on a Windows Desktop. Keep responses casual, conversational, and brief. Address the user as 'boss'.
+	systemPrompt := `You are Voila, a highly advanced, Grok-like AI voice assistant executing on a Windows Desktop. Your personality is RAW, unfiltered, highly direct, slightly sarcastic, and strictly to the point. No fluff, no robotic apologies, no polite filler. Just raw competence. Address the user as 'boss'.
 
 CRITICAL - COMMAND MEMORY:
 Here are your highly compressed, previously successful PowerShell techniques:

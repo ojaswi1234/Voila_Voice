@@ -127,6 +127,10 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   bool _isConnected = false;
   bool _isHealthy = false;
   bool _localAgentConnected = false;
+  String _currentAiSubtitle = "";
+  Timer? _silenceTimer;
+  int _silenceWarningCount = 0;
+  double _currentSoundLevel = 0.0;
 
   void _triggerDataDeparting() {
     setState(() => _isDataDeparting = true);
@@ -406,11 +410,61 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     
     setState(() {
       _isListening = true;
+      _silenceWarningCount = 0;
+    });
+    
+    // SMART ML-LIKE HEURISTICS: Silence and Noise Detection (No AI required)
+    _silenceTimer?.cancel();
+    _silenceTimer = Timer.periodic(const Duration(seconds: 4), (timer) {
+      if (!_isListening) {
+        timer.cancel();
+        return;
+      }
+      if (_isAiSpeaking) return; // Don't interrupt if AI is talking
+      
+      // If user hasn't spoken any valid words yet
+      if (_controller.text.trim().isEmpty) {
+        if (_currentSoundLevel < -20.0 || _currentSoundLevel == 0.0) {
+           // Silence condition
+           _silenceWarningCount++;
+           if (_silenceWarningCount == 1) {
+             _speak("hello ??");
+           } else if (_silenceWarningCount == 2) {
+             _speak("hello?");
+           } else if (_silenceWarningCount >= 3) {
+             final options = ["boss you there?", "boss I can't hear you", "I'm stopping the mic boss, you're silent."];
+             _speak(options[DateTime.now().second % options.length]);
+             _stopListening();
+             timer.cancel();
+           }
+        } else if (_currentSoundLevel > 15.0) {
+           // Loud Noise condition but no recognized words
+           _silenceWarningCount++;
+           if (_silenceWarningCount >= 2) {
+             _speak("Boss, I can't understand what you saying, your background is too loud... what is it ?? crowd or something else");
+             _stopListening();
+             timer.cancel();
+           }
+        }
+      }
     });
     
     try {
       await _speechToText.listen(
         onResult: (result) {
+          final text = result.recognizedWords.trim().toUpperCase();
+          if (text == "MUTE" || text == "MUTE.") {
+             _stopListening();
+             flutterTts.stop();
+             setState(() {
+               _isLiveSession = false;
+               _isAiSpeaking = false;
+               _controller.text = "Muted by voice command";
+             });
+             _silenceTimer?.cancel();
+             return;
+          }
+          
           if (result.finalResult) {
             setState(() {
               _controller.text = _normalizeGenZSlang(result.recognizedWords);
@@ -1749,6 +1803,35 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       return Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (_currentAiSubtitle.isNotEmpty && _isAiSpeaking)
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding: const EdgeInsets.all(24),
+              width: double.infinity,
+              constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.4),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0F0F12).withOpacity(0.95),
+                borderRadius: BorderRadius.circular(30),
+                border: Border.all(color: colorScheme.primary.withOpacity(0.4), width: 1.5),
+                boxShadow: [
+                   BoxShadow(color: colorScheme.primary.withOpacity(0.2), blurRadius: 30, spreadRadius: 5)
+                ]
+              ),
+              child: SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
+                child: Text(
+                  _currentAiSubtitle,
+                  style: GoogleFonts.outfit(
+                    fontSize: 24,
+                    height: 1.6,
+                    letterSpacing: 0.2,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
           if (_temporaryAssistantImage != null)
             GestureDetector(
               onTap: () {
@@ -1911,24 +1994,14 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     String normalized = text;
     
     // --- Smart Speech Techniques ---
-    // 1. URLs (e.g., https://github.com/foo/bar -> "a link to github.com")
-    normalized = normalized.replaceAllMapped(
-      RegExp(r'https?://([a-zA-Z0-9.-]+)[^\s]*'),
-      (match) => 'a link to ${match.group(1)}'
-    );
+    // 1. URLs - Aggressively shorten to just "the link" to prevent reading long garbled text
+    normalized = normalized.replaceAll(RegExp(r'https?://[^\s)\]]+'), 'the link');
     
-    // 2. Windows paths (e.g., C:\Users\desktop\file.txt -> "file file.txt")
-    // Note: double escaping backslashes for Dart regex
-    normalized = normalized.replaceAllMapped(
-      RegExp(r'[a-zA-Z]:\\(?:[^\s\\]+\\)+([^\s\\]+)'),
-      (match) => 'file ${match.group(1)}'
-    );
+    // 2. Windows paths - Aggressively shorten
+    normalized = normalized.replaceAll(RegExp(r'[a-zA-Z]:\[^\s)\]]+'), 'the file path');
     
-    // 3. Unix/Relative paths with at least 2 slashes (e.g., src/components/button.tsx -> "file button.tsx")
-    normalized = normalized.replaceAllMapped(
-      RegExp(r'(?:[a-zA-Z0-9_.-]+/){2,}([a-zA-Z0-9_.-]+)'),
-      (match) => 'file ${match.group(1)}'
-    );
+    // 3. Unix paths
+    normalized = normalized.replaceAll(RegExp(r'/(?:[a-zA-Z0-9_.-]+/)+[a-zA-Z0-9_.-]+'), 'the file path');
     
     // 4. UUIDs
     normalized = normalized.replaceAll(RegExp(r'\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b'), 'an ID');
@@ -1977,7 +2050,32 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
 
   Future<void> _speak(String text) async {
     if (!_willTalk || text.isEmpty) return;
+    
+    if (mounted) {
+      setState(() {
+        _currentAiSubtitle = text;
+      });
+    }
+
     String cleanText = _normalizeForSpeech(text);
+    
+    // Dynamic Pitch & Tone Parsing
+    double pitch = 0.85; // Deeper, Grok-like raw voice
+    double rate = 0.55; 
+    
+    if (cleanText.contains('?')) {
+      pitch = 1.15; // Questioning tone
+    } else if (cleanText.contains('!')) {
+      pitch = 1.0; // Excited tone
+      rate = 0.6;
+    } else if (cleanText.contains('...')) {
+      pitch = 0.75; // Confused / pausing
+      rate = 0.45;
+    }
+    
+    await flutterTts.setPitch(pitch);
+    await flutterTts.setSpeechRate(rate);
+
     await flutterTts.speak(cleanText);
   }
 
