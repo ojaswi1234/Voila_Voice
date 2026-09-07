@@ -416,6 +416,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     setState(() {
       _isListening = true;
       _silenceWarningCount = 0;
+      _currentAiSubtitle = ""; // Clear previous subtitle when starting new query
     });
     
     // SMART ML-LIKE HEURISTICS: Silence and Noise Detection (No AI required)
@@ -1840,7 +1841,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   }
 
   Widget _buildSubtitleOverlay(ColorScheme colorScheme, bool isOverlayMode) {
-    if (!_showSubtitles || _currentAiSubtitle.isEmpty || !_isAiSpeaking) return const SizedBox.shrink();
+    if (!_showSubtitles || _currentAiSubtitle.isEmpty) return const SizedBox.shrink();
 
     if (isOverlayMode) {
       // 1. OVERLAY MODE STYLE: Minimalist glass pill, floating, highly rounded, compact font
@@ -1848,27 +1849,50 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
         margin: const EdgeInsets.only(left: 16, right: 16, top: 10, bottom: 20),
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
         width: double.infinity,
-        constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.3),
+        constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.35),
         decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.7), // True glassmorphism
+          color: Colors.black.withOpacity(0.85), // True glassmorphism
           borderRadius: BorderRadius.circular(40), // Pill shape
           border: Border.all(color: colorScheme.primary.withOpacity(0.5), width: 1),
           boxShadow: [
             BoxShadow(color: colorScheme.primary.withOpacity(0.15), blurRadius: 20, spreadRadius: 2)
           ]
         ),
-        child: SingleChildScrollView(
-          physics: const BouncingScrollPhysics(),
-          child: Text(
-            _currentAiSubtitle,
-            style: GoogleFonts.inter(
-              fontSize: 16,
-              height: 1.4,
-              fontWeight: FontWeight.w500,
-              color: Colors.white.withOpacity(0.95),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
+                child: Text(
+                  _currentAiSubtitle,
+                  style: GoogleFonts.inter(
+                    fontSize: 16,
+                    height: 1.4,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.white.withOpacity(0.95),
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
             ),
-            textAlign: TextAlign.center,
-          ),
+            if (!_isAiSpeaking)
+              Padding(
+                padding: const EdgeInsets.only(top: 8.0),
+                child: InkWell(
+                  onTap: () => _speak(_currentAiSubtitle),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.replay_circle_filled, size: 20, color: colorScheme.primary),
+                      const SizedBox(width: 6),
+                      Text("Repeat Audio", style: TextStyle(color: colorScheme.primary, fontSize: 13, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ),
+              ),
+          ],
         ),
       );
     } else {
@@ -1886,19 +1910,45 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
              BoxShadow(color: colorScheme.secondary.withOpacity(0.08), blurRadius: 40, offset: const Offset(0, 10))
           ]
         ),
-        child: SingleChildScrollView(
-          physics: const BouncingScrollPhysics(),
-          child: Text(
-            _currentAiSubtitle,
-            style: GoogleFonts.outfit(
-              fontSize: 26,
-              height: 1.5,
-              letterSpacing: 0.5,
-              fontWeight: FontWeight.w600,
-              color: Colors.white,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Flexible(
+              child: SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
+                child: Text(
+                  _currentAiSubtitle,
+                  style: GoogleFonts.outfit(
+                    fontSize: 26,
+                    height: 1.5,
+                    letterSpacing: 0.5,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                  textAlign: TextAlign.left,
+                ),
+              ),
             ),
-            textAlign: TextAlign.left,
-          ),
+            if (!_isAiSpeaking)
+              Padding(
+                padding: const EdgeInsets.only(top: 16.0),
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: InkWell(
+                    onTap: () => _speak(_currentAiSubtitle),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.replay_circle_filled, size: 24, color: colorScheme.primary),
+                        const SizedBox(width: 8),
+                        Text("Repeat Audio", style: TextStyle(color: colorScheme.primary, fontSize: 16, fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ),
       );
     }
