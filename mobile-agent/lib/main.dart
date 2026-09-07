@@ -134,7 +134,6 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   int _lastWordCount = 0;
   DateTime _lastSpeechTime = DateTime.now();
   int _overlapTriggers = 0;
-  double _currentSoundLevel = 0.0;
 
   void _triggerDataDeparting() {
     setState(() => _isDataDeparting = true);
