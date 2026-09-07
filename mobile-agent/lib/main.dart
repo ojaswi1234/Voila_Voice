@@ -123,7 +123,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   bool _willTalk = true;
   bool _graphifyEnabled = false;
   FlutterTts flutterTts = FlutterTts();
-  Completer<void>? _ttsCompleter;
+  
   String _activeDevice = '';
   bool _isConnected = false;
   bool _isHealthy = false;
@@ -279,37 +279,17 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   }
 
   Future<void> _initTts() async {
-    // Use system default TTS engine instead of hardcoding Google TTS
-    // This ensures compatibility with de-Googled devices and Samsung devices
+    // 100% Legal, Native, Free OS-Level Neural Voices
     await flutterTts.setLanguage("en-US");
     
-    // We intentionally DO NOT force a flaky network voice here because network voices 
-    // often drop completely when streamed in rapid NLP chunks on Android.
-    // Our ML Chunking algorithm provides the dynamic "Grok" emotive pitch directly using the robust local voice!
-
+    // Set awaitSpeakCompletion to strictly block speak() calls natively
     await flutterTts.awaitSpeakCompletion(true);
     await flutterTts.setSpeechRate(0.5);
     await flutterTts.setVolume(1.0);
-    await flutterTts.setPitch(1.05); // Slightly elevated pitch for friendly casual tone
-
-    flutterTts.setStartHandler(() {
-      setState(() {
-        _isAiSpeaking = true;
-      });
-    });
-
-    flutterTts.setCompletionHandler(() {
-      if (_ttsCompleter != null && !_ttsCompleter!.isCompleted) {
-        _ttsCompleter!.complete();
-      }
-      setState(() {
-        _isAiSpeaking = false;
-      });
-      if (_isLiveSession && mounted) {
-        // Automatically start listening again after AI finishes speaking
-        _startListening();
-      }
-    });
+    await flutterTts.setPitch(1.0);
+    
+    // Intentionally omitting setStartHandler and setCompletionHandler 
+    // because they conflict with awaitSpeakCompletion(true) natively on Android!
   }
 
   Future<void> _initializeSpeech() async {
@@ -2176,53 +2156,58 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     if (mounted) {
       setState(() {
         _currentAiSubtitle = text;
+        _isAiSpeaking = true;
       });
     }
 
     String cleanText = _normalizeForSpeech(text);
     
-    // ADVANCED ML-LIKE NLP CHUNKING: Prosody and Emotional Tone analysis
-    // We break the sentence into semantic chunks based on punctuation.
-    // Then we dynamically alter the pitch and speed *per chunk* before speaking it.
-    final RegExp chunkRegex = RegExp(r'([^.?!]+[.?!]*)');
-    final Iterable<Match> matches = chunkRegex.allMatches(cleanText);
+    try {
+      final RegExp chunkRegex = RegExp(r'([^.?!]+[.?!]*)');
+      final Iterable<Match> matches = chunkRegex.allMatches(cleanText);
+      
+      for (final Match match in matches) {
+        String chunk = match.group(0)?.trim() ?? "";
+        if (chunk.isEmpty) continue;
+        
+        double pitch = 0.85;
+        double rate = 0.55; 
+        
+        if (chunk.contains('!!!')) {
+          pitch = 1.6; rate = 0.7;
+        } else if (chunk.contains('?')) {
+          pitch = 1.15; rate = 0.5;
+        } else if (chunk.contains('!')) {
+          pitch = 1.1; rate = 0.6;
+        } else if (chunk.contains('...')) {
+          pitch = 0.75; rate = 0.4;
+        } else if (chunk.toLowerCase().contains("boss")) {
+          pitch = 0.80;
+        } else if (chunk.toLowerCase().contains("error") || chunk.toLowerCase().contains("fail")) {
+          pitch = 0.9; rate = 0.45;
+        }
+        
+        await flutterTts.setPitch(pitch);
+        await flutterTts.setSpeechRate(rate);
+        
+        // This naturally blocks until finished because of awaitSpeakCompletion(true)
+        await flutterTts.speak(chunk);
+      }
+    } catch (e) {
+      debugPrint("TTS Speak Error: $e");
+      // Fallback: if chunking crashes, just play the whole text at normal pitch
+      await flutterTts.setPitch(1.0);
+      await flutterTts.speak(cleanText);
+    }
     
-    for (final Match match in matches) {
-      String chunk = match.group(0)?.trim() ?? "";
-      if (chunk.isEmpty) continue;
-      
-      double pitch = 0.85; // Baseline Grok deep voice
-      double rate = 0.55; 
-      
-      // Sentiment & Heuristic Analysis
-      if (chunk.contains('!!!')) {
-        pitch = 1.6; // Angry / Screaming pitch
-        rate = 0.7; // Fast
-      } else if (chunk.contains('?')) {
-        pitch = 1.15; // Rising intonation for questions
-        rate = 0.5;
-      } else if (chunk.contains('!')) {
-        pitch = 1.1; // Excited
-        rate = 0.6;
-      } else if (chunk.contains('...')) {
-        pitch = 0.75; // Thoughtful / Suspense
-        rate = 0.4;
-      } else if (chunk.toLowerCase().contains("boss")) {
-        pitch = 0.80; // slightly lower, authoritative when addressing user
-      } else if (chunk.toLowerCase().contains("error") || chunk.toLowerCase().contains("fail")) {
-        pitch = 0.9;
-        rate = 0.45; // Slower, more serious
+    if (mounted) {
+      setState(() {
+        _isAiSpeaking = false;
+      });
+      // Auto-restart listening if in a live session
+      if (_isLiveSession) {
+        _startListening();
       }
-      
-      await flutterTts.setPitch(pitch);
-      await flutterTts.setSpeechRate(rate);
-      _ttsCompleter = Completer<void>();
-      var result = await flutterTts.speak(chunk);
-      if (result == 1) {
-        try { await _ttsCompleter!.future.timeout(const Duration(seconds: 4)); } catch (e) {}
-      }
-      await Future.delayed(const Duration(milliseconds: 150));
-      // flutterTts handles queuing internally for Android/iOS, so loop is safe.
     }
   }
 
@@ -2610,7 +2595,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                         ),
                         onPressed: () async {
                           String cleanText = _normalizeForSpeech(message['summary']);
-                          await flutterTts.speak(cleanText);
+                          _speak(cleanText);
                         },
                       ),
                     ),
