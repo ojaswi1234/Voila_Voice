@@ -128,6 +128,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   bool _isHealthy = false;
   bool _localAgentConnected = false;
   String _currentAiSubtitle = "";
+  bool _showSubtitles = true;
   Timer? _silenceTimer;
   int _silenceWarningCount = 0;
   int _lastWordCount = 0;
@@ -299,6 +300,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       debugPrint("Voice selection error: $e");
     }
 
+    await flutterTts.awaitSpeakCompletion(true);
     await flutterTts.setSpeechRate(0.5);
     await flutterTts.setVolume(1.0);
     await flutterTts.setPitch(1.05); // Slightly elevated pitch for friendly casual tone
@@ -1818,41 +1820,77 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     );
   }
 
+  Widget _buildSubtitleOverlay(ColorScheme colorScheme, bool isOverlayMode) {
+    if (!_showSubtitles || _currentAiSubtitle.isEmpty || !_isAiSpeaking) return const SizedBox.shrink();
+
+    if (isOverlayMode) {
+      // 1. OVERLAY MODE STYLE: Minimalist glass pill, floating, highly rounded, compact font
+      return Container(
+        margin: const EdgeInsets.only(left: 16, right: 16, top: 10, bottom: 20),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+        width: double.infinity,
+        constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.3),
+        decoration: BoxDecoration(
+          color: Colors.black.withOpacity(0.7), // True glassmorphism
+          borderRadius: BorderRadius.circular(40), // Pill shape
+          border: Border.all(color: colorScheme.primary.withOpacity(0.5), width: 1),
+          boxShadow: [
+            BoxShadow(color: colorScheme.primary.withOpacity(0.15), blurRadius: 20, spreadRadius: 2)
+          ]
+        ),
+        child: SingleChildScrollView(
+          physics: const BouncingScrollPhysics(),
+          child: Text(
+            _currentAiSubtitle,
+            style: GoogleFonts.inter(
+              fontSize: 16,
+              height: 1.4,
+              fontWeight: FontWeight.w500,
+              color: Colors.white.withOpacity(0.95),
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
+    } else {
+      // 2. FULL-SCREEN MODE STYLE: Cinematic, massive, embedded within the main view seamlessly
+      return Container(
+        margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+        padding: const EdgeInsets.all(28),
+        width: double.infinity,
+        constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.5),
+        decoration: BoxDecoration(
+          color: const Color(0xFF16161D), // Darker integrated card
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: colorScheme.secondary.withOpacity(0.3), width: 2),
+          boxShadow: [
+             BoxShadow(color: colorScheme.secondary.withOpacity(0.08), blurRadius: 40, offset: const Offset(0, 10))
+          ]
+        ),
+        child: SingleChildScrollView(
+          physics: const BouncingScrollPhysics(),
+          child: Text(
+            _currentAiSubtitle,
+            style: GoogleFonts.outfit(
+              fontSize: 26,
+              height: 1.5,
+              letterSpacing: 0.5,
+              fontWeight: FontWeight.w600,
+              color: Colors.white,
+            ),
+            textAlign: TextAlign.left,
+          ),
+        ),
+      );
+    }
+  }
+
   Widget _buildMainContent(ColorScheme colorScheme) {
     if (_isAssistant) {
       // Sleek minimal overlay for Assistant Mode
       return Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (_currentAiSubtitle.isNotEmpty && _isAiSpeaking)
-            Container(
-              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              padding: const EdgeInsets.all(24),
-              width: double.infinity,
-              constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.4),
-              decoration: BoxDecoration(
-                color: const Color(0xFF0F0F12).withOpacity(0.95),
-                borderRadius: BorderRadius.circular(30),
-                border: Border.all(color: colorScheme.primary.withOpacity(0.4), width: 1.5),
-                boxShadow: [
-                   BoxShadow(color: colorScheme.primary.withOpacity(0.2), blurRadius: 30, spreadRadius: 5)
-                ]
-              ),
-              child: SingleChildScrollView(
-                physics: const BouncingScrollPhysics(),
-                child: Text(
-                  _currentAiSubtitle,
-                  style: GoogleFonts.outfit(
-                    fontSize: 24,
-                    height: 1.6,
-                    letterSpacing: 0.2,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            ),
           if (_temporaryAssistantImage != null)
             GestureDetector(
               onTap: () {
@@ -1906,6 +1944,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                 ),
               ),
             ),
+          _buildSubtitleOverlay(colorScheme, true), // OVERLAY STYLE SUBTITLES
           // Flowchart with a subtle dark background pill for readability over random desktop walls
           Container(
             margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -2080,24 +2119,41 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
 
     String cleanText = _normalizeForSpeech(text);
     
-    // Dynamic Pitch & Tone Parsing
-    double pitch = 0.85; // Deeper, Grok-like raw voice
-    double rate = 0.55; 
+    // ADVANCED ML-LIKE NLP CHUNKING: Prosody and Emotional Tone analysis
+    // We break the sentence into semantic chunks based on punctuation.
+    // Then we dynamically alter the pitch and speed *per chunk* before speaking it.
+    final RegExp chunkRegex = RegExp(r'([^.?!]+[.?!]*)');
+    final Iterable<Match> matches = chunkRegex.allMatches(cleanText);
     
-    if (cleanText.contains('?')) {
-      pitch = 1.15; // Questioning tone
-    } else if (cleanText.contains('!')) {
-      pitch = 1.0; // Excited tone
-      rate = 0.6;
-    } else if (cleanText.contains('...')) {
-      pitch = 0.75; // Confused / pausing
-      rate = 0.45;
+    for (final Match match in matches) {
+      String chunk = match.group(0)?.trim() ?? "";
+      if (chunk.isEmpty) continue;
+      
+      double pitch = 0.85; // Baseline Grok deep voice
+      double rate = 0.55; 
+      
+      // Sentiment & Heuristic Analysis
+      if (chunk.contains('?')) {
+        pitch = 1.15; // Rising intonation for questions
+        rate = 0.5;
+      } else if (chunk.contains('!')) {
+        pitch = 1.1; // Excited
+        rate = 0.6;
+      } else if (chunk.contains('...')) {
+        pitch = 0.75; // Thoughtful / Suspense
+        rate = 0.4;
+      } else if (chunk.toLowerCase().contains("boss")) {
+        pitch = 0.80; // slightly lower, authoritative when addressing user
+      } else if (chunk.toLowerCase().contains("error") || chunk.toLowerCase().contains("fail")) {
+        pitch = 0.9;
+        rate = 0.45; // Slower, more serious
+      }
+      
+      await flutterTts.setPitch(pitch);
+      await flutterTts.setSpeechRate(rate);
+      await flutterTts.speak(chunk);
+      // flutterTts handles queuing internally for Android/iOS, so loop is safe.
     }
-    
-    await flutterTts.setPitch(pitch);
-    await flutterTts.setSpeechRate(rate);
-
-    await flutterTts.speak(cleanText);
   }
 
   void _showSettingsSheet(BuildContext context) {
