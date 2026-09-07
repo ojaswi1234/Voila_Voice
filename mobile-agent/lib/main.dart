@@ -2100,7 +2100,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     normalized = normalized.replaceAll(RegExp(r'https?://[^\s)\]]+'), 'the link');
     
     // 2. Windows paths - Aggressively shorten
-    normalized = normalized.replaceAll(RegExp(r'[a-zA-Z]:\[^\s)\]]+'), 'the file path');
+    normalized = normalized.replaceAll(RegExp(r'[a-zA-Z]:\\[^\s)\]]+'), 'the file path');
     
     // 3. Unix paths
     normalized = normalized.replaceAll(RegExp(r'/(?:[a-zA-Z0-9_.-]+/)+[a-zA-Z0-9_.-]+'), 'the file path');
