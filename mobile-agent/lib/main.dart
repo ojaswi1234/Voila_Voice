@@ -489,14 +489,33 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
           }
           
           if (result.finalResult) {
+            String finalWords = _normalizeGenZSlang(result.recognizedWords);
             setState(() {
-              _controller.text = _normalizeGenZSlang(result.recognizedWords);
+              _controller.text = finalWords;
               _isListening = false;
             });
             
-            // Automatically submit command if in live session
-            if (_isLiveSession && _controller.text.isNotEmpty) {
-              _sendMessage();
+            if (_isLiveSession && finalWords.isNotEmpty) {
+               // SMART NLP ADDRESSEE DETECTION HEURISTIC
+               // Checks if the user is talking to another human rather than the AI device
+               final String lowerWords = finalWords.toLowerCase();
+               int conversationalMarkers = 0;
+               
+               if (lowerWords.contains(" um ") || lowerWords.startsWith("um ")) conversationalMarkers++;
+               if (lowerWords.contains(" uh ") || lowerWords.startsWith("uh ")) conversationalMarkers++;
+               if (lowerWords.contains(" you know ")) conversationalMarkers += 2;
+               if (lowerWords.contains(" like ") && finalWords.split(' ').length > 6) conversationalMarkers++;
+               if (lowerWords.contains(" yeah ") || lowerWords.startsWith("yeah ")) conversationalMarkers++;
+               if (lowerWords.contains(" so anyways ")) conversationalMarkers += 2;
+               
+               // Rule-based decision threshold
+               if (conversationalMarkers >= 2 || (conversationalMarkers >= 1 && finalWords.split(' ').length > 15)) {
+                  _speak("Are you talking to me, or someone else?");
+                  _silenceTimer?.cancel();
+                  return; // Intercept and DO NOT send to the AI
+               }
+               
+               _sendMessage();
             }
           } else {
             // Partial result - update text field live
@@ -2133,7 +2152,10 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       double rate = 0.55; 
       
       // Sentiment & Heuristic Analysis
-      if (chunk.contains('?')) {
+      if (chunk.contains('!!!')) {
+        pitch = 1.6; // Angry / Screaming pitch
+        rate = 0.7; // Fast
+      } else if (chunk.contains('?')) {
         pitch = 1.15; // Rising intonation for questions
         rate = 0.5;
       } else if (chunk.contains('!')) {
