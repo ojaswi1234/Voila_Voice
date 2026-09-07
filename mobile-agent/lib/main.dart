@@ -123,6 +123,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   bool _willTalk = true;
   bool _graphifyEnabled = false;
   FlutterTts flutterTts = FlutterTts();
+  Completer<void>? _ttsCompleter;
   String _activeDevice = '';
   bool _isConnected = false;
   bool _isHealthy = false;
@@ -278,26 +279,13 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   }
 
   Future<void> _initTts() async {
-    // 100% Legal, Native, Free OS-Level Neural Voices
     // Use system default TTS engine instead of hardcoding Google TTS
     // This ensures compatibility with de-Googled devices and Samsung devices
     await flutterTts.setLanguage("en-US");
     
-    // Attempt to select a high-quality network voice (Neural/Wavenet)
-    try {
-      final voices = await flutterTts.getVoices;
-      if (voices != null) {
-        for (var voice in voices) {
-          // Look for premium Google network voices (typically female, highly natural)
-          if (voice['name'] != null && voice['name'].toString().contains('network') && voice['name'].toString().contains('en-us-x-sfg')) {
-            await flutterTts.setVoice({"name": voice["name"], "locale": voice["locale"]});
-            break;
-          }
-        }
-      }
-    } catch (e) {
-      debugPrint("Voice selection error: $e");
-    }
+    // We intentionally DO NOT force a flaky network voice here because network voices 
+    // often drop completely when streamed in rapid NLP chunks on Android.
+    // Our ML Chunking algorithm provides the dynamic "Grok" emotive pitch directly using the robust local voice!
 
     await flutterTts.awaitSpeakCompletion(true);
     await flutterTts.setSpeechRate(0.5);
@@ -311,6 +299,9 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     });
 
     flutterTts.setCompletionHandler(() {
+      if (_ttsCompleter != null && !_ttsCompleter!.isCompleted) {
+        _ttsCompleter!.complete();
+      }
       setState(() {
         _isAiSpeaking = false;
       });
@@ -2225,7 +2216,12 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       
       await flutterTts.setPitch(pitch);
       await flutterTts.setSpeechRate(rate);
-      await flutterTts.speak(chunk);
+      _ttsCompleter = Completer<void>();
+      var result = await flutterTts.speak(chunk);
+      if (result == 1) {
+        try { await _ttsCompleter!.future.timeout(const Duration(seconds: 4)); } catch (e) {}
+      }
+      await Future.delayed(const Duration(milliseconds: 150));
       // flutterTts handles queuing internally for Android/iOS, so loop is safe.
     }
   }
