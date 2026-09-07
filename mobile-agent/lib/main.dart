@@ -2110,6 +2110,9 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                 Expanded(child: _buildMessagesList(colorScheme))
               else
                 const Spacer(),
+              
+              _buildSubtitleOverlay(colorScheme, false), // FULL-SCREEN STYLE SUBTITLES
+              
               _buildInputArea(colorScheme),
             ],
           ),
@@ -2241,6 +2244,17 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
             children: [
               const Text('Settings', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
               const SizedBox(height: 20),
+              SwitchListTile(
+                title: const Text('Smart Subtitles (AI Speech)', style: TextStyle(fontSize: 14)),
+                subtitle: const Text('Show scrolling text when AI speaks'),
+                value: _showSubtitles,
+                onChanged: (val) {
+                  setState(() => _showSubtitles = val);
+                  Navigator.pop(context);
+                },
+                activeColor: const Color(0xFF3DDC97),
+                contentPadding: EdgeInsets.zero,
+              ),
               SwitchListTile(
                 title: const Text('Auto-read Voice Responses', style: TextStyle(fontSize: 14)),
                 value: _willTalk,
