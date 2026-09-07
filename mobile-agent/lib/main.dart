@@ -403,13 +403,8 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
         if (_currentSoundLevel < -20.0 || _currentSoundLevel == 0.0) {
            // Silence condition
            _silenceWarningCount++;
-           if (_silenceWarningCount == 1) {
-             _speak("hello ??");
-           } else if (_silenceWarningCount == 2) {
-             _speak("hello?");
-           } else if (_silenceWarningCount >= 3) {
-             final options = ["boss you there?", "boss I can't hear you", "I'm stopping the mic boss, you're silent."];
-             _speak(options[DateTime.now().second % options.length]);
+           if (_silenceWarningCount >= 3) {
+             _speak("Boss.......BOSS......Are you there ??");
              _stopListening();
              timer.cancel();
            }
@@ -2173,9 +2168,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
         double pitch = 0.85;
         double rate = 0.55; 
         
-        if (chunk.contains('!!!')) {
-          pitch = 1.6; rate = 0.7;
-        } else if (chunk.contains('?')) {
+        if (chunk.contains('?')) {
           pitch = 1.15; rate = 0.5;
         } else if (chunk.contains('!')) {
           pitch = 1.1; rate = 0.6;
