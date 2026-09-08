@@ -5,8 +5,8 @@
       "role": "Researcher",
       "model": "llama3-8b\n(Ollama)",
       "prompt": "Analyze the request and propose an initial approach.",
-      "x": 150,
-      "y": 150,
+      "x": 295,
+      "y": 132,
       "color": "#2563EB",
       "outline": "#60A5FA",
       "r": 20
@@ -16,8 +16,8 @@
       "role": "Orchestrator",
       "model": "llama3-70b\n(Groq)",
       "prompt": "Resolve the debate and improve the approach.",
-      "x": 350,
-      "y": 250,
+      "x": 280,
+      "y": 269,
       "color": "#7C3AED",
       "outline": "#A78BFA",
       "r": 25
@@ -27,8 +27,19 @@
       "role": "Reviewer",
       "model": "gemma-2b\n(Ollama)",
       "prompt": "Critique the approach and point out flaws.",
-      "x": 550,
-      "y": 150,
+      "x": 569,
+      "y": 280,
+      "color": "#10B981",
+      "outline": "#34D399",
+      "r": 20
+    },
+    {
+      "id": "node1788859343033",
+      "role": "Agent",
+      "model": "gemma-2b\n(Ollama)",
+      "prompt": "",
+      "x": 570,
+      "y": 141,
       "color": "#10B981",
       "outline": "#34D399",
       "r": 20
@@ -42,6 +53,14 @@
     [
       "node2",
       "node3"
+    ],
+    [
+      "node1788859343033",
+      "node2"
+    ],
+    [
+      "node1",
+      "node1788859343033"
     ]
   ]
 }

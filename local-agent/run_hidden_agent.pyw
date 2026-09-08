@@ -114,6 +114,7 @@ border_idle = '#3a3a40'
 pill = create_round_rect(canvas, 10, 10, 290, 80, r=20, fill=bg_idle, outline=border_idle, width=2)
 
 brown = '#b87353'
+brown_dark = '#8b5a2b'
 black = '#000000'
 sx, sy = 15, 10
 
@@ -147,6 +148,10 @@ eye_r = canvas.create_oval(sx+48, sy+28, sx+58, sy+38, fill=black, outline='')
 eye_l_shine = canvas.create_oval(sx+27, sy+30, sx+30, sy+33, fill='white', outline='')
 eye_r_shine = canvas.create_oval(sx+53, sy+30, sx+56, sy+33, fill='white', outline='')
 
+# Eyebrows - curved lines above eyes
+eyebrow_l = canvas.create_arc(sx+18, sy+20, sx+36, sy+28, start=0, extent=180, style=tk.ARC, width=2, outline=brown_dark)
+eyebrow_r = canvas.create_arc(sx+44, sy+20, sx+62, sy+28, start=0, extent=180, style=tk.ARC, width=2, outline=brown_dark)
+
 # Snoring / Sleep visual elements
 snot_bubble = canvas.create_oval(0, 0, 0, 0, fill='', outline='#aaddff', width=1.5, state='hidden')
 snot_shine = canvas.create_oval(0, 0, 0, 0, fill='#ffffff', outline='', state='hidden')
@@ -154,7 +159,7 @@ zzz1 = canvas.create_text(0, 0, text="Z", fill='#aaddff', font=("Segoe UI", 12, 
 zzz2 = canvas.create_text(0, 0, text="z", fill='#aaddff', font=("Segoe UI", 10, "bold"), state='hidden')
 zzz3 = canvas.create_text(0, 0, text="z", fill='#aaddff', font=("Segoe UI", 8, "bold"), state='hidden')
 
-face_parts = (body, arm_l, arm_r, leg1, leg2, leg3, leg4, eye_l, eye_r, eye_l_shine, eye_r_shine, snot_bubble, snot_shine, zzz1, zzz2, zzz3)
+face_parts = (body, arm_l, arm_r, leg1, leg2, leg3, leg4, eye_l, eye_r, eye_l_shine, eye_r_shine, eyebrow_l, eyebrow_r, snot_bubble, snot_shine, zzz1, zzz2, zzz3)
 
 # Perfectly positioned Title (x=90)
 title_text = canvas.create_text(90, 45, text="Voila", fill="#ffffff", font=("Segoe UI", 12, "bold"), anchor="w")
@@ -162,14 +167,14 @@ title_text = canvas.create_text(90, 45, text="Voila", fill="#ffffff", font=("Seg
 # Perfectly centered status in the cloud (x=150+55=205)
 status_text = canvas.create_text(cx+55, cy+25, text="Standing by...", fill="#888888", font=("Segoe UI", 8, "italic"), anchor="center", width=150)
 
-# Close Button - larger clickable area for better hit detection
-close_btn_bg = canvas.create_oval(245, 25, 295, 65, fill="", outline="", width=0, state='hidden')
-close_btn = canvas.create_text(270, 45, text="âœ•", fill="#888888", font=("Segoe UI", 20, "bold"), anchor="center")
+# Close Button - smaller perfect circle
+close_btn_bg = canvas.create_oval(260, 35, 280, 55, fill="#EF4444", outline="#DC2626", width=2, state='normal')
+close_btn = canvas.create_text(270, 45, text="✖", fill="#FFFFFF", font=("Segoe UI", 12, "bold"), anchor="center")
 
-# â”€â”€ LOCAL/CLOUD mode toggle  â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ─── LOCAL/CLOUD mode toggle  ────────────────────────────────────────────
 MODES = ["LOCAL", "GROQ", "OLLAMA"]
 MODE_COLORS = {"LOCAL": "#6366F1", "GROQ": "#10B981", "OLLAMA": "#F59E0B"}
-MODE_LABELS = {"LOCAL": "âš¡LOCAL", "GROQ": "â˜⚡ GROQ", "OLLAMA": "ðŸ¦™OLLAMA"}
+MODE_LABELS = {"LOCAL": "⚡LOCAL", "GROQ": "☕ GROQ", "OLLAMA": "🦙 OLLAMA"}
 current_mode = "LOCAL"
 
 # Fetch saved mode from Go backend on startup
@@ -258,18 +263,18 @@ def on_enter_close(e):
         except:
             pass
     else:
-        canvas.itemconfig(close_btn, fill="#ff5555")
-        canvas.itemconfig(close_btn_bg, state='normal', fill="#ff5555", outline="#DC2626")
+        canvas.itemconfig(close_btn_bg, fill="#DC2626", outline="#B91C1C")  # Darker red on hover
+        canvas.itemconfig(close_btn, fill="#FFFFFF")
 
 def on_leave_close(e):
     if dashboard_active:
         try:
-            canvas.itemconfig("close_btn_bg", fill="#EF4444", outline="#B91C1C")  # Restore red
+            canvas.itemconfig("close_btn_bg", fill="#EF4444", outline="#DC2626")  # Restore red
         except:
             pass
     else:
-        canvas.itemconfig(close_btn, fill="#888888")
-        canvas.itemconfig(close_btn_bg, state='hidden')
+        canvas.itemconfig(close_btn_bg, fill="#EF4444", outline="#DC2626")  # Restore red
+        canvas.itemconfig(close_btn, fill="#FFFFFF")
 
 def switch_section(section):
     """Switch dashboard section (frame-based UI)."""
@@ -356,7 +361,7 @@ def update_expression():
             alert_msg = alert_state["message"]
             apps = alert_state["apps"]
             if apps:
-                alert_msg += "\nâ€¢ " + "\nâ€¢ ".join(apps)
+                alert_msg += "\n• " + "\n• ".join(apps)
             canvas.itemconfig(status_text, state='normal', text=alert_msg, fill='#ff5555', font=("Segoe UI", 9, "bold"))
             canvas.itemconfig(pill, outline='#ff5555', fill='#2a1a1a')
             
@@ -402,7 +407,7 @@ def update_expression():
             alert_msg = alert_state["message"]
             apps = alert_state["apps"]
             if apps:
-                alert_msg += "\nâ€¢ " + "\nâ€¢ ".join(apps)
+                alert_msg += "\n• " + "\n• ".join(apps)
             canvas.itemconfig(status_text, state='normal', text=alert_msg, fill='#ff5555', font=("Segoe UI", 9, "bold"))
             canvas.itemconfig(pill, outline='#ff5555', fill='#2a1a1a')
             
@@ -485,6 +490,8 @@ def restore_mini_popup_elements(w=300, h=90):
     canvas.coords(eye_r, sx + 48, sy + 28, sx + 58, sy + 38)
     canvas.coords(eye_l_shine, sx + 27, sy + 30, sx + 30, sy + 33)
     canvas.coords(eye_r_shine, sx + 53, sy + 30, sx + 56, sy + 33)
+    canvas.coords(eyebrow_l, sx+18, sy+20, sx+36, sy+28)
+    canvas.coords(eyebrow_r, sx+44, sy+20, sx+62, sy+28)
 
     canvas.coords(c_dot1, 90, 40, 95, 45)
     canvas.coords(c_dot2, 110, 30, 120, 40)
@@ -553,13 +560,13 @@ def build_dashboard_ui():
     tk.Label(header, textvariable=dash_session_var, bg='#0F1115', fg='#6B7280', font=('Segoe UI', 10)).pack(side='right')
 
     close_dash = tk.Button(
-        header, text='âœ•', command=toggle_dashboard,
+        header, text='✖', command=toggle_dashboard,
         bg='#EF4444', fg='#FFFFFF', activebackground='#DC2626', activeforeground='#FFFFFF',
         relief='flat', bd=0, width=3, font=('Segoe UI', 12, 'bold'), cursor='hand2',
     )
     close_dash.pack(side='right', padx=(0, 8))
 
-    # â”€â”€ Mode Toggle Pill (in dashboard header) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ─── Mode Toggle Pill (in dashboard header) ────────────────────────────────
     _mode_toggle_frame = tk.Frame(header, bg='#1A1D23', bd=0, relief='flat')
     _mode_toggle_frame.pack(side='right', padx=(0, 16))
 
@@ -594,7 +601,7 @@ def build_dashboard_ui():
     dash_sidebar.pack(side='left', fill='y')
     dash_content.pack(side='left', fill='both', expand=True, padx=(12, 16), pady=(0, 12))
 
-    tk.Label(dash_sidebar, text='âš¡', bg='#16171C', fg='#FFFFFF', font=('Segoe UI', 18)).pack(pady=(16, 0))
+    tk.Label(dash_sidebar, text='⚡', bg='#16171C', fg='#FFFFFF', font=('Segoe UI', 18)).pack(pady=(16, 0))
     tk.Label(dash_sidebar, text='Voila', bg='#16171C', fg='#FFFFFF', font=('Segoe UI', 12, 'bold')).pack(pady=(0, 16))
 
     nav_wrap = tk.Frame(dash_sidebar, bg='#16171C')
@@ -618,7 +625,7 @@ def build_dashboard_ui():
 import urllib.request as _urllib_req
 import json as _json_mod
 
-# â”€â”€ Settings widget state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ─── Settings widget state ────────────────────────────────────────────────
 _settings_frame_widget = None
 
 def _make_btn(parent, text, cmd, bg='#374151', fg='#E5E7EB', width=8):
@@ -658,7 +665,7 @@ def _show_settings_widgets():
     frame.place(x=0, y=0, relwidth=1.0, relheight=1.0)
     _settings_frame_widget = frame
 
-    # â”€â”€ Scrollable container â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ─── Scrollable container ────────────────────────────────────────────────
     canvas_s = tk.Canvas(frame, bg='#0F1115', highlightthickness=0)
     scrollbar = tk.Scrollbar(frame, orient='vertical', command=canvas_s.yview)
     canvas_s.configure(yscrollcommand=scrollbar.set)
@@ -677,12 +684,12 @@ def _show_settings_widgets():
 
     PAD = dict(padx=16, pady=6, sticky='w')
 
-    # â”€â”€â”€ Title â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    tk.Label(inner, text='âš™  API Keys & Cloud Settings', bg='#0F1115', fg='#E5E7EB',
+    # ─── Title ───────────────────────────────────────────────────────────────
+    tk.Label(inner, text='⚙️  API Keys & Cloud Settings', bg='#0F1115', fg='#E5E7EB',
              font=('Segoe UI', 14, 'bold')).grid(row=0, column=0, columnspan=4, padx=16, pady=(16, 4), sticky='w')
 
-    # â”€â”€â”€ GROQ SECTION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    groq_frame = tk.LabelFrame(inner, text=' Groq Cloud (Free tier â€” llama3-70b, mixtral) ',
+    # ─── GROQ SECTION ────────────────────────────────────────────────────────
+    groq_frame = tk.LabelFrame(inner, text=' Groq Cloud (Free tier — llama3-70b, mixtral) ',
                                bg='#1A1D23', fg='#6366F1', font=('Segoe UI', 10, 'bold'),
                                bd=1, relief='solid', labelanchor='nw')
     groq_frame.grid(row=1, column=0, columnspan=4, padx=16, pady=(12, 6), sticky='ew')
@@ -691,17 +698,17 @@ def _show_settings_widgets():
         row=0, column=0, padx=12, pady=8, sticky='w')
 
     groq_key_var = tk.StringVar()
-    groq_status_var = tk.StringVar(value='â— Set' if data.get('groq_api_key_set') == 'true' else 'â—‹ Not set')
+    groq_status_var = tk.StringVar(value='● Set' if data.get('groq_api_key_set') == 'true' else '○ Not set')
     groq_status_color = '#10B981' if data.get('groq_api_key_set') == 'true' else '#6B7280'
     groq_entry = tk.Entry(groq_frame, textvariable=groq_key_var, bg='#2D3039', fg='#E5E7EB',
                           insertbackground='#E5E7EB', relief='flat', font=('Segoe UI', 9),
-                          width=40, show='â—')
+                          width=40, show='●')
     groq_entry.grid(row=0, column=1, padx=6, pady=8, sticky='ew')
 
     # Show/hide toggle
     groq_show_var = tk.BooleanVar(value=False)
     def toggle_groq_show():
-        groq_entry.config(show='' if groq_show_var.get() else 'â—')
+        groq_entry.config(show='' if groq_show_var.get() else '●')
     tk.Checkbutton(groq_frame, text='Show', variable=groq_show_var, command=toggle_groq_show,
                    bg='#1A1D23', fg='#9CA3AF', selectcolor='#2D3039',
                    activebackground='#1A1D23', font=('Segoe UI', 8)).grid(row=0, column=2, padx=4)
@@ -738,15 +745,15 @@ def _show_settings_widgets():
         key = groq_key_var.get().strip()
         model = groq_model_var.get().strip()
         if not key:
-            groq_status_var.set('âš ️ Enter a key first')
+            groq_status_var.set('⚠️ Enter a key first')
             groq_status_lbl.config(fg='#F59E0B')
             return
         res = _api_call('POST', '/api-keys', {'groq_api_key': key, 'groq_model': model, 'action': 'save'})
         if 'error' in res:
-            groq_status_var.set(f'âŒ {res["error"][:40]}')
+            groq_status_var.set(f'⚡ {res["error"][:40]}')
             groq_status_lbl.config(fg='#EF4444')
         else:
-            groq_status_var.set('âœ… Saved')
+            groq_status_var.set('✓ Saved')
             groq_status_lbl.config(fg='#10B981')
             groq_key_var.set('')
 
@@ -758,33 +765,33 @@ def _show_settings_widgets():
         def _do():
             res = _api_call('GET', '/verify-groq')
             if res.get('status') == 'ok':
-                groq_status_var.set(f'âœ“ OK: {res.get("response","")[:30]}')
+                groq_status_var.set(f'✓ OK: {res.get("response","")[:30]}')
                 groq_status_lbl.config(fg='#10B981')
             else:
-                groq_status_var.set(f'âœ— {res.get("message", res.get("error","Unknown"))[:40]}')
+                groq_status_var.set(f'✗ {res.get("message", res.get("error","Unknown"))[:40]}')
                 groq_status_lbl.config(fg='#EF4444')
         threading.Thread(target=_do, daemon=True).start()
 
     def on_groq_delete():
         res = _api_call('POST', '/api-keys', {'action': 'delete_groq'})
         if 'error' in res:
-            groq_status_var.set(f'âœ— {res["error"][:40]}')
+            groq_status_var.set(f'✗ {res["error"][:40]}')
             groq_status_lbl.config(fg='#EF4444')
         else:
-            groq_status_var.set('â—‹ Deleted')
+            groq_status_var.set('○ Deleted')
             groq_status_lbl.config(fg='#6B7280')
 
     btn_row = tk.Frame(groq_frame, bg='#1A1D23')
     btn_row.grid(row=2, column=0, columnspan=4, padx=12, pady=(0, 10), sticky='w')
-    _make_btn(btn_row, 'ðŸ’¾ Save', on_groq_save, bg='#6366F1', width=9).pack(side='left', padx=(0, 6))
-    _make_btn(btn_row, 'âœ“ Verify', on_groq_verify, bg='#10B981', width=9).pack(side='left', padx=(0, 6))
-    _make_btn(btn_row, 'ðŸ—‘ Delete', on_groq_delete, bg='#DC2626', width=9).pack(side='left')
+    _make_btn(btn_row, '💾 Save', on_groq_save, bg='#6366F1', width=9).pack(side='left', padx=(0, 6))
+    _make_btn(btn_row, '✓ Verify', on_groq_verify, bg='#10B981', width=9).pack(side='left', padx=(0, 6))
+    _make_btn(btn_row, '🗑️ Delete', on_groq_delete, bg='#DC2626', width=9).pack(side='left')
 
     tk.Label(groq_frame, text='Free models: llama3-70b-8192, llama3-8b-8192, mixtral-8x7b-32768, gemma2-9b-it',
              bg='#1A1D23', fg='#4B5563', font=('Segoe UI', 8, 'italic')).grid(
         row=3, column=0, columnspan=4, padx=12, pady=(0, 10), sticky='w')
 
-    # â”€â”€â”€ OLLAMA SECTION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ─── OLLAMA SECTION ──────────────────────────────────────────────────────
     ollama_frame = tk.LabelFrame(inner, text=' Ollama (Local / Ollama Cloud free tier) ',
                                  bg='#1A1D23', fg='#F59E0B', font=('Segoe UI', 10, 'bold'),
                                  bd=1, relief='solid', labelanchor='nw')
@@ -843,15 +850,15 @@ def _show_settings_widgets():
         key = ollama_key_var.get().strip()
         if key == '********': key = '' # Don't resave placeholder
         if not url:
-            ollama_status_var.set('âš ️ Enter Base URL first')
+            ollama_status_var.set('⚠️ Enter Base URL first')
             ollama_status_lbl.config(fg='#F59E0B')
             return
         res = _api_call('POST', '/api-keys', {'ollama_base_url': url, 'ollama_model': model, 'ollama_api_key': key, 'action': 'save'})
         if 'error' in res:
-            ollama_status_var.set(f'âŒ {res["error"][:40]}')
+            ollama_status_var.set(f'⚡ {res["error"][:40]}')
             ollama_status_lbl.config(fg='#EF4444')
         else:
-            ollama_status_var.set('â— Saved')
+            ollama_status_var.set('● Saved')
             ollama_status_lbl.config(fg='#10B981')
 
     def on_ollama_verify():
@@ -868,35 +875,35 @@ def _show_settings_widgets():
             })
             res = _api_call('GET', '/verify-ollama')
             if res.get('status') == 'ok':
-                ollama_status_var.set(f'âœ“ OK: {res.get("response","")[:30]}')
+                ollama_status_var.set(f'✓ OK: {res.get("response","")[:30]}')
                 ollama_status_lbl.config(fg='#10B981')
             else:
-                ollama_status_var.set(f'âœ— {res.get("message", res.get("error","Unknown"))[:50]}')
+                ollama_status_var.set(f'✗ {res.get("message", res.get("error","Unknown"))[:50]}')
                 ollama_status_lbl.config(fg='#EF4444')
         threading.Thread(target=_do, daemon=True).start()
 
     def on_ollama_delete():
         res = _api_call('POST', '/api-keys', {'action': 'delete_ollama'})
         if 'error' in res:
-            ollama_status_var.set(f'âœ— {res["error"][:40]}')
+            ollama_status_var.set(f'✗ {res["error"][:40]}')
             ollama_status_lbl.config(fg='#EF4444')
         else:
             ollama_url_var.set('http://localhost:11434')
             ollama_model_var.set('llama3.2:1b')
-            ollama_status_var.set('â—‹ Cleared')
+            ollama_status_var.set('○ Cleared')
             ollama_status_lbl.config(fg='#6B7280')
 
     obtn_row = tk.Frame(ollama_frame, bg='#1A1D23')
     obtn_row.grid(row=4, column=0, columnspan=4, padx=12, pady=(0, 10), sticky='w')
-    _make_btn(obtn_row, 'ðŸ’¾ Save', on_ollama_save, bg='#D97706', width=9).pack(side='left', padx=(0, 6))
-    _make_btn(obtn_row, 'âœ“ Verify', on_ollama_verify, bg='#10B981', width=9).pack(side='left', padx=(0, 6))
-    _make_btn(obtn_row, 'ðŸ—‘ Delete', on_ollama_delete, bg='#DC2626', width=9).pack(side='left')
+    _make_btn(obtn_row, '💾 Save', on_ollama_save, bg='#D97706', width=9).pack(side='left', padx=(0, 6))
+    _make_btn(obtn_row, '✓ Verify', on_ollama_verify, bg='#10B981', width=9).pack(side='left', padx=(0, 6))
+    _make_btn(obtn_row, '🗑️ Delete', on_ollama_delete, bg='#DC2626', width=9).pack(side='left')
 
     tk.Label(ollama_frame, text='Ollama Cloud free models: gemma4:31b, gpt-oss:120b, nemotron-3-nano:30b, ...',
              bg='#1A1D23', fg='#4B5563', font=('Segoe UI', 8, 'italic')).grid(
         row=5, column=0, columnspan=4, padx=12, pady=(0, 10), sticky='w')
 
-    # â”€â”€â”€ Info footer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ─── Info footer ─────────────────────────────────────────────────────────
 
     # --- FLUSH MEMORY ---
     def flush_memory():
@@ -1288,6 +1295,8 @@ def animation_loop():
             # Animate Sleep Mode (but preserve alert text if active)
             if not alert_state["active"]:
                 canvas.itemconfig(status_text, text=f"Offline (Zzz{dots})", fill='#888888')
+                canvas.itemconfig(eyebrow_l, state='hidden')
+                canvas.itemconfig(eyebrow_r, state='hidden')
 
             # Snot Bubble expansion/contraction (only if no alert)
             if not alert_state["active"]:
@@ -1333,32 +1342,43 @@ def animation_loop():
                 canvas.itemconfig(zzz2, state='hidden')
                 canvas.itemconfig(zzz3, state='hidden')
 
-        elif ai_state != "IDLE":
+        # Working states (only when not sleeping)
+        if mobile_clients > 0 and ai_state != "IDLE":
             canvas.itemconfig(pill, fill='#22222a')
             canvas.itemconfig(status_text, state='normal')
             for cp in cloud_parts:
                 canvas.itemconfig(cp, state='normal', fill='#33333d')
 
-            pulse = (anim_frame % 6)
-            if pulse > 3:
-                pulse = 6 - pulse
-            ew = 4 + pulse
-
+            # Base eye positions
             elx, ely = sx + 27, sy + 33
             erx, ery = sx + 53, sy + 33
 
-            canvas.coords(eye_l, elx - ew, ely - ew, elx + ew, ely + ew)
-            canvas.coords(eye_r, erx - ew, ery - ew, erx + ew, ery + ew)
-            canvas.itemconfig(eye_l_shine, state='normal')
-            canvas.itemconfig(eye_r_shine, state='normal')
-            canvas.coords(eye_l_shine, elx, ely - 3, elx + 3, ely)
-            canvas.coords(eye_r_shine, erx, ery - 3, erx + 3, ery)
-
             if ai_state == "THINKING":
+                # Eyes blink rapidly and move slightly
+                think_phase = anim_frame % 8
+                if think_phase == 0 or think_phase == 1:
+                    # Rapid blink
+                    canvas.coords(eye_l, elx - 3, ely - 1, elx + 3, ely + 1)
+                    canvas.coords(eye_r, erx - 3, ery - 1, erx + 3, ery + 1)
+                    canvas.itemconfig(eyebrow_l, state='hidden')
+                    canvas.itemconfig(eyebrow_r, state='hidden')
+                else:
+                    # Slight circular movement
+                    offset_x = math.sin(anim_frame * 0.2) * 2
+                    offset_y = math.cos(anim_frame * 0.2) * 1
+                    canvas.coords(eye_l, elx - 4 + offset_x, ely - 4 + offset_y, elx + 4 + offset_x, ely + 4 + offset_y)
+                    canvas.coords(eye_r, erx - 4 + offset_x, ery - 4 + offset_y, erx + 4 + offset_x, ery + 4 + offset_y)
+                    # Eyebrows raised (thinking pose)
+                    canvas.itemconfig(eyebrow_l, state='normal')
+                    canvas.itemconfig(eyebrow_r, state='normal')
+                    canvas.coords(eyebrow_l, sx+18, sy+18+offset_y, sx+36, sy+26+offset_y)
+                    canvas.coords(eyebrow_r, sx+44, sy+18+offset_y, sx+62, sy+26+offset_y)
+                
                 canvas.itemconfig(status_text, text=f"Thinking{dots}", fill='#ffffaa')
                 canvas.itemconfig(pill, outline='#ffff55')
                 canvas.itemconfig(eye_l, fill='#ffff55')
                 canvas.itemconfig(eye_r, fill='#ffff55')
+                
             elif ai_state == "GRAPHIFY":
                 canvas.itemconfig(status_text, text=f"Team Sync{dots}", fill='#e879f9')
                 canvas.itemconfig(pill, outline='#c026d3')
@@ -1367,28 +1387,186 @@ def animation_loop():
                 canvas.coords(eye_r, sx+45, sy+28, sx+65, sy+38)
                 canvas.itemconfig(eye_l, fill='#e879f9')
                 canvas.itemconfig(eye_r, fill='#e879f9')
+                # Eyebrows slightly raised
+                canvas.itemconfig(eyebrow_l, state='normal')
+                canvas.itemconfig(eyebrow_r, state='normal')
+                canvas.coords(eyebrow_l, sx+15, sy+18, sx+33, sy+26)
+                canvas.coords(eyebrow_r, sx+45, sy+18, sx+63, sy+26)
+                
             elif ai_state == "SEARCH":
+                # Eyes look around in different directions
+                search_phase = anim_frame % 12
+                if search_phase < 3:
+                    # Look left
+                    canvas.coords(eye_l, elx - 5, ely - 4, elx + 1, ely + 4)
+                    canvas.coords(eye_r, erx - 5, ery - 4, erx + 1, ery + 4)
+                    # Eyebrows slant left
+                    canvas.itemconfig(eyebrow_l, state='normal')
+                    canvas.itemconfig(eyebrow_r, state='normal')
+                    canvas.coords(eyebrow_l, sx+16, sy+22, sx+34, sy+20)
+                    canvas.coords(eyebrow_r, sx+42, sy+22, sx+60, sy+20)
+                elif search_phase < 6:
+                    # Look right
+                    canvas.coords(eye_l, elx - 1, ely - 4, elx + 5, ely + 4)
+                    canvas.coords(eye_r, erx - 1, ery - 4, erx + 5, ery + 4)
+                    # Eyebrows slant right
+                    canvas.itemconfig(eyebrow_l, state='normal')
+                    canvas.itemconfig(eyebrow_r, state='normal')
+                    canvas.coords(eyebrow_l, sx+20, sy+20, sx+38, sy+22)
+                    canvas.coords(eyebrow_r, sx+46, sy+20, sx+64, sy+22)
+                elif search_phase < 9:
+                    # Look up
+                    canvas.coords(eye_l, elx - 4, ely - 5, elx + 4, ely + 1)
+                    canvas.coords(eye_r, erx - 4, ery - 5, erx + 4, ery + 1)
+                    # Eyebrows raised high
+                    canvas.itemconfig(eyebrow_l, state='normal')
+                    canvas.itemconfig(eyebrow_r, state='normal')
+                    canvas.coords(eyebrow_l, sx+18, sy+16, sx+36, sy+24)
+                    canvas.coords(eyebrow_r, sx+44, sy+16, sx+62, sy+24)
+                else:
+                    # Look down
+                    canvas.coords(eye_l, elx - 4, ely - 1, elx + 4, ely + 5)
+                    canvas.coords(eye_r, erx - 4, ery - 1, erx + 4, ery + 5)
+                    # Eyebrows lowered
+                    canvas.itemconfig(eyebrow_l, state='normal')
+                    canvas.itemconfig(eyebrow_r, state='normal')
+                    canvas.coords(eyebrow_l, sx+18, sy+22, sx+36, sy+30)
+                    canvas.coords(eyebrow_r, sx+44, sy+22, sx+62, sy+30)
+                
                 canvas.itemconfig(status_text, text=f"Search{dots}", fill='#aaffff')
                 canvas.itemconfig(pill, outline='#00aaff')
                 canvas.itemconfig(eye_l, fill='#00aaff')
                 canvas.itemconfig(eye_r, fill='#00aaff')
+                
             elif ai_state == "BASH":
+                # Eyes squint (focused)
+                bash_phase = anim_frame % 10
+                squint = 2 if bash_phase < 5 else 3
+                canvas.coords(eye_l, elx - 4, ely - squint, elx + 4, ely + squint)
+                canvas.coords(eye_r, erx - 4, ery - squint, erx + 4, ery + squint)
+                # Eyebrows furrowed (focused)
+                canvas.itemconfig(eyebrow_l, state='normal')
+                canvas.itemconfig(eyebrow_r, state='normal')
+                canvas.coords(eyebrow_l, sx+18, sy+24, sx+36, sy+28)
+                canvas.coords(eyebrow_r, sx+44, sy+24, sx+62, sy+28)
+                
                 canvas.itemconfig(status_text, text=f"Bash{dots}", fill='#aaffaa')
                 canvas.itemconfig(pill, outline='#00ff44')
                 canvas.itemconfig(eye_l, fill='#00ff44')
                 canvas.itemconfig(eye_r, fill='#00ff44')
+                
             elif ai_state == "FILE":
+                # Eyes become circular and pulse gently
+                file_phase = anim_frame % 10
+                pulse = 3 + (file_phase / 10) if file_phase < 5 else 3 + ((10 - file_phase) / 10)
+                canvas.coords(eye_l, elx - pulse, ely - pulse, elx + pulse, ely + pulse)
+                canvas.coords(eye_r, erx - pulse, ery - pulse, erx + pulse, ery + pulse)
+                # Eyebrows neutral with slight pulse
+                canvas.itemconfig(eyebrow_l, state='normal')
+                canvas.itemconfig(eyebrow_r, state='normal')
+                pulse_offset = (file_phase / 20) if file_phase < 5 else ((10 - file_phase) / 20)
+                canvas.coords(eyebrow_l, sx+18, sy+20-pulse_offset, sx+36, sy+28-pulse_offset)
+                canvas.coords(eyebrow_r, sx+44, sy+20-pulse_offset, sx+62, sy+28-pulse_offset)
+                
                 canvas.itemconfig(status_text, text=f"I/O{dots}", fill='#ffddaa')
                 canvas.itemconfig(pill, outline='#ffaa00')
                 canvas.itemconfig(eye_l, fill='#ffaa00')
                 canvas.itemconfig(eye_r, fill='#ffaa00')
+                
             else:
+                # Default processing - gentle breathing
+                proc_phase = anim_frame % 8
+                if proc_phase < 4:
+                    size = 4 + (proc_phase / 4)
+                else:
+                    size = 4 + ((8 - proc_phase) / 4)
+                canvas.coords(eye_l, elx - size, ely - size, elx + size, ely + size)
+                canvas.coords(eye_r, erx - size, ery - size, erx + size, ery + size)
+                # Eyebrows neutral with gentle rise
+                canvas.itemconfig(eyebrow_l, state='normal')
+                canvas.itemconfig(eyebrow_r, state='normal')
+                breathe_offset = (proc_phase / 20) if proc_phase < 4 else ((8 - proc_phase) / 20)
+                canvas.coords(eyebrow_l, sx+18, sy+20-breathe_offset, sx+36, sy+28-breathe_offset)
+                canvas.coords(eyebrow_r, sx+44, sy+20-breathe_offset, sx+62, sy+28-breathe_offset)
+                
                 canvas.itemconfig(status_text, text=f"Processing{dots}", fill='#aaffff')
                 canvas.itemconfig(pill, outline='#00ffcc')
                 canvas.itemconfig(eye_l, fill='#00ffcc')
                 canvas.itemconfig(eye_r, fill='#00ffcc')
 
-        elif ai_state == "IDLE":
+            # Update shine for all states (follow eye positions)
+            canvas.itemconfig(eye_l_shine, state='normal')
+            canvas.itemconfig(eye_r_shine, state='normal')
+            
+            # Get current eye positions to update shine
+            eye_l_coords = canvas.coords(eye_l)
+            eye_r_coords = canvas.coords(eye_r)
+            
+            if eye_l_coords and eye_r_coords:
+                # Calculate center of each eye for shine positioning
+                shine_lx = (eye_l_coords[0] + eye_l_coords[2]) / 2
+                shine_ly = (eye_l_coords[1] + eye_l_coords[3]) / 2
+                shine_rx = (eye_r_coords[0] + eye_r_coords[2]) / 2
+                shine_ry = (eye_r_coords[1] + eye_r_coords[3]) / 2
+                
+                # Adjust shine position slightly towards top-right
+                canvas.coords(eye_l_shine, shine_lx - 1, shine_ly - 2, shine_lx + 2, shine_ly + 1)
+                canvas.coords(eye_r_shine, shine_rx - 1, shine_ry - 2, shine_rx + 2, shine_ry + 1)
+
+        # Handle IDLE state when connected
+        elif mobile_clients > 0 and ai_state == "IDLE":
+            blink_phase = anim_frame % 30
+            if blink_phase == 0 or blink_phase == 1:
+                canvas.coords(eye_l, sx + 22, sy + 32, sx + 32, sy + 34)
+                canvas.coords(eye_r, sx + 48, sy + 32, sx + 58, sy + 34)
+                canvas.itemconfig(eye_l_shine, state='hidden')
+                canvas.itemconfig(eye_r_shine, state='hidden')
+                canvas.itemconfig(eyebrow_l, state='hidden')
+                canvas.itemconfig(eyebrow_r, state='hidden')
+            else:
+                canvas.coords(eye_l, sx + 22, sy + 28, sx + 32, sy + 38)
+                canvas.coords(eye_r, sx + 48, sy + 28, sx + 58, sy + 38)
+                canvas.itemconfig(eye_l_shine, state='normal')
+                canvas.itemconfig(eye_r_shine, state='normal')
+                canvas.itemconfig(eyebrow_l, state='normal')
+                canvas.itemconfig(eyebrow_r, state='normal')
+                canvas.coords(eyebrow_l, sx+18, sy+20, sx+36, sy+28)
+                canvas.coords(eyebrow_r, sx+44, sy+20, sx+62, sy+28)
+
+                cycle = anim_frame % 80
+                px_offset, py_offset = 0, 0
+                if cycle >= 20:
+                    mx, my = root.winfo_pointerx(), root.winfo_pointery()
+                    ex = root.winfo_rootx() + sx + 27
+                    ey = root.winfo_rooty() + sy + 33
+                    dx, dy = mx - ex, my - ey
+                    dist = math.hypot(dx, dy)
+                    if dist > 0:
+                        r = min(3.0, dist / 100.0)
+                        px_offset = (dx / dist) * r
+                        py_offset = (dy / dist) * r
+
+                # Get current eye positions for dynamic shine
+                eye_l_coords = canvas.coords(eye_l)
+                eye_r_coords = canvas.coords(eye_r)
+                
+                if eye_l_coords and eye_r_coords:
+                    shine_lx = (eye_l_coords[0] + eye_l_coords[2]) / 2
+                    shine_ly = (eye_l_coords[1] + eye_l_coords[3]) / 2
+                    shine_rx = (eye_r_coords[0] + eye_r_coords[2]) / 2
+                    shine_ry = (eye_r_coords[1] + eye_r_coords[3]) / 2
+                    
+                    canvas.coords(eye_l_shine, shine_lx + px_offset - 1.5, shine_ly + py_offset - 1.5, shine_lx + px_offset + 1.5, shine_ly + py_offset + 1.5)
+                    canvas.coords(eye_r_shine, shine_rx + px_offset - 1.5, shine_ry + py_offset - 1.5, shine_rx + px_offset + 1.5, shine_ry + py_offset + 1.5)
+
+        # Handle IDLE state when connected (no animation, just normal idle behavior)
+        elif mobile_clients > 0 and ai_state == "IDLE":
+            canvas.itemconfig(pill, fill='#22222a')
+            canvas.itemconfig(status_text, state='normal')
+            for cp in cloud_parts:
+                canvas.itemconfig(cp, state='normal', fill='#33333d')
+            
+            # Normal idle blinking and eye tracking
             blink_phase = anim_frame % 30
             if blink_phase == 0 or blink_phase == 1:
                 canvas.coords(eye_l, sx + 22, sy + 32, sx + 32, sy + 34)
@@ -1414,13 +1592,23 @@ def animation_loop():
                         px_offset = (dx / dist) * r
                         py_offset = (dy / dist) * r
 
-                el_cx, el_cy = sx + 27, sy + 33
-                er_cx, er_cy = sx + 53, sy + 33
-                canvas.coords(eye_l_shine, el_cx + px_offset - 1.5, el_cy + py_offset - 1.5, el_cx + px_offset + 1.5, el_cy + py_offset + 1.5)
-                canvas.coords(eye_r_shine, er_cx + px_offset - 1.5, er_cy + py_offset - 1.5, er_cx + px_offset + 1.5, er_cy + py_offset + 1.5)
+                # Get current eye positions for dynamic shine
+                eye_l_coords = canvas.coords(eye_l)
+                eye_r_coords = canvas.coords(eye_r)
+                
+                if eye_l_coords and eye_r_coords:
+                    shine_lx = (eye_l_coords[0] + eye_l_coords[2]) / 2
+                    shine_ly = (eye_l_coords[1] + eye_l_coords[3]) / 2
+                    shine_rx = (eye_r_coords[0] + eye_r_coords[2]) / 2
+                    shine_ry = (eye_r_coords[1] + eye_r_coords[3]) / 2
+                    
+                    canvas.coords(eye_l_shine, shine_lx + px_offset - 1.5, shine_ly + py_offset - 1.5, shine_lx + px_offset + 1.5, shine_ly + py_offset + 1.5)
+                    canvas.coords(eye_r_shine, shine_rx + px_offset - 1.5, shine_ry + py_offset - 1.5, shine_rx + px_offset + 1.5, shine_ry + py_offset + 1.5)
+            
+            canvas.itemconfig(status_text, text="Standing by...", fill='#888888', font=("Segoe UI", 8, "italic"))
 
     elif dashboard_active and anim_frame % 10 == 0:
-        # Don't refresh Settings section â€” it's widget-based and self-managed.
+        # Don't refresh Settings section — it's widget-based and self-managed.
         # Refreshing it would destroy all typed API keys every 18 seconds.
         if current_section != 'Settings':
             refresh_dashboard_content()
@@ -1446,7 +1634,7 @@ def parse_line(line):
             elif "read" in l or "write" in l or "file" in l: ai_state = "FILE"
         return
 
-    # â”€â”€ Authoritative STATUS: protocol â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Authoritative STATUS: protocol ──────────────────────────────────────
     if "STATUS: GRAPHIFY" in line:
         ai_state = "GRAPHIFY"
         return
@@ -1514,7 +1702,7 @@ def parse_line(line):
 
     # Tool-specific face states (from cloud AI tool calls)
     if "STATUS: MODE:" in line:
-        # Go confirmed the actual mode used â€” keep Python in sync
+        # Go confirmed the actual mode used — keep Python in sync
         confirmed_mode = line.split("STATUS: MODE:")[1].strip().upper()
         if confirmed_mode in MODE_LABELS and confirmed_mode != current_mode:
             current_mode = confirmed_mode
