@@ -169,7 +169,7 @@ close_btn = canvas.create_text(270, 45, text="âœ•", fill="#888888", font=("S
 # â”€â”€ LOCAL/CLOUD mode toggle  â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 MODES = ["LOCAL", "GROQ", "OLLAMA"]
 MODE_COLORS = {"LOCAL": "#6366F1", "GROQ": "#10B981", "OLLAMA": "#F59E0B"}
-MODE_LABELS = {"LOCAL": "âš¡LOCAL", "GROQ": "â˜ GROQ", "OLLAMA": "ðŸ¦™OLLAMA"}
+MODE_LABELS = {"LOCAL": "âš¡LOCAL", "GROQ": "â˜⚡ GROQ", "OLLAMA": "ðŸ¦™OLLAMA"}
 current_mode = "LOCAL"
 
 # Fetch saved mode from Go backend on startup
@@ -691,17 +691,17 @@ def _show_settings_widgets():
         row=0, column=0, padx=12, pady=8, sticky='w')
 
     groq_key_var = tk.StringVar()
-    groq_status_var = tk.StringVar(value='â— Set' if data.get('groq_api_key_set') == 'true' else 'â—‹ Not set')
+    groq_status_var = tk.StringVar(value='â— Set' if data.get('groq_api_key_set') == 'true' else 'â—‹ Not set')
     groq_status_color = '#10B981' if data.get('groq_api_key_set') == 'true' else '#6B7280'
     groq_entry = tk.Entry(groq_frame, textvariable=groq_key_var, bg='#2D3039', fg='#E5E7EB',
                           insertbackground='#E5E7EB', relief='flat', font=('Segoe UI', 9),
-                          width=40, show='â—')
+                          width=40, show='â—')
     groq_entry.grid(row=0, column=1, padx=6, pady=8, sticky='ew')
 
     # Show/hide toggle
     groq_show_var = tk.BooleanVar(value=False)
     def toggle_groq_show():
-        groq_entry.config(show='' if groq_show_var.get() else 'â—')
+        groq_entry.config(show='' if groq_show_var.get() else 'â—')
     tk.Checkbutton(groq_frame, text='Show', variable=groq_show_var, command=toggle_groq_show,
                    bg='#1A1D23', fg='#9CA3AF', selectcolor='#2D3039',
                    activebackground='#1A1D23', font=('Segoe UI', 8)).grid(row=0, column=2, padx=4)
@@ -738,12 +738,12 @@ def _show_settings_widgets():
         key = groq_key_var.get().strip()
         model = groq_model_var.get().strip()
         if not key:
-            groq_status_var.set('âš ï¸ Enter a key first')
+            groq_status_var.set('âš ️ Enter a key first')
             groq_status_lbl.config(fg='#F59E0B')
             return
         res = _api_call('POST', '/api-keys', {'groq_api_key': key, 'groq_model': model, 'action': 'save'})
         if 'error' in res:
-            groq_status_var.set(f'âŒ {res["error"][:40]}')
+            groq_status_var.set(f'âŒ {res["error"][:40]}')
             groq_status_lbl.config(fg='#EF4444')
         else:
             groq_status_var.set('âœ… Saved')
@@ -751,7 +751,7 @@ def _show_settings_widgets():
             groq_key_var.set('')
 
     def on_groq_verify():
-        groq_status_var.set('â³ Verifying...')
+        groq_status_var.set('⏳ Verifying...')
         groq_status_lbl.config(fg='#F59E0B')
         frame.update_idletasks()
 
@@ -843,19 +843,19 @@ def _show_settings_widgets():
         key = ollama_key_var.get().strip()
         if key == '********': key = '' # Don't resave placeholder
         if not url:
-            ollama_status_var.set('âš ï¸ Enter Base URL first')
+            ollama_status_var.set('âš ️ Enter Base URL first')
             ollama_status_lbl.config(fg='#F59E0B')
             return
         res = _api_call('POST', '/api-keys', {'ollama_base_url': url, 'ollama_model': model, 'ollama_api_key': key, 'action': 'save'})
         if 'error' in res:
-            ollama_status_var.set(f'âŒ {res["error"][:40]}')
+            ollama_status_var.set(f'âŒ {res["error"][:40]}')
             ollama_status_lbl.config(fg='#EF4444')
         else:
-            ollama_status_var.set('â— Saved')
+            ollama_status_var.set('â— Saved')
             ollama_status_lbl.config(fg='#10B981')
 
     def on_ollama_verify():
-        ollama_status_var.set('â³ Verifying...')
+        ollama_status_var.set('⏳ Verifying...')
         ollama_status_lbl.config(fg='#F59E0B')
         frame.update_idletasks()
 
