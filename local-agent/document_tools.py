@@ -30,6 +30,8 @@ def _strip_markdown(text):
     text = re.sub(r'__(.*?)__', r'\1', text)
     text = re.sub(r'_(.*?)_', r'\1', text)
     text = re.sub(r'`(.*?)`', r'\1', text)
+    # Handle nested bold in headings: **text** inside headings
+    text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)
     return text
 
 # --- (CSV/EXCEL Code omitted for brevity, keeping V3 implementations) ---
@@ -125,27 +127,42 @@ def modify_excel(kwargs):
 def _analyze_dataset(headers, rows):
     return "Analysis placeholder"
 
-# --- INSANELY ENHANCED DOCX CREATION ---
+# --- DOCX CREATION ---
 def create_doc(kwargs):
     import docx
     from docx.shared import Pt, RGBColor, Inches
     from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from design_tokens import get_theme
     
     path = kwargs.get('path')
     content = kwargs.get('content', '')
+    theme = kwargs.get('theme', 'modern_dark')
+    theme_config = get_theme(theme)
+    
     doc = docx.Document()
     
-    # Elegant Styles
+    # Apply theme-based styles
     styles = doc.styles
     try:
-        styles['Title'].font.name = 'Segoe UI Light'; styles['Title'].font.size = Pt(32); styles['Title'].font.color.rgb = RGBColor(30, 61, 89)
-        styles['Heading 1'].font.name = 'Segoe UI'; styles['Heading 1'].font.size = Pt(20); styles['Heading 1'].font.color.rgb = RGBColor(255, 110, 64) 
-        styles['Normal'].font.name = 'Georgia'; styles['Normal'].font.size = Pt(11); styles['Normal'].font.color.rgb = RGBColor(40, 40, 40)
+        styles['Title'].font.name = theme_config['font_heading']
+        styles['Title'].font.size = Pt(32)
+        styles['Title'].font.color.rgb = RGBColor(*theme_config['color_heading'])
+        
+        styles['Heading 1'].font.name = theme_config['font_heading']
+        styles['Heading 1'].font.size = Pt(20)
+        styles['Heading 1'].font.color.rgb = RGBColor(*theme_config['color_accent'])
+        
+        styles['Normal'].font.name = theme_config['font_body']
+        styles['Normal'].font.size = Pt(11)
+        styles['Normal'].font.color.rgb = RGBColor(*theme_config['color_text'])
     except: pass
     
     try:
         quote_style = styles.add_style('BlockQuote', docx.enum.style.WD_STYLE_TYPE.PARAGRAPH)
-        quote_style.font.name = 'Georgia'; quote_style.font.italic = True; quote_style.font.size = Pt(12); quote_style.font.color.rgb = RGBColor(100, 100, 100)
+        quote_style.font.name = theme_config['font_body']
+        quote_style.font.italic = True
+        quote_style.font.size = Pt(12)
+        quote_style.font.color.rgb = RGBColor(*theme_config['color_text'])
     except: quote_style = styles['Normal']
 
     in_code_block = False
@@ -186,7 +203,9 @@ def create_doc(kwargs):
             
         if in_code_block:
             p = doc.add_paragraph(line)
-            p.style.font.name = 'Consolas'; p.style.font.size = Pt(9.5); p.style.font.color.rgb = RGBColor(20, 100, 20)
+            p.style.font.name = 'Consolas'
+            p.style.font.size = Pt(9.5)
+            p.style.font.color.rgb = RGBColor(*theme_config['color_primary'])
             continue
             
         img_match = re.match(r'^!\[.*?\]\((.*?)\)$', stripped)
@@ -197,17 +216,21 @@ def create_doc(kwargs):
             continue
 
         if stripped.startswith('# '):
-            p = doc.add_paragraph(stripped[2:], style='Title')
+            p = doc.add_paragraph(_strip_markdown(stripped[2:]), style='Title')
             p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         elif stripped.startswith('## '):
-            doc.add_paragraph(stripped[3:], style='Heading 1')
+            doc.add_paragraph(_strip_markdown(stripped[3:]), style='Heading 1')
         elif stripped.startswith('### '):
-            doc.add_paragraph(stripped[4:], style='Heading 2')
+            doc.add_paragraph(_strip_markdown(stripped[4:]), style='Heading 2')
         elif stripped.startswith('> '):
-            p = doc.add_paragraph(stripped[2:], style='BlockQuote')
+            p = doc.add_paragraph(_strip_markdown(stripped[2:]), style='BlockQuote')
             p.paragraph_format.left_indent = Inches(0.5)
         elif stripped.startswith('- ') or stripped.startswith('* '):
-            doc.add_paragraph(stripped[2:], style='List Bullet')
+            cleaned = _strip_markdown(stripped[2:])
+            doc.add_paragraph(cleaned, style='List Bullet')
+        elif re.match(r'^\d+\.\s', stripped):
+            cleaned = _strip_markdown(re.sub(r'^\d+\.\s', '', stripped))
+            doc.add_paragraph(cleaned, style='List Number')
         else:
             p = doc.add_paragraph(style='Normal')
             parts = re.split(r'(\*\*.*?\*\*)', line)
@@ -217,27 +240,47 @@ def create_doc(kwargs):
                 else:
                     p.add_run(part)
                     
-    flush_table() # In case doc ends with table
+    flush_table()
     doc.save(path)
-    return f"Successfully created STUNNING Word Document (DOCX) at {path}"
+    return f"Successfully created Word Document (DOCX) at {path}"
 
-# --- PERFECTED PDF CREATION (WITH TABLES & MARKDOWN STRIPPING) ---
+# --- PDF CREATION ---
 def create_pdf(kwargs):
     from fpdf import FPDF
-    path = kwargs.get('path'); content = kwargs.get('content', ''); watermark = kwargs.get('watermark', '')
+    from design_tokens import get_theme
+    
+    path = kwargs.get('path')
+    content = kwargs.get('content', '')
+    watermark = kwargs.get('watermark', '')
+    theme = kwargs.get('theme', 'modern_dark')
+    theme_config = get_theme(theme)
     
     class PDF(FPDF):
+        def __init__(self, theme_config, watermark_text):
+            super().__init__()
+            self.theme_config = theme_config
+            self.watermark_text = watermark_text
+        
         def header(self):
-            self.set_draw_color(255, 110, 64) 
+            self.set_draw_color(*self.theme_config['color_accent'])
             self.set_line_width(0.8)
             self.line(10, 15, 200, 15)
-            if watermark:
-                self.set_font('Arial', 'B', 50); self.set_text_color(240, 240, 240)
-                self.text(30, 150, watermark.upper())
+            if self.watermark_text:
+                self.set_font('Arial', '', 50)
+                self.set_text_color(240, 240, 240)
+                self.text(30, 150, self.watermark_text.upper())
         def footer(self):
-            self.set_y(-15); self.set_font('Arial', 'I', 8); self.set_text_color(149, 165, 166); self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
+            self.set_y(-15)
+            self.set_font('Arial', '', 8)
+            self.set_text_color(149, 165, 166)
+            self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
 
-    pdf = PDF()
+    pdf = PDF(theme_config, watermark)
+    
+    # Use Arial for stability (FPDF has known issues with some TTF fonts)
+    # Note: Limited Unicode support compared to DejaVu, but more reliable
+    pdf.set_font('Arial', '', 11)
+    
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
     
@@ -256,16 +299,21 @@ def create_pdf(kwargs):
                     cells = [c.strip() for c in row.split('|') if c.strip()]
                     for j, c in enumerate(cells):
                         if j >= cols: break
+                        pdf.set_font('Arial', '', 10)
                         if i == 0:
-                            pdf.set_font("Arial", 'B', 10)
-                            pdf.set_fill_color(52, 152, 219); pdf.set_text_color(255, 255, 255)
+                            pdf.set_fill_color(*theme_config['color_accent'])
+                            pdf.set_text_color(255, 255, 255)
                         else:
-                            pdf.set_font("Arial", '', 10)
-                            if i % 2 == 0: pdf.set_fill_color(240, 240, 240)
-                            else: pdf.set_fill_color(255, 255, 255)
-                            pdf.set_text_color(40, 40, 40)
+                            if i % 2 == 0:
+                                pdf.set_fill_color(240, 240, 240)
+                            else:
+                                pdf.set_fill_color(255, 255, 255)
+                            pdf.set_text_color(*theme_config['color_text'])
                         
-                        clean_c = _strip_markdown(c).encode('latin-1', 'replace').decode('latin-1')
+                        clean_c = _strip_markdown(c)
+                        # FPDF limitation: encode latin-1 with replace converts non-Latin-1 chars to ?
+                        clean_c = clean_c.encode('latin-1', 'replace').decode('latin-1')
+                        # Basic cell - FPDF limitation: text may not wrap perfectly in tables
                         pdf.cell(col_width, 8, clean_c, 1, 0, 'C', fill=True)
                     pdf.ln(8)
             pdf.ln(5)
@@ -290,49 +338,62 @@ def create_pdf(kwargs):
             if in_code_block: pdf.ln(2)
             continue
             
-        line_safe = _strip_markdown(line).encode('latin-1', 'replace').decode('latin-1')
+        line_safe = _strip_markdown(line)
+        # FPDF limitation: encode latin-1 with replace converts non-Latin-1 chars to ?
+        # This is a known limitation of FPDF without proper Unicode font support
+        line_safe = line_safe.encode('latin-1', 'replace').decode('latin-1')
             
         if in_code_block:
-            pdf.set_font("Courier", '', 9)
-            pdf.set_text_color(40, 100, 40); pdf.set_fill_color(245, 245, 245)
+            pdf.set_font('Arial', '', 9)
+            pdf.set_text_color(*theme_config['color_primary'])
+            pdf.set_fill_color(245, 245, 245)
             pdf.cell(0, 5, line_safe, 0, 1, 'L', fill=True)
             continue
 
         img_match = re.match(r'^!\[.*?\]\((.*?)\)$', stripped)
         if img_match:
             try: pdf.image(img_match.group(1), w=150); pdf.ln(5)
-            except: pdf.set_font("Arial", 'I', 10); pdf.set_text_color(255, 0, 0); pdf.cell(0, 5, f"[Image error: {img_match.group(1)}]", 0, 1, 'L')
+            except: 
+                pdf.set_font('Arial', '', 10)
+                pdf.set_text_color(255, 0, 0)
+                pdf.cell(0, 5, f"[Image error: {img_match.group(1)}]", 0, 1, 'L')
             continue
         
-        # Proper cell rendering without cutting text heights!
         if stripped.startswith('# '):
-            pdf.set_font("Arial", 'B', 24); pdf.set_text_color(30, 61, 89)
-            pdf.multi_cell(0, 12, line_safe[2:]) # Use multi_cell to prevent line cutting
+            pdf.set_font('Arial', '', 24)
+            pdf.set_text_color(*theme_config['color_heading'])
+            pdf.multi_cell(0, 12, line_safe[2:])
             pdf.ln(3)
         elif stripped.startswith('## '):
-            pdf.set_font("Arial", 'B', 18); pdf.set_text_color(255, 110, 64)
+            pdf.set_font('Arial', '', 18)
+            pdf.set_text_color(*theme_config['color_accent'])
             pdf.multi_cell(0, 10, line_safe[3:])
             pdf.ln(2)
         elif stripped.startswith('### '):
-            pdf.set_font("Arial", 'B', 14); pdf.set_text_color(50, 50, 50)
+            pdf.set_font('Arial', '', 14)
+            pdf.set_text_color(*theme_config['color_text'])
             pdf.multi_cell(0, 8, line_safe[4:])
             pdf.ln(2)
         elif stripped.startswith('- ') or stripped.startswith('* '):
-            pdf.set_font("Arial", '', 11); pdf.set_text_color(40, 40, 40)
+            pdf.set_font('Arial', '', 11)
+            pdf.set_text_color(*theme_config['color_text'])
             pdf.cell(5, 6, chr(149), 0, 0)
             pdf.multi_cell(0, 6, line_safe[2:])
         elif stripped.startswith('> '):
-            pdf.set_font("Arial", 'I', 11); pdf.set_text_color(100, 100, 100)
-            pdf.set_x(20); pdf.multi_cell(0, 6, line_safe[2:])
+            pdf.set_font('Arial', '', 11)
+            pdf.set_text_color(100, 100, 100)
+            pdf.set_x(20)
+            pdf.multi_cell(0, 6, line_safe[2:])
         else:
-            pdf.set_font("Arial", '', 11); pdf.set_text_color(40, 40, 40)
+            pdf.set_font('Arial', '', 11)
+            pdf.set_text_color(*theme_config['color_text'])
             pdf.multi_cell(0, 6, line_safe)
             
     flush_table()
     pdf.output(path)
-    return f"Successfully created FLAWLESS PDF at {path}"
+    return f"Successfully created PDF at {path}"
 
-# --- FIXING PPT CREATION TO NEVER MISS CHARTS ---
+# --- PPT CREATION ---
 def create_ppt(kwargs):
     from pptx import Presentation
     from pptx.util import Inches, Pt
@@ -340,34 +401,25 @@ def create_ppt(kwargs):
     from pptx.enum.text import PP_ALIGN
     from pptx.chart.data import CategoryChartData
     from pptx.enum.chart import XL_CHART_TYPE
+    from design_tokens import get_theme
     
     path = kwargs.get('path')
     title = kwargs.get('title', 'Presentation')
     slides_data = kwargs.get('slides', [])
-    theme = kwargs.get('theme', 'modern_dark') 
+    theme = kwargs.get('theme', 'modern_dark')
+    theme_config = get_theme(theme)
     
     if isinstance(slides_data, str):
         try: slides_data = json.loads(slides_data)
         except: slides_data = [{"title": "Content", "content": slides_data}]
-            
-    # VALIDATION: Check if AI missed a chart when requested by user context.
-    # To fix "where are your so-called charts" issue:
-    has_chart = any(s.get('type') == 'chart' for s in slides_data)
-    if not has_chart:
-        # Auto-inject a chart to fulfill chart requirements dynamically!
-        slides_data.append({
-            "type": "chart",
-            "title": "Data Overview (Auto-Generated)",
-            "chart_type": "bar",
-            "chart_data": {"Item A": 45, "Item B": 70, "Item C": 30}
-        })
 
     prs = Presentation()
     
-    if theme == 'cyberpunk': bg_color = RGBColor(13, 2, 8); title_color = RGBColor(0, 255, 204); accent_color = RGBColor(255, 0, 85); text_color = RGBColor(220, 220, 220)
-    elif theme == 'corporate_blue': bg_color = RGBColor(240, 244, 248); title_color = RGBColor(16, 42, 67); accent_color = RGBColor(36, 59, 83); text_color = RGBColor(51, 78, 104)
-    elif theme == 'minimalist': bg_color = RGBColor(255, 255, 255); title_color = RGBColor(0, 0, 0); accent_color = RGBColor(200, 200, 200); text_color = RGBColor(100, 100, 100)
-    else: bg_color = RGBColor(30, 30, 36); title_color = RGBColor(255, 255, 255); accent_color = RGBColor(255, 110, 64); text_color = RGBColor(200, 200, 200)
+    # Apply theme colors
+    bg_color = RGBColor(*theme_config['color_primary'])
+    title_color = RGBColor(*theme_config['color_heading'])
+    accent_color = RGBColor(*theme_config['color_accent'])
+    text_color = RGBColor(*theme_config['color_text'])
 
     def apply_bg(slide): slide.background.fill.solid(); slide.background.fill.fore_color.rgb = bg_color
 
@@ -375,7 +427,7 @@ def create_ppt(kwargs):
     txBox = slide.shapes.add_textbox(Inches(1), Inches(2.5), Inches(8), Inches(2))
     tf = txBox.text_frame; tf.word_wrap = True
     p = tf.paragraphs[0]; p.text = title.upper()
-    p.font.bold = True; p.font.size = Pt(48); p.font.color.rgb = title_color; p.font.name = "Montserrat"
+    p.font.bold = True; p.font.size = Pt(48); p.font.color.rgb = title_color; p.font.name = theme_config['font_heading']
     p.alignment = PP_ALIGN.CENTER
     line = slide.shapes.add_shape(9, Inches(4), Inches(4.5), Inches(2), Pt(2)) 
     line.line.color.rgb = accent_color; line.line.width = Pt(4)
@@ -388,7 +440,7 @@ def create_ppt(kwargs):
         header_box = slide.shapes.add_textbox(Inches(0.5), Inches(0.4), Inches(9), Inches(1))
         hp = header_box.text_frame.paragraphs[0]
         hp.text = str(s.get('title', '')).upper()
-        hp.font.bold = True; hp.font.size = Pt(32); hp.font.color.rgb = title_color; hp.font.name = "Montserrat"
+        hp.font.bold = True; hp.font.size = Pt(32); hp.font.color.rgb = title_color; hp.font.name = theme_config['font_heading']
         
         line = slide.shapes.add_shape(9, Inches(0.5), Inches(1.2), Inches(2), Pt(2))
         line.line.color.rgb = accent_color; line.line.width = Pt(3)
@@ -423,35 +475,49 @@ def create_ppt(kwargs):
         elif stype == 'two_column':
             left_box = slide.shapes.add_textbox(Inches(0.5), Inches(1.8), Inches(4.2), Inches(5))
             lp = left_box.text_frame.paragraphs[0]; left_box.text_frame.word_wrap = True
-            lp.text = _strip_markdown(str(s.get('content_left', ''))); lp.font.size = Pt(18); lp.font.color.rgb = text_color
+            lp.text = _strip_markdown(str(s.get('content_left', ''))); lp.font.size = Pt(18); lp.font.color.rgb = text_color; lp.font.name = theme_config['font_body']
             
             right_box = slide.shapes.add_textbox(Inches(5.0), Inches(1.8), Inches(4.2), Inches(5))
             rp = right_box.text_frame.paragraphs[0]; right_box.text_frame.word_wrap = True
-            rp.text = _strip_markdown(str(s.get('content_right', ''))); rp.font.size = Pt(18); rp.font.color.rgb = text_color
+            rp.text = _strip_markdown(str(s.get('content_right', ''))); rp.font.size = Pt(18); rp.font.color.rgb = text_color; rp.font.name = theme_config['font_body']
             
         elif stype == 'quote':
             q_box = slide.shapes.add_textbox(Inches(1.5), Inches(2.5), Inches(7), Inches(3))
             qp = q_box.text_frame.paragraphs[0]; q_box.text_frame.word_wrap = True
             qp.text = f'"{_strip_markdown(str(s.get("content", "")))}"'
-            qp.font.italic = True; qp.font.size = Pt(36); qp.font.color.rgb = accent_color; qp.alignment = PP_ALIGN.CENTER
+            qp.font.italic = True; qp.font.size = Pt(36); qp.font.color.rgb = accent_color; qp.alignment = PP_ALIGN.CENTER; qp.font.name = theme_config['font_body']
             
             author = s.get("author", "")
             if author:
                 ap = q_box.text_frame.add_paragraph()
-                ap.text = f"— {author}"; ap.font.italic = False; ap.font.size = Pt(22); ap.font.color.rgb = text_color; ap.alignment = PP_ALIGN.RIGHT
+                ap.text = f"— {author}"; ap.font.italic = False; ap.font.size = Pt(22); ap.font.color.rgb = text_color; ap.alignment = PP_ALIGN.RIGHT; ap.font.name = theme_config['font_body']
                 
         else: # content
             body_box = slide.shapes.add_textbox(Inches(0.5), Inches(1.8), Inches(9), Inches(5))
             btf = body_box.text_frame; btf.word_wrap = True
             lines = str(s.get('content', '')).split('\n')
+            
+            # Auto-shrink logic for long content
+            content_height = 0
+            for line in lines:
+                content_height += len(line) // 50  # Approximate lines per line of text
+            
+            font_size = Pt(20)
+            if content_height > 15:  # More than ~15 lines
+                font_size = Pt(16)
+            if content_height > 20:  # More than ~20 lines
+                font_size = Pt(14)
+            if content_height > 25:  # More than ~25 lines
+                font_size = Pt(12)  # Floor at 12pt
+            
             for i, line in enumerate(lines):
                 p = btf.paragraphs[0] if i == 0 else btf.add_paragraph()
                 p.text = _strip_markdown(line.strip('- ').strip('* '))
-                p.font.size = Pt(20); p.font.color.rgb = text_color
+                p.font.size = font_size; p.font.color.rgb = text_color; p.font.name = theme_config['font_body']
                 if line.startswith('- ') or line.startswith('* '): p.level = 1
                 
     prs.save(path)
-    return f"Successfully created FLAWLESS PPT at {path} using {theme} theme!"
+    return f"Successfully created PowerPoint (PPTX) at {path}"
 
 def main():
     try:

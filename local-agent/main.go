@@ -2181,8 +2181,10 @@ var availableTools = []toolDef{
 			Parameters: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
-					"path":    map[string]interface{}{"type": "string", "description": "Absolute path to save the PDF"},
-					"content": map[string]interface{}{"type": "string", "description": "Text content of the PDF"},
+					"path":      map[string]interface{}{"type": "string", "description": "Absolute path to save the PDF"},
+					"content":   map[string]interface{}{"type": "string", "description": "Text content of the PDF"},
+					"watermark": map[string]interface{}{"type": "string", "description": "Optional watermark text to display diagonally on pages"},
+					"theme":     map[string]interface{}{"type": "string", "description": "Theme name: corporate_blue, cyberpunk, minimalist, modern_dark"},
 				},
 				"required": []string{"path", "content"},
 			},
@@ -2205,14 +2207,31 @@ var availableTools = []toolDef{
 	{
 		Type: "function",
 		Function: toolFuncDef{
+			Name:        "create_doc",
+			Description: "Create a Word document with text content.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"path":    map[string]interface{}{"type": "string", "description": "Absolute path to save DOCX"},
+					"content": map[string]interface{}{"type": "string", "description": "Text content of the document"},
+					"theme":   map[string]interface{}{"type": "string", "description": "Theme name: corporate_blue, cyberpunk, minimalist, modern_dark"},
+				},
+				"required": []string{"path", "content"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
 			Name:        "create_ppt",
-			Description: "Create a basic PowerPoint presentation.",
+			Description: "Create a PowerPoint presentation with various slide types.",
 			Parameters: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"path":   map[string]interface{}{"type": "string", "description": "Absolute path to save PPTX"},
 					"title":  map[string]interface{}{"type": "string", "description": "Title of the presentation"},
-					"slides": map[string]interface{}{"type": "string", "description": "JSON array string of slides: [{\"title\":\"Slide 1\",\"content\":\"text\"}]"},
+					"slides": map[string]interface{}{"type": "string", "description": "JSON array string of slides. Supported types: content (default), chart (with chart_type and chart_data), image (with image_path), two_column (with content_left and content_right), quote (with content and author). Example: [{\"type\":\"content\",\"title\":\"Slide 1\",\"content\":\"text\"},{\"type\":\"chart\",\"title\":\"Data\",\"chart_type\":\"bar\",\"chart_data\":{\"A\":10,\"B\":20}}]"},
+					"theme":  map[string]interface{}{"type": "string", "description": "Theme name: corporate_blue (professional blue/gray), cyberpunk (neon pink/cyan on dark), minimalist (black/white), modern_dark (orange on dark gray)"},
 				},
 				"required": []string{"path", "title", "slides"},
 			},
