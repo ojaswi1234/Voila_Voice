@@ -34,6 +34,24 @@ def _strip_markdown(text):
     text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)
     return text
 
+def _transliterate_unicode(text):
+    """Map common Unicode typographic characters to core-font-safe ASCII equivalents."""
+    # Em dash to double hyphen
+    text = text.replace('—', '--')
+    # En dash to single hyphen
+    text = text.replace('–', '-')
+    # Curly quotes to straight quotes
+    text = text.replace('"', '"').replace('"', '"')
+    text = text.replace(''', "'").replace(''', "'")
+    text = text.replace(''', "'").replace(''', "'")
+    # Ellipsis to three periods
+    text = text.replace('…', '...')
+    # Non-breaking space to regular space
+    text = text.replace('\u00A0', ' ')
+    # Common currency symbols
+    text = text.replace('€', 'EUR').replace('£', 'GBP').replace('¥', 'JPY')
+    return text
+
 # --- (CSV/EXCEL Code omitted for brevity, keeping V3 implementations) ---
 def read_csv(kwargs):
     path = kwargs.get('path'); analyze = kwargs.get('analyze', False)
@@ -266,20 +284,20 @@ def create_pdf(kwargs):
             self.set_line_width(0.8)
             self.line(10, 15, 200, 15)
             if self.watermark_text:
-                self.set_font('Arial', '', 50)
+                self.set_font(self.theme_config['pdf_font_body'], '', 50)
                 self.set_text_color(240, 240, 240)
                 self.text(30, 150, self.watermark_text.upper())
         def footer(self):
             self.set_y(-15)
-            self.set_font('Arial', '', 8)
+            self.set_font(self.theme_config['pdf_font_body'], '', 8)
             self.set_text_color(149, 165, 166)
             self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
 
     pdf = PDF(theme_config, watermark)
     
-    # Use Arial for stability (FPDF has known issues with some TTF fonts)
-    # Note: Limited Unicode support compared to DejaVu, but more reliable
-    pdf.set_font('Arial', '', 11)
+    # FPDF limitation: Only core fonts (Arial, Times, Courier, Helvetica, Symbol, ZapfDingbats) work without embedding
+    # Theme fonts mapped to core fonts in design_tokens.py (pdf_font_heading, pdf_font_body)
+    pdf.set_font(theme_config['pdf_font_body'], '', 11)
     
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
@@ -299,7 +317,7 @@ def create_pdf(kwargs):
                     cells = [c.strip() for c in row.split('|') if c.strip()]
                     for j, c in enumerate(cells):
                         if j >= cols: break
-                        pdf.set_font('Arial', '', 10)
+                        pdf.set_font(theme_config['pdf_font_body'], '', 10)
                         if i == 0:
                             pdf.set_fill_color(*theme_config['color_accent'])
                             pdf.set_text_color(255, 255, 255)
@@ -311,7 +329,9 @@ def create_pdf(kwargs):
                             pdf.set_text_color(*theme_config['color_text'])
                         
                         clean_c = _strip_markdown(c)
-                        # FPDF limitation: encode latin-1 with replace converts non-Latin-1 chars to ?
+                        # Transliterate Unicode characters to ASCII equivalents
+                        clean_c = _transliterate_unicode(clean_c)
+                        # FPDF limitation: encode latin-1 with replace converts remaining non-Latin-1 chars to ?
                         clean_c = clean_c.encode('latin-1', 'replace').decode('latin-1')
                         # Basic cell - FPDF limitation: text may not wrap perfectly in tables
                         pdf.cell(col_width, 8, clean_c, 1, 0, 'C', fill=True)
@@ -339,12 +359,14 @@ def create_pdf(kwargs):
             continue
             
         line_safe = _strip_markdown(line)
-        # FPDF limitation: encode latin-1 with replace converts non-Latin-1 chars to ?
-        # This is a known limitation of FPDF without proper Unicode font support
+        # Transliterate Unicode characters to ASCII equivalents before latin-1 encoding
+        line_safe = _transliterate_unicode(line_safe)
+        # FPDF limitation: encode latin-1 with replace converts remaining non-Latin-1 chars to ?
+        # This handles any characters not covered by transliteration
         line_safe = line_safe.encode('latin-1', 'replace').decode('latin-1')
             
         if in_code_block:
-            pdf.set_font('Arial', '', 9)
+            pdf.set_font(theme_config['pdf_font_body'], '', 9)
             pdf.set_text_color(*theme_config['color_primary'])
             pdf.set_fill_color(245, 245, 245)
             pdf.cell(0, 5, line_safe, 0, 1, 'L', fill=True)
@@ -354,38 +376,38 @@ def create_pdf(kwargs):
         if img_match:
             try: pdf.image(img_match.group(1), w=150); pdf.ln(5)
             except: 
-                pdf.set_font('Arial', '', 10)
+                pdf.set_font(theme_config['pdf_font_body'], '', 10)
                 pdf.set_text_color(255, 0, 0)
                 pdf.cell(0, 5, f"[Image error: {img_match.group(1)}]", 0, 1, 'L')
             continue
         
         if stripped.startswith('# '):
-            pdf.set_font('Arial', '', 24)
+            pdf.set_font(theme_config['pdf_font_heading'], '', 24)
             pdf.set_text_color(*theme_config['color_heading'])
             pdf.multi_cell(0, 12, line_safe[2:])
             pdf.ln(3)
         elif stripped.startswith('## '):
-            pdf.set_font('Arial', '', 18)
+            pdf.set_font(theme_config['pdf_font_heading'], '', 18)
             pdf.set_text_color(*theme_config['color_accent'])
             pdf.multi_cell(0, 10, line_safe[3:])
             pdf.ln(2)
         elif stripped.startswith('### '):
-            pdf.set_font('Arial', '', 14)
+            pdf.set_font(theme_config['pdf_font_heading'], '', 14)
             pdf.set_text_color(*theme_config['color_text'])
             pdf.multi_cell(0, 8, line_safe[4:])
             pdf.ln(2)
         elif stripped.startswith('- ') or stripped.startswith('* '):
-            pdf.set_font('Arial', '', 11)
+            pdf.set_font(theme_config['pdf_font_body'], '', 11)
             pdf.set_text_color(*theme_config['color_text'])
             pdf.cell(5, 6, chr(149), 0, 0)
             pdf.multi_cell(0, 6, line_safe[2:])
         elif stripped.startswith('> '):
-            pdf.set_font('Arial', '', 11)
+            pdf.set_font(theme_config['pdf_font_body'], '', 11)
             pdf.set_text_color(100, 100, 100)
             pdf.set_x(20)
             pdf.multi_cell(0, 6, line_safe[2:])
         else:
-            pdf.set_font('Arial', '', 11)
+            pdf.set_font(theme_config['pdf_font_body'], '', 11)
             pdf.set_text_color(*theme_config['color_text'])
             pdf.multi_cell(0, 6, line_safe)
             
@@ -402,24 +424,188 @@ def create_ppt(kwargs):
     from pptx.chart.data import CategoryChartData
     from pptx.enum.chart import XL_CHART_TYPE
     from design_tokens import get_theme
+    import hashlib
+    import os
+    import requests
     
     path = kwargs.get('path')
     title = kwargs.get('title', 'Presentation')
     slides_data = kwargs.get('slides', [])
     theme = kwargs.get('theme', 'modern_dark')
     theme_config = get_theme(theme)
+    auto_images = kwargs.get('auto_images', False)
     
     if isinstance(slides_data, str):
         try: slides_data = json.loads(slides_data)
         except: slides_data = [{"title": "Content", "content": slides_data}]
 
+    # Image cache directory
+    cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'image_cache')
+    os.makedirs(cache_dir, exist_ok=True)
+
+    def get_cached_image_url(search_query):
+        """Return cached image URL if available, None otherwise."""
+        cache_key = hashlib.md5(search_query.encode()).hexdigest()
+        cache_file = os.path.join(cache_dir, f"{cache_key}.txt")
+        if os.path.exists(cache_file):
+            with open(cache_file, 'r') as f:
+                return f.read().strip()
+        return None
+
+    def cache_image_url(search_query, image_url):
+        """Cache image URL for future use."""
+        cache_key = hashlib.md5(search_query.encode()).hexdigest()
+        cache_file = os.path.join(cache_dir, f"{cache_key}.txt")
+        with open(cache_file, 'w') as f:
+            f.write(image_url)
+
+    def download_image(image_url, local_path):
+        """Download image from URL to local path."""
+        try:
+            resp = requests.get(image_url, timeout=30)
+            resp.raise_for_status()
+            with open(local_path, 'wb') as f:
+                f.write(resp.content)
+            return True
+        except Exception as e:
+            return False
+
+    def search_image_url(search_query):
+        """Search for image URL using Picsum (no API key required)."""
+        try:
+            # Use Picsum.photos for random images (seeded by query for consistency)
+            seed = search_query.replace(' ', '')[:10]  # Use first 10 chars as seed
+            image_url = f"https://picsum.photos/seed/{seed}/800/600"
+            return image_url
+        except Exception as e:
+            return None
+
+    def get_image_for_slide(slide):
+        """Get image URL for a slide, using cache or performing search."""
+        if not auto_images:
+            return None
+        
+        # Generate search query from slide title/content
+        title = slide.get('title', '')
+        content = slide.get('content', '')
+        search_query = f"{title} {content}" if title and content else (title or content)
+        
+        if not search_query:
+            return None
+        
+        # Check cache first
+        cached_url = get_cached_image_url(search_query)
+        if cached_url:
+            return cached_url
+        
+        # Perform image search
+        image_url = search_image_url(search_query)
+        if image_url:
+            cache_image_url(search_query, image_url)
+        
+        return image_url
+
+    def calculate_image_dimensions(img_path, max_width=Inches(8), max_height=Inches(4.5)):
+        """Calculate dimensions that fit within max bounds while preserving aspect ratio."""
+        from PIL import Image
+        
+        try:
+            with Image.open(img_path) as img:
+                img_width, img_height = img.size
+                
+                # Convert to inches (assuming 96 DPI)
+                img_width_in = img_width / 96
+                img_height_in = img_height / 96
+                
+                # Calculate scaling factor
+                width_ratio = max_width.inches / img_width_in
+                height_ratio = max_height.inches / img_height_in
+                scale = min(width_ratio, height_ratio)
+                
+                final_width = Inches(img_width_in * scale)
+                final_height = Inches(img_height_in * scale)
+                
+                return final_width, final_height
+        except:
+            # Fallback to default dimensions
+            return max_width, max_height
+
+    def generate_svg_fallback(local_path, color):
+        """Generate simple SVG placeholder if image download fails."""
+        svg_content = f'''<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600">
+  <rect width="800" height="600" fill="{color}"/>
+  <text x="400" y="300" font-family="Arial" font-size="24" text-anchor="middle" fill="white">Image unavailable</text>
+</svg>'''
+        with open(local_path, 'w') as f:
+            f.write(svg_content)
+        return True
+
+    def generate_dynamic_style(slides_data, theme_hint):
+        """Generate unique visual style based on task analysis (Option C hybrid approach)."""
+        import random
+        random.seed(hash(str(slides_data) + theme_hint))
+        
+        # Analyze task depth from slides
+        slide_count = len(slides_data)
+        has_charts = any(s.get('type') == 'chart' for s in slides_data)
+        has_images = any(s.get('type') == 'image' for s in slides_data)
+        has_quotes = any(s.get('type') == 'quote' for s in slides_data)
+        
+        # Generate unique color palette
+        primary_color = (
+            random.randint(20, 100),
+            random.randint(20, 100),
+            random.randint(40, 140)
+        )
+        
+        accent_color = (
+            random.randint(150, 255),
+            random.randint(50, 150),
+            random.randint(50, 150)
+        )
+        
+        # Font selection based on content type
+        if has_quotes:
+            font_heading = "Georgia"
+            font_body = "Segoe UI"
+        elif has_charts:
+            font_heading = "Segoe UI"
+            font_body = "Arial"
+        else:
+            font_heading = "Segoe UI"
+            font_body = "Georgia"
+        
+        dynamic_style = {
+            'color_primary': primary_color,
+            'color_accent': accent_color,
+            'color_text': (50, 50, 50),
+            'color_heading': tuple(max(0, min(255, int(c * 0.8))) for c in accent_color),
+            'font_heading': font_heading,
+            'font_body': font_body,
+            'layout_complexity': 'high' if slide_count > 10 or (has_charts and has_images) else 'medium' if slide_count > 5 else 'simple'
+        }
+        
+        return dynamic_style
+
     prs = Presentation()
     
-    # Apply theme colors
-    bg_color = RGBColor(*theme_config['color_primary'])
-    title_color = RGBColor(*theme_config['color_heading'])
-    accent_color = RGBColor(*theme_config['color_accent'])
-    text_color = RGBColor(*theme_config['color_text'])
+    # Apply theme colors (use dynamic style if theme == "dynamic")
+    if theme == "dynamic":
+        dynamic_style = generate_dynamic_style(slides_data, theme)
+        bg_color = RGBColor(*dynamic_style['color_primary'])
+        title_color = RGBColor(*dynamic_style['color_heading'])
+        accent_color = RGBColor(*dynamic_style['color_accent'])
+        text_color = RGBColor(*dynamic_style['color_text'])
+        font_heading = dynamic_style['font_heading']
+        font_body = dynamic_style['font_body']
+    else:
+        bg_color = RGBColor(*theme_config['color_primary'])
+        title_color = RGBColor(*theme_config['color_heading'])
+        accent_color = RGBColor(*theme_config['color_accent'])
+        text_color = RGBColor(*theme_config['color_text'])
+        font_heading = theme_config['font_heading']
+        font_body = theme_config['font_body']
 
     def apply_bg(slide): slide.background.fill.solid(); slide.background.fill.fore_color.rgb = bg_color
 
@@ -427,7 +613,7 @@ def create_ppt(kwargs):
     txBox = slide.shapes.add_textbox(Inches(1), Inches(2.5), Inches(8), Inches(2))
     tf = txBox.text_frame; tf.word_wrap = True
     p = tf.paragraphs[0]; p.text = title.upper()
-    p.font.bold = True; p.font.size = Pt(48); p.font.color.rgb = title_color; p.font.name = theme_config['font_heading']
+    p.font.bold = True; p.font.size = Pt(48); p.font.color.rgb = title_color; p.font.name = font_heading
     p.alignment = PP_ALIGN.CENTER
     line = slide.shapes.add_shape(9, Inches(4), Inches(4.5), Inches(2), Pt(2)) 
     line.line.color.rgb = accent_color; line.line.width = Pt(4)
@@ -437,10 +623,24 @@ def create_ppt(kwargs):
         slide = prs.slides.add_slide(prs.slide_layouts[6])
         apply_bg(slide)
         
+        # Section slides have different layout (no header/line)
+        if stype == 'section':
+            section_text = s.get('content', 'Section')
+            section_box = slide.shapes.add_textbox(Inches(1), Inches(2.5), Inches(8), Inches(3))
+            stf = section_box.text_frame; stf.word_wrap = True
+            p = stf.paragraphs[0]
+            p.text = section_text.upper()
+            p.font.bold = True; p.font.size = Pt(48); p.font.color.rgb = accent_color; p.alignment = PP_ALIGN.CENTER; p.font.name = font_heading
+            # Add decorative border
+            border = slide.shapes.add_shape(9, Inches(2), Inches(3.8), Inches(6), Pt(3))
+            border.line.color.rgb = accent_color; border.line.width = Pt(4)
+            continue  # Skip standard layout handling
+        
+        # Standard layout (header + line) for non-section slides
         header_box = slide.shapes.add_textbox(Inches(0.5), Inches(0.4), Inches(9), Inches(1))
         hp = header_box.text_frame.paragraphs[0]
         hp.text = str(s.get('title', '')).upper()
-        hp.font.bold = True; hp.font.size = Pt(32); hp.font.color.rgb = title_color; hp.font.name = theme_config['font_heading']
+        hp.font.bold = True; hp.font.size = Pt(32); hp.font.color.rgb = title_color; hp.font.name = font_heading
         
         line = slide.shapes.add_shape(9, Inches(0.5), Inches(1.2), Inches(2), Pt(2))
         line.line.color.rgb = accent_color; line.line.width = Pt(3)
@@ -462,35 +662,83 @@ def create_ppt(kwargs):
             elif ctype == 'line': chart_type = XL_CHART_TYPE.LINE
             else: chart_type = XL_CHART_TYPE.COLUMN_CLUSTERED
             
-            try: slide.shapes.add_chart(chart_type, Inches(1.5), Inches(2.0), Inches(7), Inches(4.5), chart_data_obj)
+            try: 
+                chart_shape = slide.shapes.add_chart(chart_type, Inches(1.5), Inches(2.0), Inches(7), Inches(4.5), chart_data_obj)
+                chart = chart_shape.chart
+                
+                # Set chart title
+                chart.has_title = True
+                chart.chart_title.text_frame.text = s.get('title', 'Chart')
+                chart.chart_title.text_frame.paragraphs[0].font.size = Pt(18)
+                chart.chart_title.text_frame.paragraphs[0].font.color.rgb = title_color
+                chart.chart_title.text_frame.paragraphs[0].font.name = font_heading
+                
+                # Set series fill color
+                series = chart.plots[0].series[0]
+                series.format.fill.solid()
+                series.format.fill.fore_color.rgb = accent_color
+                
+                # Legend: only enable for multi-series charts (currently single-series only)
+                chart.has_legend = False
+                
+                # Set axis label colors for legibility on dark themes
+                if theme in ['cyberpunk', 'modern_dark']:
+                    # Dark backgrounds need light axis labels
+                    for axis in [chart.category_axis, chart.value_axis]:
+                        if hasattr(axis, 'format'):
+                            axis.format.line.color.rgb = text_color
+                        if hasattr(axis, 'tick_labels'):
+                            axis.tick_labels.font.color.rgb = text_color
             except Exception as e:
                 # Fallback print error on slide
                 slide.shapes.add_textbox(Inches(2), Inches(3), Inches(6), Inches(1)).text_frame.text = f"[Chart generation error: {e}]"
                 
         elif stype == 'image':
             img_path = s.get('image_path', '')
-            try: slide.shapes.add_picture(img_path, Inches(2), Inches(1.8), height=Inches(5))
-            except: slide.shapes.add_textbox(Inches(2), Inches(3), Inches(6), Inches(1)).text_frame.text = f"[Image not found: {img_path}]"
+            
+            # Auto-search for image if enabled and no path provided
+            if auto_images and not img_path:
+                image_url = get_image_for_slide(s)
+                if image_url:
+                    # Download image to local cache
+                    cache_key = hashlib.md5(image_url.encode()).hexdigest()
+                    img_path = os.path.join(cache_dir, f"{cache_key}.jpg")
+                    if not os.path.exists(img_path):
+                        if not download_image(image_url, img_path):
+                            # Fallback to SVG if download fails
+                            img_path = os.path.join(cache_dir, f"{cache_key}.svg")
+                            generate_svg_fallback(img_path, f"#{theme_config['color_accent']:02x}")
+            
+            if img_path:
+                try:
+                    # Calculate proper dimensions to fit in frame
+                    img_width, img_height = calculate_image_dimensions(img_path)
+                    # Insert image with calculated dimensions (centered horizontally)
+                    slide.shapes.add_picture(img_path, Inches(1), Inches(1.8), width=img_width, height=img_height)
+                except:
+                    slide.shapes.add_textbox(Inches(2), Inches(3), Inches(6), Inches(1)).text_frame.text = f"[Image failed to load: {img_path}]"
+            else:
+                slide.shapes.add_textbox(Inches(2), Inches(3), Inches(6), Inches(1)).text_frame.text = "[No image available]"
                 
         elif stype == 'two_column':
             left_box = slide.shapes.add_textbox(Inches(0.5), Inches(1.8), Inches(4.2), Inches(5))
             lp = left_box.text_frame.paragraphs[0]; left_box.text_frame.word_wrap = True
-            lp.text = _strip_markdown(str(s.get('content_left', ''))); lp.font.size = Pt(18); lp.font.color.rgb = text_color; lp.font.name = theme_config['font_body']
+            lp.text = _strip_markdown(str(s.get('content_left', ''))); lp.font.size = Pt(18); lp.font.color.rgb = text_color; lp.font.name = font_body
             
             right_box = slide.shapes.add_textbox(Inches(5.0), Inches(1.8), Inches(4.2), Inches(5))
             rp = right_box.text_frame.paragraphs[0]; right_box.text_frame.word_wrap = True
-            rp.text = _strip_markdown(str(s.get('content_right', ''))); rp.font.size = Pt(18); rp.font.color.rgb = text_color; rp.font.name = theme_config['font_body']
+            rp.text = _strip_markdown(str(s.get('content_right', ''))); rp.font.size = Pt(18); rp.font.color.rgb = text_color; rp.font.name = font_body
             
         elif stype == 'quote':
             q_box = slide.shapes.add_textbox(Inches(1.5), Inches(2.5), Inches(7), Inches(3))
             qp = q_box.text_frame.paragraphs[0]; q_box.text_frame.word_wrap = True
             qp.text = f'"{_strip_markdown(str(s.get("content", "")))}"'
-            qp.font.italic = True; qp.font.size = Pt(36); qp.font.color.rgb = accent_color; qp.alignment = PP_ALIGN.CENTER; qp.font.name = theme_config['font_body']
+            qp.font.italic = True; qp.font.size = Pt(36); qp.font.color.rgb = accent_color; qp.alignment = PP_ALIGN.CENTER; qp.font.name = font_body
             
             author = s.get("author", "")
             if author:
                 ap = q_box.text_frame.add_paragraph()
-                ap.text = f"— {author}"; ap.font.italic = False; ap.font.size = Pt(22); ap.font.color.rgb = text_color; ap.alignment = PP_ALIGN.RIGHT; ap.font.name = theme_config['font_body']
+                ap.text = f"— {author}"; ap.font.italic = False; ap.font.size = Pt(22); ap.font.color.rgb = text_color; ap.alignment = PP_ALIGN.RIGHT; ap.font.name = font_body
                 
         else: # content
             body_box = slide.shapes.add_textbox(Inches(0.5), Inches(1.8), Inches(9), Inches(5))
@@ -513,7 +761,7 @@ def create_ppt(kwargs):
             for i, line in enumerate(lines):
                 p = btf.paragraphs[0] if i == 0 else btf.add_paragraph()
                 p.text = _strip_markdown(line.strip('- ').strip('* '))
-                p.font.size = font_size; p.font.color.rgb = text_color; p.font.name = theme_config['font_body']
+                p.font.size = font_size; p.font.color.rgb = text_color; p.font.name = font_body
                 if line.startswith('- ') or line.startswith('* '): p.level = 1
                 
     prs.save(path)

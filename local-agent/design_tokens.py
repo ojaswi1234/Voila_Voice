@@ -5,6 +5,8 @@ THEMES = {
     "corporate_blue": {
         "font_heading": "Segoe UI",
         "font_body": "Georgia",
+        "pdf_font_heading": "Helvetica",  # FPDF core font mapping
+        "pdf_font_body": "Times",        # FPDF core font mapping
         "color_primary": (16, 42, 67),      # Dark blue
         "color_accent": (36, 59, 83),       # Medium blue  
         "color_text": (51, 78, 104),        # Blue-gray
@@ -13,7 +15,9 @@ THEMES = {
     },
     "cyberpunk": {
         "font_heading": "Segoe UI",
-        "font_body": "Georgia", 
+        "font_body": "Georgia",
+        "pdf_font_heading": "Helvetica",  # FPDF core font mapping
+        "pdf_font_body": "Times",        # FPDF core font mapping
         "color_primary": (13, 2, 8),        # Dark purple-black
         "color_accent": (255, 0, 85),       # Neon pink
         "color_text": (220, 220, 220),      # Light gray
@@ -23,6 +27,8 @@ THEMES = {
     "minimalist": {
         "font_heading": "Segoe UI",
         "font_body": "Georgia",
+        "pdf_font_heading": "Helvetica",  # FPDF core font mapping
+        "pdf_font_body": "Times",        # FPDF core font mapping
         "color_primary": (0, 0, 0),         # Black
         "color_accent": (200, 200, 200),    # Light gray
         "color_text": (100, 100, 100),      # Medium gray
@@ -32,6 +38,8 @@ THEMES = {
     "modern_dark": {
         "font_heading": "Segoe UI",
         "font_body": "Georgia",
+        "pdf_font_heading": "Helvetica",  # FPDF core font mapping
+        "pdf_font_body": "Times",        # FPDF core font mapping
         "color_primary": (30, 30, 36),      # Dark gray
         "color_accent": (255, 110, 64),     # Orange
         "color_text": (200, 200, 200),     # Light gray

@@ -2113,6 +2113,10 @@ var availableTools = []toolDef{
 						"type":        "string",
 						"description": "The search query",
 					},
+					"search_type": map[string]interface{}{
+						"type":        "string",
+						"description": "Search type: 'text' (default, DuckDuckGo text search) or 'image' (Picsum random image search)",
+					},
 				},
 				"required": []string{"query"},
 			},
@@ -2230,8 +2234,9 @@ var availableTools = []toolDef{
 				"properties": map[string]interface{}{
 					"path":   map[string]interface{}{"type": "string", "description": "Absolute path to save PPTX"},
 					"title":  map[string]interface{}{"type": "string", "description": "Title of the presentation"},
-					"slides": map[string]interface{}{"type": "string", "description": "JSON array string of slides. Supported types: content (default), chart (with chart_type and chart_data), image (with image_path), two_column (with content_left and content_right), quote (with content and author). Example: [{\"type\":\"content\",\"title\":\"Slide 1\",\"content\":\"text\"},{\"type\":\"chart\",\"title\":\"Data\",\"chart_type\":\"bar\",\"chart_data\":{\"A\":10,\"B\":20}}]"},
-					"theme":  map[string]interface{}{"type": "string", "description": "Theme name: corporate_blue (professional blue/gray), cyberpunk (neon pink/cyan on dark), minimalist (black/white), modern_dark (orange on dark gray)"},
+					"slides": map[string]interface{}{"type": "string", "description": "JSON array string of slides. Supported types: content (default), chart (with chart_type and chart_data), image (with image_path), two_column (with content_left and content_right), quote (with content and author), section (centered divider with content). Example: [{\"type\":\"content\",\"title\":\"Slide 1\",\"content\":\"text\"},{\"type\":\"chart\",\"title\":\"Data\",\"chart_type\":\"bar\",\"chart_data\":{\"A\":10,\"B\":20}},{\"type\":\"section\",\"content\":\"Next Section\"}]"},
+					"theme":  map[string]interface{}{"type": "string", "description": "Theme name: corporate_blue (professional blue/gray), cyberpunk (neon pink/cyan on dark), minimalist (black/white), modern_dark (orange on dark gray), dynamic (AI-generated unique style based on task analysis)"},
+					"auto_images": map[string]interface{}{"type": "boolean", "description": "If true, AI will automatically search for and download relevant images for content/image slides using web_research"},
 				},
 				"required": []string{"path", "title", "slides"},
 			},
@@ -2558,9 +2563,30 @@ func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMes
 		return saveMemory(getString("purpose"), getString("command"))
 	case "web_research":
 		query := getString("query")
+		searchType := getString("search_type")
 		if query == "" {
 			return "error: query is required"
 		}
+		
+		// Image search branch (for PPT image integration)
+		if searchType == "image" {
+			// Use Picsum.photos (no API key required, reliable public service)
+			seed := strings.ReplaceAll(query, " ", "")
+			if len(seed) > 10 {
+				seed = seed[:10]
+			}
+			imageSearchURL := "https://picsum.photos/seed/" + seed + "/800x600"
+			resp, err := http.Get(imageSearchURL)
+			if err != nil {
+				return "image search failed: " + err.Error()
+			}
+			defer resp.Body.Close()
+			
+			// Picsum returns 200 with image directly
+			return "image_url: " + imageSearchURL
+		}
+		
+		// Original text search logic (unchanged)
 		searchURL := "https://api.duckduckgo.com/?q=" + strings.ReplaceAll(query, " ", "+") + "&format=json&no_html=1&skip_disambig=1"
 		resp, err := http.Get(searchURL)
 		if err != nil {
