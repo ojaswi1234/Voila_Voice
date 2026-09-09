@@ -505,7 +505,7 @@ def create_ppt(kwargs):
         
         return image_url
 
-    def calculate_image_dimensions(img_path, max_width=Inches(8), max_height=Inches(4.5)):
+    def calculate_image_dimensions(img_path, max_width=Inches(6), max_height=Inches(3.5)):
         """Calculate dimensions that fit within max bounds while preserving aspect ratio."""
         from PIL import Image
         
