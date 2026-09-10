@@ -22,6 +22,8 @@ backend/main
 local-agent/main
 local-agent/tasks.json
 
+local-agent/*.json
+
 # Flutter
 mobile-agent/build/
 mobile-agent/.dart_tool/

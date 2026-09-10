@@ -2,6 +2,7 @@ package main
 
 import (
 	"unsafe"
+	"voice-cli-system/shared/decoy"
 
 	"bufio"
 	"bytes"
@@ -17,17 +18,18 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"path/filepath"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
-	"syscall"
 	"sync"
+	"syscall"
 	"time"
 
-	"github.com/charmbracelet/bubbletea"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
+
 // --- ZERO ORPHAN PROCESS MANAGEMENT ---
 
 type JOBOBJECT_BASIC_LIMIT_INFORMATION struct {
@@ -88,8 +90,13 @@ func initZeroOrphanJobObject() {
 	assignProcessToJobObject.Call(job, uintptr(currentProcess))
 }
 
-
 // Styles
+
+var (
+	localMockCount int
+	localMockMu    sync.Mutex
+)
+
 var (
 	terminalSessionMu sync.Mutex
 	terminalCmdFile   = filepath.Join(os.TempDir(), "voila_ipc_cmd.txt")
@@ -99,22 +106,22 @@ var (
 	terminalActive    = false
 	terminalPid       = ""
 
-	cmdMu      sync.Mutex
-	currentCmd *exec.Cmd
-	currentConvID string
-	currentCancel context.CancelFunc
-	circuitMu  sync.Mutex
-	circuitOpen bool
-	execSemaphore chan struct{} // Limit concurrent executions
-	maxConcurrentExecs = 3 // Maximum concurrent AI executions
-	resilienceManager *ResilienceManager
+	cmdMu              sync.Mutex
+	currentCmd         *exec.Cmd
+	currentConvID      string
+	currentCancel      context.CancelFunc
+	circuitMu          sync.Mutex
+	circuitOpen        bool
+	execSemaphore      chan struct{} // Limit concurrent executions
+	maxConcurrentExecs = 3           // Maximum concurrent AI executions
+	resilienceManager  *ResilienceManager
 
 	// Protect local models from VRAM crashes
 	ollamaSemaphore = make(chan struct{}, 1)
 
 	// Inter-Agent IPC
 	agentRegistryMu sync.RWMutex
-	activeAgents = make(map[string]*AgentTask)
+	activeAgents    = make(map[string]*AgentTask)
 )
 
 type AgentTask struct {
@@ -123,7 +130,6 @@ type AgentTask struct {
 	Mode    string
 	Inbox   chan string
 }
-
 
 var initialDir string
 var debugLog *log.Logger
@@ -144,7 +150,7 @@ func initDebugLog() {
 
 func init() {
 	execSemaphore = make(chan struct{}, maxConcurrentExecs)
-	
+
 	// Initialize network resilience manager
 	initResilienceManager()
 }
@@ -160,15 +166,15 @@ func initResilienceManager() {
 		CircuitThreshold:    5,
 		CircuitTimeout:      30 * time.Second,
 	}
-	
+
 	resilienceManager = NewResilienceManager(config)
 	log.Printf("Network resilience manager initialized with %d transport layers", len(resilienceManager.transportStack.transports))
-	
+
 	// Start health check goroutine
 	go func() {
 		ticker := time.NewTicker(config.HealthCheckInterval)
 		defer ticker.Stop()
-		
+
 		for range ticker.C {
 			// Health check logic for backend
 			if resilienceManager != nil {
@@ -185,19 +191,19 @@ func resilientHTTPGet(url string) (*http.Response, error) {
 		client := &http.Client{Timeout: 5 * time.Second}
 		return client.Get(url)
 	}
-	
+
 	if resilienceManager == nil {
 		// Fallback to basic HTTP client if resilience manager not initialized
 		return http.Get(url)
 	}
-	
+
 	resp, err := resilienceManager.Request(context.Background(), url)
 	if err != nil {
 		log.Printf("Resilient HTTP request failed for %s: %v", url, err)
 		// Fallback to basic HTTP client
 		return http.Get(url)
 	}
-	
+
 	return resp, nil
 }
 
@@ -208,12 +214,12 @@ func resilientHTTPDo(req *http.Request) (*http.Response, error) {
 		client := &http.Client{Timeout: 5 * time.Second}
 		return client.Do(req)
 	}
-	
+
 	if resilienceManager == nil {
 		client := &http.Client{Timeout: 30 * time.Second}
 		return client.Do(req)
 	}
-	
+
 	// For now, use basic client with resilience manager for DNS and connection pooling
 	client := &http.Client{
 		Timeout: 30 * time.Second,
@@ -223,26 +229,26 @@ func resilientHTTPDo(req *http.Request) (*http.Response, error) {
 			IdleConnTimeout:     90 * time.Second,
 		},
 	}
-	
+
 	return client.Do(req)
 }
 
 const circuitFlagFile = "circuit_open.flag"
 
 var (
-	titleStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Bold(true)
-	subtitleStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("242"))
-	successStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
-	errorStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
-	warningStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
-	buttonStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("15")).Background(lipgloss.Color("4")).Padding(0, 2)
+	titleStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Bold(true)
+	subtitleStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("242"))
+	successStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
+	errorStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
+	warningStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
+	buttonStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("15")).Background(lipgloss.Color("4")).Padding(0, 2)
 	activeButtonStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("0")).Background(lipgloss.Color("6")).Padding(0, 2)
-	inputStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("15")).Background(lipgloss.Color("8")).Padding(0, 2)
-	statusStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("5"))
-	deviceStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("14"))
-	menuStyle        = lipgloss.NewStyle().Margin(1, 0)
-	asciiArtStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Bold(true)
-	separatorStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	inputStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("15")).Background(lipgloss.Color("8")).Padding(0, 2)
+	statusStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("5"))
+	deviceStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("14"))
+	menuStyle         = lipgloss.NewStyle().Margin(1, 0)
+	asciiArtStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Bold(true)
+	separatorStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 )
 
 // ASCII Art
@@ -302,13 +308,13 @@ const (
 
 	decorativeLine = "╔════════════════════════════════════════════════════════════════════════════╗"
 
-	sparklineConnected = "▓▓▓▓▓▓▓▓▓▓▓ 100%"
+	sparklineConnected    = "▓▓▓▓▓▓▓▓▓▓▓ 100%"
 	sparklineDisconnected = "░░░░░░░░░░░ 0%"
 
-	progressBarConnected = "████████████████████ 100%"
+	progressBarConnected    = "████████████████████ 100%"
 	progressBarDisconnected = "░░░░░░░░░░░░░░░░░░░ 0%"
 
-	frameTop = "╔════════════════════════════════════════════════════════════════════════════╗"
+	frameTop    = "╔════════════════════════════════════════════════════════════════════════════╗"
 	frameBottom = "╚════════════════════════════════════════════════════════════════════════════╝"
 
 	dividerLine = "────────────────────────────────────────────────────────────────────────────"
@@ -451,10 +457,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.state = "connected"
 			m.connectionData.Connected = true
 			m.connectionData.LastConnected = time.Now().Format(time.RFC3339)
-			
+
 			// Save data immediately so /execute can read it!
 			saveConnectionData(m.connectionData)
-			
+
 			m.messages = append(m.messages, successStyle.Render(successCheckArt))
 			m.messages = append(m.messages, statusStyle.Render("Server will auto-start on device boot"))
 			m.isRunning = true
@@ -546,7 +552,7 @@ func (m model) handleEnter() (model, tea.Cmd) {
 		m.selectedOption = 0
 	} else if m.state == "menu" {
 		backgroundRunning := isBackgroundServiceRunning()
-		
+
 		// Handle disconnected state menu (3 options)
 		if !m.connectionData.Connected {
 			switch m.selectedOption {
@@ -562,7 +568,7 @@ func (m model) handleEnter() (model, tea.Cmd) {
 			}
 			return m, nil
 		}
-		
+
 		// Handle connected state menu (8 options)
 		switch m.selectedOption {
 		case 0: // Stop Service / Stop Background Service
@@ -619,22 +625,22 @@ func (m model) testConnection() tea.Cmd {
 		if err != nil {
 			return connectionResultMsg{success: false, message: "Failed to connect to backend: " + err.Error()}
 		}
-		
+
 		// Add ngrok skip browser warning header if calling through ngrok
 		if strings.Contains(m.connectionData.BackendURL, "ngrok") || strings.Contains(m.connectionData.BackendURL, "ngrok-free") {
 			req.Header.Set("ngrok-skip-browser-warning", "true")
 		}
-		
+
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			return connectionResultMsg{success: false, message: "Failed to connect to backend: " + err.Error()}
 		}
 		defer resp.Body.Close()
-		
+
 		if resp.StatusCode != 200 {
 			return connectionResultMsg{success: false, message: "Backend returned status: " + resp.Status}
 		}
-		
+
 		// Successfully connected to backend - registration happens in background loop when ngrok is available
 		return connectionResultMsg{success: true, message: "Connection successful"}
 	}
@@ -687,32 +693,32 @@ func (m model) clearBackendDataWithPhrase(phrase string) tea.Cmd {
 		if phrase == "" {
 			return errorMsg{"Security phrase required"}
 		}
-		
+
 		clearURL := strings.TrimRight(m.connectionData.BackendURL, "/") + "/clear-all-devices"
 		reqBody := map[string]string{"security_phrase": phrase}
 		bodyBytes, _ := json.Marshal(reqBody)
-		
+
 		req, err := http.NewRequest(http.MethodPost, clearURL, bytes.NewReader(bodyBytes))
 		if err != nil {
 			return errorMsg{fmt.Sprintf("Failed to create request: %v", err)}
 		}
 		req.Header.Set("Content-Type", "application/json")
-		
+
 		if strings.Contains(m.connectionData.BackendURL, "ngrok") || strings.Contains(m.connectionData.BackendURL, "ngrok-free") {
 			req.Header.Set("ngrok-skip-browser-warning", "true")
 		}
-		
+
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			return errorMsg{fmt.Sprintf("Failed to clear backend data: %v", err)}
 		}
 		defer resp.Body.Close()
-		
+
 		if resp.StatusCode != 200 {
 			body, _ := io.ReadAll(resp.Body)
 			return errorMsg{fmt.Sprintf("Backend returned: %s - %s", resp.Status, string(body))}
 		}
-		
+
 		return successMsg{"Backend data cleared successfully"}
 	}
 }
@@ -848,7 +854,7 @@ func (m model) menuView() string {
 	content.WriteString("\n\n")
 	content.WriteString(asciiArtStyle.Render(menuArt))
 	content.WriteString("\n\n")
-	
+
 	// Status indicator
 	if m.serverRunning {
 		content.WriteString(successStyle.Render(statusOnline))
@@ -856,27 +862,27 @@ func (m model) menuView() string {
 		content.WriteString(errorStyle.Render(statusOffline))
 	}
 	content.WriteString("\n\n")
-	
+
 	// Connection progress - only show if connected
 	if m.connectionData.Connected {
 		content.WriteString(successStyle.Render(progressBarConnected))
 		content.WriteString("\n\n")
 	}
-	
+
 	content.WriteString(statusStyle.Render(fmt.Sprintf("Status: %s", m.status)))
-	
+
 	// Show background service status
 	if isBackgroundServiceRunning() {
 		content.WriteString("\n\n")
 		content.WriteString(successStyle.Render("● Background service running"))
 	}
-	
+
 	// Show connection status message
 	if !m.connectionData.Connected {
 		content.WriteString("\n\n")
 		content.WriteString(warningStyle.Render("⚠ No connection configured"))
 	}
-	
+
 	content.WriteString("\n\n")
 	content.WriteString(separatorStyle.Render(separatorLine))
 	content.WriteString("\n\n")
@@ -894,7 +900,7 @@ func (m model) menuView() string {
 			"📊 View Status",
 			"🚪 Exit",
 		}
-		
+
 		if isBackgroundServiceRunning() {
 			options = []string{
 				"⏯  Stop Background Service",
@@ -920,9 +926,9 @@ func (m model) menuView() string {
 		prefix := " "
 		if i == m.selectedOption {
 			prefix = "→"
-			content.WriteString(activeButtonStyle.Render(prefix+" "+option))
+			content.WriteString(activeButtonStyle.Render(prefix + " " + option))
 		} else {
-			content.WriteString(buttonStyle.Render(prefix+" "+option))
+			content.WriteString(buttonStyle.Render(prefix + " " + option))
 		}
 		content.WriteString("\n")
 	}
@@ -1025,7 +1031,6 @@ var (
 	currentModeMu sync.Mutex
 )
 
-
 func getNgrokPublicURL() string {
 	resp, err := resilientHTTPGet("http://127.0.0.1:4040/api/tunnels")
 	if err != nil {
@@ -1078,7 +1083,7 @@ func getNgrokExecutable() (string, error) {
 			return strings.TrimSpace(string(output)), nil
 		}
 	}
-	
+
 	// Check scripts directory with multiple path attempts
 	execDir := getExecutableDir()
 	possiblePaths := []string{
@@ -1089,7 +1094,7 @@ func getNgrokExecutable() (string, error) {
 		filepath.Join("..", "scripts", "ngrok.exe"),
 		filepath.Join("..", "scripts", "ngrok"),
 	}
-	
+
 	for _, ngrokPath := range possiblePaths {
 		if _, err := os.Stat(ngrokPath); err == nil {
 			absPath, err := filepath.Abs(ngrokPath)
@@ -1099,7 +1104,7 @@ func getNgrokExecutable() (string, error) {
 			return ngrokPath, nil
 		}
 	}
-	
+
 	return "", fmt.Errorf("ngrok not found in PATH or scripts directory")
 }
 
@@ -1108,20 +1113,20 @@ func configureNgrokAuthtoken(ngrokPath string) error {
 	if authtoken == "" {
 		return fmt.Errorf("NGROK_AUTHTOKEN environment variable not set. Get your authtoken from https://dashboard.ngrok.com/get-started/your-authtoken")
 	}
-	
+
 	// Check if already configured
 	cmd := exec.Command(ngrokPath, "config", "check")
 	if _, err := cmd.CombinedOutput(); err == nil {
 		// Config exists, verify authtoken matches
 		return nil
 	}
-	
+
 	// Configure authtoken
 	cmd = exec.Command(ngrokPath, "config", "add-authtoken", authtoken)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to configure authtoken: %s, output: %s", err, string(output))
 	}
-	
+
 	log.Println("Ngrok authtoken configured successfully")
 	return nil
 }
@@ -1131,34 +1136,34 @@ func startNgrok() error {
 	if err != nil {
 		return fmt.Errorf("ngrok not found: %w", err)
 	}
-	
+
 	log.Printf("Using ngrok at: %s", ngrokPath)
-	
+
 	// Check if ngrok is already running
 	if isNgrokRunning() {
 		log.Println("Ngrok is already running")
 		return nil
 	}
-	
+
 	// Configure authtoken if needed
 	if err := configureNgrokAuthtoken(ngrokPath); err != nil {
 		log.Printf("Warning: %v", err)
 		// Continue anyway - authtoken might already be configured
 	}
-	
+
 	// Start ngrok tunnel with environment variable
 	cmd := exec.Command(ngrokPath, "http", "8088")
-	
+
 	// Set NGROK_AUTHTOKEN environment variable for this process
 	authtoken := os.Getenv("NGROK_AUTHTOKEN")
 	if authtoken != "" {
 		cmd.Env = append(os.Environ(), "NGROK_AUTHTOKEN="+authtoken)
 	}
-	
+
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start ngrok: %w", err)
 	}
-	
+
 	log.Println("Ngrok started in background")
 	return nil
 }
@@ -1187,11 +1192,11 @@ func startHTTPServer() {
 			http.Error(w, "Agent not configured", http.StatusServiceUnavailable)
 			return
 		}
-		
+
 		expectedSecret := hashPhrase(connData.SecurityPhrase, connData.DeviceID)
 		providedSecret := r.Header.Get("X-Exec-Secret")
 		if subtle.ConstantTimeCompare([]byte(providedSecret), []byte(expectedSecret)) != 1 {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			handleLocalMockExecution(w, r, "circuit", connData, "/circuit")
 			return
 		}
 
@@ -1205,15 +1210,15 @@ func startHTTPServer() {
 			} else {
 				currentCmd.Process.Kill()
 			}
-			
+
 			// Clean up the terminal to prevent the face from getting stuck
 			fmt.Print("\r\n\x1b[0m\x1b[?25h\x1b[?1049l\x1b[2J\x1b[H")
-			
+
 			// Append cancellation to transcript to prevent orphaned running state
 			if currentConvID != "" {
 				brainDir := getBrainDir()
 				transcriptPath := filepath.Join(brainDir, currentConvID, ".system_generated", "logs", "transcript.jsonl")
-				cancelMsg := fmt.Sprintf(`{"type":"SYSTEM_MESSAGE","status":"ERROR","content":"Execution forcibly cancelled by user.","created_at":"%s"}` + "\n", time.Now().Format(time.RFC3339))
+				cancelMsg := fmt.Sprintf(`{"type":"SYSTEM_MESSAGE","status":"ERROR","content":"Execution forcibly cancelled by user.","created_at":"%s"}`+"\n", time.Now().Format(time.RFC3339))
 				if f, err := os.OpenFile(transcriptPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
 					f.WriteString(cancelMsg)
 					f.Close()
@@ -1262,14 +1267,14 @@ func startHTTPServer() {
 				}
 			}
 			resp := map[string]string{
-				"groq_api_key_masked": groqMasked,
-				"groq_api_key_set":    fmt.Sprintf("%v", connData.GroqAPIKey != ""),
-				"groq_model":          connData.GroqModel,
-				"ollama_base_url":     connData.OllamaBaseURL,
+				"groq_api_key_masked":   groqMasked,
+				"groq_api_key_set":      fmt.Sprintf("%v", connData.GroqAPIKey != ""),
+				"groq_model":            connData.GroqModel,
+				"ollama_base_url":       connData.OllamaBaseURL,
 				"ollama_api_key_masked": ollamaMasked,
 				"ollama_api_key_set":    fmt.Sprintf("%v", connData.OllamaAPIKey != ""),
-				"ollama_model":        connData.OllamaModel,
-				"active_mode":         connData.ActiveMode,
+				"ollama_model":          connData.OllamaModel,
+				"active_mode":           connData.ActiveMode,
 			}
 			json.NewEncoder(w).Encode(resp)
 
@@ -1361,10 +1366,20 @@ func startHTTPServer() {
 		expectedSecret := hashPhrase(connData.SecurityPhrase, connData.DeviceID)
 		providedSecret := r.Header.Get("X-Exec-Secret")
 		if subtle.ConstantTimeCompare([]byte(providedSecret), []byte(expectedSecret)) != 1 {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			cmd := "unknown"
+			bodyBytes, _ := io.ReadAll(r.Body)
+			r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+			var req struct {
+				Command string `json:"command"`
+			}
+			json.Unmarshal(bodyBytes, &req)
+			if req.Command != "" {
+				cmd = req.Command
+			}
+			handleLocalMockExecution(w, r, cmd, connData, r.URL.Path)
 			return
 		}
-		
+
 		var req struct {
 			State string `json:"state"` // "open" or "closed"
 		}
@@ -1372,7 +1387,7 @@ func startHTTPServer() {
 			http.Error(w, "Bad request", http.StatusBadRequest)
 			return
 		}
-		
+
 		if req.State == "open" {
 			setCircuitState(true)
 			w.WriteHeader(http.StatusOK)
@@ -1401,11 +1416,21 @@ func startHTTPServer() {
 		expectedSecret := hashPhrase(connData.SecurityPhrase, connData.DeviceID)
 		providedSecret := r.Header.Get("X-Exec-Secret")
 		if subtle.ConstantTimeCompare([]byte(providedSecret), []byte(expectedSecret)) != 1 {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			cmd := "unknown"
+			bodyBytes, _ := io.ReadAll(r.Body)
+			r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+			var req struct {
+				Command string `json:"command"`
+			}
+			json.Unmarshal(bodyBytes, &req)
+			if req.Command != "" {
+				cmd = req.Command
+			}
+			handleLocalMockExecution(w, r, cmd, connData, r.URL.Path)
 			return
 		}
 
-				var req map[string]interface{}
+		var req map[string]interface{}
 		json.NewDecoder(r.Body).Decode(&req)
 
 		getString := func(k string) string {
@@ -1414,7 +1439,7 @@ func startHTTPServer() {
 			}
 			return ""
 		}
-		
+
 		getBool := func(k string) bool {
 			if v, ok := req[k].(bool); ok {
 				return v
@@ -1428,7 +1453,7 @@ func startHTTPServer() {
 		conversationID := getString("conversation_id")
 		modelName := getString("model")
 		graphifyEnabled := getBool("graphify_enabled")
-		
+
 		if command == "__SCREENSHOT__" {
 			w.WriteHeader(http.StatusAccepted)
 			go func() {
@@ -1485,18 +1510,18 @@ Write-Output $base64
 
 		if graphifyEnabled {
 			w.WriteHeader(http.StatusAccepted)
-			
+
 			go func() {
 				output, err := executeGraphifyDAG(context.Background(), command)
-				
+
 				backendURL := strings.TrimRight(connData.BackendURL, "/") + "/webhook/result"
 				backendURL = strings.Replace(backendURL, "wss://", "https://", 1)
 				backendURL = strings.Replace(backendURL, "ws://", "http://", 1)
-				
+
 				h := sha256.New()
 				h.Write([]byte(connData.SecurityPhrase + ":" + connData.DeviceID))
 				secretHash := hex.EncodeToString(h.Sum(nil))
-				
+
 				resultPayload := map[string]string{
 					"client_id":           clientID,
 					"device_id":           connData.DeviceID,
@@ -1504,33 +1529,33 @@ Write-Output $base64
 					"mode":                effectiveMode,
 					"new_conversation_id": conversationID,
 				}
-				
+
 				if err != nil {
 					resultPayload["error"] = "DAG Execution Failed:\n" + err.Error()
 				} else {
 					resultPayload["output"] = output
 				}
-				
+
 				webhookPayload, _ := json.Marshal(resultPayload)
 				resp, postErr := http.Post(backendURL, "application/json", bytes.NewBuffer(webhookPayload))
 				if postErr == nil && resp != nil {
 					resp.Body.Close()
 				}
-				
+
 				fmt.Println("STATUS: IDLE")
 				os.Stdout.Sync()
 			}()
-			
+
 			return
 		}
-		
+
 		// Check circuit breaker before executing
 		if isCircuitOpen() {
 			w.WriteHeader(http.StatusForbidden)
 			json.NewEncoder(w).Encode(map[string]string{"error": "circuit_open", "message": "Circuit breaker is open - refusing new commands"})
 			return
 		}
-		
+
 		// Check semaphore to limit concurrent executions
 		select {
 		case execSemaphore <- struct{}{}:
@@ -1541,15 +1566,14 @@ Write-Output $base64
 			json.NewEncoder(w).Encode(map[string]string{"error": "too_many_requests", "message": "Maximum concurrent executions reached"})
 			return
 		}
-		
+
 		ctx, cancel := context.WithCancel(context.Background())
 		cmdMu.Lock()
 		currentCancel = cancel
 		cmdMu.Unlock()
 
 		w.WriteHeader(http.StatusAccepted)
-		
-		
+
 		go func() {
 			defer func() {
 				<-execSemaphore // Release semaphore when done
@@ -1570,7 +1594,6 @@ Write-Output $base64
 			// Priority: explicit GROQ/OLLAMA/SHELL in request body > global badge (currentMode) > LOCAL fallback.
 			// The mobile app always sends mode="AGENT", so we must prefer the badge-set global mode.
 			debugLog.Printf("[/execute] reqMode=%q globalMode=%q effectiveMode=%q", reqMode, globalMode, effectiveMode)
-
 
 			taskID := fmt.Sprintf("Agent-%x", time.Now().UnixNano()%0xFFFF)
 			myTask := &AgentTask{
@@ -1624,7 +1647,7 @@ Write-Output $base64
 				// LOCAL / AGENT / SHELL — use agy or powershell
 				output, newConvID, err = executeCommand(ctx, command, effectiveMode, conversationID, modelName)
 			}
-			
+
 			latencyMs := time.Since(startTime).Milliseconds()
 			fmt.Printf("STATUS: LATENCY_MS:%d\n", latencyMs)
 			os.Stdout.Sync()
@@ -1639,35 +1662,34 @@ Write-Output $base64
 			backendURL := strings.TrimRight(connData.BackendURL, "/") + "/webhook/result"
 			backendURL = strings.Replace(backendURL, "wss://", "https://", 1)
 			backendURL = strings.Replace(backendURL, "ws://", "http://", 1)
-			
+
 			// Calculate security hash to authenticate webhook
 			h := sha256.New()
 			h.Write([]byte(connData.SecurityPhrase + ":" + connData.DeviceID))
 			secretHash := hex.EncodeToString(h.Sum(nil))
 
-
 			resultPayload := map[string]string{
-				"client_id": clientID,
-				"device_id": connData.DeviceID,
-				"secret_hash": secretHash,
-				"mode": effectiveMode,
+				"client_id":           clientID,
+				"device_id":           connData.DeviceID,
+				"secret_hash":         secretHash,
+				"mode":                effectiveMode,
 				"new_conversation_id": newConvID,
 			}
-			
+
 			if err != nil {
 				resultPayload["error"] = "Command failed:\n" + err.Error()
 			} else {
 				resultPayload["output"] = output
 			}
-			
+
 			payloadBytes, _ := json.Marshal(resultPayload)
-			
+
 			req, _ := http.NewRequest(http.MethodPost, backendURL, bytes.NewBuffer(payloadBytes))
 			req.Header.Set("Content-Type", "application/json")
 			if strings.Contains(connData.BackendURL, "ngrok") || strings.Contains(connData.BackendURL, "ngrok-free") {
 				req.Header.Set("ngrok-skip-browser-warning", "true")
 			}
-			
+
 			// Webhook retry fix: silently ignoring errors left the mobile app
 			// deadlocked in "Thinking..." forever on any transient network hiccup.
 			webhookClient := &http.Client{Timeout: 10 * time.Second}
@@ -1716,26 +1738,26 @@ Write-Output $base64
 			http.Error(w, "Invalid mode; must be LOCAL, GROQ, or OLLAMA", http.StatusBadRequest)
 			return
 		}
-				currentModeMu.Lock()
+		currentModeMu.Lock()
 		currentMode = mode
 		currentModeMu.Unlock()
-		
+
 		if connData, err := loadConnectionData(); err == nil {
 			connData.ActiveMode = mode
 			saveConnectionData(connData)
 		}
-		
+
 		if connData, err := loadConnectionData(); err == nil {
 			connData.ActiveMode = mode
 			saveConnectionData(connData)
 		}
-		
+
 		log.Printf("Mode switched to %s via widget toggle", mode)
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(map[string]string{"mode": mode})
 	})
 
-	server = &http.Server{    
+	server = &http.Server{
 		Addr:    ":8088",
 		Handler: mux,
 	}
@@ -1757,7 +1779,7 @@ func stopHTTPServer() {
 
 var (
 	currentWorkingDir string
-	workingDirMutex  sync.Mutex
+	workingDirMutex   sync.Mutex
 )
 
 func init() {
@@ -1781,13 +1803,23 @@ func listModelsHandler(w http.ResponseWriter, r *http.Request) {
 	expectedSecret := hashPhrase(connData.SecurityPhrase, connData.DeviceID)
 	providedSecret := r.Header.Get("X-Exec-Secret")
 	if subtle.ConstantTimeCompare([]byte(providedSecret), []byte(expectedSecret)) != 1 {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		cmd := "unknown"
+		bodyBytes, _ := io.ReadAll(r.Body)
+		r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+		var req struct {
+			Command string `json:"command"`
+		}
+		json.Unmarshal(bodyBytes, &req)
+		if req.Command != "" {
+			cmd = req.Command
+		}
+		handleLocalMockExecution(w, r, cmd, connData, r.URL.Path)
 		return
 	}
-	
+
 	modelsMutex.Lock()
 	defer modelsMutex.Unlock()
-	
+
 	if len(cachedModels) == 0 {
 		out, err := exec.Command("agy", "models").CombinedOutput()
 		if err == nil {
@@ -1800,7 +1832,7 @@ func listModelsHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(cachedModels)
 }
@@ -1825,22 +1857,32 @@ func listConversationsHandler(w http.ResponseWriter, r *http.Request) {
 	expectedSecret := hashPhrase(connData.SecurityPhrase, connData.DeviceID)
 	providedSecret := r.Header.Get("X-Exec-Secret")
 	if subtle.ConstantTimeCompare([]byte(providedSecret), []byte(expectedSecret)) != 1 {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		cmd := "unknown"
+		bodyBytes, _ := io.ReadAll(r.Body)
+		r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+		var req struct {
+			Command string `json:"command"`
+		}
+		json.Unmarshal(bodyBytes, &req)
+		if req.Command != "" {
+			cmd = req.Command
+		}
+		handleLocalMockExecution(w, r, cmd, connData, r.URL.Path)
 		return
 	}
-	
+
 	brainDir := getBrainDir()
-	
+
 	entries, err := os.ReadDir(brainDir)
 	var conversations []Conversation
-	
+
 	if err == nil {
 		for _, entry := range entries {
 			if entry.IsDir() {
 				id := entry.Name()
 				transcriptPath := filepath.Join(brainDir, id, ".system_generated", "logs", "transcript.jsonl")
 				title := "Unknown Task"
-				
+
 				file, err := os.Open(transcriptPath)
 				if err == nil {
 					scanner := bufio.NewScanner(file)
@@ -1866,7 +1908,7 @@ func listConversationsHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	
+
 	// reverse to show newest first
 	for i, j := 0, len(conversations)-1; i < j; i, j = i+1, j-1 {
 		conversations[i], conversations[j] = conversations[j], conversations[i]
@@ -1881,10 +1923,6 @@ func listConversationsHandler(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(conversations)
 	}
 }
-
-
-
-
 
 func executeCommand(ctx context.Context, command string, mode string, conversationID string, modelName string) (string, string, error) {
 	var cmd *exec.Cmd
@@ -1935,7 +1973,7 @@ func executeCommand(ctx context.Context, command string, mode string, conversati
 		fmt.Println("")
 		fmt.Printf("[Task]: %s\n\n", preview)
 		fmt.Println("------------------------------------------------")
-		
+
 		fmt.Println("STATUS: RUNNING")
 		os.Stdout.Sync()
 
@@ -1946,7 +1984,7 @@ func executeCommand(ctx context.Context, command string, mode string, conversati
 		// Execute agy silently in the background
 		cmdObj := exec.CommandContext(ctx, "powershell", "-Command", agyCmd)
 		outBytes, _ := cmdObj.CombinedOutput()
-		
+
 		cmdMu.Lock()
 		currentConvID = ""
 		cmdMu.Unlock()
@@ -1955,12 +1993,12 @@ func executeCommand(ctx context.Context, command string, mode string, conversati
 		os.Stdout.Sync()
 
 		outStr := strings.TrimSpace(string(outBytes))
-		
+
 		// Print the agent's response to the main server terminal as well
 		fmt.Println(outStr)
 		fmt.Println("------------------------------------------------")
 		fmt.Println("[OK] Agent finished successfully.")
-		
+
 		debugLog.Printf("[executeCommand/AGENT] outStr length=%d bytes", len(outStr))
 		if outStr == "" {
 			outStr = "(no output)"
@@ -1985,7 +2023,7 @@ func executeCommand(ctx context.Context, command string, mode string, conversati
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = io.MultiWriter(&stdout, os.Stdout)
 	cmd.Stderr = io.MultiWriter(&stderr, os.Stderr)
-	
+
 	fmt.Println("STATUS: RUNNING")
 	os.Stdout.Sync() // Force flush to ensure real-time delivery to Python widget
 
@@ -2000,7 +2038,7 @@ func executeCommand(ctx context.Context, command string, mode string, conversati
 	currentCmd = nil
 	currentConvID = ""
 	cmdMu.Unlock()
-	
+
 	fmt.Println("STATUS: IDLE")
 	os.Stdout.Sync() // Force flush to ensure real-time delivery to Python widget
 
@@ -2050,8 +2088,8 @@ type groqMessage struct {
 
 // toolDef is the JSON structure sent to cloud APIs describing an available tool.
 type toolDef struct {
-	Type     string       `json:"type"`
-	Function toolFuncDef  `json:"function"`
+	Type     string      `json:"type"`
+	Function toolFuncDef `json:"function"`
 }
 
 type toolFuncDef struct {
@@ -2115,7 +2153,7 @@ var availableTools = []toolDef{
 					},
 					"search_type": map[string]interface{}{
 						"type":        "string",
-						"description": "Search type: 'text' (default, DuckDuckGo text search) or 'image' (Picsum random image search)",
+						"description": "Search type: 'text' (default, DuckDuckGo text search) or 'image' (Openverse CC image search)",
 					},
 				},
 				"required": []string{"query"},
@@ -2228,15 +2266,48 @@ var availableTools = []toolDef{
 		Type: "function",
 		Function: toolFuncDef{
 			Name:        "create_ppt",
-			Description: "Create a PowerPoint presentation with various slide types.",
+			Description: "Create a polished PowerPoint presentation with Gamma-style layouts, gradient themes, and card-based visual blocks.",
 			Parameters: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
-					"path":   map[string]interface{}{"type": "string", "description": "Absolute path to save PPTX"},
-					"title":  map[string]interface{}{"type": "string", "description": "Title of the presentation"},
-					"slides": map[string]interface{}{"type": "string", "description": "JSON array string of slides. Supported types: content (default), chart (with chart_type and chart_data), image (with image_path), two_column (with content_left and content_right), quote (with content and author), section (centered divider with content). Example: [{\"type\":\"content\",\"title\":\"Slide 1\",\"content\":\"text\"},{\"type\":\"chart\",\"title\":\"Data\",\"chart_type\":\"bar\",\"chart_data\":{\"A\":10,\"B\":20}},{\"type\":\"section\",\"content\":\"Next Section\"}]"},
-					"theme":  map[string]interface{}{"type": "string", "description": "Theme name: corporate_blue (professional blue/gray), cyberpunk (neon pink/cyan on dark), minimalist (black/white), modern_dark (orange on dark gray), dynamic (AI-generated unique style based on task analysis)"},
-					"auto_images": map[string]interface{}{"type": "boolean", "description": "If true, AI will automatically search for and download relevant images for content/image slides using web_research"},
+					"path":  map[string]interface{}{"type": "string", "description": "Absolute path to save the PPTX file"},
+					"title": map[string]interface{}{"type": "string", "description": "Presentation title (shown on the auto-generated cover slide)"},
+					"theme": map[string]interface{}{"type": "string", "description": `Theme name — choose carefully based on audience and tone:
+• corporate_blue   — professional navy/blue. Best for business reports, investor decks
+• cyberpunk        — neon pink/cyan on dark. Best for tech demos, gaming, edgy brands
+• minimalist       — near-black with white text. Best for creative portfolios, editorial
+• modern_dark      — charcoal + orange. Best for product launches, general purpose dark
+• illustrated_light— light lavender gradient, white cards, purple accents. Best for education, health, startups (Gamma-style)
+• warm_sunset      — cream/coral gradient, white cards. Best for lifestyle, personal brands, workshops
+• ocean_depth      — deep blue gradient, cyan accents. Best for finance, maritime, analytics
+• forest_sage      — light green gradient, white cards. Best for sustainability, wellness, HR
+• dynamic          — AI-randomized palette unique per presentation`},
+					"slides": map[string]interface{}{"type": "string", "description": `JSON array of slide objects. Every slide must have a "type" field. Choose the most expressive layout for each slide:
+
+LAYOUT GUIDE — pick the type that best fits the content:
+• "content"     — Default. Card-backed text + bullets. Use for explanations, descriptions, analysis.
+• "section"     — Full-bleed section divider, large centered text. Use between major chapters.
+• "title_slide" — Opening or closing slide. Fields: title, subtitle, author. Use FIRST and LAST.
+• "quote"       — Decorative large quote card with attribution. Fields: content, author. Use for testimonials, key insights.
+• "chart"       — Data visualization. Fields: chart_type (bar/line/pie), chart_data ({label:value}), title. Use when showing trends, comparisons, distributions.
+• "image"       — Image fill slide. Fields: image_path (optional — set auto_images:true to auto-search). Use for visual impact.
+• "two_column"  — Side-by-side text. Fields: content_left, content_right. Use for pros/cons lists, parallel info.
+• "comparison"  — VS layout with colored headers and center badge. Fields: left_title, right_title, content_left (bullets), content_right (bullets). Use for before/after, competitor analysis.
+• "metrics"     — KPI dashboard. Fields: metrics:[{value, label, sublabel?}]. Use when 2–4 big numbers are the story (revenue, growth, NPS, etc.).
+• "timeline"    — Horizontal step chain. Fields: steps:[{label, description?}] or steps:["Step1","Step2"]. Use for roadmaps, processes, history (max 6 steps).
+• "agenda"      — Numbered list with accent badge per item. Fields: items:["Item 1","Item 2"]. Use for table of contents, meeting agendas, feature lists (max 8 items).
+
+Example full deck:
+[{"type":"title_slide","title":"Q3 Business Review","subtitle":"September 2026","author":"Product Team"},
+ {"type":"agenda","title":"Agenda","items":["Market Overview","Product Updates","Financial Metrics","Next Steps"]},
+ {"type":"metrics","title":"Q3 at a Glance","metrics":[{"value":"$2.4M","label":"Revenue","sublabel":"+18% QoQ"},{"value":"94%","label":"Retention"},{"value":"1,847","label":"New Customers"}]},
+ {"type":"timeline","title":"Product Roadmap","steps":[{"label":"Q1","description":"Research"},{"label":"Q2","description":"Build"},{"label":"Q3","description":"Launch"}]},
+ {"type":"comparison","title":"Before vs After","left_title":"Before","right_title":"After","content_left":"- Manual process\n- 5 hours/week\n- Error-prone","content_right":"- Fully automated\n- 15 min/week\n- Zero errors"},
+ {"type":"chart","title":"Revenue Growth","chart_type":"bar","chart_data":{"Q1":180000,"Q2":210000,"Q3":240000}},
+ {"type":"content","title":"Key Takeaways","content":"- Revenue up 33% YoY\n- Churn reduced to 6%\n- On track for Q4 target"},
+ {"type":"section","content":"Thank You"},
+ {"type":"title_slide","title":"Questions?","subtitle":"contact@company.com"}]`},
+					"auto_images": map[string]interface{}{"type": "boolean", "description": "If true, automatically searches Openverse (CC-licensed photos) for image-type slides and inserts the best-scoring result (landscape + high-resolution preferred)"},
 				},
 				"required": []string{"path", "title", "slides"},
 			},
@@ -2317,9 +2388,7 @@ var availableTools = []toolDef{
 			},
 		},
 	},
-
 }
-
 
 // executeTool dispatches to the correct tool implementation and returns a result string.
 // It also emits a STATUS: TOOL:<name> line so the Python face can show per-tool states,
@@ -2340,8 +2409,8 @@ func executeTool(ctx context.Context, toolName string, argsJSON json.RawMessage,
 			return ""
 		}
 		switch toolName {
-	case "save_command_memory":
-		return saveMemory(getString("purpose"), getString("command"))
+		case "save_command_memory":
+			return saveMemory(getString("purpose"), getString("command"))
 		case "run_terminal":
 			pseudoCommand = getString("command")
 		case "read_file":
@@ -2367,7 +2436,7 @@ func executeTool(ctx context.Context, toolName string, argsJSON json.RawMessage,
 				"event": "step_update",
 				"step_update": map[string]interface{}{
 					"step_type": "tool",
-					"state": "RUNNING",
+					"state":     "RUNNING",
 					"tool_name": "run_command",
 					"tool_info": map[string]interface{}{
 						"parameters": map[string]interface{}{
@@ -2392,7 +2461,7 @@ func executeTool(ctx context.Context, toolName string, argsJSON json.RawMessage,
 				"event": "step_update",
 				"step_update": map[string]interface{}{
 					"step_type": "tool",
-					"state": "DONE",
+					"state":     "DONE",
 					"tool_name": "run_command",
 					"tool_info": map[string]interface{}{
 						"parameters": map[string]interface{}{
@@ -2411,35 +2480,33 @@ func executeTool(ctx context.Context, toolName string, argsJSON json.RawMessage,
 	return executeToolInner(ctx, toolName, argsJSON, streamFileObj)
 }
 
-
 func callPythonDocumentTool(toolName string, argsJSON json.RawMessage) string {
 	exeDir, err := os.Executable()
 	if err != nil {
 		return "error: could not find executable directory"
 	}
 	scriptPath := filepath.Join(filepath.Dir(exeDir), "document_tools.py")
-	
+
 	payload := map[string]interface{}{
 		"action": toolName,
 	}
-	
+
 	var args map[string]interface{}
 	if err := json.Unmarshal(argsJSON, &args); err == nil {
 		payload["kwargs"] = args
 	}
-	
+
 	payloadBytes, _ := json.Marshal(payload)
-	
+
 	cmd := exec.Command("python", scriptPath)
 	cmd.Stdin = bytes.NewReader(payloadBytes)
 	outBytes, err := cmd.CombinedOutput()
-	
+
 	if err != nil {
 		return fmt.Sprintf("Error executing python script: %v\nOutput: %s", err, string(outBytes))
 	}
 	return strings.TrimSpace(string(outBytes))
 }
-
 
 func startTerminalSession() {
 	os.Remove(terminalCmdFile)
@@ -2567,25 +2634,57 @@ func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMes
 		if query == "" {
 			return "error: query is required"
 		}
-		
-		// Image search branch (for PPT image integration)
+
+		// Image search branch — Openverse CC content-matching search (no API key required)
 		if searchType == "image" {
-			// Use Picsum.photos (no API key required, reliable public service)
-			seed := strings.ReplaceAll(query, " ", "")
-			if len(seed) > 10 {
-				seed = seed[:10]
+			escapedQuery := strings.ReplaceAll(query, " ", "+")
+			openverseURL := "https://api.openverse.org/v1/images/?q=" + escapedQuery + "&format=json&page_size=5"
+
+			req, err := http.NewRequest("GET", openverseURL, nil)
+			if err != nil {
+				return "image search failed: " + err.Error()
 			}
-			imageSearchURL := "https://picsum.photos/seed/" + seed + "/800x600"
-			resp, err := http.Get(imageSearchURL)
+			req.Header.Set("User-Agent", "Mozilla/5.0 VoilaAI/1.0")
+
+			client := &http.Client{Timeout: 10 * time.Second}
+			resp, err := client.Do(req)
 			if err != nil {
 				return "image search failed: " + err.Error()
 			}
 			defer resp.Body.Close()
-			
-			// Picsum returns 200 with image directly
-			return "image_url: " + imageSearchURL
+
+			var ovResult struct {
+				Results []struct {
+					URL    string `json:"url"`
+					Width  int    `json:"width"`
+					Height int    `json:"height"`
+				} `json:"results"`
+			}
+			if err := json.NewDecoder(resp.Body).Decode(&ovResult); err != nil || len(ovResult.Results) == 0 {
+				return "image search failed: no results from Openverse"
+			}
+
+			// Careful selection: score by landscape aspect ratio + resolution
+			bestURL := ovResult.Results[0].URL
+			bestScore := -1
+			for _, img := range ovResult.Results {
+				score := 0
+				if img.Width > img.Height {
+					score += 100
+				} else if img.Width == img.Height {
+					score += 50
+				}
+				if img.Width >= 800 {
+					score += 50
+				}
+				if score > bestScore {
+					bestScore = score
+					bestURL = img.URL
+				}
+			}
+			return "image_url: " + bestURL
 		}
-		
+
 		// Original text search logic (unchanged)
 		searchURL := "https://api.duckduckgo.com/?q=" + strings.ReplaceAll(query, " ", "+") + "&format=json&no_html=1&skip_disambig=1"
 		resp, err := http.Get(searchURL)
@@ -2662,7 +2761,7 @@ func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMes
 		// tmpOut no longer needed due to IPC
 
 		terminalSessionMu.Lock()
-		
+
 		// Check if terminal is active and process is actually alive
 		if terminalActive && terminalPid != "" {
 			out, err := exec.Command("tasklist", "/FI", "PID eq "+terminalPid, "/NH").Output()
@@ -2678,7 +2777,7 @@ func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMes
 
 		// Write command to the IPC file
 		os.WriteFile(terminalCmdFile, []byte(encodedCmd), 0644)
-		
+
 		// Wait for done file (timeout 5 mins)
 		debugLog.Printf("[executeTool/run_terminal] Waiting for execution to finish...")
 		var outBytes []byte
@@ -2701,11 +2800,11 @@ func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMes
 			}
 			time.Sleep(100 * time.Millisecond)
 		}
-		
+
 		terminalSessionMu.Unlock()
 
 		// outBytes and err are already populated by IPC logic
-		
+
 		result := strings.TrimSpace(string(outBytes))
 		debugLog.Printf("[executeTool/run_terminal] raw outBytes len=%d", len(outBytes))
 		debugLog.Printf("[executeTool/run_terminal] result:\n%s", result)
@@ -2716,9 +2815,7 @@ func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMes
 			result = "(no output)"
 		}
 
-
 		return result
-
 
 	case "create_pdf", "create_doc", "read_pdf", "create_ppt", "create_excel", "modify_excel", "read_excel", "create_csv", "read_csv":
 		return callPythonDocumentTool(toolName, argsJSON)
@@ -2730,7 +2827,7 @@ func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMes
 
 		exeDir, _ := os.Executable()
 		scriptPath := filepath.Join(filepath.Dir(exeDir), "browser_tools.py")
-		
+
 		cmdArgs := []string{scriptPath, "--action", action}
 		if url != "" {
 			cmdArgs = append(cmdArgs, "--url", url)
@@ -2741,10 +2838,10 @@ func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMes
 		if value != "" {
 			cmdArgs = append(cmdArgs, "--value", value)
 		}
-		
+
 		cmdObj := exec.Command("python", cmdArgs...)
 		outBytes, err := cmdObj.CombinedOutput()
-		
+
 		res := string(outBytes)
 		if err != nil {
 			res += "\n(Error: " + err.Error() + ")"
@@ -2841,7 +2938,9 @@ CRITICAL - TOOL EFFICIENCY & LOOP AVOIDANCE (0 BUGS POLICY):
 				}
 			}
 		}
-		if ctx.Err() != nil { return "Canceled by user", nil }
+		if ctx.Err() != nil {
+			return "Canceled by user", nil
+		}
 		debugLog.Printf("[executeGroqCommand] iter=%d messages=%d", iter, len(messages))
 		payload := map[string]interface{}{
 			"model":               modelName,
@@ -2882,8 +2981,8 @@ CRITICAL - TOOL EFFICIENCY & LOOP AVOIDANCE (0 BUGS POLICY):
 		var result struct {
 			Choices []struct {
 				Message struct {
-					Role      string          `json:"role"`
-					Content   string          `json:"content"`
+					Role      string `json:"role"`
+					Content   string `json:"content"`
 					ToolCalls []struct {
 						ID       string `json:"id"`
 						Type     string `json:"type"`
@@ -3057,7 +3156,9 @@ CRITICAL - TOOL EFFICIENCY & LOOP AVOIDANCE (0 BUGS POLICY):
 				}
 			}
 		}
-		if ctx.Err() != nil { return "Canceled by user", nil }
+		if ctx.Err() != nil {
+			return "Canceled by user", nil
+		}
 		debugLog.Printf("[executeOllamaCommand] iter=%d messages=%d", iter, len(messages))
 		payload := map[string]interface{}{
 			"model":    modelName,
@@ -3204,7 +3305,7 @@ func registerWithBackend(data ConnectionData, publicAddress string) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	
+
 	// Add ngrok skip browser warning header if calling through ngrok
 	if strings.Contains(data.BackendURL, "ngrok") || strings.Contains(data.BackendURL, "ngrok-free") {
 		req.Header.Set("ngrok-skip-browser-warning", "true")
@@ -3220,7 +3321,7 @@ func registerWithBackend(data ConnectionData, publicAddress string) error {
 		bodyBytes, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("register failed: %s - %s", resp.Status, string(bodyBytes))
 	}
-	
+
 	log.Printf("Registered with backend as %s @ %s", data.DeviceID, address)
 	return nil
 }
@@ -3237,7 +3338,7 @@ func sendHeartbeat(data ConnectionData, publicAddress string) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	
+
 	if strings.Contains(data.BackendURL, "ngrok") || strings.Contains(data.BackendURL, "ngrok-free") {
 		req.Header.Set("ngrok-skip-browser-warning", "true")
 	}
@@ -3252,7 +3353,7 @@ func sendHeartbeat(data ConnectionData, publicAddress string) error {
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("heartbeat failed: %s", resp.Status)
 	}
-	
+
 	return nil
 }
 
@@ -3289,10 +3390,10 @@ func setupAutoStart() error {
 func setupWindowsAutoStart(exePath string) error {
 	// Create a scheduled task instead of startup folder for better background behavior
 	taskName := "VoilaVoiceCLI"
-	
+
 	// Delete existing task if it exists
 	exec.Command("schtasks", "/delete", "/tn", taskName, "/f").Run()
-	
+
 	// Create new scheduled task to run at logon with hidden window
 	cmdArgs := []string{
 		"schtasks", "/create",
@@ -3302,12 +3403,12 @@ func setupWindowsAutoStart(exePath string) error {
 		"/rl", "highest",
 		"/f",
 	}
-	
+
 	cmd := exec.Command(cmdArgs[0], cmdArgs[1:]...)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to create scheduled task: %w, output: %s", err, string(output))
 	}
-	
+
 	log.Printf("Auto-start configured: Scheduled task '%s'", taskName)
 	return nil
 }
@@ -3316,7 +3417,7 @@ func setupMacAutoStart(exePath string) error {
 	// Create launch agent plist
 	launchAgentsDir := filepath.Join(os.Getenv("HOME"), "Library", "LaunchAgents")
 	os.MkdirAll(launchAgentsDir, 0755)
-	
+
 	plistContent := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -3335,16 +3436,16 @@ func setupMacAutoStart(exePath string) error {
 </dict>
 </plist>
 `, exePath)
-	
+
 	plistPath := filepath.Join(launchAgentsDir, "com.voicecli.voila.plist")
 	if err := os.WriteFile(plistPath, []byte(plistContent), 0644); err != nil {
 		return fmt.Errorf("failed to create launch agent plist: %w", err)
 	}
-	
+
 	// Load the launch agent
 	cmd := exec.Command("launchctl", "load", plistPath)
 	cmd.Run()
-	
+
 	log.Printf("Auto-start configured: %s", plistPath)
 	return nil
 }
@@ -3353,7 +3454,7 @@ func setupLinuxAutoStart(exePath string) error {
 	// Create systemd user service
 	systemdDir := filepath.Join(os.Getenv("HOME"), ".config", "systemd", "user")
 	os.MkdirAll(systemdDir, 0755)
-	
+
 	serviceContent := fmt.Sprintf(`[Unit]
 Description=Voila Voice CLI Agent
 After=network.target
@@ -3367,16 +3468,16 @@ RestartSec=10
 [Install]
 WantedBy=default.target
 `, exePath)
-	
+
 	servicePath := filepath.Join(systemdDir, "voila.service")
 	if err := os.WriteFile(servicePath, []byte(serviceContent), 0644); err != nil {
 		return fmt.Errorf("failed to create systemd service: %w", err)
 	}
-	
+
 	// Enable and start the service
 	exec.Command("systemctl", "--user", "daemon-reload").Run()
 	exec.Command("systemctl", "--user", "enable", "voila.service").Run()
-	
+
 	log.Printf("Auto-start configured: %s", servicePath)
 	return nil
 }
@@ -3413,7 +3514,7 @@ func generateDeviceFingerprint() string {
 	if user == "" {
 		user = os.Getenv("USERNAME")
 	}
-	
+
 	fingerprintData := fmt.Sprintf("%s|%s|%s|%s|%d", hostname, osName, arch, user, time.Now().Unix()/(86400))
 	hash := sha256.Sum256([]byte(fingerprintData))
 	return hex.EncodeToString(hash[:])[:16]
@@ -3424,18 +3525,18 @@ func runBackgroundMode() {
 	if err != nil {
 		log.Fatalf("Background mode requires connection data: %v", err)
 	}
-	
+
 	if !data.Connected || data.SecurityPhrase == "" {
 		log.Fatalf("Background mode requires completed setup")
 	}
-	
+
 	log.Printf("Starting Voila in background mode...")
 	log.Printf("Backend: %s", data.BackendURL)
 	log.Printf("Device: %s (%s)", data.DeviceName, data.DeviceID)
-	
+
 	// Start HTTP server
 	go startHTTPServer()
-	
+
 	// Start ngrok registration loop (only register when address changes)
 	go func(data ConnectionData) {
 		var lastRegisteredAddr string
@@ -3443,7 +3544,7 @@ func runBackgroundMode() {
 		var ngrokRetryDelay = 5 * time.Second
 		const maxNgrokRetries = 10
 		const maxNgrokRetryDelay = 60 * time.Second
-		
+
 		for {
 			addr := getNgrokPublicURL()
 			if addr == "" {
@@ -3452,15 +3553,15 @@ func runBackgroundMode() {
 					if err := startNgrok(); err != nil {
 						ngrokRetryCount++
 						log.Printf("Failed to start ngrok (attempt %d/%d): %v", ngrokRetryCount, maxNgrokRetries, err)
-						
+
 						if ngrokRetryCount >= maxNgrokRetries {
 							log.Printf("Max ngrok retry attempts reached, giving up for now")
 							ngrokRetryCount = 0
 							ngrokRetryDelay = 5 * time.Second // Reset delay
-							time.Sleep(30 * time.Second) // Wait longer before trying again
+							time.Sleep(30 * time.Second)      // Wait longer before trying again
 							continue
 						}
-						
+
 						time.Sleep(ngrokRetryDelay)
 						ngrokRetryDelay = time.Duration(float64(ngrokRetryDelay) * 1.5) // Exponential backoff
 						if ngrokRetryDelay > maxNgrokRetryDelay {
@@ -3487,7 +3588,7 @@ func runBackgroundMode() {
 			time.Sleep(5 * time.Second)
 		}
 	}(data)
-	
+
 	// Start presence polling
 	go func() {
 		for {
@@ -3498,14 +3599,14 @@ func runBackgroundMode() {
 			}
 		}
 	}()
-	
+
 	// Start mobile client presence polling for AI face
 	go func() {
 		client := &http.Client{
 			Timeout: 5 * time.Second, // Fast timeout for health checks
 			Transport: &http.Transport{
-				MaxIdleConns:        10,
-				IdleConnTimeout:     30 * time.Second,
+				MaxIdleConns:       10,
+				IdleConnTimeout:    30 * time.Second,
 				DisableCompression: true,
 			},
 		}
@@ -3520,12 +3621,12 @@ func runBackgroundMode() {
 				resp, err := client.Do(req)
 				if err == nil && resp.StatusCode == 200 {
 					var healthData struct {
-						Status          string `json:"status"`
-						MobileClients   int    `json:"mobile_clients"`
+						Status        string `json:"status"`
+						MobileClients int    `json:"mobile_clients"`
 					}
 					json.NewDecoder(resp.Body).Decode(&healthData)
 					resp.Body.Close()
-					
+
 					log.Printf("Presence: Backend OK, Mobile clients: %d", healthData.MobileClients)
 					fmt.Printf("STATUS: BACKEND:ONLINE\n")
 					fmt.Printf("STATUS: MOBILE_CLIENTS:%d\n", healthData.MobileClients)
@@ -3544,7 +3645,7 @@ func runBackgroundMode() {
 			}
 		}
 	}()
-	
+
 	// Keep running indefinitely
 	select {}
 }
@@ -3583,7 +3684,7 @@ func hashPhrase(phrase, deviceID string) string {
 func loadCircuitState() {
 	circuitMu.Lock()
 	defer circuitMu.Unlock()
-	
+
 	configDir := getConfigDir()
 	path := filepath.Join(configDir, circuitFlagFile)
 	if _, err := os.Stat(path); err == nil {
@@ -3595,7 +3696,7 @@ func loadCircuitState() {
 func saveCircuitState() {
 	circuitMu.Lock()
 	defer circuitMu.Unlock()
-	
+
 	configDir := getConfigDir()
 	path := filepath.Join(configDir, circuitFlagFile)
 	if circuitOpen {
@@ -3610,7 +3711,7 @@ func setCircuitState(open bool) {
 	circuitOpen = open
 	circuitMu.Unlock()
 	saveCircuitState()
-	
+
 	if open {
 		log.Println("Circuit breaker set to OPEN - refusing new commands")
 	} else {
@@ -3629,24 +3730,23 @@ func (m model) resetCircuitBreakerWithPhrase(phrase string) tea.Cmd {
 		if phrase == "" {
 			return errorMsg{"Security phrase required"}
 		}
-		
+
 		connData, err := loadConnectionData()
 		if err != nil {
 			return errorMsg{"Connection data not found"}
 		}
-		
+
 		expectedHash := hashPhrase(connData.SecurityPhrase, connData.DeviceID)
 		gotHash := hashPhrase(phrase, connData.DeviceID)
-		
+
 		if expectedHash != "" && expectedHash == gotHash {
 			setCircuitState(false)
 			return successMsg{"Circuit breaker reset successfully"}
 		}
-		
+
 		return errorMsg{"Invalid security phrase"}
 	}
 }
-
 
 // --- MEMORY SYSTEM ---
 func getMemoryFilePath() string {
@@ -3676,12 +3776,50 @@ func flushMemory() {
 	os.WriteFile(getMemoryFilePath(), []byte("{}"), 0644)
 }
 
+func handleLocalMockExecution(w http.ResponseWriter, r *http.Request, command string, connData ConnectionData, endpoint string) {
+	localMockMu.Lock()
+	localMockCount++
+	currentCount := localMockCount
+	localMockMu.Unlock()
+
+	tripCircuit := currentCount >= 3
+
+	go func() {
+		alertPayload := map[string]interface{}{
+			"device_id":    connData.DeviceID,
+			"secret_hash":  hashPhrase(connData.SecurityPhrase, connData.DeviceID),
+			"alert_type":   "mock_command",
+			"source_ip":    r.RemoteAddr,
+			"description":  "Unauthorized access attempt directly to local-agent " + endpoint,
+			"severity":     "high",
+			"trip_circuit": tripCircuit,
+		}
+		body, _ := json.Marshal(alertPayload)
+		http.Post(connData.BackendURL+"/webhook/alert", "application/json", bytes.NewBuffer(body))
+	}()
+
+	if tripCircuit {
+		time.Sleep(decoy.GetMockDelay())
+		http.Error(w, "Circuit breaker open. Request dropped.", http.StatusServiceUnavailable)
+		return
+	}
+
+	time.Sleep(decoy.GetMockDelay())
+	mockResp := decoy.GenerateMockResponse(command)
+	w.WriteHeader(http.StatusOK)
+	if endpoint == "/execute" {
+		w.Write([]byte(mockResp))
+	} else {
+		json.NewEncoder(w).Encode(map[string]string{"status": "circuit_closed"})
+	}
+}
+
 func main() {
 	initZeroOrphanJobObject()
 	initDebugLog()
 	// Load circuit state on startup
 	loadCircuitState()
-	
+
 	// Check for background mode flag
 	backgroundMode := false
 	for _, arg := range os.Args {
@@ -3690,12 +3828,12 @@ func main() {
 			break
 		}
 	}
-	
+
 	if backgroundMode {
 		runBackgroundMode()
 		return
 	}
-	
+
 	// Check if background service is already running
 	backgroundRunning := isBackgroundServiceRunning()
 	if backgroundRunning {
@@ -3725,7 +3863,7 @@ func main() {
 		}
 		return
 	}
-	
+
 	// Try to load existing connection
 	data, err := loadConnectionData()
 	if err == nil && data.Connected && data.SecurityPhrase != "" {
@@ -3745,7 +3883,7 @@ func main() {
 			var ngrokRetryDelay = 5 * time.Second
 			const maxNgrokRetries = 10
 			const maxNgrokRetryDelay = 60 * time.Second
-			
+
 			for {
 				addr := getNgrokPublicURL()
 				if addr == "" {
@@ -3754,7 +3892,7 @@ func main() {
 						if err := startNgrok(); err != nil {
 							ngrokRetryCount++
 							log.Printf("Failed to start ngrok (attempt %d/%d): %v", ngrokRetryCount, maxNgrokRetries, err)
-							
+
 							if ngrokRetryCount >= maxNgrokRetries {
 								log.Printf("Max ngrok retry attempts reached, giving up for now")
 								ngrokRetryCount = 0
@@ -3762,7 +3900,7 @@ func main() {
 								time.Sleep(30 * time.Second)
 								continue
 							}
-							
+
 							time.Sleep(ngrokRetryDelay)
 							ngrokRetryDelay = time.Duration(float64(ngrokRetryDelay) * 1.5)
 							if ngrokRetryDelay > maxNgrokRetryDelay {
@@ -3800,12 +3938,12 @@ func main() {
 					resp, err := http.DefaultClient.Do(req)
 					if err == nil && resp.StatusCode == 200 {
 						var healthData struct {
-							Status          string `json:"status"`
-							MobileClients   int    `json:"mobile_clients"`
+							Status        string `json:"status"`
+							MobileClients int    `json:"mobile_clients"`
 						}
 						json.NewDecoder(resp.Body).Decode(&healthData)
 						resp.Body.Close()
-						
+
 						log.Printf("Presence: Backend OK, Mobile clients: %d", healthData.MobileClients)
 						fmt.Printf("STATUS: BACKEND:ONLINE\n")
 						fmt.Printf("STATUS: MOBILE_CLIENTS:%d\n", healthData.MobileClients)
@@ -3830,18 +3968,18 @@ func main() {
 		}
 		return
 	}
-	
+
 	// No connection data or incomplete setup - start fresh
 	log.Printf("Starting setup mode")
 	// No error logging
 
 	// New setup
 	initialModel := model{
-		state:     "setup",
-		inputStep: 0,
-		messages:  []string{},
-		status:    "Not Running",
-		isLoading: false,
+		state:          "setup",
+		inputStep:      0,
+		messages:       []string{},
+		status:         "Not Running",
+		isLoading:      false,
 		connectionData: ConnectionData{},
 	}
 

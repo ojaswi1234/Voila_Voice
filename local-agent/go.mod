@@ -25,3 +25,7 @@ require (
 	golang.org/x/term v0.45.0 // indirect
 	golang.org/x/text v0.41.0 // indirect
 )
+
+require voice-cli-system v0.0.0
+
+replace voice-cli-system => ../

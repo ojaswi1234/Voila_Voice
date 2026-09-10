@@ -1,4 +1,8 @@
 import 'dart:async';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+
 import 'dart:convert';
 import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart'; // For compute()
@@ -58,9 +62,21 @@ String get backendUrl {
   return url;
 }
 
-void main() {
+
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp();
+  debugPrint("Handling a background message: ${message.messageId}");
+}
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
+  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+  
   runApp(const VoiceCliApp());
 }
+
 
 class VoiceCliApp extends StatelessWidget {
   const VoiceCliApp({super.key});
@@ -103,6 +119,7 @@ class VoiceHomePage extends StatefulWidget {
 class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserver {
   late WebSocketChannel channel;
   static const platform = MethodChannel('com.voila/intent');
+  bool _showFlowchart = false;
   bool _isAssistant = false;
   String? _temporaryAssistantImage;
   Timer? _assistantImageTimer;
@@ -135,6 +152,19 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   int _lastWordCount = 0;
   DateTime _lastSpeechTime = DateTime.now();
   int _overlapTriggers = 0;
+
+  void _addMessage(Map<String, dynamic> msg) {
+    if (msg['type'] == 'error') {
+      HapticFeedback.heavyImpact();
+    }
+    if (_currentMode.toUpperCase() == 'AGENT') {
+      _messagesAgent.add(msg);
+      if (_messagesAgent.length > 200) _messagesAgent.removeAt(0);
+    } else {
+      _messagesShell.add(msg);
+      if (_messagesShell.length > 200) _messagesShell.removeAt(0);
+    }
+  }
 
   void _triggerDataDeparting() {
     setState(() => _isDataDeparting = true);
@@ -177,6 +207,63 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   String _securityPhrase = '';
 
   @override
+
+  String? _fcmToken;
+  final FlutterLocalNotificationsPlugin _flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+
+  Future<void> _setupFCM() async {
+    NotificationSettings settings = await FirebaseMessaging.instance.requestPermission(
+      alert: true, announcement: false, badge: true, carPlay: false, criticalAlert: false, provisional: false, sound: true,
+    );
+    debugPrint('User granted permission: ${settings.authorizationStatus}');
+
+    const AndroidNotificationChannel channel = AndroidNotificationChannel(
+      'security_alerts_channel', 
+      'High Severity Security Alerts', 
+      description: 'This channel is used for important security alerts.',
+      importance: Importance.max,
+    );
+    await _flutterLocalNotificationsPlugin
+        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+        ?.createNotificationChannel(channel);
+
+    String? token = await FirebaseMessaging.instance.getToken();
+    if (token != null) {
+      _fcmToken = token;
+      _sendFCMToken(token);
+    }
+
+    FirebaseMessaging.instance.onTokenRefresh.listen((newToken) {
+      _fcmToken = newToken;
+      _sendFCMToken(newToken);
+    });
+
+    FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+      if (message.data['type'] == 'security_alert') {
+        _showSecurityAlerts();
+      }
+    });
+
+    RemoteMessage? initialMessage = await FirebaseMessaging.instance.getInitialMessage();
+    if (initialMessage != null && initialMessage.data['type'] == 'security_alert') {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _showSecurityAlerts();
+      });
+    }
+  }
+
+  void _sendFCMToken(String token) {
+    if (_activeDevice.isNotEmpty && _isConnected) {
+      channel.sink.add(jsonEncode({
+        'type': 'register_fcm_token',
+        'device_id': _activeDevice,
+        'token': token,
+        'session_token': _sessionToken,
+      }));
+    }
+  }
+
+  @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
@@ -198,6 +285,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     _storage.read(key: 'security_phrase').then((val) => _cachedSecurityPhrase = val ?? '');
     _setupWebSocket();
     _initializeSpeech();
+    _setupFCM();
   }
 
   Future<void> _checkIntent() async {
@@ -535,7 +623,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       
       setState(() {
         _isThinking = false; _triggerDataArriving();
-        _messages.add({
+        _addMessage({
           'type': 'system',
           'content': 'Cancellation signal sent to local agent (ESC pressed).',
           'timestamp': DateTime.now().toString(),
@@ -592,6 +680,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                 _sessionToken = sessionToken;
                 _sessionExpiresAt = sessionExpiresAt;
               });
+              if (_fcmToken != null) _sendFCMToken(_fcmToken!);
               
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -650,7 +739,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
               }
               final onlineCount = _devices.values.where((d) => d['online'] == true).length;
               final reachableCount = _devices.values.where((d) => d['reachable'] == true).length;
-              _messages.add({
+              _addMessage({
                 'type': 'system',
                 'content': 'Desktop devices updated: ${_devices.length} devices ($onlineCount online, $reachableCount reachable)',
                 'timestamp': DateTime.now().toString(),
@@ -749,7 +838,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
 
               final contentStr = jsonResponse['output'] ?? message;
               _interceptImageForAssistant(contentStr);
-              _messages.add({
+              _addMessage({
                 'type': 'response',
                 'content': contentStr,
                 'summary': summaryToSpeak,
@@ -773,7 +862,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                 }
               }
             } else if (message.contains('OK: All devices cleared')) {
-              _messages.add({
+              _addMessage({
                 'type': 'system',
                 'content': 'Backend data cleared successfully',
                 'timestamp': DateTime.now().toString(),
@@ -795,14 +884,14 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                 _storage.delete(key: 'session_expires_at');
               }
 
-              _messages.add({
+              _addMessage({
                 'type': 'error',
                 'content': message.replaceFirst('ERROR: ', ''),
                 'timestamp': DateTime.now().toString(),
               });
             } else {
               setState(() { _isThinking = false; _triggerDataArriving(); });
-              _messages.add({
+              _addMessage({
                 'type': 'response',
                 'content': message,
                 'timestamp': DateTime.now().toString(),
@@ -813,7 +902,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
               _isThinking = false; _triggerDataArriving(); 
               _isFetchingModels = false;
             });
-            _messages.add({
+            _addMessage({
               'type': 'response',
               'content': message,
               'timestamp': DateTime.now().toString(),
@@ -826,7 +915,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
         setState(() {
           _isThinking = false; _triggerDataArriving();
           _isConnected = false;
-          _messages.add({
+          _addMessage({
             'type': 'error',
             'content': 'Connection error: $error',
             'timestamp': DateTime.now().toString(),
@@ -835,7 +924,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       }, onDone: () {
         setState(() {
           _isConnected = false;
-          _messages.add({
+          _addMessage({
             'type': 'system',
             'content': 'Connection closed. Attempting to reconnect...',
             'timestamp': DateTime.now().toString(),
@@ -856,7 +945,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     } catch (e) {
       setState(() {
         _isConnected = false;
-        _messages.add({
+        _addMessage({
           'type': 'error',
           'content': 'Failed to connect: $e',
           'timestamp': DateTime.now().toString(),
@@ -999,7 +1088,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       channel.sink.add(jsonEncode({"type": "stop_command"}));
       setState(() {
         _isThinking = false; _triggerDataArriving();
-        _messages.add({
+        _addMessage({
           'type': 'response',
           'content': 'Execution stopped by user.',
           'timestamp': DateTime.now().toString(),
@@ -1068,7 +1157,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     if (_controller.text.isNotEmpty) {
       if (!_isConnected) {
         setState(() {
-          _messages.add({
+          _addMessage({
             'type': 'error',
             'content': 'Not connected to backend. Please wait for reconnection.',
             'timestamp': DateTime.now().toString(),
@@ -1080,7 +1169,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       
       if (_activeDevice.isEmpty) {
         setState(() {
-          _messages.add({
+          _addMessage({
             'type': 'error',
             'content': 'No online desktop device selected. Please wait for devices to load or refresh.',
             'timestamp': DateTime.now().toString(),
@@ -1099,7 +1188,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       // Validate that selected device is actually a desktop device
       if (!_activeDevice.startsWith('desktop-')) {
         setState(() {
-          _messages.add({
+          _addMessage({
             'type': 'error',
             'content': 'Invalid device selected: $_activeDevice. Expected desktop- device.',
             'timestamp': DateTime.now().toString(),
@@ -1115,7 +1204,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       // Check session validity before sending
       if (!_isSessionValid()) {
         setState(() {
-          _messages.add({
+          _addMessage({
             'type': 'error',
             'content': 'Session expired — unlock to continue',
             'timestamp': DateTime.now().toString(),
@@ -1176,7 +1265,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
           _isThinking = true;
           _triggerDataDeparting();
         }
-        _messages.add({
+        _addMessage({
           'type': 'user',
           'content': _controller.text == '__SCREENSHOT__' ? '📸 Taking screenshot...' : _controller.text,
           'timestamp': DateTime.now().toString(),
@@ -1200,7 +1289,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     channel.sink.add(jsonEncode(message));
     setState(() {
       _activeDevice = deviceId;
-      _messages.add({
+      _addMessage({
         'type': 'system',
         'content': 'Switched to device: $deviceId',
         'timestamp': DateTime.now().toString(),
@@ -1373,7 +1462,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       
       channel.sink.add(jsonEncode(message));
       setState(() {
-        _messages.add({
+        _addMessage({
           'type': 'system',
           'content': 'Requesting backend data clear...',
           'timestamp': DateTime.now().toString(),
@@ -1385,6 +1474,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   }
 
   void _showSecurityAlerts() {
+    FocusScope.of(context).unfocus();
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF1E1E1E),
@@ -1562,7 +1652,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       setState(() {
         _savedDevices = {};
         _devices = {};
-        _messages.add({
+        _addMessage({
           'type': 'system',
           'content': 'Local data cleared',
           'timestamp': DateTime.now().toString(),
@@ -2063,13 +2153,33 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
         Expanded(
           child: Column(
             children: [
-              ConnectionFlowchart(
-                isBackendConnected: _isHealthy,
-                isLocalAgentConnected: _localAgentConnected,
-                isWebSocketConnected: _isConnected,
-                isDataDeparting: _isDataDeparting,
-                isDataArriving: _isDataArriving,
-                activeDeviceName: _activeDevice.isNotEmpty ? (_devices[_activeDevice]?['name'] ?? 'Desktop') : null,
+              GestureDetector(
+                onTap: () => setState(() => _showFlowchart = !_showFlowchart),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                  color: Colors.transparent,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(_showFlowchart ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, size: 16, color: Colors.white54),
+                      const SizedBox(width: 4),
+                      Text(_showFlowchart ? 'Hide Connection Info' : 'Show Connection Info', style: const TextStyle(fontSize: 12, color: Colors.white54)),
+                    ],
+                  ),
+                ),
+              ),
+              AnimatedCrossFade(
+                firstChild: const SizedBox(width: double.infinity, height: 0),
+                secondChild: ConnectionFlowchart(
+                  isBackendConnected: _isHealthy,
+                  isLocalAgentConnected: _localAgentConnected,
+                  isWebSocketConnected: _isConnected,
+                  isDataDeparting: _isDataDeparting,
+                  isDataArriving: _isDataArriving,
+                  activeDeviceName: _activeDevice.isNotEmpty ? (_devices[_activeDevice]?['name'] ?? 'Desktop') : null,
+                ),
+                crossFadeState: _showFlowchart ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+                duration: const Duration(milliseconds: 250),
               ),
               const SizedBox(height: 12),
               _buildModeToggle(colorScheme),
@@ -2079,7 +2189,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
               else
                 const Spacer(),
               
-              _buildSubtitleOverlay(colorScheme, false), // FULL-SCREEN STYLE SUBTITLES
+              _buildSubtitleOverlay(colorScheme, true), // FIXED: Uses overlay style everywhere
               
               _buildInputArea(colorScheme),
             ],
@@ -2207,6 +2317,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   }
 
   void _showSettingsSheet(BuildContext context) {
+    FocusScope.of(context).unfocus();
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF1A1A1F),
@@ -2314,6 +2425,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   }
 
   void _showDeviceSelector(BuildContext context) {
+    FocusScope.of(context).unfocus();
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF1A1A1F),

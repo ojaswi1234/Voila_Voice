@@ -1,7 +1,11 @@
 package main
 
 import (
+	"voice-cli-system/shared/decoy"
+
+	"golang.org/x/crypto/pbkdf2"
 	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -20,6 +24,9 @@ import (
 	"sync"
 	"time"
 	"github.com/gorilla/websocket"
+	"firebase.google.com/go/v4"
+	"firebase.google.com/go/v4/messaging"
+	"google.golang.org/api/option"
 )
 
 var sessionSigningKey []byte
@@ -77,6 +84,7 @@ type Device struct {
 	UnlockFailures int
 	ClearFailures  int
 	CircuitOpen bool // Circuit breaker state
+	FCMTokens map[string]bool
 }
 
 
@@ -147,6 +155,7 @@ type Backend struct {
 	mockCommandCounts map[string]int // deviceID -> count
 	offlineQueue      map[string][]QueuedMessage
 	queueMu           sync.Mutex
+	fcmClient *messaging.Client
 }
 
 type WebSocketClient struct {
@@ -167,6 +176,26 @@ func NewBackend() *Backend {
 		offlineQueue:      make(map[string][]QueuedMessage),
 	}
 	
+	// Initialize Firebase FCM Client
+	ctx := context.Background()
+	fcmKeyPath := os.Getenv("FIREBASE_SERVICE_ACCOUNT_JSON")
+	if fcmKeyPath == "" {
+		fcmKeyPath = "local-agent/firebase-service-account.json"
+	}
+	opt := option.WithCredentialsFile(fcmKeyPath)
+	app, err := firebase.NewApp(ctx, nil, opt)
+	if err == nil {
+		client, err := app.Messaging(ctx)
+		if err == nil {
+			b.fcmClient = client
+			log.Println("FCM client initialized successfully via HTTP v1 API.")
+		} else {
+			log.Printf("Failed to init FCM messaging: %v", err)
+		}
+	} else {
+		log.Printf("Failed to init Firebase app: %v", err)
+	}
+
 	// Start presence ticker
 	go b.startPresenceTicker()
 	
@@ -190,9 +219,10 @@ func safeHTTPClient() *http.Client {
 }
 
 func hashPhrase(phrase, deviceID string) string {
-	h := sha256.New()
-	h.Write([]byte(phrase + ":" + deviceID))
-	return hex.EncodeToString(h.Sum(nil))
+	// Bug #3 Fix: Use PBKDF2 to mitigate brute-force rainbow table attacks
+	salt := []byte(deviceID + "_voila_salt_v2")
+	hash := pbkdf2.Key([]byte(phrase), salt, 10000, 32, sha256.New)
+	return hex.EncodeToString(hash)
 }
 
 func stripPort(ip string) string {
@@ -231,6 +261,99 @@ func (b *Backend) addSecurityAlert(alertType, ip, deviceID, clientID, detail, se
 	
 	// Push to all connected mobile clients
 	b.broadcastSecurityAlert(alert)
+	
+	if severity == "high" && b.fcmClient != nil {
+		go b.sendFCMAlert(deviceID, alert)
+	}
+}
+
+
+func (b *Backend) sendFCMTaskCompletion(deviceID, title, body string) {
+	b.mu.RLock()
+	device, exists := b.devices[deviceID]
+	if !exists || len(device.FCMTokens) == 0 {
+		b.mu.RUnlock()
+		return
+	}
+	tokens := make([]string, 0, len(device.FCMTokens))
+	for token := range device.FCMTokens {
+		tokens = append(tokens, token)
+	}
+	b.mu.RUnlock()
+
+	ctx := context.Background()
+	for _, token := range tokens {
+		msg := &messaging.Message{
+			Token: token,
+			Notification: &messaging.Notification{
+				Title: title,
+				Body:  body,
+			},
+			Data: map[string]string{
+				"type": "task_finished",
+			},
+		}
+		
+		_, err := b.fcmClient.Send(ctx, msg)
+		if err != nil {
+			log.Printf("FCM task_finished send failed for token %s: %v", token, err)
+			if messaging.IsUnregistered(err) || strings.Contains(err.Error(), "not registered") || strings.Contains(err.Error(), "invalid-argument") {
+				b.mu.Lock()
+				if dev, ok := b.devices[deviceID]; ok {
+					delete(dev.FCMTokens, token)
+				}
+				b.mu.Unlock()
+			}
+		}
+	}
+}
+
+func (b *Backend) sendFCMAlert(deviceID string, alert SecurityAlert) {
+	b.mu.RLock()
+	device, exists := b.devices[deviceID]
+	if !exists || len(device.FCMTokens) == 0 {
+		b.mu.RUnlock()
+		return
+	}
+	// Copy tokens to avoid holding lock during network call
+	tokens := make([]string, 0, len(device.FCMTokens))
+	for token := range device.FCMTokens {
+		tokens = append(tokens, token)
+	}
+	b.mu.RUnlock()
+
+	ctx := context.Background()
+	for _, token := range tokens {
+		msg := &messaging.Message{
+			Token: token,
+			Notification: &messaging.Notification{
+				Title: "High Severity Security Alert",
+				Body:  alert.Detail,
+			},
+			Data: map[string]string{
+				"type": "security_alert",
+				"alert_id": alert.ID,
+				"alert_type": alert.Type,
+				"severity": alert.Severity,
+			},
+		}
+		
+		_, err := b.fcmClient.Send(ctx, msg)
+		if err != nil {
+			log.Printf("FCM send failed for token %s: %v", token, err)
+			// Handle invalid tokens
+			if messaging.IsUnregistered(err) || strings.Contains(err.Error(), "not registered") || strings.Contains(err.Error(), "invalid-argument") {
+				b.mu.Lock()
+				if dev, ok := b.devices[deviceID]; ok {
+					delete(dev.FCMTokens, token)
+					log.Printf("Removed invalid FCM token for device %s", deviceID)
+				}
+				b.mu.Unlock()
+			}
+		} else {
+			log.Printf("Successfully sent FCM alert to device %s", deviceID)
+		}
+	}
 }
 
 func (b *Backend) broadcastSecurityAlert(alert SecurityAlert) {
@@ -338,7 +461,7 @@ func (b *Backend) resetCircuitBreaker(deviceID string) bool {
 	return false
 }
 
-func (b *Backend) generateMockResponse(command string) string {
+func (b *Backend) _deprecated_generateMockResponse(command string) string {
 	// Plausible fake shell responses
 	cmdLower := strings.ToLower(strings.TrimSpace(command))
 	
@@ -936,7 +1059,10 @@ func (b *Backend) writeMessage(clientID string, messageType int, data []byte) er
 	}
 	client.writeMu.Lock()
 	defer client.writeMu.Unlock()
-	return client.conn.WriteMessage(messageType, data)
+	client.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+	err := client.conn.WriteMessage(messageType, data)
+	client.conn.SetWriteDeadline(time.Time{}) // reset deadline
+	return err
 }
 
 
@@ -980,6 +1106,46 @@ func handleWebhookStatus(b *Backend) http.HandlerFunc {
 	}
 }
 
+func handleWebhookAlert(b *Backend) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var req map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Bad request", http.StatusBadRequest)
+			return
+		}
+		
+		deviceID, _ := req["device_id"].(string)
+		secretHash, _ := req["secret_hash"].(string)
+		
+		b.mu.RLock()
+		device, exists := b.devices[deviceID]
+		b.mu.RUnlock()
+		
+		if !exists || subtle.ConstantTimeCompare([]byte(device.SecurityPhraseHash), []byte(secretHash)) != 1 {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		
+		alertType, _ := req["alert_type"].(string)
+		sourceIp, _ := req["source_ip"].(string)
+		desc, _ := req["description"].(string)
+		sev, _ := req["severity"].(string)
+		
+		b.addSecurityAlert(alertType, sourceIp, deviceID, "local-agent", desc, sev)
+		
+		trip, _ := req["trip_circuit"].(bool)
+		if trip {
+			b.tripCircuitBreaker(deviceID)
+		}
+		
+		w.WriteHeader(http.StatusOK)
+	}
+}
+
 func handleWebhookResult(b *Backend) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -1011,6 +1177,10 @@ func handleWebhookResult(b *Backend) http.HandlerFunc {
 		}
 
 		b.unlockDevice(deviceID, clientID)
+
+		if b.fcmClient != nil {
+			go b.sendFCMTaskCompletion(deviceID, "Task Finished", "Your executed command has finished.")
+		}
 
 		outputEnc, _ := req["output_enc"].(string)
 		errorEnc, _ := req["error_enc"].(string)
@@ -1181,6 +1351,30 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 			case "ping":
 				b.dispatcher.Dispatch(clientID, messageType, []byte(`{"type":"pong"}`))
 				continue
+				
+			case "register_fcm_token":
+				token, _ := msg["token"].(string)
+				if deviceID == "" || token == "" {
+					b.dispatcher.Dispatch(clientID, messageType, []byte(`{"error":"device_id and token required"}`))
+					continue
+				}
+				b.mu.Lock()
+				device, exists := b.devices[deviceID]
+				if !exists {
+					b.mu.Unlock()
+					b.dispatcher.Dispatch(clientID, messageType, []byte(`{"error":"device not found"}`))
+					continue
+				}
+				if device.FCMTokens == nil || len(device.FCMTokens) > 10 {
+					// Bug #2 Fix: Prevent token exhaustion DoS by capping tokens per device
+					device.FCMTokens = make(map[string]bool)
+				}
+				device.FCMTokens[token] = true
+				b.mu.Unlock()
+				log.Printf("FCM Token registered for device %s", deviceID)
+				b.dispatcher.Dispatch(clientID, messageType, []byte(`{"type":"register_fcm_token_ack"}`))
+				continue
+
 			case "unlock":
 				phrase, _ := msg["security_phrase"].(string)
 				cID, _ := msg["client_device_id"].(string)
@@ -1393,7 +1587,7 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 					mockCount := b.mockCommandCounts[deviceID]
 					b.mu.Unlock()
 					
-					b.addSecurityAlert("mock_command", clientIP, deviceID, clientID, fmt.Sprintf("Unauthorized command attempt (mock count: %d)", mockCount), "medium")
+					b.addSecurityAlert("mock_command", clientIP, deviceID, clientID, fmt.Sprintf("Unauthorized command attempt (mock count: %d)", mockCount), "high")
 					
 					// Trip breaker after threshold
 					if mockCount >= mockCommandThreshold {
@@ -1403,7 +1597,7 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 					// Return fake response with small delay
 					go func(cmd string, mt int, cid string) {
 						time.Sleep(time.Duration(50 + time.Now().UnixNano()%250) * time.Millisecond) // 50-300ms delay
-						mockResp := b.generateMockResponse(cmd)
+						mockResp := decoy.GenerateMockResponse(cmd)
 						b.dispatcher.Dispatch(cid, mt, []byte(mockResp))
 					}(command, messageType, clientID)
 					continue
@@ -1436,6 +1630,10 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				b.lockDevice(deviceID, clientID)
 				result, err := b.stopCommand(deviceID)
 				b.unlockDevice(deviceID, clientID)
+
+		if b.fcmClient != nil {
+			go b.sendFCMTaskCompletion(deviceID, "Task Finished", "Your executed command has finished.")
+		}
 				
 				if err != nil {
 					b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: "+err.Error()))
@@ -1461,6 +1659,10 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				
 			case "unlock_device":
 				err := b.unlockDevice(deviceID, clientID)
+
+		if b.fcmClient != nil {
+			go b.sendFCMTaskCompletion(deviceID, "Task Finished", "Your executed command has finished.")
+		}
 				if err != nil {
 					b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: "+err.Error()))
 				} else {
@@ -1680,6 +1882,7 @@ func main() {
 
 	http.HandleFunc("/ws", handleWebSocket(backend))
 	http.HandleFunc("/webhook/result", handleWebhookResult(backend))
+	http.HandleFunc("/webhook/alert", handleWebhookAlert(backend))
 	http.HandleFunc("/webhook/status", handleWebhookStatus(backend))
 	http.HandleFunc("/test_optimize", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {

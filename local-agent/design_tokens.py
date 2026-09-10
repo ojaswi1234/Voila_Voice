@@ -1,52 +1,145 @@
 # Shared design tokens for document generation
 # Ensures visual consistency across DOCX, PDF, and PPTX formats
+# v3 — expanded with light themes, gradient data, and card color system
 
 THEMES = {
     "corporate_blue": {
         "font_heading": "Segoe UI",
         "font_body": "Georgia",
-        "pdf_font_heading": "Helvetica",  # FPDF core font mapping
-        "pdf_font_body": "Times",        # FPDF core font mapping
-        "color_primary": (16, 42, 67),      # Dark blue
-        "color_accent": (36, 59, 83),       # Medium blue  
-        "color_text": (51, 78, 104),        # Blue-gray
-        "color_heading": (255, 110, 64),    # Orange accent
-        "spacing_unit": 0.5,                # Base spacing unit
+        "pdf_font_heading": "Helvetica",
+        "pdf_font_body": "Times",
+        "color_primary": (16, 42, 67),
+        "color_accent": (36, 86, 148),
+        "color_text": (200, 215, 230),
+        "color_heading": (255, 140, 80),
+        "color_card": (22, 55, 88),
+        "color_card_border": (36, 86, 148),
+        "spacing_unit": 0.5,
+        "gradient": False,
     },
     "cyberpunk": {
         "font_heading": "Segoe UI",
-        "font_body": "Georgia",
-        "pdf_font_heading": "Helvetica",  # FPDF core font mapping
-        "pdf_font_body": "Times",        # FPDF core font mapping
-        "color_primary": (13, 2, 8),        # Dark purple-black
-        "color_accent": (255, 0, 85),       # Neon pink
-        "color_text": (220, 220, 220),      # Light gray
-        "color_heading": (0, 255, 204),     # Cyan
+        "font_body": "Segoe UI",
+        "pdf_font_heading": "Helvetica",
+        "pdf_font_body": "Helvetica",
+        "color_primary": (13, 2, 8),
+        "color_accent": (255, 0, 85),
+        "color_text": (220, 220, 220),
+        "color_heading": (0, 255, 204),
+        "color_card": (28, 6, 20),
+        "color_card_border": (255, 0, 85),
         "spacing_unit": 0.5,
+        "gradient": True,
+        "gradient_start": (13, 2, 8),
+        "gradient_end": (30, 5, 35),
+        "gradient_angle": 135,
     },
     "minimalist": {
         "font_heading": "Segoe UI",
         "font_body": "Georgia",
-        "pdf_font_heading": "Helvetica",  # FPDF core font mapping
-        "pdf_font_body": "Times",        # FPDF core font mapping
-        "color_primary": (0, 0, 0),         # Black
-        "color_accent": (200, 200, 200),    # Light gray
-        "color_text": (100, 100, 100),      # Medium gray
-        "color_heading": (0, 0, 0),         # Black
+        "pdf_font_heading": "Helvetica",
+        "pdf_font_body": "Times",
+        "color_primary": (12, 12, 12),
+        "color_accent": (220, 220, 220),
+        "color_text": (180, 180, 180),
+        "color_heading": (255, 255, 255),
+        "color_card": (22, 22, 22),
+        "color_card_border": (55, 55, 55),
         "spacing_unit": 0.5,
+        "gradient": False,
     },
     "modern_dark": {
         "font_heading": "Segoe UI",
         "font_body": "Georgia",
-        "pdf_font_heading": "Helvetica",  # FPDF core font mapping
-        "pdf_font_body": "Times",        # FPDF core font mapping
-        "color_primary": (30, 30, 36),      # Dark gray
-        "color_accent": (255, 110, 64),     # Orange
-        "color_text": (200, 200, 200),     # Light gray
-        "color_heading": (255, 255, 255),   # White
+        "pdf_font_heading": "Helvetica",
+        "pdf_font_body": "Times",
+        "color_primary": (22, 22, 30),
+        "color_accent": (255, 110, 64),
+        "color_text": (200, 200, 200),
+        "color_heading": (255, 255, 255),
+        "color_card": (32, 32, 42),
+        "color_card_border": (60, 60, 80),
         "spacing_unit": 0.5,
+        "gradient": True,
+        "gradient_start": (22, 22, 30),
+        "gradient_end": (14, 14, 20),
+        "gradient_angle": 90,
+    },
+    # ── LIGHT THEMES ─────────────────────────────────────────────────────────
+    "illustrated_light": {
+        # Gamma-style: lavender gradient, white cards, bold purple accents
+        "font_heading": "Calibri",
+        "font_body": "Calibri",
+        "pdf_font_heading": "Helvetica",
+        "pdf_font_body": "Helvetica",
+        "color_primary": (245, 243, 255),
+        "color_accent": (109, 40, 217),
+        "color_text": (30, 27, 75),
+        "color_heading": (76, 29, 149),
+        "color_card": (255, 255, 255),
+        "color_card_border": (221, 214, 254),
+        "spacing_unit": 0.5,
+        "gradient": True,
+        "gradient_start": (245, 243, 255),
+        "gradient_end": (229, 222, 255),
+        "gradient_angle": 135,
+    },
+    "warm_sunset": {
+        # Warm cream/coral — approachable, startup-friendly
+        "font_heading": "Calibri",
+        "font_body": "Calibri",
+        "pdf_font_heading": "Helvetica",
+        "pdf_font_body": "Helvetica",
+        "color_primary": (255, 251, 245),
+        "color_accent": (234, 88, 12),
+        "color_text": (67, 20, 7),
+        "color_heading": (154, 52, 18),
+        "color_card": (255, 255, 255),
+        "color_card_border": (254, 215, 170),
+        "spacing_unit": 0.5,
+        "gradient": True,
+        "gradient_start": (255, 251, 245),
+        "gradient_end": (254, 240, 218),
+        "gradient_angle": 135,
+    },
+    "ocean_depth": {
+        # Deep blue ocean — bold, executive, trustworthy
+        "font_heading": "Segoe UI",
+        "font_body": "Segoe UI",
+        "pdf_font_heading": "Helvetica",
+        "pdf_font_body": "Helvetica",
+        "color_primary": (7, 52, 98),
+        "color_accent": (6, 182, 212),
+        "color_text": (186, 230, 253),
+        "color_heading": (255, 255, 255),
+        "color_card": (10, 70, 125),
+        "color_card_border": (6, 182, 212),
+        "spacing_unit": 0.5,
+        "gradient": True,
+        "gradient_start": (7, 52, 98),
+        "gradient_end": (3, 35, 68),
+        "gradient_angle": 90,
+    },
+    "forest_sage": {
+        # Green/sage — calm, nature, sustainability, wellness
+        "font_heading": "Calibri",
+        "font_body": "Calibri",
+        "pdf_font_heading": "Helvetica",
+        "pdf_font_body": "Helvetica",
+        "color_primary": (240, 253, 244),
+        "color_accent": (22, 163, 74),
+        "color_text": (20, 83, 45),
+        "color_heading": (15, 118, 110),
+        "color_card": (255, 255, 255),
+        "color_card_border": (187, 247, 208),
+        "spacing_unit": 0.5,
+        "gradient": True,
+        "gradient_start": (240, 253, 244),
+        "gradient_end": (220, 252, 231),
+        "gradient_angle": 135,
     },
 }
+
 
 def get_theme(theme_name="modern_dark"):
     """Get theme dictionary, default to modern_dark if not found."""

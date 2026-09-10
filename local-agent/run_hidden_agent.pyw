@@ -1,4 +1,4 @@
-﻿import tkinter as tk
+import tkinter as tk
 import tkinter.messagebox
 from tkinter import ttk
 import subprocess
@@ -149,8 +149,8 @@ eye_l_shine = canvas.create_oval(sx+27, sy+30, sx+30, sy+33, fill='white', outli
 eye_r_shine = canvas.create_oval(sx+53, sy+30, sx+56, sy+33, fill='white', outline='')
 
 # Eyebrows - curved lines above eyes
-eyebrow_l = canvas.create_arc(sx+18, sy+20, sx+36, sy+28, start=0, extent=180, style=tk.ARC, width=2, outline=brown_dark)
-eyebrow_r = canvas.create_arc(sx+44, sy+20, sx+62, sy+28, start=0, extent=180, style=tk.ARC, width=2, outline=brown_dark)
+eyebrow_l = canvas.create_line(sx+16, sy+20, sx+36, sy+26, width=8, fill=brown_dark, capstyle=tk.PROJECTING)
+eyebrow_r = canvas.create_line(sx+64, sy+20, sx+44, sy+26, width=8, fill=brown_dark, capstyle=tk.PROJECTING)
 
 # Snoring / Sleep visual elements
 snot_bubble = canvas.create_oval(0, 0, 0, 0, fill='', outline='#aaddff', width=1.5, state='hidden')
@@ -490,8 +490,8 @@ def restore_mini_popup_elements(w=300, h=90):
     canvas.coords(eye_r, sx + 48, sy + 28, sx + 58, sy + 38)
     canvas.coords(eye_l_shine, sx + 27, sy + 30, sx + 30, sy + 33)
     canvas.coords(eye_r_shine, sx + 53, sy + 30, sx + 56, sy + 33)
-    canvas.coords(eyebrow_l, sx+18, sy+20, sx+36, sy+28)
-    canvas.coords(eyebrow_r, sx+44, sy+20, sx+62, sy+28)
+    canvas.coords(eyebrow_l, sx+16, sy+20, sx+36, sy+26)
+    canvas.coords(eyebrow_r, sx+64, sy+20, sx+44, sy+26)
 
     canvas.coords(c_dot1, 90, 40, 95, 45)
     canvas.coords(c_dot2, 110, 30, 120, 40)
@@ -1354,84 +1354,82 @@ def animation_loop():
             erx, ery = sx + 53, sy + 33
 
             if ai_state == "THINKING":
-                # Eyes blink rapidly and move slightly
-                think_phase = anim_frame % 8
+                # Eyes look up and blink occasionally
+                think_phase = anim_frame % 16
                 if think_phase == 0 or think_phase == 1:
-                    # Rapid blink
-                    canvas.coords(eye_l, elx - 3, ely - 1, elx + 3, ely + 1)
-                    canvas.coords(eye_r, erx - 3, ery - 1, erx + 3, ery + 1)
+                    # Blink
+                    canvas.coords(eye_l, elx - 4, ely - 1, elx + 4, ely + 1)
+                    canvas.coords(eye_r, erx - 4, ery - 1, erx + 4, ery + 1)
                     canvas.itemconfig(eyebrow_l, state='hidden')
                     canvas.itemconfig(eyebrow_r, state='hidden')
                 else:
-                    # Slight circular movement
-                    offset_x = math.sin(anim_frame * 0.2) * 2
-                    offset_y = math.cos(anim_frame * 0.2) * 1
+                    # Look up and right slightly
+                    offset_x = 2
+                    offset_y = -3
                     canvas.coords(eye_l, elx - 4 + offset_x, ely - 4 + offset_y, elx + 4 + offset_x, ely + 4 + offset_y)
                     canvas.coords(eye_r, erx - 4 + offset_x, ery - 4 + offset_y, erx + 4 + offset_x, ery + 4 + offset_y)
-                    # Eyebrows raised (thinking pose)
+                    # Eyebrows raised
                     canvas.itemconfig(eyebrow_l, state='normal')
                     canvas.itemconfig(eyebrow_r, state='normal')
-                    canvas.coords(eyebrow_l, sx+18, sy+18+offset_y, sx+36, sy+26+offset_y)
-                    canvas.coords(eyebrow_r, sx+44, sy+18+offset_y, sx+62, sy+26+offset_y)
-                
+                    canvas.coords(eyebrow_l, sx+16, sy+18+offset_y, sx+36, sy+24+offset_y)
+                    canvas.coords(eyebrow_r, sx+64, sy+18+offset_y, sx+44, sy+24+offset_y)
+                    
                 canvas.itemconfig(status_text, text=f"Thinking{dots}", fill='#ffffaa')
                 canvas.itemconfig(pill, outline='#ffff55')
                 canvas.itemconfig(eye_l, fill='#ffff55')
                 canvas.itemconfig(eye_r, fill='#ffff55')
-                
+
             elif ai_state == "GRAPHIFY":
                 canvas.itemconfig(status_text, text=f"Team Sync{dots}", fill='#e879f9')
                 canvas.itemconfig(pill, outline='#c026d3')
-                # Make the eyes look connected (wide)
-                canvas.coords(eye_l, sx+15, sy+28, sx+35, sy+38)
-                canvas.coords(eye_r, sx+45, sy+28, sx+65, sy+38)
-                canvas.itemconfig(eye_l, fill='#e879f9')
-                canvas.itemconfig(eye_r, fill='#e879f9')
-                # Eyebrows slightly raised
+                # Eyes moving fast side to side (syncing data)
+                sync_offset = math.sin(anim_frame * 1.5) * 5
+                canvas.coords(eye_l, elx - 4 + sync_offset, ely - 3, elx + 4 + sync_offset, ely + 3)
+                canvas.coords(eye_r, erx - 4 + sync_offset, ery - 3, erx + 4 + sync_offset, ery + 3)
+                # Eyebrows neutral
                 canvas.itemconfig(eyebrow_l, state='normal')
                 canvas.itemconfig(eyebrow_r, state='normal')
-                canvas.coords(eyebrow_l, sx+15, sy+18, sx+33, sy+26)
-                canvas.coords(eyebrow_r, sx+45, sy+18, sx+63, sy+26)
+                canvas.coords(eyebrow_l, sx+16, sy+20, sx+36, sy+26)
+                canvas.coords(eyebrow_r, sx+64, sy+20, sx+44, sy+26)
+                
+                canvas.itemconfig(eye_l, fill='#e879f9')
+                canvas.itemconfig(eye_r, fill='#e879f9')
                 
             elif ai_state == "SEARCH":
-                # Eyes look around in different directions
-                search_phase = anim_frame % 12
-                if search_phase < 3:
+                # Eyes look around dynamically
+                search_phase = anim_frame % 16
+                if search_phase < 4:
                     # Look left
-                    canvas.coords(eye_l, elx - 5, ely - 4, elx + 1, ely + 4)
-                    canvas.coords(eye_r, erx - 5, ery - 4, erx + 1, ery + 4)
-                    # Eyebrows slant left
+                    canvas.coords(eye_l, elx - 6, ely - 2, elx + 2, ely + 2)
+                    canvas.coords(eye_r, erx - 6, ery - 2, erx + 2, ery + 2)
                     canvas.itemconfig(eyebrow_l, state='normal')
                     canvas.itemconfig(eyebrow_r, state='normal')
-                    canvas.coords(eyebrow_l, sx+16, sy+22, sx+34, sy+20)
-                    canvas.coords(eyebrow_r, sx+42, sy+22, sx+60, sy+20)
-                elif search_phase < 6:
+                    canvas.coords(eyebrow_l, sx+16, sy+24, sx+36, sy+24)
+                    canvas.coords(eyebrow_r, sx+64, sy+20, sx+44, sy+28)
+                elif search_phase < 8:
                     # Look right
-                    canvas.coords(eye_l, elx - 1, ely - 4, elx + 5, ely + 4)
-                    canvas.coords(eye_r, erx - 1, ery - 4, erx + 5, ery + 4)
-                    # Eyebrows slant right
+                    canvas.coords(eye_l, elx - 2, ely - 2, elx + 6, ely + 2)
+                    canvas.coords(eye_r, erx - 2, ery - 2, erx + 6, ery + 2)
                     canvas.itemconfig(eyebrow_l, state='normal')
                     canvas.itemconfig(eyebrow_r, state='normal')
-                    canvas.coords(eyebrow_l, sx+20, sy+20, sx+38, sy+22)
-                    canvas.coords(eyebrow_r, sx+46, sy+20, sx+64, sy+22)
-                elif search_phase < 9:
-                    # Look up
-                    canvas.coords(eye_l, elx - 4, ely - 5, elx + 4, ely + 1)
-                    canvas.coords(eye_r, erx - 4, ery - 5, erx + 4, ery + 1)
-                    # Eyebrows raised high
+                    canvas.coords(eyebrow_l, sx+16, sy+20, sx+36, sy+28)
+                    canvas.coords(eyebrow_r, sx+64, sy+24, sx+44, sy+24)
+                elif search_phase < 12:
+                    # Look down and squint
+                    canvas.coords(eye_l, elx - 4, ely + 1, elx + 4, ely + 5)
+                    canvas.coords(eye_r, erx - 4, ery + 1, erx + 4, ery + 5)
                     canvas.itemconfig(eyebrow_l, state='normal')
                     canvas.itemconfig(eyebrow_r, state='normal')
-                    canvas.coords(eyebrow_l, sx+18, sy+16, sx+36, sy+24)
-                    canvas.coords(eyebrow_r, sx+44, sy+16, sx+62, sy+24)
+                    canvas.coords(eyebrow_l, sx+16, sy+24, sx+36, sy+28)
+                    canvas.coords(eyebrow_r, sx+64, sy+24, sx+44, sy+28)
                 else:
-                    # Look down
-                    canvas.coords(eye_l, elx - 4, ely - 1, elx + 4, ely + 5)
-                    canvas.coords(eye_r, erx - 4, ery - 1, erx + 4, ery + 5)
-                    # Eyebrows lowered
+                    # Look up
+                    canvas.coords(eye_l, elx - 4, ely - 5, elx + 4, ely - 1)
+                    canvas.coords(eye_r, erx - 4, ery - 5, erx + 4, ery - 1)
                     canvas.itemconfig(eyebrow_l, state='normal')
                     canvas.itemconfig(eyebrow_r, state='normal')
-                    canvas.coords(eyebrow_l, sx+18, sy+22, sx+36, sy+30)
-                    canvas.coords(eyebrow_r, sx+44, sy+22, sx+62, sy+30)
+                    canvas.coords(eyebrow_l, sx+16, sy+16, sx+36, sy+22)
+                    canvas.coords(eyebrow_r, sx+64, sy+16, sx+44, sy+22)
                 
                 canvas.itemconfig(status_text, text=f"Search{dots}", fill='#aaffff')
                 canvas.itemconfig(pill, outline='#00aaff')
@@ -1439,16 +1437,17 @@ def animation_loop():
                 canvas.itemconfig(eye_r, fill='#00aaff')
                 
             elif ai_state == "BASH":
-                # Eyes squint (focused)
-                bash_phase = anim_frame % 10
-                squint = 2 if bash_phase < 5 else 3
-                canvas.coords(eye_l, elx - 4, ely - squint, elx + 4, ely + squint)
-                canvas.coords(eye_r, erx - 4, ery - squint, erx + 4, ery + squint)
-                # Eyebrows furrowed (focused)
+                # Eyes squint and dart like reading terminal
+                bash_phase = anim_frame % 8
+                dart_x = (bash_phase % 4) * 2 - 2
+                squint = 2
+                canvas.coords(eye_l, elx - 4 + dart_x, ely - squint, elx + 4 + dart_x, ely + squint)
+                canvas.coords(eye_r, erx - 4 + dart_x, ery - squint, erx + 4 + dart_x, ery + squint)
+                # Eyebrows furrowed
                 canvas.itemconfig(eyebrow_l, state='normal')
                 canvas.itemconfig(eyebrow_r, state='normal')
-                canvas.coords(eyebrow_l, sx+18, sy+24, sx+36, sy+28)
-                canvas.coords(eyebrow_r, sx+44, sy+24, sx+62, sy+28)
+                canvas.coords(eyebrow_l, sx+16, sy+22, sx+36, sy+28)
+                canvas.coords(eyebrow_r, sx+64, sy+22, sx+44, sy+28)
                 
                 canvas.itemconfig(status_text, text=f"Bash{dots}", fill='#aaffaa')
                 canvas.itemconfig(pill, outline='#00ff44')
@@ -1456,17 +1455,15 @@ def animation_loop():
                 canvas.itemconfig(eye_r, fill='#00ff44')
                 
             elif ai_state == "FILE":
-                # Eyes become circular and pulse gently
-                file_phase = anim_frame % 10
-                pulse = 3 + (file_phase / 10) if file_phase < 5 else 3 + ((10 - file_phase) / 10)
-                canvas.coords(eye_l, elx - pulse, ely - pulse, elx + pulse, ely + pulse)
-                canvas.coords(eye_r, erx - pulse, ery - pulse, erx + pulse, ery + pulse)
-                # Eyebrows neutral with slight pulse
+                # Eyes scan up and down like reading a file
+                scan_y = math.sin(anim_frame * 0.8) * 3
+                canvas.coords(eye_l, elx - 4, ely - 3 + scan_y, elx + 4, ely + 3 + scan_y)
+                canvas.coords(eye_r, erx - 4, ery - 3 + scan_y, erx + 4, ery + 3 + scan_y)
+                # Eyebrows focused
                 canvas.itemconfig(eyebrow_l, state='normal')
                 canvas.itemconfig(eyebrow_r, state='normal')
-                pulse_offset = (file_phase / 20) if file_phase < 5 else ((10 - file_phase) / 20)
-                canvas.coords(eyebrow_l, sx+18, sy+20-pulse_offset, sx+36, sy+28-pulse_offset)
-                canvas.coords(eyebrow_r, sx+44, sy+20-pulse_offset, sx+62, sy+28-pulse_offset)
+                canvas.coords(eyebrow_l, sx+16, sy+21, sx+36, sy+27)
+                canvas.coords(eyebrow_r, sx+64, sy+21, sx+44, sy+27)
                 
                 canvas.itemconfig(status_text, text=f"I/O{dots}", fill='#ffddaa')
                 canvas.itemconfig(pill, outline='#ffaa00')
@@ -1474,20 +1471,23 @@ def animation_loop():
                 canvas.itemconfig(eye_r, fill='#ffaa00')
                 
             else:
-                # Default processing - gentle breathing
-                proc_phase = anim_frame % 8
-                if proc_phase < 4:
-                    size = 4 + (proc_phase / 4)
+                # Default processing - rhythmic scanning with blinks
+                proc_phase = anim_frame % 20
+                if proc_phase == 0 or proc_phase == 10:
+                    # Blink
+                    canvas.coords(eye_l, elx - 4, ely - 1, elx + 4, ely + 1)
+                    canvas.coords(eye_r, erx - 4, ery - 1, erx + 4, ery + 1)
                 else:
-                    size = 4 + ((8 - proc_phase) / 4)
-                canvas.coords(eye_l, elx - size, ely - size, elx + size, ely + size)
-                canvas.coords(eye_r, erx - size, ery - size, erx + size, ery + size)
-                # Eyebrows neutral with gentle rise
+                    # Gentle sway
+                    sway_x = math.sin(anim_frame * 0.3) * 2
+                    canvas.coords(eye_l, elx - 4 + sway_x, ely - 4, elx + 4 + sway_x, ely + 4)
+                    canvas.coords(eye_r, erx - 4 + sway_x, ery - 4, erx + 4 + sway_x, ery + 4)
+                
+                # Eyebrows neutral
                 canvas.itemconfig(eyebrow_l, state='normal')
                 canvas.itemconfig(eyebrow_r, state='normal')
-                breathe_offset = (proc_phase / 20) if proc_phase < 4 else ((8 - proc_phase) / 20)
-                canvas.coords(eyebrow_l, sx+18, sy+20-breathe_offset, sx+36, sy+28-breathe_offset)
-                canvas.coords(eyebrow_r, sx+44, sy+20-breathe_offset, sx+62, sy+28-breathe_offset)
+                canvas.coords(eyebrow_l, sx+16, sy+20, sx+36, sy+26)
+                canvas.coords(eyebrow_r, sx+64, sy+20, sx+44, sy+26)
                 
                 canvas.itemconfig(status_text, text=f"Processing{dots}", fill='#aaffff')
                 canvas.itemconfig(pill, outline='#00ffcc')
@@ -1530,8 +1530,8 @@ def animation_loop():
                 canvas.itemconfig(eye_r_shine, state='normal')
                 canvas.itemconfig(eyebrow_l, state='normal')
                 canvas.itemconfig(eyebrow_r, state='normal')
-                canvas.coords(eyebrow_l, sx+18, sy+20, sx+36, sy+28)
-                canvas.coords(eyebrow_r, sx+44, sy+20, sx+62, sy+28)
+                canvas.coords(eyebrow_l, sx+16, sy+20, sx+36, sy+26)
+                canvas.coords(eyebrow_r, sx+64, sy+20, sx+44, sy+26)
 
                 cycle = anim_frame % 80
                 px_offset, py_offset = 0, 0
@@ -1664,6 +1664,11 @@ def parse_line(line):
     if "STATUS: IDLE" in line:
         if glow_timer: root.after_cancel(glow_timer)
         glow_timer = root.after(1500, reset_to_idle)
+        return
+
+    if "STATUS: FORCE_IDLE" in line:
+        if glow_timer: root.after_cancel(glow_timer)
+        reset_to_idle()
         return
 
     if "STATUS: RUNNING" in line:

@@ -471,13 +471,81 @@ def create_ppt(kwargs):
             return False
 
     def search_image_url(search_query):
-        """Search for image URL using Picsum (no API key required)."""
+        """Search Openverse for a CC-licensed image with careful scoring.
+        Falls back to simpler queries if the full query returns no results,
+        so niche topics (e.g. 'Agentic AI') still get a visually relevant image.
+        """
+        import urllib.request
+        import urllib.parse
+        import json
+
+        def _openverse_fetch(query):
+            """Return scored best result URL for a given query, or None."""
+            query = query.strip()[:60]
+            url = ('https://api.openverse.org/v1/images/?q='
+                   + urllib.parse.quote(query)
+                   + '&format=json&page_size=5')
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 VoilaAI/1.0'})
+            try:
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    data = json.loads(resp.read().decode('utf-8'))
+            except Exception:
+                return None, None
+
+            results = data.get('results', [])
+            if not results:
+                return None, None
+
+            best_candidate = None
+            best_score     = -1
+            selection_reason = ''
+
+            for idx, img in enumerate(results):
+                w = img.get('width', 0)
+                h = img.get('height', 0)
+                url_candidate = img.get('url', '')
+                if not url_candidate:
+                    continue
+                score = 0
+                reason = f'Index {idx}: '
+                if w and h and w > h:
+                    score += 100; reason += 'Landscape aspect ratio (+100). '
+                elif w and h and w == h:
+                    score += 50;  reason += 'Square aspect ratio (+50). '
+                if w >= 800:
+                    score += 50;  reason += 'Good resolution >= 800px (+50). '
+                if score > best_score:
+                    best_score = score
+                    best_candidate = img
+                    selection_reason = reason
+
+            if best_candidate:
+                return best_candidate.get('url'), selection_reason
+            return results[0].get('url'), 'Fallback to index 0.'
+
         try:
-            # Use Picsum.photos for random images (seeded by query for consistency)
-            seed = search_query.replace(' ', '')[:10]  # Use first 10 chars as seed
-            image_url = f"https://picsum.photos/seed/{seed}/800/600"
-            return image_url
+            raw = search_query.strip()
+
+            # ── Progressive fallback: full → first-2-words → first-word ───
+            words = raw.split()
+            candidates = [
+                raw,                                # e.g. "neural network deep learning"
+                ' '.join(words[:3]) if len(words) > 3 else None,  # first 3 words
+                ' '.join(words[:2]) if len(words) > 1 else None,  # first 2 words
+                words[0] if words else None,        # just the first keyword
+            ]
+            candidates = [c for c in candidates if c]  # remove None
+
+            for query in candidates:
+                url_result, reason = _openverse_fetch(query)
+                if url_result:
+                    print(f"IMAGE SELECTION: Query '{query}'. Picked {url_result} because: {reason}")
+                    return url_result
+
+            print(f"IMAGE SELECTION: No results found for any fallback of '{raw}'")
+            return None
         except Exception as e:
+            print(f"Image search error: {e}")
             return None
 
     def get_image_for_slide(slide):
@@ -531,18 +599,25 @@ def create_ppt(kwargs):
             return max_width, max_height
 
     def generate_svg_fallback(local_path, color):
-        """Generate simple SVG placeholder if image download fails."""
-        svg_content = f'''<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600">
-  <rect width="800" height="600" fill="{color}"/>
-  <text x="400" y="300" font-family="Arial" font-size="24" text-anchor="middle" fill="white">Image unavailable</text>
-</svg>'''
-        with open(local_path, 'w') as f:
-            f.write(svg_content)
-        return True
+        """Generate simple PNG placeholder if image download fails (SVG crashes python-pptx)."""
+        try:
+            from PIL import Image, ImageDraw
+            img = Image.new('RGB', (800, 600), color=color if isinstance(color, str) else 'gray')
+            d = ImageDraw.Draw(img)
+            d.line([(0,0), (800,600)], fill='white', width=5)
+            d.line([(0,600), (800,0)], fill='white', width=5)
+            d.text((350, 280), "Image Unavailable", fill='white')
+            # If path ends in .svg, change to .png
+            if local_path.endswith('.svg'):
+                local_path = local_path[:-4] + '.png'
+            img.save(local_path, 'PNG')
+            return True
+        except Exception as e:
+            print(f"Fallback PNG generation failed: {e}")
+            return False
 
     def generate_dynamic_style(slides_data, theme_hint):
-        """Generate unique visual style based on task analysis (Option C hybrid approach)."""
+        """Randomized variation, not AI-generated design. (Interim feature)"""
         import random
         random.seed(hash(str(slides_data) + theme_hint))
         
@@ -607,7 +682,165 @@ def create_ppt(kwargs):
         font_heading = theme_config['font_heading']
         font_body = theme_config['font_body']
 
-    def apply_bg(slide): slide.background.fill.solid(); slide.background.fill.fore_color.rgb = bg_color
+    # ── GRADIENT BACKGROUND ENGINE ─────────────────────────────────────────
+    def _apply_gradient_bg(slide, start_rgb, end_rgb, angle_deg=135):
+        """Inject gradient fill into slide background via raw lxml XML manipulation.
+        python-pptx's high-level API only supports solid fills; gradients require
+        direct OOXML element injection into the p:cSld/p:bg element."""
+        try:
+            from lxml import etree
+            from pptx.oxml.ns import qn
+            NS_P = 'http://schemas.openxmlformats.org/presentationml/2006/main'
+            NS_A = 'http://schemas.openxmlformats.org/drawingml/2006/main'
+
+            def hex6(rgb):
+                return '%02X%02X%02X' % tuple(max(0, min(255, int(c))) for c in rgb)
+
+            ang_emu = int(angle_deg * 60000)
+            cSld = slide._element.find(qn('p:cSld'))
+            if cSld is None:
+                return
+
+            existing = cSld.find(qn('p:bg'))
+            if existing is not None:
+                cSld.remove(existing)
+
+            bg_xml = (
+                f'<p:bg xmlns:p="{NS_P}" xmlns:a="{NS_A}">'
+                f'<p:bgPr>'
+                f'<a:gradFill rot="1">'
+                f'<a:gsLst>'
+                f'<a:gs pos="0"><a:srgbClr val="{hex6(start_rgb)}"/></a:gs>'
+                f'<a:gs pos="100000"><a:srgbClr val="{hex6(end_rgb)}"/></a:gs>'
+                f'</a:gsLst>'
+                f'<a:lin ang="{ang_emu}" scaled="0"/>'
+                f'</a:gradFill>'
+                f'<a:effectLst/>'
+                f'</p:bgPr>'
+                f'</p:bg>'
+            )
+            cSld.insert(0, etree.fromstring(bg_xml))
+        except Exception:
+            slide.background.fill.solid()
+            slide.background.fill.fore_color.rgb = bg_color  # safe fallback
+
+    def apply_bg(slide):
+        """Apply background: gradient if theme supports it, solid otherwise."""
+        if theme_config.get('gradient') and not (theme == 'dynamic'):
+            _apply_gradient_bg(
+                slide,
+                theme_config['gradient_start'],
+                theme_config['gradient_end'],
+                theme_config.get('gradient_angle', 135)
+            )
+        else:
+            slide.background.fill.solid()
+            slide.background.fill.fore_color.rgb = bg_color
+
+    # ── CARD SHAPE HELPER ──────────────────────────────────────────────────
+    def _make_rounded(shape, adj=16667):
+        """Morph a rectangle to roundRect via direct OOXML geometry edit."""
+        try:
+            from lxml import etree
+            from pptx.oxml.ns import qn
+            spPr = shape._element.find(qn('p:spPr'))
+            if spPr is None:
+                return
+            prstGeom = spPr.find(qn('a:prstGeom'))
+            if prstGeom is not None:
+                prstGeom.set('prst', 'roundRect')
+                avLst = prstGeom.find(qn('a:avLst'))
+                if avLst is None:
+                    avLst = etree.SubElement(prstGeom, qn('a:avLst'))
+                for gd in list(avLst.findall(qn('a:gd'))):
+                    avLst.remove(gd)
+                gd = etree.SubElement(avLst, qn('a:gd'))
+                gd.set('name', 'adj')
+                gd.set('fmla', f'val {adj}')
+        except Exception:
+            pass
+
+    def _add_shadow(shape, blur=60000, dist=25000, alpha=13000):
+        """Add a soft drop-shadow to a shape via OOXML effectLst injection."""
+        try:
+            from lxml import etree
+            from pptx.oxml.ns import qn
+            NS_A = 'http://schemas.openxmlformats.org/drawingml/2006/main'
+            spPr = shape._element.find(qn('p:spPr'))
+            if spPr is None:
+                return
+            eff = spPr.find(qn('a:effectLst'))
+            if eff is None:
+                eff = etree.SubElement(spPr, qn('a:effectLst'))
+            for old in list(eff.findall(qn('a:outerShdw'))):
+                eff.remove(old)
+            eff.append(etree.fromstring(
+                f'<a:outerShdw xmlns:a="{NS_A}" blurRad="{blur}" dist="{dist}" '
+                f'dir="5400000" algn="ctr" rotWithShape="0">'
+                f'<a:srgbClr val="000000"><a:alpha val="{alpha}"/></a:srgbClr>'
+                f'</a:outerShdw>'
+            ))
+        except Exception:
+            pass
+
+    def _add_card(slide, left, top, width, height, fill_rgb=None, accent_rgb=None, border_rgb=None):
+        """Gamma-style card: rounded rectangle + drop shadow + top accent bar.
+
+        Visual hierarchy:
+          ╔══════════════════════════════╗  ← accent colour bar (full width, 6px tall)
+          ║                              ║
+          ║  (content placed by caller)  ║  ← rounded card body
+          ║                              ║
+          ╚══════════════════════════════╝
+        """
+        _fill = fill_rgb or theme_config.get('color_card', theme_config['color_primary'])
+        _acc  = accent_rgb or theme_config['color_accent']
+        _bord = border_rgb or theme_config.get('color_card_border')
+
+        # ── 1. Card body (rounded rectangle with shadow) ─────────────────
+        card = slide.shapes.add_shape(1, left, top, width, height)
+        card.fill.solid()
+        card.fill.fore_color.rgb = RGBColor(*_fill)
+        if _bord:
+            card.line.color.rgb = RGBColor(*_bord)
+            card.line.width = Pt(0.5)
+        else:
+            card.line.fill.background()
+        _make_rounded(card, adj=12000)   # ~13% radius — clean modern look
+        _add_shadow(card, blur=60000, dist=20000, alpha=11000)
+
+        # ── 2. Top accent bar (full-width colour strip) ──────────────────
+        bar_h = Inches(0.075)            # ~5.4pt tall accent bar
+        bar = slide.shapes.add_shape(1, left, top, width, bar_h)
+        bar.fill.solid()
+        bar.fill.fore_color.rgb = RGBColor(*_acc)
+        bar.line.fill.background()
+        _make_rounded(bar, adj=12000)    # match card corner radius
+
+        return card
+
+    # ── BADGE / ICON CIRCLE HELPER ─────────────────────────────────────────
+    def _add_number_badge(slide, cx, cy, radius, number, fill_rgb=None):
+        """Add a circular number badge (used in agenda, timeline, metrics)."""
+        _fill = fill_rgb or theme_config['color_accent']
+        left = int(cx - radius)
+        top  = int(cy - radius)
+        size = int(radius * 2)
+        circ = slide.shapes.add_shape(9, left, top, size, size)   # 9 = oval
+        circ.fill.solid()
+        circ.fill.fore_color.rgb = RGBColor(*_fill)
+        circ.line.fill.background()
+        tf = circ.text_frame
+        tf.word_wrap = False
+        p = tf.paragraphs[0]
+        p.text = str(number)
+        p.alignment = PP_ALIGN.CENTER
+        p.font.bold = True
+        p.font.size = Pt(max(10, int(size / 60000 * 1.4)))   # scale with badge size
+        p.font.color.rgb = RGBColor(255, 255, 255)
+        p.font.name = font_heading
+        return circ
+
 
     slide = prs.slides.add_slide(prs.slide_layouts[6]); apply_bg(slide)
     txBox = slide.shapes.add_textbox(Inches(1), Inches(2.5), Inches(8), Inches(2))
@@ -706,8 +939,9 @@ def create_ppt(kwargs):
                     if not os.path.exists(img_path):
                         if not download_image(image_url, img_path):
                             # Fallback to SVG if download fails
-                            img_path = os.path.join(cache_dir, f"{cache_key}.svg")
-                            generate_svg_fallback(img_path, f"#{theme_config['color_accent']:02x}")
+                            img_path = os.path.join(cache_dir, f"{cache_key}.png")
+                            _acc = theme_config['color_accent']
+                            generate_svg_fallback(img_path, f"#{_acc[0]:02X}{_acc[1]:02X}{_acc[2]:02X}")
             
             if img_path:
                 try:
@@ -730,41 +964,278 @@ def create_ppt(kwargs):
             rp.text = _strip_markdown(str(s.get('content_right', ''))); rp.font.size = Pt(18); rp.font.color.rgb = text_color; rp.font.name = font_body
             
         elif stype == 'quote':
-            q_box = slide.shapes.add_textbox(Inches(1.5), Inches(2.5), Inches(7), Inches(3))
-            qp = q_box.text_frame.paragraphs[0]; q_box.text_frame.word_wrap = True
-            qp.text = f'"{_strip_markdown(str(s.get("content", "")))}"'
-            qp.font.italic = True; qp.font.size = Pt(36); qp.font.color.rgb = accent_color; qp.alignment = PP_ALIGN.CENTER; qp.font.name = font_body
-            
-            author = s.get("author", "")
+            # ── Large decorative quote with accent bar and author tag ──────
+            # Decorative giant quotation mark
+            qdec = slide.shapes.add_textbox(Inches(0.6), Inches(1.7), Inches(1.5), Inches(1.5))
+            qp = qdec.text_frame.paragraphs[0]
+            qp.text = '\u201c'
+            qp.font.size = Pt(120); qp.font.color.rgb = accent_color; qp.font.name = font_heading
+            # Quote card
+            _add_card(slide, Inches(1.2), Inches(2.0), Inches(7.6), Inches(3.2))
+            q_box = slide.shapes.add_textbox(Inches(1.45), Inches(2.22), Inches(7.1), Inches(2.72))
+            qp2 = q_box.text_frame.paragraphs[0]; q_box.text_frame.word_wrap = True
+            qp2.text = _strip_markdown(str(s.get('content', '')))
+            qp2.font.italic = True; qp2.font.size = Pt(28); qp2.font.color.rgb = text_color
+            qp2.alignment = PP_ALIGN.LEFT; qp2.font.name = font_body
+            author = s.get('author', '')
             if author:
                 ap = q_box.text_frame.add_paragraph()
-                ap.text = f"— {author}"; ap.font.italic = False; ap.font.size = Pt(22); ap.font.color.rgb = text_color; ap.alignment = PP_ALIGN.RIGHT; ap.font.name = font_body
-                
-        else: # content
-            body_box = slide.shapes.add_textbox(Inches(0.5), Inches(1.8), Inches(9), Inches(5))
+                ap.text = f'— {author}'; ap.font.italic = False; ap.font.size = Pt(18)
+                ap.font.color.rgb = accent_color; ap.alignment = PP_ALIGN.RIGHT; ap.font.name = font_heading
+
+        # ── NEW LAYOUT: title_slide ────────────────────────────────────────
+        elif stype == 'title_slide':
+            # Full-bleed opening slide: big title + subtitle + author
+            # Top accent bar
+            top_bar = slide.shapes.add_shape(1, Inches(0), Inches(0), Inches(10), Inches(0.12))
+            top_bar.fill.solid(); top_bar.fill.fore_color.rgb = accent_color; top_bar.line.fill.background()
+            # Center title
+            title_box = slide.shapes.add_textbox(Inches(1.0), Inches(2.0), Inches(8.0), Inches(2.0))
+            tp = title_box.text_frame.paragraphs[0]; title_box.text_frame.word_wrap = True
+            tp.text = str(s.get('title', ''))
+            tp.font.bold = True; tp.font.size = Pt(52); tp.font.color.rgb = title_color
+            tp.alignment = PP_ALIGN.CENTER; tp.font.name = font_heading
+            # Subtitle
+            sub = s.get('subtitle', '')
+            if sub:
+                sub_box = slide.shapes.add_textbox(Inches(1.5), Inches(4.1), Inches(7.0), Inches(0.8))
+                sp = sub_box.text_frame.paragraphs[0]
+                sp.text = sub; sp.font.size = Pt(26); sp.font.color.rgb = accent_color
+                sp.alignment = PP_ALIGN.CENTER; sp.font.name = font_body
+            # Author / date
+            author = s.get('author', '')
+            if author:
+                a_box = slide.shapes.add_textbox(Inches(1.5), Inches(5.1), Inches(7.0), Inches(0.6))
+                a_p = a_box.text_frame.paragraphs[0]
+                a_p.text = author; a_p.font.size = Pt(18); a_p.font.color.rgb = text_color
+                a_p.alignment = PP_ALIGN.CENTER; a_p.font.name = font_body
+            # Bottom accent line
+            bot_bar = slide.shapes.add_shape(1, Inches(0), Inches(7.38), Inches(10), Inches(0.12))
+            bot_bar.fill.solid(); bot_bar.fill.fore_color.rgb = accent_color; bot_bar.line.fill.background()
+            continue  # already has no standard header
+
+        # ── NEW LAYOUT: metrics (KPI dashboard) ────────────────────────────
+        elif stype == 'metrics':
+            # metrics: list of dicts [{value, label, sublabel?}]
+            # Displays 2-4 big-number cards side by side — Gamma-style KPI board
+            raw_metrics = s.get('metrics', [])
+            if isinstance(raw_metrics, str):
+                try: raw_metrics = json.loads(raw_metrics)
+                except: raw_metrics = [{'value': raw_metrics, 'label': ''}]
+            if not raw_metrics:
+                raw_metrics = [{'value': '—', 'label': 'No data'}]
+
+            count = min(len(raw_metrics), 4)
+            card_w = Inches((9.0 - (count - 1) * 0.25) / count)
+            card_h = Inches(3.5)
+            top_y  = Inches(1.9)
+
+            for idx, metric in enumerate(raw_metrics[:count]):
+                card_left = Inches(0.5 + idx * (card_w.inches + 0.25))
+                _add_card(slide, card_left, top_y, card_w, card_h)
+                # Big value text
+                val_box = slide.shapes.add_textbox(
+                    card_left + Inches(0.15), top_y + Inches(0.45), card_w - Inches(0.25), Inches(1.7))
+                vp = val_box.text_frame.paragraphs[0]
+                vp.text = str(metric.get('value', ''))
+                vp.font.bold = True; vp.font.size = Pt(42); vp.font.color.rgb = accent_color
+                vp.alignment = PP_ALIGN.CENTER; vp.font.name = font_heading
+                # Label text
+                lbl_box = slide.shapes.add_textbox(
+                    card_left + Inches(0.15), top_y + Inches(2.22), card_w - Inches(0.25), Inches(0.9))
+                lp2 = lbl_box.text_frame.paragraphs[0]; lbl_box.text_frame.word_wrap = True
+                lp2.text = str(metric.get('label', ''))
+                lp2.font.size = Pt(16); lp2.font.color.rgb = text_color
+                lp2.alignment = PP_ALIGN.CENTER; lp2.font.name = font_body
+                # Optional sublabel
+                sub2 = metric.get('sublabel', '')
+                if sub2:
+                    sl_box = slide.shapes.add_textbox(
+                        card_left + Inches(0.15), top_y + Inches(2.8), card_w - Inches(0.25), Inches(0.55))
+                    slp = sl_box.text_frame.paragraphs[0]
+                    slp.text = sub2; slp.font.size = Pt(12); slp.font.color.rgb = text_color
+                    slp.alignment = PP_ALIGN.CENTER; slp.font.name = font_body
+
+        # ── NEW LAYOUT: timeline ───────────────────────────────────────────
+        elif stype == 'timeline':
+            # steps: list of strings or [{label, description?}]
+            steps = s.get('steps', [])
+            if isinstance(steps, str):
+                try: steps = json.loads(steps)
+                except: steps = [steps]
+            steps = steps[:6]  # max 6 steps for readability
+            if not steps:
+                steps = ['Start', 'End']
+
+            count  = len(steps)
+            line_y = Inches(3.6)   # horizontal centre line Y
+            x_step = Inches(9.0 / (count + 1))
+            dot_r  = Inches(0.22)
+
+            # Draw horizontal connector line
+            conn = slide.shapes.add_shape(1, Inches(0.5), line_y - Inches(0.03), Inches(9.0), Inches(0.06))
+            conn.fill.solid(); conn.fill.fore_color.rgb = accent_color; conn.line.fill.background()
+
+            for idx, step in enumerate(steps):
+                lbl  = step if isinstance(step, str) else step.get('label', str(step))
+                desc = '' if isinstance(step, str) else step.get('description', '')
+                cx = Inches(0.5) + x_step * (idx + 1)
+                cy = line_y
+
+                # Circle dot
+                circ = slide.shapes.add_shape(9, int(cx - dot_r), int(cy - dot_r), int(dot_r * 2), int(dot_r * 2))
+                circ.fill.solid(); circ.fill.fore_color.rgb = accent_color; circ.line.fill.background()
+                # Step number inside dot
+                num_box = slide.shapes.add_textbox(int(cx - dot_r), int(cy - dot_r), int(dot_r * 2), int(dot_r * 2))
+                np2 = num_box.text_frame.paragraphs[0]
+                np2.text = str(idx + 1); np2.font.size = Pt(12); np2.font.bold = True
+                np2.font.color.rgb = RGBColor(255, 255, 255); np2.alignment = PP_ALIGN.CENTER; np2.font.name = font_heading
+
+                # Label above or below alternating (prevents overlap)
+                if idx % 2 == 0:
+                    lbl_y = line_y - Inches(1.4)
+                else:
+                    lbl_y = line_y + Inches(0.6)
+                lbl_box = slide.shapes.add_textbox(int(cx - x_step * 0.45), int(lbl_y), int(x_step * 0.9), Inches(0.9))
+                lbl_box.text_frame.word_wrap = True
+                lp3 = lbl_box.text_frame.paragraphs[0]
+                lp3.text = _strip_markdown(lbl); lp3.font.size = Pt(14); lp3.font.bold = True
+                lp3.font.color.rgb = text_color; lp3.alignment = PP_ALIGN.CENTER; lp3.font.name = font_heading
+                if desc:
+                    dp = lbl_box.text_frame.add_paragraph()
+                    dp.text = _strip_markdown(desc); dp.font.size = Pt(11); dp.font.bold = False
+                    dp.font.color.rgb = text_color; dp.alignment = PP_ALIGN.CENTER; dp.font.name = font_body
+
+        # ── NEW LAYOUT: comparison ─────────────────────────────────────────
+        elif stype == 'comparison':
+            # Two side-by-side columns with distinct header bars — VS layout
+            left_title   = str(s.get('left_title', 'Option A'))
+            right_title  = str(s.get('right_title', 'Option B'))
+            left_content = str(s.get('content_left', s.get('left_content', '')))
+            right_content= str(s.get('content_right', s.get('right_content', '')))
+
+            col_w = Inches(4.0)
+            col_h = Inches(4.4)
+            col_t = Inches(1.85)
+            gap   = Inches(0.5)
+            l_x   = Inches(0.5)
+            r_x   = Inches(5.5)
+
+            # Left card
+            _add_card(slide, l_x, col_t, col_w, col_h)
+            # Left header bar
+            lh = slide.shapes.add_shape(1, l_x, col_t, col_w, Inches(0.55))
+            lh.fill.solid(); lh.fill.fore_color.rgb = accent_color; lh.line.fill.background()
+            lh_txt = slide.shapes.add_textbox(l_x + Inches(0.2), col_t + Inches(0.05), col_w - Inches(0.25), Inches(0.45))
+            lhp = lh_txt.text_frame.paragraphs[0]
+            lhp.text = left_title; lhp.font.bold = True; lhp.font.size = Pt(20)
+            lhp.font.color.rgb = RGBColor(255, 255, 255); lhp.font.name = font_heading
+
+            # Left content
+            l_body = slide.shapes.add_textbox(l_x + Inches(0.2), col_t + Inches(0.65), col_w - Inches(0.3), col_h - Inches(0.8))
+            l_body.text_frame.word_wrap = True
+            for i, line in enumerate(left_content.split('\n')):
+                p2 = l_body.text_frame.paragraphs[0] if i == 0 else l_body.text_frame.add_paragraph()
+                p2.text = _strip_markdown(line.strip('- ').strip('* '))
+                p2.font.size = Pt(16); p2.font.color.rgb = text_color; p2.font.name = font_body
+                if line.startswith('- ') or line.startswith('* '): p2.level = 1
+
+            # Right card
+            _add_card(slide, r_x, col_t, col_w, col_h)
+            # Right header bar (slightly different shade — 80% of accent)
+            acc2 = tuple(max(0, min(255, int(c * 0.75))) for c in theme_config['color_accent'])
+            rh = slide.shapes.add_shape(1, r_x, col_t, col_w, Inches(0.55))
+            rh.fill.solid(); rh.fill.fore_color.rgb = RGBColor(*acc2); rh.line.fill.background()
+            rh_txt = slide.shapes.add_textbox(r_x + Inches(0.2), col_t + Inches(0.05), col_w - Inches(0.25), Inches(0.45))
+            rhp = rh_txt.text_frame.paragraphs[0]
+            rhp.text = right_title; rhp.font.bold = True; rhp.font.size = Pt(20)
+            rhp.font.color.rgb = RGBColor(255, 255, 255); rhp.font.name = font_heading
+
+            # Right content
+            r_body = slide.shapes.add_textbox(r_x + Inches(0.2), col_t + Inches(0.65), col_w - Inches(0.3), col_h - Inches(0.8))
+            r_body.text_frame.word_wrap = True
+            for i, line in enumerate(right_content.split('\n')):
+                p2 = r_body.text_frame.paragraphs[0] if i == 0 else r_body.text_frame.add_paragraph()
+                p2.text = _strip_markdown(line.strip('- ').strip('* '))
+                p2.font.size = Pt(16); p2.font.color.rgb = text_color; p2.font.name = font_body
+                if line.startswith('- ') or line.startswith('* '): p2.level = 1
+
+            # VS badge in centre
+            vs_cx = int(Inches(5.0))
+            vs_cy = int(col_t + col_h / 2)
+            vs_r  = int(Inches(0.38))
+            vs_circ = slide.shapes.add_shape(9, vs_cx - vs_r, vs_cy - vs_r, vs_r * 2, vs_r * 2)
+            vs_circ.fill.solid(); vs_circ.fill.fore_color.rgb = accent_color; vs_circ.line.fill.background()
+            vs_txt = slide.shapes.add_textbox(vs_cx - vs_r, vs_cy - vs_r, vs_r * 2, vs_r * 2)
+            vsp = vs_txt.text_frame.paragraphs[0]
+            vsp.text = 'VS'; vsp.font.bold = True; vsp.font.size = Pt(14)
+            vsp.font.color.rgb = RGBColor(255, 255, 255); vsp.alignment = PP_ALIGN.CENTER; vsp.font.name = font_heading
+
+        # ── NEW LAYOUT: agenda ─────────────────────────────────────────────
+        elif stype == 'agenda':
+            # Numbered list — large accent numbers + item text, card per row
+            items = s.get('items', s.get('content', '').split('\n'))
+            if isinstance(items, str):
+                items = [ln.strip() for ln in items.split('\n') if ln.strip()]
+            items = [i for i in items if i][:8]
+
+            row_h   = Inches(0.62)
+            start_y = Inches(1.75)
+            gap     = Inches(0.1)
+
+            for idx, item in enumerate(items):
+                row_top = start_y + (row_h + gap) * idx
+                # Card background for this row
+                _add_card(slide, Inches(0.5), row_top, Inches(9.0), row_h)
+                # Accent number badge
+                badge_cx = int(Inches(1.1))
+                badge_cy = int(row_top + row_h / 2)
+                badge_r  = int(row_h * 0.38)
+                badge = slide.shapes.add_shape(9, badge_cx - badge_r, badge_cy - badge_r, badge_r * 2, badge_r * 2)
+                badge.fill.solid(); badge.fill.fore_color.rgb = accent_color; badge.line.fill.background()
+                badge_lbl = slide.shapes.add_textbox(badge_cx - badge_r, badge_cy - badge_r, badge_r * 2, badge_r * 2)
+                bp = badge_lbl.text_frame.paragraphs[0]
+                bp.text = str(idx + 1); bp.font.bold = True; bp.font.size = Pt(16)
+                bp.font.color.rgb = RGBColor(255, 255, 255); bp.alignment = PP_ALIGN.CENTER; bp.font.name = font_heading
+                # Item text
+                item_box = slide.shapes.add_textbox(Inches(1.65), int(row_top + Inches(0.17)), Inches(7.6), row_h - Inches(0.22))
+                item_box.text_frame.word_wrap = False
+                ip = item_box.text_frame.paragraphs[0]
+                ip.text = _strip_markdown(str(item).strip('- ').strip('* '))
+                ip.font.size = Pt(18); ip.font.color.rgb = text_color; ip.font.name = font_body
+
+        else:  # ── DEFAULT: content (card-backed text) ────────────────────
+            # Card behind main content area
+            _add_card(slide, Inches(0.4), Inches(1.75), Inches(9.2), Inches(5.15))
+            body_box = slide.shapes.add_textbox(Inches(0.62), Inches(1.98), Inches(8.85), Inches(4.75))
             btf = body_box.text_frame; btf.word_wrap = True
             lines = str(s.get('content', '')).split('\n')
-            
-            # Auto-shrink logic for long content
-            content_height = 0
-            for line in lines:
-                content_height += len(line) // 50  # Approximate lines per line of text
-            
+
+            # Auto-shrink font for very long content
+            char_total = sum(len(l) for l in lines)
             font_size = Pt(20)
-            if content_height > 15:  # More than ~15 lines
-                font_size = Pt(16)
-            if content_height > 20:  # More than ~20 lines
-                font_size = Pt(14)
-            if content_height > 25:  # More than ~25 lines
-                font_size = Pt(12)  # Floor at 12pt
-            
+            if char_total > 600: font_size = Pt(16)
+            if char_total > 900: font_size = Pt(14)
+            if char_total > 1200: font_size = Pt(12)
+
             for i, line in enumerate(lines):
                 p = btf.paragraphs[0] if i == 0 else btf.add_paragraph()
                 p.text = _strip_markdown(line.strip('- ').strip('* '))
                 p.font.size = font_size; p.font.color.rgb = text_color; p.font.name = font_body
                 if line.startswith('- ') or line.startswith('* '): p.level = 1
-                
+
+
     prs.save(path)
+
+    # Clear image cache after successful PPTX creation so stale files don't accumulate
+    try:
+        import shutil
+        if os.path.exists(cache_dir):
+            shutil.rmtree(cache_dir)
+            os.makedirs(cache_dir, exist_ok=True)
+    except Exception as _cache_err:
+        pass  # Cache clear failure is non-fatal
+
     return f"Successfully created PowerPoint (PPTX) at {path}"
 
 def main():
