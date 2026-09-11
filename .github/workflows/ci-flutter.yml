@@ -26,22 +26,16 @@ jobs:
           channel: 'stable'
           cache: true
 
-      # The repo only has lib/ — we need a full Flutter project scaffold for CI.
-      # We create it, restore our custom sources, then run analysis & tests.
+      # The repo only partially tracks Android/iOS files.
+      # We create the missing scaffolding, then restore our tracked files.
       - name: Scaffold Flutter project & restore sources
         working-directory: mobile-agent
         run: |
-          # Back up all custom dart files
-          find lib -name "*.dart" | while read f; do cp "$f" "${f}.bak"; done
-
-          # Create full project scaffold (overwrites generated files only)
           flutter create --org com.voicecli --project-name voice_cli_temp .
-
-          # Restore our custom dart files
-          find lib -name "*.dart.bak" | while read f; do
-            original="${f%.bak}"
-            mv "$f" "$original"
-          done
+          
+          # Restore all custom tracked files that flutter create might have overwritten
+          cd ..
+          git checkout -- mobile-agent/lib/ mobile-agent/android/
 
       - name: Create dummy google-services.json for CI
         working-directory: mobile-agent/android/app
