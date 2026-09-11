@@ -97,28 +97,29 @@ backend.exe
 # ── Scratch / patch / test scripts (never commit these) ──────────────────────
 patch*.py
 patch*.ps1
+fix_*.py
 test_*.py
-check_xml.py
-fix_go.py
+check_*.py
+t[0-9]*.txt
+t[0-9]*.ps
+t[0-9]*.ps1
 final_test.ps1
-t11.txt
+build_out.txt
 
 # Python cache
 __pycache__/
 *.pyc
 *.pyo
 
-# Generated test PPTX / PDF / DOCX artifacts
+# Generated test artifacts (PPTX / PDF / DOCX)
 test_*.pptx
 test_*.pdf
 test_*.docx
 test_*.xlsx
-*.test.pptx
 
-# Temp / scratch files at root
+# Temp scratch files at root
 *.svg
-build_out.txt
 
-# Keep important JSON files
+# Keep important files
 !mobile-agent/pubspec.yaml
 !mobile-agent/android/app/build.gradle

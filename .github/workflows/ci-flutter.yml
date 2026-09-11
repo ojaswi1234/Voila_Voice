@@ -1,0 +1,102 @@
+name: CI — Flutter Mobile
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'mobile-agent/**'
+      - '.github/workflows/ci-flutter.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'mobile-agent/**'
+
+jobs:
+  analyze-and-test:
+    name: Analyze & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.27.0'
+          channel: 'stable'
+          cache: true
+
+      # The repo only has lib/ — we need a full Flutter project scaffold for CI.
+      # We create it, restore our custom sources, then run analysis & tests.
+      - name: Scaffold Flutter project & restore sources
+        working-directory: mobile-agent
+        run: |
+          # Back up all custom dart files
+          find lib -name "*.dart" | while read f; do cp "$f" "${f}.bak"; done
+
+          # Create full project scaffold (overwrites generated files only)
+          flutter create --org com.voicecli --project-name voice_cli_temp .
+
+          # Restore our custom dart files
+          find lib -name "*.dart.bak" | while read f; do
+            original="${f%.bak}"
+            mv "$f" "$original"
+          done
+
+      - name: Create dummy google-services.json for CI
+        working-directory: mobile-agent/android/app
+        run: |
+          cat > google-services.json << 'EOF'
+          {
+            "project_info": {
+              "project_number": "000000000000",
+              "project_id": "voila-voice-ci",
+              "storage_bucket": "voila-voice-ci.appspot.com"
+            },
+            "client": [
+              {
+                "client_info": {
+                  "mobilesdk_app_id": "1:000000000000:android:0000000000000000000000",
+                  "android_client_info": { "package_name": "com.voicecli.voice_cli_temp" }
+                },
+                "oauth_client": [],
+                "api_key": [{ "current_key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" }],
+                "services": { "appinvite_service": { "other_platform_oauth_client": [] } }
+              }
+            ],
+            "configuration_version": "1"
+          }
+          EOF
+
+      - name: flutter pub get
+        working-directory: mobile-agent
+        run: flutter pub get
+
+      - name: flutter analyze
+        working-directory: mobile-agent
+        run: flutter analyze --no-fatal-infos
+
+      - name: flutter test
+        working-directory: mobile-agent
+        run: flutter test --reporter compact
+
+  # ─────────────────────────────────────────────────────────────
+  # Dart format check (fast, runs on every PR)
+  # ─────────────────────────────────────────────────────────────
+  format-check:
+    name: Dart Format Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.27.0'
+          channel: 'stable'
+          cache: true
+
+      - name: Check dart format
+        working-directory: mobile-agent
+        run: dart format --set-exit-if-changed lib/

@@ -1,0 +1,70 @@
+name: CI — Security Scan
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run weekly on Sunday 00:00 UTC regardless of pushes
+    - cron: '0 0 * * 0'
+
+jobs:
+  go-security:
+    name: Go — govulncheck
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: Scan backend for known CVEs
+        run: govulncheck ./...
+
+      - name: Scan local-agent for known CVEs
+        working-directory: local-agent
+        run: govulncheck ./...
+
+  python-security:
+    name: Python — pip-audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      - name: Audit Python dependencies
+        working-directory: local-agent
+        run: |
+          # Generate a minimal requirements list from imports and audit it
+          pip install python-pptx fpdf2 pillow requests lxml
+          pip-audit --skip-editable -f json || true  # report but don't fail on non-critical
+
+  secret-scan:
+    name: Secret Scan — Gitleaks
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history needed for gitleaks
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

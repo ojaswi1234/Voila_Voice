@@ -1,0 +1,72 @@
+name: CI — Go Backend & Local Agent
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '**.go'
+      - 'go.mod'
+      - 'go.sum'
+      - 'local-agent/go.mod'
+      - 'local-agent/go.sum'
+      - '.github/workflows/ci-go.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - '**.go'
+      - 'go.mod'
+      - 'go.sum'
+
+jobs:
+  # ─────────────────────────────────────────────────────────────
+  # Backend (root module: voice-cli-system)
+  # ─────────────────────────────────────────────────────────────
+  backend:
+    name: Backend — vet / build / test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go build
+        run: go build -v -o /dev/null ./...
+
+      - name: go test
+        run: go test -race -timeout 60s ./...
+
+  # ─────────────────────────────────────────────────────────────
+  # Local Agent (module: voila, sub-directory)
+  # ─────────────────────────────────────────────────────────────
+  local-agent:
+    name: Local Agent — vet / build / test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: local-agent/go.mod
+          cache: true
+
+      - name: go vet
+        working-directory: local-agent
+        run: go vet ./...
+
+      - name: go build
+        working-directory: local-agent
+        run: go build -v -o /dev/null ./...
+
+      - name: go test
+        working-directory: local-agent
+        run: go test -race -timeout 60s ./...

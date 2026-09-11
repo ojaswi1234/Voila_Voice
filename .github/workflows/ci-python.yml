@@ -1,0 +1,73 @@
+name: CI — Python Local Agent
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'local-agent/**.py'
+      - '.github/workflows/ci-python.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'local-agent/**.py'
+
+jobs:
+  lint-and-check:
+    name: Lint & Syntax Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install linting tools
+        run: pip install ruff pyflakes
+
+      - name: ruff check (lint + style)
+        working-directory: local-agent
+        run: |
+          ruff check --select=E,F,W,B,I \
+            --ignore=E501,E402,W503,B008 \
+            --output-format=github \
+            design_tokens.py document_tools.py browser_tools.py
+
+      - name: pyflakes (undefined names, unused imports)
+        working-directory: local-agent
+        run: |
+          pyflakes design_tokens.py document_tools.py browser_tools.py
+
+      - name: Python syntax check (compile all)
+        working-directory: local-agent
+        run: |
+          for f in *.py; do
+            python -m py_compile "$f" && echo "OK: $f" || { echo "SYNTAX ERROR: $f"; exit 1; }
+          done
+
+  import-check:
+    name: Import Smoke Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install runtime dependencies
+        run: |
+          pip install python-pptx fpdf2 pillow requests lxml
+
+      - name: Verify design_tokens imports cleanly
+        working-directory: local-agent
+        run: python -c "import design_tokens; print('design_tokens OK')"
+
+      - name: Verify document_tools imports cleanly
+        working-directory: local-agent
+        run: python -c "import document_tools; print('document_tools OK')"
