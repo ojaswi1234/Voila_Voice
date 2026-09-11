@@ -35,12 +35,14 @@ jobs:
         git checkout -- mobile-agent/lib/ mobile-agent/android/
 
     - name: Inject google-services.json securely
+      env:
+        SECRET_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
       run: |
-        if [ -z "${{ secrets.GOOGLE_SERVICES_JSON }}" ]; then
+        if [ -z "$SECRET_JSON" ]; then
           echo "GOOGLE_SERVICES_JSON secret is missing. Writing mock json to pass build."
           echo '{"project_info": {"project_number": "0", "project_id": "ci", "storage_bucket": "ci"}, "client": [{"client_info": {"mobilesdk_app_id": "1:0:android:0", "android_client_info": {"package_name": "com.voicecli.voice_cli_temp"}}, "oauth_client": [], "api_key": [{"current_key": "ci"}], "services": {"appinvite_service": {"other_platform_oauth_client": []}}}], "configuration_version": "1"}' > mobile-agent/android/app/google-services.json
         else
-          echo "${{ secrets.GOOGLE_SERVICES_JSON }}" > mobile-agent/android/app/google-services.json
+          echo "$SECRET_JSON" > mobile-agent/android/app/google-services.json
         fi
 
     - name: Inject Google Services and Fix Android Gradle
