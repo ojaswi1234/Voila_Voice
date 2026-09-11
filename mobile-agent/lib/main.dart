@@ -255,6 +255,26 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       }
     });
 
+    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+      RemoteNotification? notification = message.notification;
+      AndroidNotification? android = message.notification?.android;
+      if (notification != null && android != null) {
+        _flutterLocalNotificationsPlugin.show(
+          notification.hashCode,
+          notification.title,
+          notification.body,
+          const NotificationDetails(
+            android: AndroidNotificationDetails(
+              'security_alerts_channel',
+              'High Severity Security Alerts',
+              importance: Importance.max,
+              priority: Priority.high,
+            ),
+          ),
+        );
+      }
+    });
+
     RemoteMessage? initialMessage = await FirebaseMessaging.instance.getInitialMessage();
     if (initialMessage != null && initialMessage.data['type'] == 'security_alert' && mounted) {  // FCM-05 fix
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -666,10 +686,16 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       
       _wsSubscription = _channel!.stream.listen((message) async {
         if (!mounted) return;  // BUG-02 fix: widget may be disposed during async reconnect loop
-        setState(() {
-          _isConnected = true;
-          _reconnectAttempts = 0;
-        });
+        
+        if (!_isConnected) {
+          setState(() {
+            _isConnected = true;
+            _reconnectAttempts = 0;
+          });
+          if (_fcmToken != null && _activeDevice.isNotEmpty) {
+            _sendFCMToken(_fcmToken!);
+          }
+        }
         
         try {
           // Bug #13 Fix: Heavy JSON parsing moved to a background isolate via compute()
