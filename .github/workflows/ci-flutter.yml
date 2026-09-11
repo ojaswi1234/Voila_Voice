@@ -63,7 +63,7 @@ jobs:
             ],
             "configuration_version": "1"
           }
-          EOF
+EOF
 
       - name: flutter pub get
         working-directory: mobile-agent
