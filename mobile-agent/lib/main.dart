@@ -1,4 +1,4 @@
-import 'dart:async';
+import 'dart:async';  // unawaited(), StreamSubscription, Timer
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -65,7 +65,8 @@ String get backendUrl {
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  await Firebase.initializeApp();
+  // BUG-09 fix: Only init if not already initialized (prevents FirebaseException on Android)
+  if (Firebase.apps.isEmpty) await Firebase.initializeApp();
   debugPrint("Handling a background message: ${message.messageId}");
 }
 
@@ -117,7 +118,10 @@ class VoiceHomePage extends StatefulWidget {
 }
 
 class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserver {
-  late WebSocketChannel channel;
+  WebSocketChannel? _channel;  // nullable — prevents LateInitializationError before first connect
+  StreamSubscription? _wsSubscription;  // stored so we can cancel on dispose/reconnect
+  StreamSubscription? _fcmRefreshSubscription;  // BUG-15 fix: FCM refresh listener cancellation
+
   static const platform = MethodChannel('com.voila/intent');
   bool _showFlowchart = false;
   bool _isAssistant = false;
@@ -233,7 +237,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       _sendFCMToken(token);
     }
 
-    FirebaseMessaging.instance.onTokenRefresh.listen((newToken) {
+    _fcmRefreshSubscription = FirebaseMessaging.instance.onTokenRefresh.listen((newToken) {
       _fcmToken = newToken;
       _sendFCMToken(newToken);
     });
@@ -254,7 +258,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
 
   void _sendFCMToken(String token) {
     if (_activeDevice.isNotEmpty && _isConnected) {
-      channel.sink.add(jsonEncode({
+      _channel?.sink.add(jsonEncode({
         'type': 'register_fcm_token',
         'device_id': _activeDevice,
         'token': token,
@@ -300,6 +304,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   }
 
   Future<void> _initBackground() async {
+    if (!Platform.isAndroid) return;  // BUG-25 fix: flutter_background is Android-only
     try {
       const androidConfig = FlutterBackgroundAndroidConfig(
         notificationTitle: "Voila Live Active",
@@ -316,13 +321,13 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
 
 
   void _fetchConversations() {
-    if (channel != null && _isConnected) {
+    if (_channel != null && _isConnected) {
       final msg = jsonEncode({
         "type": "get_conversations",
         "device_id": _activeDevice,
         "session_token": _sessionToken
       });
-      channel.sink.add(msg);
+      _channel?.sink.add(msg);
     }
   }
   
@@ -346,6 +351,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   void _loadSession() async {
     final savedToken = await _storage.read(key: 'session_token');
     final savedExpiresAt = await _storage.read(key: 'session_expires_at');
+    if (!mounted) return;  // BUG-04 fix
     if (savedToken != null && savedToken.isNotEmpty) {
       setState(() {
         _sessionToken = savedToken;
@@ -361,7 +367,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     _initializeDeviceIdentity();
     _connectToBackend();
     _startHealthChecks();
-    _initializeSpeech();
+    // BUG-18 fix: _initializeSpeech() removed — called once from initState()
 
     Future.delayed(const Duration(seconds: 1), _getDevices);
   }
@@ -467,9 +473,8 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
 
   Future<void> _startListening() async {
     final hasPermission = await _requestMicrophonePermission();
-    if (!hasPermission) {
-      return;
-    }
+    if (!hasPermission) return;
+    if (!mounted) return;  // BUG-13 fix
     
     setState(() {
       _isListening = true;
@@ -492,7 +497,9 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
            // Silence condition
            _silenceWarningCount++;
            if (_silenceWarningCount >= 2) {
-             _speak("Boss.......BOSS......Are you there ??");
+             // BUG-17 fix: Timer.periodic callback is sync; _speak is async.
+             // unawaited() prevents multiple concurrent TTS calls on each 3s tick.
+             unawaited(_speak("Boss.......BOSS......Are you there ??"));
              _stopListening();
              timer.cancel();
            }
@@ -500,7 +507,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
            // Loud Noise condition but no recognized words
            _silenceWarningCount++;
            if (_silenceWarningCount >= 2) {
-             _speak("Boss, I can't understand what you saying, your background is too loud... what is it ?? crowd or something else");
+             unawaited(_speak("Boss, I can't understand what you saying, your background is too loud... what is it ?? crowd or something else"));  // BUG-17 fix
              _stopListening();
              timer.cancel();
            }
@@ -619,7 +626,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
         'type': 'stop_command',
         'device_id': _activeDevice,
       };
-      channel.sink.add(jsonEncode(message));
+      _channel?.sink.add(jsonEncode(message));
       
       setState(() {
         _isThinking = false; _triggerDataArriving();
@@ -638,21 +645,22 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     _currentDeviceName = await DeviceIdentity.getDeviceName();
     _sessionId = const Uuid().v4();
     _savedDevices = await DeviceIdentity.getSavedDevices();
-    setState(() {});
+    if (mounted) setState(() {});  // BUG-10 fix
   }
 
   void _connectToBackend() {
     try {
       final url = backendUrl;
       debugPrint('Connecting WebSocket to: $url');
-      channel = WebSocketChannel.connect(
+      _channel = WebSocketChannel.connect(
         Uri.parse(url),
       );
       
-      channel.stream.listen((message) async {
+      _wsSubscription = _channel!.stream.listen((message) async {
+        if (!mounted) return;  // BUG-02 fix: widget may be disposed during async reconnect loop
         setState(() {
           _isConnected = true;
-          _reconnectAttempts = 0; // Reset reconnection counter on successful connect
+          _reconnectAttempts = 0;
         });
         
         try {
@@ -715,6 +723,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                     // Auto-save desktop devices for quick reconnect
                     DeviceIdentity.saveDevice(deviceId, device);
                     DeviceIdentity.getSavedDevices().then((devices) {
+                      if (!mounted) return;  // BUG-14 fix
                       _savedDevices = devices;
                       setState(() {});
                     });
@@ -756,10 +765,13 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
               } else if (payload is List) {
                  parsedData = payload;
               }
-              setState(() {
-                _conversations = List<Map<String, String>>.from(
-                  parsedData.map((x) => Map<String, String>.from(x))
-                );
+              setState(() {  // BUG-08 fix: safe cast handles non-String JSON values
+                _conversations = parsedData.map((x) {
+                  try {
+                    return Map<String, String>.from(
+                      (x as Map).map((k, v) => MapEntry(k.toString(), v?.toString() ?? '')));
+                  } catch (_) { return <String, String>{}; }
+                }).where((m) => m.isNotEmpty).toList();
               });
             } else if (jsonResponse is Map && jsonResponse['type'] == 'security_alert') {
               final alert = jsonResponse['alert'];
@@ -912,6 +924,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
           _checkBackendHealth();
           _scrollToBottom();
       }, onError: (error) {
+        if (!mounted) return;  // BUG-11b fix
         setState(() {
           _isThinking = false; _triggerDataArriving();
           _isConnected = false;
@@ -922,7 +935,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
           });
         });
       }, onDone: () {
-        setState(() {
+        if (mounted) setState(() {  // BUG-11 fix
           _isConnected = false;
           _addMessage({
             'type': 'system',
@@ -937,7 +950,8 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
         // Bug #14 Fix: Explicitly close the old sink before reconnecting.
         // Without this, every reconnect orphans the old WebSocketChannel and its
         // stream listener, leaking memory indefinitely when disconnected.
-        try { channel.sink.close(); } catch (_) {}
+        _wsSubscription?.cancel();
+        try { _channel?.sink.close(); } catch (_) {}
         Future.delayed(delay, () {
           if (mounted) _connectToBackend();
         });
@@ -1008,6 +1022,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
             _backendStatus = 'Healthy (${statusData['uptime']})';
           });
         } else {
+          if (!mounted) return;  // BUG-06 fix
           setState(() {
             _isHealthy = false;
             _localAgentConnected = false;
@@ -1015,6 +1030,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
           });
         }
       } else {
+        if (!mounted) return;  // BUG-06 fix
         setState(() {
           _isHealthy = false;
           _localAgentConnected = false;
@@ -1022,6 +1038,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
         });
       }
     } catch (e) {
+      if (!mounted) return;  // BUG-06 fix
       setState(() {
         _isHealthy = false;
         _localAgentConnected = false;
@@ -1064,9 +1081,10 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _assistantImageTimer?.cancel();
-
+    _silenceTimer?.cancel();  // BUG-03 fix: was missing, caused setState-after-dispose
+    _fcmRefreshSubscription?.cancel();  // BUG-15 fix: prevent post-dispose FCM callback
     _healthCheckTimer?.cancel();
-    channel.sink.close();
+    _channel?.sink.close();
     _controller.dispose();
     _scrollController.dispose();
     if (_isListening) {
@@ -1084,8 +1102,8 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
 
 
   void _stopCommand() {
-    if (channel != null && _isConnected) {
-      channel.sink.add(jsonEncode({"type": "stop_command"}));
+    if (_channel != null && _isConnected) {
+      _channel?.sink.add(jsonEncode({"type": "stop_command"}));
       setState(() {
         _isThinking = false; _triggerDataArriving();
         _addMessage({
@@ -1098,9 +1116,9 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   }
 
   void _fetchModels() {
-    if (channel != null && _isConnected) {
+    if (_channel != null && _isConnected) {
       setState(() => _isFetchingModels = true);
-      channel.sink.add(jsonEncode({
+      _channel?.sink.add(jsonEncode({
         "type": "get_models",
         "device_id": _activeDevice,
         "session_token": _sessionToken
@@ -1129,7 +1147,8 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                   if (_modelsList.isEmpty) 
                     const Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator())
                   else
-                    Expanded(
+                    SizedBox(  // BUG-23 fix: Expanded inside mainAxisSize.min crashes — use SizedBox
+                      height: 300,
                       child: ListView.builder(
                         itemCount: _modelsList.length,
                         itemBuilder: (context, index) {
@@ -1200,6 +1219,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       }
       
       final deviceInfo = await DeviceIdentity.getDeviceInfo();
+      if (!mounted) return;  // BUG-05 fix
       
       // Check session validity before sending
       if (!_isSessionValid()) {
@@ -1259,7 +1279,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       debugPrint('Sending command to device: $_activeDevice');
       debugPrint('Message: $message');
       
-      channel.sink.add(jsonEncode(message));
+      _channel?.sink.add(jsonEncode(message));
       setState(() {
         if (_controller.text != '__SCREENSHOT__') {
           _isThinking = true;
@@ -1286,7 +1306,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       'session_id': _sessionId,
     };
     
-    channel.sink.add(jsonEncode(message));
+    _channel?.sink.add(jsonEncode(message));
     setState(() {
       _activeDevice = deviceId;
       _addMessage({
@@ -1305,7 +1325,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       'session_id': _sessionId,
     };
     
-    channel.sink.add(jsonEncode(message));
+    _channel?.sink.add(jsonEncode(message));
   }
 
   
@@ -1411,7 +1431,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       'client_device_id': _currentDeviceId,
       'security_phrase': phrase,
     };
-    channel.sink.add(jsonEncode(message));
+    _channel?.sink.add(jsonEncode(message));
     
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1431,9 +1451,9 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
 
   void _clearBackendData() async {
     if (!await _ensureUnlocked()) return;
-    final securityPhrase = _securityPhrase; // still using it for clear data just in case, but token is better
+    if (!mounted) return;  // BUG-19 fix
+    final securityPhrase = _securityPhrase;
 
-    
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -1460,7 +1480,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
         'security_phrase': securityPhrase,
       };
       
-      channel.sink.add(jsonEncode(message));
+      _channel?.sink.add(jsonEncode(message));
       setState(() {
         _addMessage({
           'type': 'system',
@@ -1483,10 +1503,14 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setModalState) {
-            return Container(
+            return DraggableScrollableSheet(
+              expand: false,
+              initialChildSize: 0.6,
+              minChildSize: 0.3,
+              maxChildSize: 0.9,
+              builder: (_, scrollController) => Container(  // BUG-22 fix: use DraggableScrollableSheet instead of mainAxisSize.min+Expanded
               padding: const EdgeInsets.all(20),
               child: Column(
-                mainAxisSize: MainAxisSize.min,
                 children: [
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1512,7 +1536,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                                 'device_id': _activeDevice,
                                 'session_token': _sessionToken,
                               };
-                              channel.sink.add(jsonEncode(message));
+                              _channel?.sink.add(jsonEncode(message));
                             },
                           ),
                         ],
@@ -1579,7 +1603,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                     ),
                 ],
               ),
-            );
+            ));  // BUG-22b fix: close DraggableScrollableSheet
           },
         );
       },
@@ -1606,6 +1630,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
 
   void _resetCircuitBreaker() async {
     if (!await _ensureUnlocked()) return;
+    if (!mounted) return;  // BUG-20 fix
     
     final phrase = await _promptSecurityPhrase();
     if (phrase == null || phrase.isEmpty) return;
@@ -1617,7 +1642,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       'security_phrase': phrase,
     };
     
-    channel.sink.add(jsonEncode(message));
+    _channel?.sink.add(jsonEncode(message));
     
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -2033,8 +2058,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                           boundaryMargin: const EdgeInsets.all(20),
                           minScale: 0.5,
                           maxScale: 4,
-                          child: Image.memory(
-                            base64Decode(_temporaryAssistantImage!),
+                          child: Image.memory((() { try { return base64Decode(_temporaryAssistantImage!); } catch(_) { return Uint8List(0); } })(),
                             fit: BoxFit.contain,
                           ),
                         ),
@@ -2062,8 +2086,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                 ),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(16),
-                  child: Image.memory(
-                    base64Decode(_temporaryAssistantImage!),
+                  child: Image.memory((() { try { return base64Decode(_temporaryAssistantImage!); } catch(_) { return Uint8List(0); } })(),
                     fit: BoxFit.contain,
                     errorBuilder: (c, e, s) => const Text('Image Error', style: TextStyle(color: Colors.red)),
                   ),
@@ -2649,10 +2672,16 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                                   boundaryMargin: const EdgeInsets.all(20),
                                   minScale: 0.5,
                                   maxScale: 4,
-                                  child: Image.memory(
-                                    base64Decode(content.substring(10).replaceAll(RegExp(r'\s+'), '')),
-                                    fit: BoxFit.contain,
-                                  ),
+                                  child: Builder(builder: (ctx) {  // BUG-16 fix: base64Decode throws FormatException on bad data
+                                    try {
+                                      return Image.memory(
+                                        base64Decode(content.substring(10).replaceAll(RegExp(r'\s+'), '')),
+                                        fit: BoxFit.contain,
+                                      );
+                                    } catch (_) {
+                                      return const Center(child: Text('Invalid image data', style: TextStyle(color: Colors.red)));
+                                    }
+                                  }),
                                 ),
                                 Positioned(
                                   top: 40,
@@ -2665,15 +2694,21 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                               ],
                             ),
                           ),
-                        );
+                        );\r
                       },
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(8),
-                        child: Image.memory(
-                          base64Decode(content.substring(10).replaceAll(RegExp(r'\s+'), '')),
-                          fit: BoxFit.contain,
-                          errorBuilder: (context, error, stackTrace) => const Text('Invalid image data', style: TextStyle(color: Colors.red)),
-                        ),
+                        child: Builder(builder: (ctx) {  // BUG-16 fix
+                          try {
+                            return Image.memory(
+                              base64Decode(content.substring(10).replaceAll(RegExp(r'\s+'), '')),
+                              fit: BoxFit.contain,
+                              errorBuilder: (context, error, stackTrace) => const Text('Invalid image data', style: TextStyle(color: Colors.red)),
+                            );
+                          } catch (_) {
+                            return const Text('Invalid image data', style: TextStyle(color: Colors.red));
+                          }
+                        }),
                       ),
                     )
                   else
