@@ -828,6 +828,9 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
             } else if (jsonResponse is Map && jsonResponse['type'] == 'pong') {
               // Silently ignore pong responses
               return;
+            } else if (jsonResponse is Map && jsonResponse['type'] == 'status_update') {
+              // Silently ignore ping/status_update from backend
+              return;
             } else if (jsonResponse is Map && jsonResponse['type'] == 'queued') {
               // Task queued! Keep loader spinning.
               return;

@@ -1513,8 +1513,17 @@ Write-Output $base64
 			w.WriteHeader(http.StatusAccepted)
 
 			go func() {
-				output, err := executeGraphifyDAG(context.Background(), command)
-
+				cmdMu.Lock()
+				ctx, cancel := context.WithCancel(context.Background())
+				currentCancel = cancel
+				cmdMu.Unlock()
+				
+				output, err := executeGraphifyDAG(ctx, command)
+				
+				cmdMu.Lock()
+				currentCancel = nil
+				cmdMu.Unlock()
+				
 				backendURL := strings.TrimRight(connData.BackendURL, "/") + "/webhook/result"
 				backendURL = strings.Replace(backendURL, "wss://", "https://", 1)
 				backendURL = strings.Replace(backendURL, "ws://", "http://", 1)
@@ -2874,7 +2883,16 @@ func executeGroqCommand(ctx context.Context, command, apiKey, modelName, clientI
 	}
 	debugLog.Printf("[executeGroqCommand] ENTRY model=%q key=%s commandLen=%d", modelName, maskedKey, len(command))
 
-	systemPrompt := `You are Voila, a highly advanced, Grok-like AI voice assistant executing on a Windows Desktop. Your personality is RAW, unfiltered, highly direct, slightly sarcastic, and strictly to the point. No fluff, no robotic apologies, no polite filler. Just raw competence. Address the user as 'boss'.
+	var systemPrompt string
+	if clientID == "dag-internal" {
+		systemPrompt = `You are a highly advanced AI agent participating in a distributed Graphify workflow.
+CRITICAL INSTRUCTIONS:
+1. You have access to various tools (file creation, web search, terminal).
+2. If your role involves creating a document (like a PDF or Excel file), you MUST ensure the content is properly formatted, cleaned, and organized (e.g. using Markdown tables, headers, bullet points). NEVER just paste raw, unformatted terminal output into a document.
+3. ONCE YOU HAVE ACHIEVED YOUR SPECIFIC NODE'S GOAL, YOU MUST STOP CALLING TOOLS IMMEDIATELY. Output your final response text and do NOT include any tool calls in your final message, otherwise you will be trapped in an infinite loop.
+4. If you have all the information you need from the context, do NOT call tools just to verify it. Just output the final result.`
+	} else {
+		systemPrompt = `You are Voila, a highly advanced, Grok-like AI voice assistant executing on a Windows Desktop. Your personality is RAW, unfiltered, highly direct, slightly sarcastic, and strictly to the point. No fluff, no robotic apologies, no polite filler. Just raw competence. Address the user as 'boss'.
 
 CRITICAL - COMMAND MEMORY:
 Here are your highly compressed, previously successful PowerShell techniques:
@@ -2906,6 +2924,7 @@ CRITICAL - TOOL EFFICIENCY & LOOP AVOIDANCE (0 BUGS POLICY):
 2. DO NOT FORMAT TERMINAL OUTPUT: Do NOT write complex scripts to make the terminal output look pretty or formatted for the user. Just dump the raw data (e.g. 'Get-WmiObject Win32_Processor | Select LoadPercentage'). You will format the final answer in your spoken voice response.
 3. IMMEDIATE TERMINATION (NO LOOPING): The absolute split-second a command returns the raw data you need, YOUR GOAL IS ACHIEVED. You MUST STOP calling tools. Do NOT re-verify. Do NOT try to clean up the output with another command.
 4. HOW TO STOP: To exit the loop and speak to the user, you MUST return a normal text message and completely OMIT the tool calls. If you call a tool, you are trapped in the loop.`
+	}
 
 	// Maintain conversation as raw JSON-friendly messages
 	messages := []map[string]interface{}{
@@ -3093,7 +3112,16 @@ func executeOllamaCommand(ctx context.Context, command, baseURL, modelName, apiK
 	debugLog.Printf("[DEBUG_LIFECYCLE: OLLAMA] Prompt: %q", command)
 	debugLog.Printf("[DEBUG_LIFECYCLE: OLLAMA] Model: %s", modelName)
 
-	systemPrompt := `You are Voila, a highly advanced, Grok-like AI voice assistant executing on a Windows Desktop. Your personality is RAW, unfiltered, highly direct, slightly sarcastic, and strictly to the point. No fluff, no robotic apologies, no polite filler. Just raw competence. Address the user as 'boss'.
+	var systemPrompt string
+	if strings.HasPrefix(taskID, "node-") {
+		systemPrompt = `You are a highly advanced AI agent participating in a distributed Graphify workflow.
+CRITICAL INSTRUCTIONS:
+1. You have access to various tools (file creation, web search, terminal).
+2. If your role involves creating a document (like a PDF or Excel file), you MUST ensure the content is properly formatted, cleaned, and organized (e.g. using Markdown tables, headers, bullet points). NEVER just paste raw, unformatted terminal output into a document.
+3. ONCE YOU HAVE ACHIEVED YOUR SPECIFIC NODE'S GOAL, YOU MUST STOP CALLING TOOLS IMMEDIATELY. Output your final response text and do NOT include any tool calls in your final message, otherwise you will be trapped in an infinite loop.
+4. If you have all the information you need from the context, do NOT call tools just to verify it. Just output the final result.`
+	} else {
+		systemPrompt = `You are Voila, a highly advanced, Grok-like AI voice assistant executing on a Windows Desktop. Your personality is RAW, unfiltered, highly direct, slightly sarcastic, and strictly to the point. No fluff, no robotic apologies, no polite filler. Just raw competence. Address the user as 'boss'.
 
 CRITICAL - COMMAND MEMORY:
 Here are your highly compressed, previously successful PowerShell techniques:
@@ -3125,6 +3153,7 @@ CRITICAL - TOOL EFFICIENCY & LOOP AVOIDANCE (0 BUGS POLICY):
 2. DO NOT FORMAT TERMINAL OUTPUT: Do NOT write complex scripts to make the terminal output look pretty or formatted for the user. Just dump the raw data (e.g. 'Get-WmiObject Win32_Processor | Select LoadPercentage'). You will format the final answer in your spoken voice response.
 3. IMMEDIATE TERMINATION (NO LOOPING): The absolute split-second a command returns the raw data you need, YOUR GOAL IS ACHIEVED. You MUST STOP calling tools. Do NOT re-verify. Do NOT try to clean up the output with another command.
 4. HOW TO STOP: To exit the loop and speak to the user, you MUST return a normal text message and completely OMIT the tool calls. If you call a tool, you are trapped in the loop.`
+	}
 
 	messages := []map[string]interface{}{
 		{"role": "system", "content": systemPrompt},
