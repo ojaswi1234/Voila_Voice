@@ -121,6 +121,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   WebSocketChannel? _channel;  // nullable — prevents LateInitializationError before first connect
   StreamSubscription? _wsSubscription;  // stored so we can cancel on dispose/reconnect
   StreamSubscription? _fcmRefreshSubscription;  // BUG-15 fix: FCM refresh listener cancellation
+  StreamSubscription? _fcmOpenedAppSubscription;  // FCM-02 fix
 
   static const platform = MethodChannel('com.voila/intent');
   bool _showFlowchart = false;
@@ -216,6 +217,12 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   final FlutterLocalNotificationsPlugin _flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
 
   Future<void> _setupFCM() async {
+    // REMAIN-09 fix: initialize local notifications plugin before use
+    const initSettings = InitializationSettings(
+      android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+    );
+    await _flutterLocalNotificationsPlugin.initialize(initSettings);
+
     NotificationSettings settings = await FirebaseMessaging.instance.requestPermission(
       alert: true, announcement: false, badge: true, carPlay: false, criticalAlert: false, provisional: false, sound: true,
     );
@@ -232,9 +239,9 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
         ?.createNotificationChannel(channel);
 
     String? token = await FirebaseMessaging.instance.getToken();
-    if (token != null) {
+    if (token != null && mounted) {  // FCM-03 fix: widget may be gone by the time token arrives
       _fcmToken = token;
-      _sendFCMToken(token);
+      _sendFCMToken(token);  // safe: _sendFCMToken checks _isConnected internally
     }
 
     _fcmRefreshSubscription = FirebaseMessaging.instance.onTokenRefresh.listen((newToken) {
@@ -242,16 +249,16 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       _sendFCMToken(newToken);
     });
 
-    FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-      if (message.data['type'] == 'security_alert') {
+    _fcmOpenedAppSubscription = FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+      if (message.data['type'] == 'security_alert' && mounted) {  // FCM-04 fix
         _showSecurityAlerts();
       }
     });
 
     RemoteMessage? initialMessage = await FirebaseMessaging.instance.getInitialMessage();
-    if (initialMessage != null && initialMessage.data['type'] == 'security_alert') {
+    if (initialMessage != null && initialMessage.data['type'] == 'security_alert' && mounted) {  // FCM-05 fix
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _showSecurityAlerts();
+        if (mounted) _showSecurityAlerts();  // double-check inside callback
       });
     }
   }
@@ -289,12 +296,13 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     _storage.read(key: 'security_phrase').then((val) => _cachedSecurityPhrase = val ?? '');
     _setupWebSocket();
     _initializeSpeech();
-    _setupFCM();
+    _setupFCM().catchError((e) => debugPrint('FCM setup error: $e'));  // FCM-01: errors now visible
   }
 
   Future<void> _checkIntent() async {
     try {
       final bool isAssistant = await platform.invokeMethod('isAssistantIntent');
+      if (!mounted) return;  // REMAIN-07 fix
       setState(() {
         _isAssistant = isAssistant;
       });
@@ -684,6 +692,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                 await _storage.write(key: 'security_phrase', value: _securityPhrase);
               }
               
+              if (!mounted) return;  // REMAIN-01 fix: two awaits before this
               setState(() {
                 _sessionToken = sessionToken;
                 _sessionExpiresAt = sessionExpiresAt;
@@ -744,7 +753,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
               if (_devices.isEmpty) {
                 _savedDevices = {};
                 _activeDevice = '';
-                setState(() {});
+                if (mounted) setState(() {});  // REMAIN-03 fix
               }
               final onlineCount = _devices.values.where((d) => d['online'] == true).length;
               final reachableCount = _devices.values.where((d) => d['reachable'] == true).length;
@@ -837,7 +846,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
               }
               
               if (_willTalk) {
-                _speak(summaryToSpeak);
+                unawaited(_speak(summaryToSpeak));  // REMAIN-02 fix: async speak, don't block stream
               }
               
               if (jsonResponse.containsKey('new_conversation_id') && jsonResponse['new_conversation_id'] != null) {
@@ -910,6 +919,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
               });
             }
           } catch (e) {
+            if (!mounted) return;  // REMAIN-04 fix
             setState(() { 
               _isThinking = false; _triggerDataArriving(); 
               _isFetchingModels = false;
@@ -957,6 +967,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
         });
       });
     } catch (e) {
+      if (!mounted) return;  // REMAIN-05 fix
       setState(() {
         _isConnected = false;
         _addMessage({
@@ -1082,7 +1093,9 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     WidgetsBinding.instance.removeObserver(this);
     _assistantImageTimer?.cancel();
     _silenceTimer?.cancel();  // BUG-03 fix: was missing, caused setState-after-dispose
-    _fcmRefreshSubscription?.cancel();  // BUG-15 fix: prevent post-dispose FCM callback
+    _wsSubscription?.cancel();  // REMAIN-06 fix: cancel WS stream subscription
+    _fcmRefreshSubscription?.cancel();  // BUG-15 fix
+    _fcmOpenedAppSubscription?.cancel();  // FCM-02 fix
     _healthCheckTimer?.cancel();
     _channel?.sink.close();
     _controller.dispose();
