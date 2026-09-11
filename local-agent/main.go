@@ -1519,9 +1519,7 @@ Write-Output $base64
 				backendURL = strings.Replace(backendURL, "wss://", "https://", 1)
 				backendURL = strings.Replace(backendURL, "ws://", "http://", 1)
 
-				h := sha256.New()
-				h.Write([]byte(connData.SecurityPhrase + ":" + connData.DeviceID))
-				secretHash := hex.EncodeToString(h.Sum(nil))
+				secretHash := hashPhrase(connData.SecurityPhrase, connData.DeviceID)
 
 				resultPayload := map[string]string{
 					"client_id":           clientID,
@@ -1665,9 +1663,7 @@ Write-Output $base64
 			backendURL = strings.Replace(backendURL, "ws://", "http://", 1)
 
 			// Calculate security hash to authenticate webhook
-			h := sha256.New()
-			h.Write([]byte(connData.SecurityPhrase + ":" + connData.DeviceID))
-			secretHash := hex.EncodeToString(h.Sum(nil))
+			secretHash := hashPhrase(connData.SecurityPhrase, connData.DeviceID)
 
 			resultPayload := map[string]string{
 				"client_id":           clientID,
