@@ -31,6 +31,8 @@ jobs:
 
       - name: Scan local-agent for known CVEs
         working-directory: local-agent
+        env:
+          GOOS: windows
         run: govulncheck ./...
 
   python-security:
