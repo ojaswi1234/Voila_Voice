@@ -1336,7 +1336,7 @@ func startHTTPServer() {
 		w.Header().Set("Content-Type", "application/json")
 
 		connData, _ := loadConnectionData()
-		out, err := executeGroqCommand(context.Background(), "Say hello in one word", connData.GroqAPIKey, connData.GroqModel, connData.DeviceID, nil, "verify")
+		out, err := executeGroqCommand(context.Background(), "Say hello in one word", connData.GroqAPIKey, connData.GroqModel, connData.DeviceID, nil, "verify", "")
 		if err != nil {
 			json.NewEncoder(w).Encode(map[string]string{"status": "error", "message": err.Error()})
 			return
@@ -1350,7 +1350,7 @@ func startHTTPServer() {
 		w.Header().Set("Content-Type", "application/json")
 
 		connData, _ := loadConnectionData()
-		out, err := executeOllamaCommand(context.Background(), "Say hello in one word", connData.OllamaBaseURL, connData.OllamaModel, connData.OllamaAPIKey, nil, "verify")
+		out, err := executeOllamaCommand(context.Background(), "Say hello in one word", connData.OllamaBaseURL, connData.OllamaModel, connData.OllamaAPIKey, nil, "verify", "")
 		if err != nil {
 			json.NewEncoder(w).Encode(map[string]string{"status": "error", "message": err.Error()})
 			return
@@ -1634,7 +1634,7 @@ Write-Output $base64
 				if m == "" {
 					m = "llama3-70b-8192"
 				}
-				output, err = executeGroqCommand(ctx, command, connData.GroqAPIKey, m, clientID, nil, taskID)
+				output, err = executeGroqCommand(ctx, command, connData.GroqAPIKey, m, clientID, nil, taskID, conversationID)
 				fmt.Println("STATUS: IDLE")
 				os.Stdout.Sync()
 				newConvID = conversationID
@@ -1646,7 +1646,7 @@ Write-Output $base64
 					ollamaModel = "gemma4:31b"
 				}
 				ollamaSemaphore <- struct{}{}
-				output, err = executeOllamaCommand(ctx, command, connData.OllamaBaseURL, ollamaModel, connData.OllamaAPIKey, nil, taskID)
+				output, err = executeOllamaCommand(ctx, command, connData.OllamaBaseURL, ollamaModel, connData.OllamaAPIKey, nil, taskID, conversationID)
 				<-ollamaSemaphore
 				fmt.Println("STATUS: IDLE")
 				os.Stdout.Sync()
@@ -2867,7 +2867,47 @@ func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMes
 // executeGroqCommand sends a prompt to the Groq cloud API and returns the response.
 // It uses the fast llama3-70b-8192 model by default, but respects modelName if provided.
 // Supports up to 5 tool-calling iterations using OpenAI-compatible tool_calls format.
-func executeGroqCommand(ctx context.Context, command, apiKey, modelName, clientID string, streamFileObj *os.File, taskID string) (string, error) {
+
+// --- Cloud Memory Helpers ---
+func loadCloudHistory(convID string) []map[string]interface{} {
+	var history []map[string]interface{}
+	if convID == "" {
+		return history
+	}
+	brainDir := getBrainDir()
+	path := filepath.Join(brainDir, convID, "cloud_history.json")
+	data, err := os.ReadFile(path)
+	if err == nil {
+		json.Unmarshal(data, &history)
+	}
+	// Limit to last 10 messages (5 turns) to prevent bloating
+	if len(history) > 10 {
+		history = history[len(history)-10:]
+	}
+	return history
+}
+
+func saveCloudHistory(convID, userContent, assistantContent string) {
+	if convID == "" {
+		return
+	}
+	history := loadCloudHistory(convID)
+	history = append(history, map[string]interface{}{"role": "user", "content": userContent})
+	history = append(history, map[string]interface{}{"role": "assistant", "content": assistantContent})
+	
+	if len(history) > 10 {
+		history = history[len(history)-10:]
+	}
+	
+	brainDir := getBrainDir()
+	os.MkdirAll(filepath.Join(brainDir, convID), 0755)
+	path := filepath.Join(brainDir, convID, "cloud_history.json")
+	data, _ := json.MarshalIndent(history, "", "  ")
+	os.WriteFile(path, data, 0644)
+}
+// -----------------------------
+
+func executeGroqCommand(ctx context.Context, command, apiKey, modelName, clientID string, streamFileObj *os.File, taskID string, convID string) (string, error) {
 	defer cleanupTerminalSession()
 	if apiKey == "" {
 		return "", fmt.Errorf("Groq API key not set. Open the Voila dashboard → Settings to add your key")
@@ -2931,8 +2971,10 @@ CRITICAL - TOOL EFFICIENCY & LOOP AVOIDANCE (0 BUGS POLICY):
 	// Maintain conversation as raw JSON-friendly messages
 	messages := []map[string]interface{}{
 		{"role": "system", "content": systemPrompt},
-		{"role": "user", "content": command},
 	}
+	historyMsgs := loadCloudHistory(convID)
+	messages = append(messages, historyMsgs...)
+	messages = append(messages, map[string]interface{}{"role": "user", "content": command})
 
 	client := &http.Client{Timeout: 60 * time.Second}
 	const maxIter = 8
@@ -3091,7 +3133,7 @@ CRITICAL - TOOL EFFICIENCY & LOOP AVOIDANCE (0 BUGS POLICY):
 // executeOllamaCommand sends a prompt to an Ollama-compatible endpoint.
 // Works for both local Ollama (http://localhost:11434) and Ollama Cloud (https://api.ollama.ai).
 // Supports up to 5 tool-calling iterations using the Ollama /api/chat tools field.
-func executeOllamaCommand(ctx context.Context, command, baseURL, modelName, apiKey string, streamFileObj *os.File, taskID string) (string, error) {
+func executeOllamaCommand(ctx context.Context, command, baseURL, modelName, apiKey string, streamFileObj *os.File, taskID string, convID string) (string, error) {
 	defer cleanupTerminalSession()
 	if baseURL == "" || baseURL == "http://localhost:11434" {
 		if apiKey != "" {
@@ -3161,8 +3203,10 @@ CRITICAL - TOOL EFFICIENCY & LOOP AVOIDANCE (0 BUGS POLICY):
 
 	messages := []map[string]interface{}{
 		{"role": "system", "content": systemPrompt},
-		{"role": "user", "content": command},
 	}
+	historyMsgs := loadCloudHistory(convID)
+	messages = append(messages, historyMsgs...)
+	messages = append(messages, map[string]interface{}{"role": "user", "content": command})
 
 	client := &http.Client{Timeout: 300 * time.Second}
 	const maxIter = 8

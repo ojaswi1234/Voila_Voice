@@ -549,18 +549,23 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
           final text = result.recognizedWords.trim().toUpperCase();
           
           // SMART HEURISTIC: 2 Person / Overlapping Voice Detection
-          // If word count jumps massively in a fraction of a second, it often means multiple voices are overlapping
+          // Enhanced edge-case handling: STT chunking can send multiple words at once (batching bottleneck). 
+          // We need to look for larger jumps over a slightly longer period, and require more consistent triggers.
           int currentWords = result.recognizedWords.split(' ').length;
           DateTime now = DateTime.now();
-          if (currentWords > _lastWordCount + 4 && now.difference(_lastSpeechTime).inMilliseconds < 500) {
+          
+          // Fix: Increase word jump threshold to 8 words, timeframe to 800ms, and require 3 consistent triggers.
+          if (currentWords > _lastWordCount + 8 && now.difference(_lastSpeechTime).inMilliseconds < 800) {
             _overlapTriggers++;
-            if (_overlapTriggers == 2) {
+            if (_overlapTriggers >= 3) {
                _speak("boss, is any one there with you?");
                _overlapTriggers = 0; // reset
             }
           } else {
-            // Decay the trigger if normal speech pacing
-            if (now.difference(_lastSpeechTime).inSeconds > 2) _overlapTriggers = 0; 
+            // Decay the trigger if normal speech pacing (slower decay to catch intermittent overlapping)
+            if (now.difference(_lastSpeechTime).inSeconds > 2) {
+                if (_overlapTriggers > 0) _overlapTriggers--; 
+            }
           }
           _lastWordCount = currentWords;
           _lastSpeechTime = now;
@@ -588,19 +593,36 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
             
             if (_isLiveSession && finalWords.isNotEmpty) {
                // SMART NLP ADDRESSEE DETECTION HEURISTIC
-               // Checks if the user is talking to another human rather than the AI device
+               // Enhanced to prevent false positives while still catching actual side-conversations
                final String lowerWords = finalWords.toLowerCase();
                int conversationalMarkers = 0;
                
+               // Filler words get penalized but are not enough to trigger on their own
                if (lowerWords.contains(" um ") || lowerWords.startsWith("um ")) conversationalMarkers++;
                if (lowerWords.contains(" uh ") || lowerWords.startsWith("uh ")) conversationalMarkers++;
                if (lowerWords.contains(" you know ")) conversationalMarkers += 2;
                if (lowerWords.contains(" like ") && finalWords.split(' ').length > 6) conversationalMarkers++;
                if (lowerWords.contains(" yeah ") || lowerWords.startsWith("yeah ")) conversationalMarkers++;
-               if (lowerWords.contains(" so anyways ")) conversationalMarkers += 2;
                
-               // Rule-based decision threshold
-               if (conversationalMarkers >= 2 || (conversationalMarkers >= 1 && finalWords.split(' ').length > 15)) {
+               // Stronger markers of a side conversation
+               if (lowerWords.contains(" so anyways ")) conversationalMarkers += 3;
+               if (lowerWords.contains(" i was telling ")) conversationalMarkers += 3;
+               if (lowerWords.contains(" he said ") || lowerWords.contains(" she said ")) conversationalMarkers += 2;
+               
+               // Look for clear command intents (whitelist) which cancel out conversational markers
+               bool hasCommandIntent = lowerWords.contains("open") || lowerWords.contains("create") || 
+                                       lowerWords.contains("execute") || lowerWords.contains("run") || 
+                                       lowerWords.contains("search") || lowerWords.contains("tell me") ||
+                                       lowerWords.contains("what is") || lowerWords.contains("boss") ||
+                                       lowerWords.startsWith("yeah but") || lowerWords.startsWith("no ");
+                                       
+               if (hasCommandIntent) {
+                  conversationalMarkers -= 3; // Heavily reduce the marker score if there's a clear command
+               }
+               
+               // Rule-based decision threshold (Enhanced edge-case handling)
+               // Only trigger if score is very high (>=4) or it's a very long sentence with no command intent and some markers
+               if (conversationalMarkers >= 4 || (conversationalMarkers >= 2 && finalWords.split(' ').length > 25 && !hasCommandIntent)) {
                   _speak("Are you talking to me, or someone else?");
                   _silenceTimer?.cancel();
                   return; // Intercept and DO NOT send to the AI

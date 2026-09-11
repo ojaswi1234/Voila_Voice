@@ -162,14 +162,14 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 					if strings.Contains(modelStr, "8b") {
 						actualModel = "llama3-8b-8192"
 					}
-					nodeOut, nodeErr = executeGroqCommand(ctx, finalCommand, connData.GroqAPIKey, actualModel, "dag-internal", nil, taskID)
+					nodeOut, nodeErr = executeGroqCommand(ctx, finalCommand, connData.GroqAPIKey, actualModel, "dag-internal", nil, taskID, "")
 				} else {
 					actualModel := "gemma-2b" // default fallback
 					if strings.Contains(modelStr, "llama3") {
 						actualModel = "llama3:8b"
 					}
 					ollamaSemaphore <- struct{}{}
-					nodeOut, nodeErr = executeOllamaCommand(ctx, finalCommand, connData.OllamaBaseURL, actualModel, connData.OllamaAPIKey, nil, taskID)
+					nodeOut, nodeErr = executeOllamaCommand(ctx, finalCommand, connData.OllamaBaseURL, actualModel, connData.OllamaAPIKey, nil, taskID, "")
 					<-ollamaSemaphore
 				}
 
