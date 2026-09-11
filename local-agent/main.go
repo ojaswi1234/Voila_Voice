@@ -2901,6 +2901,8 @@ When asked to do a task, FIRST check if a command in this memory perfectly satis
 
 CRITICAL OS GUARDRAIL: You MUST NEVER modify, delete, or touch Windows system files, System32, Program Files, the Registry, or any critical OS configuration. You must refuse commands that could harm or break the OS.
 
+CRITICAL SYSTEM NOTE: You are running inside an isolated background sandbox (` + "`exebox`" + ` desktop). To open ANY GUI application, URL, or file so it is visible to the user on their main desktop, you MUST use WMI to break out of the sandbox. Use exactly this command format: ` + "`Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'explorer.exe \"<URL_OR_PATH>\"'`" + ` (for URLs/files) or ` + "`Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList '<APP_EXE>'`" + ` (for apps). DO NOT use Start-Process, as it will spawn invisibly in the sandbox! To perform browser automation, you MUST first launch a visible browser using Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe --remote-debugging-port=9222 --user-data-dir=C:\tmp\ai_browser_profile "about:blank"'. Then, control it by running python C:\Users\ojasw\Desktop\voice-cli-system\local-agent\browser_tools.py with args --action [goto|click|type|scrape|extract_links|snapshot] --url <url> --selector <css> --value <text>.
+
 CRITICAL: You are running inside a Windows PowerShell environment. You MUST use PowerShell syntax, NOT Bash!
 - Use 'Get-ChildItem' or 'ls' (without bash flags like -la). Do NOT use 'ls -la'.
 - Use 'Select-String' or 'findstr', NOT 'grep'.
@@ -3129,6 +3131,8 @@ Here are your highly compressed, previously successful PowerShell techniques:
 When asked to do a task, FIRST check if a command in this memory perfectly satisfies the purpose. If yes, RUN IT EXACTLY AS-IS from memory (unless the user explicitly requests a new/specific method). If you invent a NEW successful technique, you MUST immediately call the 'save_command_memory' tool to permanently memorize it.
 
 CRITICAL OS GUARDRAIL: You MUST NEVER modify, delete, or touch Windows system files, System32, Program Files, the Registry, or any critical OS configuration. You must refuse commands that could harm or break the OS.
+
+CRITICAL SYSTEM NOTE: You are running inside an isolated background sandbox (` + "`exebox`" + ` desktop). To open ANY GUI application, URL, or file so it is visible to the user on their main desktop, you MUST use WMI to break out of the sandbox. Use exactly this command format: ` + "`Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'explorer.exe \"<URL_OR_PATH>\"'`" + ` (for URLs/files) or ` + "`Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList '<APP_EXE>'`" + ` (for apps). DO NOT use Start-Process, as it will spawn invisibly in the sandbox! To perform browser automation, you MUST first launch a visible browser using Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe --remote-debugging-port=9222 --user-data-dir=C:\tmp\ai_browser_profile "about:blank"'. Then, control it by running python C:\Users\ojasw\Desktop\voice-cli-system\local-agent\browser_tools.py with args --action [goto|click|type|scrape|extract_links|snapshot] --url <url> --selector <css> --value <text>.
 
 CRITICAL: You are running inside a Windows PowerShell environment. You MUST use PowerShell syntax, NOT Bash!
 - Use 'Get-ChildItem' or 'ls' (without bash flags like -la). Do NOT use 'ls -la'.
