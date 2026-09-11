@@ -37,17 +37,41 @@ jobs:
     - name: Inject Google Services and Fix Android Gradle
       working-directory: ./mobile-agent
       run: |
-        # Inject google-services classpath into project build.gradle
-        ROOT_GRADLE="android/build.gradle"
-        if grep -q "dependencies {" "$ROOT_GRADLE"; then
-          sed -i '/dependencies {/a \        classpath "com.google.gms:google-services:4.3.15"' "$ROOT_GRADLE"
-        fi
-
-        # Apply google-services plugin to app build.gradle
-        APP_GRADLE="android/app/build.gradle"
-        echo "apply plugin: 'com.google.gms.google-services'" >> "$APP_GRADLE"
+        python3 -c '
+        import os
+        
+        # 1. Add to settings.gradle (modern Flutter)
+        sg = "android/settings.gradle"
+        if os.path.exists(sg):
+            with open(sg, "r") as f: c = f.read()
+            if "plugins {" in c and "google-services" not in c:
+                c = c.replace("plugins {", "plugins {\n    id \"com.google.gms.google-services\" version \"4.3.15\" apply false", 1)
+                with open(sg, "w") as f: f.write(c)
+        
+        # 2. Add to build.gradle (older Flutter / classpath)
+        bg = "android/build.gradle"
+        if os.path.exists(bg):
+            with open(bg, "r") as f: c = f.read()
+            if "buildscript {" in c and "dependencies {" in c and "google-services" not in c:
+                c = c.replace("dependencies {", "dependencies {\n        classpath \"com.google.gms:google-services:4.3.15\"", 1)
+                with open(bg, "w") as f: f.write(c)
+            elif "buildscript {" not in c and "plugins {" not in c:
+                c = "buildscript {\n    repositories {\n        google()\n        mavenCentral()\n    }\n    dependencies {\n        classpath \"com.google.gms:google-services:4.3.15\"\n    }\n}\n" + c
+                with open(bg, "w") as f: f.write(c)
+        
+        # 3. Add to app/build.gradle
+        ag = "android/app/build.gradle"
+        if os.path.exists(ag):
+            with open(ag, "r") as f: c = f.read()
+            if "plugins {" in c and "google-services" not in c:
+                c = c.replace("plugins {", "plugins {\n    id \"com.google.gms.google-services\"", 1)
+            else:
+                c += "\napply plugin: \"com.google.gms.google-services\"\n"
+            with open(ag, "w") as f: f.write(c)
+        '
 
         # Update minSdkVersion to 21 for speech_to_text and permission_handler compatibility
+        APP_GRADLE="android/app/build.gradle"
         if [ -f "$APP_GRADLE" ]; then
 
           sed -i 's/minSdkVersion 19/minSdkVersion 21/g' android/app/build.gradle
