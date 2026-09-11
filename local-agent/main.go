@@ -2,6 +2,7 @@ package main
 
 import (
 	"unsafe"
+	"golang.org/x/crypto/pbkdf2"
 	"voice-cli-system/shared/decoy"
 
 	"bufio"
@@ -3675,9 +3676,9 @@ func isBackgroundServiceRunning() bool {
 // Main
 
 func hashPhrase(phrase, deviceID string) string {
-	h := sha256.New()
-	h.Write([]byte(phrase + ":" + deviceID))
-	return hex.EncodeToString(h.Sum(nil))
+	salt := []byte(deviceID + "_voila_salt_v2")
+	hash := pbkdf2.Key([]byte(phrase), salt, 10000, 32, sha256.New)
+	return hex.EncodeToString(hash)
 }
 
 // Circuit breaker functions
