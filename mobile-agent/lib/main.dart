@@ -2707,7 +2707,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                               ],
                             ),
                           ),
-                        );\r
+                        );
                       },
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(8),
