@@ -2126,6 +2126,9 @@ def _draw_teams_section(dc, w, h):
                 widget.destroy()
             entries.clear()
             
+            groq_models = ["llama-3.1-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768", "gemma2-9b-it", "llama3-groq-70b-8192-tool-use-preview"]
+            ollama_models = ["gemma4:31b", "gpt-oss:120b", "gpt-oss:20b", "nemotron-3-nano:30b", "nemotron-3-super", "nemotron-3-ultra"]
+            
             for i, n in enumerate(editor_nodes):
                 row = tk.Frame(scrollable_frame, bg='#1A1D23', bd=1, relief='solid', pady=5, padx=5)
                 row.pack(fill='x', pady=5, padx=5)
@@ -2133,16 +2136,54 @@ def _draw_teams_section(dc, w, h):
                 top_row = tk.Frame(row, bg='#1A1D23')
                 top_row.pack(fill='x')
                 tk.Label(top_row, text=f"Node {i+1} Role:", bg='#1A1D23', fg='#D1D5DB').pack(side='left')
-                role_entry = tk.Entry(top_row, width=15, bg='#374151', fg='white', insertbackground='white', relief='flat')
+                role_entry = tk.Entry(top_row, width=12, bg='#374151', fg='white', insertbackground='white', relief='flat')
                 role_entry.insert(0, n.get('role', ''))
-                role_entry.pack(side='left', padx=5)
+                role_entry.pack(side='left', padx=2)
                 
-                tk.Label(top_row, text="Model:", bg='#1A1D23', fg='#D1D5DB').pack(side='left')
-                model_entry = tk.Entry(top_row, width=15, bg='#374151', fg='white', insertbackground='white', relief='flat')
-                model_entry.insert(0, n.get('model', '').replace('\n', ' '))
-                model_entry.pack(side='left', padx=5)
+                tk.Label(top_row, text="Prov:", bg='#1A1D23', fg='#D1D5DB').pack(side='left')
+                prov_var = tk.StringVar()
+                model_var = tk.StringVar()
                 
-                tk.Button(top_row, text="X", bg='#EF4444', fg='white', relief='flat', command=lambda idx=i: delete_node(idx)).pack(side='right', padx=5)
+                existing_model = n.get('model', '')
+                curr_prov = "Groq"
+                curr_mod = groq_models[1]
+                if '(Ollama)' in existing_model:
+                    curr_prov = "Ollama"
+                    curr_mod = existing_model.replace('\n(Ollama)', '').replace('(Ollama)', '').strip()
+                elif '(Groq)' in existing_model:
+                    curr_prov = "Groq"
+                    curr_mod = existing_model.replace('\n(Groq)', '').replace('(Groq)', '').strip()
+                
+                prov_var.set(curr_prov)
+                model_var.set(curr_mod)
+                
+                import tkinter.ttk as ttk
+                style = ttk.Style()
+                if 'Dark.TCombobox' not in style.theme_names():
+                    try: style.theme_use('clam')
+                    except: pass
+                    style.configure('Dark.TCombobox', fieldbackground='#374151', background='#374151', foreground='white')
+                
+                model_cb = ttk.Combobox(top_row, textvariable=model_var, style='Dark.TCombobox', width=16, state='readonly')
+                
+                def on_prov_change(event, cb=model_cb, mv=model_var, pv=prov_var):
+                    if pv.get() == "Groq":
+                        cb['values'] = groq_models
+                        if mv.get() not in groq_models: mv.set(groq_models[1])
+                    else:
+                        cb['values'] = ollama_models
+                        if mv.get() not in ollama_models: mv.set(ollama_models[0])
+                        
+                prov_cb = ttk.Combobox(top_row, textvariable=prov_var, values=["Groq", "Ollama"], style='Dark.TCombobox', width=7, state='readonly')
+                prov_cb.bind('<<ComboboxSelected>>', on_prov_change)
+                prov_cb.pack(side='left', padx=2)
+                
+                if curr_prov == "Groq": model_cb['values'] = groq_models
+                else: model_cb['values'] = ollama_models
+                
+                model_cb.pack(side='left', padx=2)
+                
+                tk.Button(top_row, text="X", bg='#EF4444', fg='white', relief='flat', command=lambda idx=i: delete_node(idx)).pack(side='right', padx=2)
                 
                 bot_row = tk.Frame(row, bg='#1A1D23')
                 bot_row.pack(fill='x', pady=5)
@@ -2151,22 +2192,21 @@ def _draw_teams_section(dc, w, h):
                 prompt_text.insert('1.0', n.get('prompt', ''))
                 prompt_text.pack(side='left', padx=5)
                 
-                entries.append((role_entry, model_entry, prompt_text))
+                entries.append((role_entry, model_var, prov_var, prompt_text))
                 
         def sync_entries():
-            for i, (r_ent, m_ent, p_txt) in enumerate(entries):
+            for i, (r_ent, m_var, p_var, p_txt) in enumerate(entries):
                 editor_nodes[i]['role'] = r_ent.get()
-                editor_nodes[i]['model'] = m_ent.get().replace(' ', '\n', 1)
+                editor_nodes[i]['model'] = m_var.get() + '\n(' + p_var.get() + ')'
                 editor_nodes[i]['prompt'] = p_txt.get('1.0', 'end').strip()
                 
-        def add_node():
+        def delete_node(idx):
             sync_entries()
-            new_id = f"node{int(_time.time()*1000)}"
-            editor_nodes.append({
-                "id": new_id, "role": "Agent", "model": "llama3-8b\n(Groq)", 
-                "prompt": "", "x": w//2, "y": 200, "color": "#10B981", "outline": "#34D399", "r": 20
-            })
-            render_nodes()
+            if len(editor_nodes) > 0:
+                editor_nodes.pop(idx)
+                render_nodes()
+                
+        render_nodes()
             
         def delete_node(idx):
             sync_entries()
