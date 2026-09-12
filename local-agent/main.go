@@ -1524,7 +1524,23 @@ Write-Output $base64
 				cmdMu.Lock()
 				ctx, cancel := context.WithCancel(context.Background())
 				currentCancel = cancel
+				isGraphifyRunning = true
 				cmdMu.Unlock()
+				
+				// Force spawn a completely independent Windows Terminal or PowerShell window
+				exe, _ := os.Executable()
+				psScript := `
+$ErrorActionPreference = 'SilentlyContinue'
+$host.UI.RawUI.WindowTitle = 'Voila AI - Graphify Tracker'
+Clear-Host
+& '` + exe + `' --tui
+`
+				psScriptPath := filepath.Join(os.TempDir(), "voila_tui_launcher.ps1")
+				os.WriteFile(psScriptPath, []byte(psScript), 0644)
+				
+				tuiCmd := exec.Command("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", psScriptPath)
+				tuiCmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: 0x00000010}
+				tuiCmd.Start()
 				
 				output, err := executeGraphifyDAG(ctx, command)
 				
