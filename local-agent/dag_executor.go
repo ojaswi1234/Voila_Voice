@@ -170,6 +170,7 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 		}
 		if allDone {
 			mu.Unlock()
+			finishLiveState("done", "")
 			break
 		}
 
@@ -184,6 +185,7 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 			}
 			if !anyRunning {
 				mu.Unlock()
+				finishLiveState("error", "deadlock detected: no nodes are ready or running")
 				return "", fmt.Errorf("deadlock detected: no nodes are ready or running")
 			}
 			cond.Wait()
@@ -205,6 +207,9 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 			
 			go func(nodeID string, pOuts map[string]string, myRevs []string, rCount int) {
 				n := nodeMap[nodeID]
+				
+				updateLiveNode(nodeID, "running")
+				appendLiveLog(fmt.Sprintf("[%s] Node execution started...", n.Role))
 
 				fmt.Printf("STATUS: TEAM_NODE_START:%s\n", n.Role)
 				os.Stdout.Sync()
@@ -266,6 +271,14 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 
 				mu.Lock()
 				defer mu.Unlock()
+				
+				if nodeErr != nil {
+					updateLiveNode(nodeID, "error")
+					appendLiveLog(fmt.Sprintf("[%s] ERROR: %v", n.Role, nodeErr))
+				} else {
+					updateLiveNode(nodeID, "completed")
+					appendLiveLog(fmt.Sprintf("[%s] Successfully generated output.", n.Role))
+				}
 				defer cond.Broadcast()
 				
 				running[nodeID] = false
