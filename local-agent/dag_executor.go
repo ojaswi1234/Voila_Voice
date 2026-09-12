@@ -52,9 +52,16 @@ func updateLiveNode(id string, status string) {
 func appendLiveLog(log string) {
 	liveStateMu.Lock()
 	defer liveStateMu.Unlock()
-	currentLiveState.Logs = append(currentLiveState.Logs, log)
-	if len(currentLiveState.Logs) > 15 {
-		currentLiveState.Logs = currentLiveState.Logs[len(currentLiveState.Logs)-15:]
+	
+	lines := strings.Split(log, "\n")
+	for _, l := range lines {
+		if strings.TrimSpace(l) != "" {
+			currentLiveState.Logs = append(currentLiveState.Logs, l)
+		}
+	}
+	
+	if len(currentLiveState.Logs) > 40 {
+		currentLiveState.Logs = currentLiveState.Logs[len(currentLiveState.Logs)-40:]
 	}
 	writeLiveState()
 }
@@ -274,7 +281,16 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 					appendLiveLog(fmt.Sprintf("[%s] ERROR: %v", n.Role, nodeErr))
 				} else {
 					updateLiveNode(nodeID, "completed")
-					appendLiveLog(fmt.Sprintf("[%s] Successfully generated output.", n.Role))
+					
+					// Format the chat output nicely
+					cleanOut := strings.TrimSpace(nodeOut)
+					if len(cleanOut) > 500 {
+						cleanOut = cleanOut[:497] + "..."
+					}
+					appendLiveLog(fmt.Sprintf("[%s]: %s\n", n.Role, cleanOut))
+					
+					outputs[nodeID] = nodeOut
+					transcript = append(transcript, fmt.Sprintf("--- From [%s] ---\n%s\n", n.Role, nodeOut))
 				}
 				defer cond.Broadcast()
 				

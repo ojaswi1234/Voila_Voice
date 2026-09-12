@@ -3004,6 +3004,7 @@ func executeGroqCommand(ctx context.Context, command, apiKey, modelName, clientI
 	}
 	debugLog.Printf("[executeGroqCommand] ENTRY model=%q key=%s commandLen=%d", modelName, maskedKey, len(command))
 
+	var toolUsageSummary strings.Builder
 	var systemPrompt string
 	if clientID == "dag-internal" {
 		systemPrompt = `You are a highly advanced AI agent participating in a distributed Graphify workflow.
@@ -3014,7 +3015,8 @@ CRITICAL INSTRUCTIONS:
 - For PDFs: Use rich Markdown (Headers, Bold). If you have tabular data, you MUST use clean |Markdown|Tables| instead of ASCII.
 - For PPTX: Intelligently choose the most expressive layout type for each slide. If the data contains metrics, trends, or comparisons, strongly consider using the "chart" layout with JSON data (e.g. {"chart_type":"bar", "chart_data":{"Process A": 50}}) rather than text.
 3. ONCE YOU HAVE ACHIEVED YOUR SPECIFIC NODE'S GOAL, YOU MUST STOP CALLING TOOLS IMMEDIATELY. Output your final response text and do NOT include any tool calls in your final message, otherwise you will be trapped in an infinite loop.
-4. If you have all the information you need from the context, do NOT call tools just to verify it. Just output the final result.`
+4. If you have all the information you need from the context, do NOT call tools just to verify it. Just output the final result.
+5. SECURITY GUARDRAILS: You are operating in a sandboxed environment. Do NOT execute destructive terminal commands (e.g., del, format, rm -rf, diskpart). Do NOT modify system registries, alter user permissions, or access secure credentials. Any attempt to bypass system security will be logged and terminated.`
 	} else {
 		systemPrompt = `You are Voila, a highly advanced, Grok-like AI voice assistant executing on a Windows Desktop. Your personality is RAW, unfiltered, highly direct, slightly sarcastic, and strictly to the point. No fluff, no robotic apologies, no polite filler. Just raw competence. Address the user as 'boss'.
 
@@ -3193,6 +3195,9 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 			debugLog.Printf("================================================================")
 			debugLog.Printf("[executeGroqCommand] iter=%d final answer len=%d", iter, len(choice.Message.Content))
 			finalAnswer := strings.TrimSpace(choice.Message.Content)
+			if toolUsageSummary.Len() > 0 {
+				finalAnswer = "Actions taken during execution:\n" + toolUsageSummary.String() + "\nFinal Output:\n" + finalAnswer
+			}
 			saveCloudHistory(convID, command, finalAnswer)
 			return finalAnswer, nil
 		}
@@ -3214,6 +3219,7 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 
 		// Execute each tool and collect results
 		for _, tc := range choice.Message.ToolCalls {
+			toolUsageSummary.WriteString(fmt.Sprintf("> Executed tool: %s (args: %s)\n", tc.Function.Name, string(tc.Function.Arguments)))
 			debugLog.Printf("================================================================")
 			debugLog.Printf("[DEBUG_LIFECYCLE: GROQ] 2. TOOL EXECUTION PHASE")
 			debugLog.Printf("[DEBUG_LIFECYCLE: GROQ] AI requested tool: %q with args: %s", tc.Function.Name, tc.Function.Arguments)

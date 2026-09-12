@@ -134,13 +134,39 @@ func (m tuiModel) View() string {
 	var teamView string
 	if len(nodeViews) > 0 {
 		arrow := lipgloss.NewStyle().Foreground(lipgloss.Color("#4B5563")).Padding(1, 1).Render(" ──> ")
-		teamView = lipgloss.JoinHorizontal(lipgloss.Center, strings.Join(nodeViews, arrow))
+		
+		// To properly join horizontally, we interleave the arrows and pass as variadic args
+		var horizontalArgs []string
+		for i, nv := range nodeViews {
+			horizontalArgs = append(horizontalArgs, nv)
+			if i < len(nodeViews)-1 {
+				horizontalArgs = append(horizontalArgs, arrow)
+			}
+		}
+		teamView = lipgloss.JoinHorizontal(lipgloss.Center, horizontalArgs...)
 	} else {
 		teamView = "Loading team layout..."
 	}
 
 	// Render logs
-	logs := strings.Join(m.state.Logs, "\n")
+	var formattedLogs []string
+	roleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#60A5FA")) // Blue for role
+	toolStyle := lipgloss.NewStyle().Faint(true).Foreground(lipgloss.Color("#A78BFA")) // Purple for tools
+
+	for _, l := range m.state.Logs {
+		if strings.HasPrefix(l, "[") && strings.Contains(l, "]") {
+			idx := strings.Index(l, "]")
+			rolePart := l[:idx+1]
+			msgPart := l[idx+1:]
+			formattedLogs = append(formattedLogs, roleStyle.Render(rolePart)+msgPart)
+		} else if strings.HasPrefix(strings.TrimSpace(l), "> Executed tool:") || strings.HasPrefix(strings.TrimSpace(l), ">") {
+			formattedLogs = append(formattedLogs, toolStyle.Render(l))
+		} else {
+			formattedLogs = append(formattedLogs, l)
+		}
+	}
+	
+	logs := strings.Join(formattedLogs, "\n")
 	if m.state.ErrorMsg != "" {
 		logs += "\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("#EF4444")).Render("FATAL ERROR: "+m.state.ErrorMsg)
 	}
