@@ -1530,16 +1530,20 @@ Write-Output $base64
 				// Force spawn a completely independent Windows Terminal or PowerShell window
 				exe, _ := os.Executable()
 				psScript := `
-$ErrorActionPreference = 'SilentlyContinue'
+$ErrorActionPreference = 'Continue'
 $host.UI.RawUI.WindowTitle = 'Voila AI - Graphify Tracker'
 Clear-Host
 & '` + exe + `' --tui
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "TUI crashed with code $LASTEXITCODE. Press Enter to exit."
+    Read-Host
+}
 `
 				psScriptPath := filepath.Join(os.TempDir(), "voila_tui_launcher.ps1")
 				os.WriteFile(psScriptPath, []byte(psScript), 0644)
 				
-				tuiCmd := exec.Command("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", psScriptPath)
-				tuiCmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: 0x00000010}
+				// Use cmd /c start to completely detach the process from the parent's stdout pipe!
+				tuiCmd := exec.Command("cmd.exe", "/c", "start", "Voila TUI", "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", psScriptPath)
 				tuiCmd.Start()
 				
 				output, err := executeGraphifyDAG(ctx, command)
