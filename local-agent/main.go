@@ -2200,7 +2200,7 @@ var availableTools = []toolDef{
 						"description": "Content to write into the file",
 					},
 				},
-				"required": []string{"path", "content", "theme"},
+				"required": []string{"path", "content", "theme", "design_strategy"},
 			},
 		},
 	},
@@ -2233,9 +2233,14 @@ var availableTools = []toolDef{
 					"content":   map[string]interface{}{"type": "string", "description": "Text content of the PDF"},
 					"latex":     map[string]interface{}{"type": "string", "description": "Raw LaTeX code to compile into a PDF. If you are generating a professional or multi-page PDF, YOU MUST PROVIDE THIS. Autonomously write full, exhaustive LaTeX code using \\chapter, \\section, \\newpage, and tabularx to design the document perfectly based on the topic, acting as an expert typesetter."},
 					"watermark": map[string]interface{}{"type": "string", "description": "Optional watermark text to display diagonally on pages"},
+					"design_strategy": map[string]interface{}{"type": "string", "description": `Select a Global Marketplace Skill Prompt to guide your LaTeX generation:
+- "McKinsey Consulting Report": Enforces BLUF (Bottom Line Up Front), strict two-column layouts, heavy data tables, and minimal corporate styling.
+- "Academic Whitepaper (IEEE/Nature)": Enforces standard LaTeX academic margins, complex tabularx datasets, and highly rigorous technical prose.
+- "Creative Apple-Style Pitch": Enforces massive text sizes, extreme minimalism, huge margins, and striking use of negative space.
+- "FlowGPT Visual Infographic": Uses dense, highly visual layouts, bullet point grids, and colorful accent blocks.`},
 					"theme":     map[string]interface{}{"type": "string", "description": "Theme name: corporate_blue, cyberpunk, minimalist, modern_dark"},
 				},
-				"required": []string{"path", "content", "theme"},
+				"required": []string{"path", "content", "theme", "design_strategy"},
 			},
 		},
 	},
@@ -2265,7 +2270,7 @@ var availableTools = []toolDef{
 					"content": map[string]interface{}{"type": "string", "description": "Text content of the document"},
 					"theme":   map[string]interface{}{"type": "string", "description": "Theme name: corporate_blue, cyberpunk, minimalist, modern_dark"},
 				},
-				"required": []string{"path", "content", "theme"},
+				"required": []string{"path", "content", "theme", "design_strategy"},
 			},
 		},
 	},
@@ -2279,6 +2284,10 @@ var availableTools = []toolDef{
 				"properties": map[string]interface{}{
 					"path":  map[string]interface{}{"type": "string", "description": "Absolute path to save the PPTX file"},
 					"title": map[string]interface{}{"type": "string", "description": "Presentation title (shown on the auto-generated cover slide)"},
+					"design_strategy": map[string]interface{}{"type": "string", "description": `Select a Global Marketplace Skill Prompt to guide your slide design:
+- "PromptBase Y-Combinator Pitch Deck": Forces problem-solution structure, large metric callouts, and minimalist startup aesthetics.
+- "McKinsey Strategy Deck": Forces dense data slides, actionable slide titles, 6x6 rule, and highly analytical visual blocks.
+- "SnackPrompt Storytelling Flow": Uses quote blocks, full-image backgrounds, and narrative-driven section dividers.`},
 					"theme": map[string]interface{}{"type": "string", "description": `Theme name — choose carefully based on audience and tone:
 • corporate_blue   — professional navy/blue. Best for business reports, investor decks
 • cyberpunk        — neon pink/cyan on dark. Best for tech demos, gaming, edgy brands
@@ -2316,7 +2325,7 @@ Example full deck:
  {"type":"title_slide","title":"Questions?","subtitle":"contact@company.com"}]`},
 					"auto_images": map[string]interface{}{"type": "boolean", "description": "If true, automatically searches Openverse (CC-licensed photos) for image-type slides and inserts the best-scoring result (landscape + high-resolution preferred)"},
 				},
-				"required": []string{"path", "title", "theme", "slides"},
+				"required": []string{"path", "title", "theme", "design_strategy", "slides"},
 			},
 		},
 	},
