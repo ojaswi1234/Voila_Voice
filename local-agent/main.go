@@ -1503,16 +1503,17 @@ Write-Output $base64
 		reqMode := strings.ToUpper(mode)
 		var effectiveMode string
 		switch reqMode {
-		case "GROQ", "OLLAMA", "SHELL":
+		case "GROQ", "OLLAMA", "SHELL", "AGENT", "LOCAL":
 			effectiveMode = reqMode
-			if graphifyEnabled {
-				effectiveMode = "AGENT"
-			}
 		default:
 			effectiveMode = globalMode
 			if effectiveMode == "" {
 				effectiveMode = "LOCAL"
 			}
+		}
+
+		if graphifyEnabled {
+			effectiveMode = "AGENT"
 		}
 
 		if graphifyEnabled {
