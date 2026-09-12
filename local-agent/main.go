@@ -2231,7 +2231,7 @@ var availableTools = []toolDef{
 				"properties": map[string]interface{}{
 					"path":      map[string]interface{}{"type": "string", "description": "Absolute path to save the PDF"},
 					"content":   map[string]interface{}{"type": "string", "description": "Text content of the PDF"},
-					"latex":     map[string]interface{}{"type": "string", "description": "Optional raw LaTeX code to compile into a PDF. If provided, overrides content and compiles via pdflatex for perfect formatting."},
+					"latex":     map[string]interface{}{"type": "string", "description": "Raw LaTeX code to compile into a PDF. If you are generating a professional or multi-page PDF, YOU MUST PROVIDE THIS. Autonomously write full, exhaustive LaTeX code using \\chapter, \\section, \\newpage, and tabularx to design the document perfectly based on the topic, acting as an expert typesetter."},
 					"watermark": map[string]interface{}{"type": "string", "description": "Optional watermark text to display diagonally on pages"},
 					"theme":     map[string]interface{}{"type": "string", "description": "Theme name: corporate_blue, cyberpunk, minimalist, modern_dark"},
 				},
