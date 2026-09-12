@@ -35,9 +35,12 @@ type graphifyTickMsg time.Time
 
 
 var (
-	kernel32TUI     = syscall.NewLazyDLL("kernel32.dll")
+	kernel32TUI  = syscall.NewLazyDLL("kernel32.dll")
+	user32TUI    = syscall.NewLazyDLL("user32.dll")
 	allocConsole = kernel32TUI.NewProc("AllocConsole")
 	freeConsole  = kernel32TUI.NewProc("FreeConsole")
+	getConsole   = kernel32TUI.NewProc("GetConsoleWindow")
+	showWindow   = user32TUI.NewProc("ShowWindow")
 )
 
 func runGraphifyTUI() {
@@ -46,6 +49,12 @@ func runGraphifyTUI() {
 	freeConsole.Call()
 	time.Sleep(100 * time.Millisecond) // Give OS a tiny moment
 	allocConsole.Call()
+	
+	// Force the console to be visible, overriding Python's CREATE_NO_WINDOW (SW_HIDE)
+	hwnd, _, _ := getConsole.Call()
+	if hwnd != 0 {
+		showWindow.Call(hwnd, 5) // 5 = SW_SHOW
+	}
 	
 	// Bind std streams to the new console window
 	out, _ := os.OpenFile("CONOUT$", os.O_RDWR, 0644)
