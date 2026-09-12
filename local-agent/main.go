@@ -2839,7 +2839,36 @@ func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMes
 		actualCommand = strings.ReplaceAll(actualCommand, "\\\"", "\"")
 
 		if actualCommand == "" {
-			return "error: command is required"
+			return "(Error: Empty command provided)"
+		}
+
+		// 🛡️ HARD GUARDRAILS TO PROTECT THE USER SYSTEM 🛡️
+		cmdLower := strings.ToLower(actualCommand)
+		dangerousPatterns := []string{
+			"format-volume", "clear-disk", "diskpart",
+			"format c:", "format d:", 
+			"set-itemproperty hklm:", "set-itemproperty hkcu:",
+			"remove-itemproperty hklm:", "remove-itemproperty hkcu:",
+			"net user", "net localgroup",
+			"vssadmin delete shadows", "wbadmin delete",
+			"bcdedit /set", "takeown /f c:\\",
+			"icacls c:\\",
+			"remove-computer", "stop-computer", "restart-computer",
+			"disable-netadapter",
+		}
+		for _, p := range dangerousPatterns {
+			if strings.Contains(cmdLower, p) {
+				return fmt.Sprintf("HARD GUARDRAIL TRIGGERED: The command contains a restricted pattern (%s) and has been BLOCKED to protect system integrity.", p)
+			}
+		}
+		
+		// Blanket delete protections
+		if strings.Contains(cmdLower, "rm ") || strings.Contains(cmdLower, "remove-item ") || strings.Contains(cmdLower, "del ") {
+			if strings.Contains(cmdLower, "-recurse") || strings.Contains(cmdLower, "/s") {
+				if strings.Contains(cmdLower, "c:\\windows") || strings.Contains(cmdLower, "c:\\program") || strings.Contains(cmdLower, "system32") {
+					return "HARD GUARDRAIL TRIGGERED: Recursive deletion of OS core directories is strictly forbidden."
+				}
+			}
 		}
 
 		debugLog.Printf("[executeTool/run_terminal] actualCommand=%q", actualCommand)
