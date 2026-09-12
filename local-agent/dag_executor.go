@@ -128,6 +128,7 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 	cond := sync.NewCond(&mu)
 	
 	outputs := make(map[string]string)
+	var transcript []string
 	revisions := make(map[string][]string)
 	runCount := make(map[string]int)
 	running := make(map[string]bool)
@@ -197,15 +198,11 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 			running[nid] = true
 			runCount[nid]++
 			
-			// Copy state safely for the goroutine
-			parentOutputs := make(map[string]string)
-			for _, p := range parents[nid] {
-				parentOutputs[p] = outputs[p]
-			}
+			myTranscript := append([]string(nil), transcript...)
 			myRevisions := append([]string(nil), revisions[nid]...)
 			myRunCount := runCount[nid]
 			
-			go func(nodeID string, pOuts map[string]string, myRevs []string, rCount int) {
+			go func(nodeID string, history []string, myRevs []string, rCount int) {
 				n := nodeMap[nodeID]
 				
 				updateLiveNode(nodeID, "running")
@@ -217,19 +214,19 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 				promptBuilder := strings.Builder{}
 				promptBuilder.WriteString(fmt.Sprintf("You are %s. %s\n\n", n.Role, n.Prompt))
 
-				parentIDs := parents[nodeID]
-				if len(parentIDs) > 0 {
-					promptBuilder.WriteString("TEAM MEMBER CONTEXT (You are reviewing/continuing their work):\n")
-					for _, pid := range parentIDs {
-						promptBuilder.WriteString(fmt.Sprintf("--- From [%s] ---\n%v\n\n", nodeMap[pid].Role, pOuts[pid]))
+				if len(history) > 0 {
+					promptBuilder.WriteString("TEAM DISCUSSION SO FAR (Context from other team members):\n")
+					for _, msg := range history {
+						promptBuilder.WriteString(msg + "\n")
 					}
 					
 					promptBuilder.WriteString("CRITICAL DEBATE INSTRUCTIONS:\n")
-					promptBuilder.WriteString("You are part of an iterative review loop. If the work from your team members is flawed, missing requirements, or incorrect, you MUST reject it.\n")
+					promptBuilder.WriteString("You are part of an iterative team discussion. You can see everyone's work above.\n")
+					promptBuilder.WriteString("If the work from your team members is flawed, missing requirements, or incorrect, you MUST reject it.\n")
 					promptBuilder.WriteString("To reject and force a team member to revise their work, your response MUST start EXACTLY with this format:\n")
 					promptBuilder.WriteString("REJECT: [RoleName]: [Your detailed critique]\n")
 					promptBuilder.WriteString("For example: REJECT: Researcher: The data is outdated. Find 2024 statistics.\n")
-					promptBuilder.WriteString("If you reject, do NOT output anything else. If the work is acceptable, do NOT use the REJECT prefix; simply perform your task and output your final result.\n\n")
+					promptBuilder.WriteString("If you reject, do NOT output anything else. If the work is acceptable, or if you are just adding your own contribution, do NOT use the REJECT prefix; simply perform your task and output your final result.\n\n")
 				}
 
 				if len(myRevs) > 0 {
@@ -332,7 +329,7 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 					fmt.Printf("STATUS: TEAM_NODE_DONE:%s\n", n.Role)
 					os.Stdout.Sync()
 				}
-			}(nid, parentOutputs, myRevisions, myRunCount)
+			}(nid, myTranscript, myRevisions, myRunCount)
 		}
 		mu.Unlock()
 	}
