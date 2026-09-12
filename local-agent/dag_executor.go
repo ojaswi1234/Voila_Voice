@@ -184,24 +184,24 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 
 				finalCommand := promptBuilder.String()
 				
-				modelStr := strings.ReplaceAll(n.Model, "\n", " ")
-				modelStr = strings.ToLower(modelStr)
+				var actualModel string
+				parts := strings.Split(n.Model, "\n")
+				if len(parts) > 0 {
+					actualModel = strings.TrimSpace(parts[0])
+				}
+				if actualModel == "" {
+					actualModel = "llama-3.1-8b-instant"
+				}
+
+				modelStr := strings.ToLower(n.Model)
 				
 				var nodeOut string
 				var nodeErr error
 				taskID := fmt.Sprintf("node-%s", nodeID)
 
 				if strings.Contains(modelStr, "groq") {
-					actualModel := "llama3-70b-8192"
-					if strings.Contains(modelStr, "8b") {
-						actualModel = "llama3-8b-8192"
-					}
 					nodeOut, nodeErr = executeGroqCommand(ctx, finalCommand, connData.GroqAPIKey, actualModel, "dag-internal", nil, taskID, "")
 				} else {
-					actualModel := "gemma-2b"
-					if strings.Contains(modelStr, "llama3") {
-						actualModel = "llama3:8b"
-					}
 					ollamaSemaphore <- struct{}{}
 					nodeOut, nodeErr = executeOllamaCommand(ctx, finalCommand, connData.OllamaBaseURL, actualModel, connData.OllamaAPIKey, nil, taskID, "")
 					<-ollamaSemaphore
