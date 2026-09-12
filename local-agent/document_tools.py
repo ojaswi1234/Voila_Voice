@@ -326,9 +326,6 @@ def create_pdf(kwargs):
         def header(self):
             self.set_fill_color(*self.theme_config['color_primary'])
             self.rect(0, 0, 210, 297, 'F')
-            self.set_draw_color(*self.theme_config['color_accent'])
-            self.set_line_width(0.8)
-            self.line(10, 15, 200, 15)
             if self.watermark_text:
                 self.set_font(self.theme_config['pdf_font_body'], '', 50)
                 self.set_text_color(240, 240, 240)
@@ -345,6 +342,7 @@ def create_pdf(kwargs):
     # Theme fonts mapped to core fonts in design_tokens.py (pdf_font_heading, pdf_font_body)
     pdf.set_font(theme_config['pdf_font_body'], '', 11)
     
+    pdf.set_margins(left=15, top=30, right=15)
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
     
