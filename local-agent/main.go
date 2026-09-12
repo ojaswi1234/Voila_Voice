@@ -2231,6 +2231,7 @@ var availableTools = []toolDef{
 				"properties": map[string]interface{}{
 					"path":      map[string]interface{}{"type": "string", "description": "Absolute path to save the PDF"},
 					"content":   map[string]interface{}{"type": "string", "description": "Text content of the PDF"},
+					"latex":     map[string]interface{}{"type": "string", "description": "Optional raw LaTeX code to compile into a PDF. If provided, overrides content and compiles via pdflatex for perfect formatting."},
 					"watermark": map[string]interface{}{"type": "string", "description": "Optional watermark text to display diagonally on pages"},
 					"theme":     map[string]interface{}{"type": "string", "description": "Theme name: corporate_blue, cyberpunk, minimalist, modern_dark"},
 				},
@@ -2320,67 +2321,6 @@ Example full deck:
 		},
 	},
 
-	{
-		Type: "function",
-		Function: toolFuncDef{
-			Name:        "docs.templates.list",
-			Description: "List available document templates from the registry.",
-			Parameters: map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
-		},
-	},
-	{
-		Type: "function",
-		Function: toolFuncDef{
-			Name:        "docs.templates.get",
-			Description: "Get details and placeholders for a specific template.",
-			Parameters: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"template_id": map[string]interface{}{"type": "string", "description": "The ID of the template"},
-				},
-				"required": []string{"template_id"},
-			},
-		},
-	},
-	{
-		Type: "function",
-		Function: toolFuncDef{
-			Name:        "docs.create_from_template",
-			Description: "Create a new document by filling a template. EXCLUSIVE WAY to create PPT/PDF/DOCX now.",
-			Parameters: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"template_id": map[string]interface{}{"type": "string"},
-					"title": map[string]interface{}{"type": "string"},
-					"fills": map[string]interface{}{"type": "object", "description": "Map of placeholder keys to string values"},
-					"export": map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": `e.g. ["pptx", "pdf"]`},
-				},
-				"required": []string{"template_id", "title", "fills"},
-			},
-		},
-	},
-	{
-		Type: "function",
-		Function: toolFuncDef{
-			Name:        "docs.list_recent",
-			Description: "List recently generated documents.",
-			Parameters: map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
-		},
-	},
-	{
-		Type: "function",
-		Function: toolFuncDef{
-			Name:        "docs.open_local",
-			Description: "Open a locally downloaded document file in the default OS application.",
-			Parameters: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"path": map[string]interface{}{"type": "string"},
-				},
-				"required": []string{"path"},
-			},
-		},
-	},
 	{
 		Type: "function",
 		Function: toolFuncDef{
@@ -2477,16 +2417,6 @@ func executeTool(ctx context.Context, toolName string, argsJSON json.RawMessage,
 			return ""
 		}
 		switch toolName {
-		case "docs.templates.list":
-			pseudoCommand = "python mcp_docs_facade.py list"
-		case "docs.templates.get":
-			pseudoCommand = "python mcp_docs_facade.py get " + getString("template_id")
-		case "docs.create_from_template":
-			pseudoCommand = "python mcp_docs_facade.py create " + getString("template_id")
-		case "docs.list_recent":
-			pseudoCommand = "python mcp_docs_facade.py list_recent"
-		case "docs.open_local":
-			pseudoCommand = "python mcp_docs_facade.py open_local " + getString("path")
 
 		case "save_command_memory":
 			return saveMemory(getString("purpose"), getString("command"))

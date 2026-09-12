@@ -156,6 +156,28 @@ def create_doc(kwargs):
     content = kwargs.get('content', '')
     theme = kwargs.get('theme', 'modern_dark')
     theme_config = get_theme(theme)
+
+    latex_content = kwargs.get('latex')
+    if latex_content:
+        import subprocess, tempfile, shutil, os
+        temp_dir = tempfile.mkdtemp()
+        tex_path = os.path.join(temp_dir, 'doc.tex')
+        with open(tex_path, 'w', encoding='utf-8') as f:
+            f.write(latex_content)
+        try:
+            result = subprocess.run(['pdflatex', '-interaction=nonstopmode', '-output-directory', temp_dir, tex_path], capture_output=True, text=True)
+            pdf_path = os.path.join(temp_dir, 'doc.pdf')
+            if os.path.exists(pdf_path):
+                shutil.copy(pdf_path, path)
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                return f"Successfully created beautifully formatted PDF via LaTeX at {path}"
+            else:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                return f"LaTeX compilation failed (no PDF output). Output:\n{result.stdout[-1000:]}"
+        except Exception as e:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            return f"Failed to run pdflatex (is MiKTeX/TeXLive installed?). Error: {str(e)}"
+
     
     doc = docx.Document()
     
@@ -272,6 +294,28 @@ def create_pdf(kwargs):
     watermark = kwargs.get('watermark', '')
     theme = kwargs.get('theme', 'modern_dark')
     theme_config = get_theme(theme)
+
+    latex_content = kwargs.get('latex')
+    if latex_content:
+        import subprocess, tempfile, shutil, os
+        temp_dir = tempfile.mkdtemp()
+        tex_path = os.path.join(temp_dir, 'doc.tex')
+        with open(tex_path, 'w', encoding='utf-8') as f:
+            f.write(latex_content)
+        try:
+            result = subprocess.run(['pdflatex', '-interaction=nonstopmode', '-output-directory', temp_dir, tex_path], capture_output=True, text=True)
+            pdf_path = os.path.join(temp_dir, 'doc.pdf')
+            if os.path.exists(pdf_path):
+                shutil.copy(pdf_path, path)
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                return f"Successfully created beautifully formatted PDF via LaTeX at {path}"
+            else:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                return f"LaTeX compilation failed (no PDF output). Output:\n{result.stdout[-1000:]}"
+        except Exception as e:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            return f"Failed to run pdflatex (is MiKTeX/TeXLive installed?). Error: {str(e)}"
+
     
     class PDF(FPDF):
         def __init__(self, theme_config, watermark_text):
