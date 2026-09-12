@@ -22,6 +22,8 @@ type GraphState struct {
 }
 
 func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
+	fmt.Printf("STATUS: GRAPHIFY\n")
+	os.Stdout.Sync()
 	fmt.Printf("STATUS: SYSTEM_MSG:Initializing Distributed DAG Execution...\n")
 	os.Stdout.Sync()
 

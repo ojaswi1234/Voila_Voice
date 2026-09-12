@@ -1445,6 +1445,9 @@ func startHTTPServer() {
 			if v, ok := req[k].(bool); ok {
 				return v
 			}
+			if v, ok := req[k].(string); ok {
+				return v == "true" || v == "1"
+			}
 			return false
 		}
 
