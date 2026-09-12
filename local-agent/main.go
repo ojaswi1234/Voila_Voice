@@ -1505,6 +1505,9 @@ Write-Output $base64
 		switch reqMode {
 		case "GROQ", "OLLAMA", "SHELL":
 			effectiveMode = reqMode
+			if graphifyEnabled {
+				effectiveMode = "AGENT"
+			}
 		default:
 			effectiveMode = globalMode
 			if effectiveMode == "" {
