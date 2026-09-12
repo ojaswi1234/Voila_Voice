@@ -2200,15 +2200,28 @@ def _draw_teams_section(dc, w, h):
                 editor_nodes[i]['model'] = m_var.get() + '\n(' + p_var.get() + ')'
                 editor_nodes[i]['prompt'] = p_txt.get('1.0', 'end').strip()
                 
+                def add_node():
+            sync_entries()
+            import time as _time
+            new_id = f"node{int(_time.time()*1000)}"
+            editor_nodes.append({
+                "id": new_id, "role": "Agent", "model": "llama-3.1-8b-instant\n(Groq)", 
+                "prompt": "", "x": 250, "y": 200, "color": "#10B981", "outline": "#34D399", "r": 20
+            })
+            render_nodes()
+            
+ "model": "llama-3.1-8b-instant\n(Groq)", 
+                "prompt": "", "x": 250, "y": 200, "color": "#10B981", "outline": "#34D399", "r": 20
+            })
+            render_nodes()
+            
         def delete_node(idx):
             sync_entries()
             if len(editor_nodes) > 0:
                 editor_nodes.pop(idx)
                 render_nodes()
                 
-        render_nodes()
-            
-        def delete_node(idx):
+        
             sync_entries()
             if len(editor_nodes) > 0:
                 editor_nodes.pop(idx)
