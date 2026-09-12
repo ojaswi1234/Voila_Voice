@@ -3228,7 +3228,7 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 // Supports up to 5 tool-calling iterations using the Ollama /api/chat tools field.
 func executeOllamaCommand(ctx context.Context, command, baseURL, modelName, apiKey string, streamFileObj *os.File, taskID string, convID string) (string, error) {
 	defer cleanupTerminalSession()
-	if baseURL == "" || baseURL == "http://localhost:11434" {
+	if baseURL == "" || baseURL == "http://localhost:11434" || baseURL == "https://ollama.com" {
 		if apiKey != "" {
 			baseURL = "https://api.ollama.ai"
 		} else {

@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	"syscall"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -32,13 +33,33 @@ type tuiModel struct {
 
 type graphifyTickMsg time.Time
 
+
+var (
+	kernel32TUI     = syscall.NewLazyDLL("kernel32.dll")
+	allocConsole = kernel32TUI.NewProc("AllocConsole")
+	freeConsole  = kernel32TUI.NewProc("FreeConsole")
+)
+
 func runGraphifyTUI() {
-	p := tea.NewProgram(tuiModel{}, tea.WithAltScreen())
+	// Pop open a visible console window!
+	allocConsole.Call()
+	
+	// Bind std streams to the new console window
+	out, _ := os.OpenFile("CONOUT$", os.O_RDWR, 0644)
+	os.Stdout = out
+	os.Stderr = out
+	in, _ := os.OpenFile("CONIN$", os.O_RDWR, 0644)
+	os.Stdin = in
+
+	p := tea.NewProgram(tuiModel{}, tea.WithAltScreen(), tea.WithInput(in), tea.WithOutput(out))
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("Alas, there's been an error: %v", err)
-		os.Exit(1)
 	}
+	
+	// Close window when done
+	freeConsole.Call()
 }
+
 
 func (m tuiModel) Init() tea.Cmd {
 	return tea.Batch(
