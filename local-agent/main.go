@@ -3229,7 +3229,7 @@ func executeOllamaCommand(ctx context.Context, command, baseURL, modelName, apiK
 	defer cleanupTerminalSession()
 	if baseURL == "" || baseURL == "http://localhost:11434" {
 		if apiKey != "" {
-			baseURL = "https://ollama.com"
+			baseURL = "https://api.ollama.ai"
 		} else {
 			baseURL = "http://localhost:11434"
 		}
