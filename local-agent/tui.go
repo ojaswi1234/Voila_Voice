@@ -152,9 +152,12 @@ func (m tuiModel) View() string {
 	var formattedLogs []string
 	roleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#60A5FA")) // Blue for role
 	toolStyle := lipgloss.NewStyle().Faint(true).Foreground(lipgloss.Color("#A78BFA")) // Purple for tools
+	sysStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#F87171")) // Red for system alerts
 
 	for _, l := range m.state.Logs {
-		if strings.HasPrefix(l, "[") && strings.Contains(l, "]") {
+		if strings.HasPrefix(l, "[SYSTEM]:") {
+			formattedLogs = append(formattedLogs, sysStyle.Render(l))
+		} else if strings.HasPrefix(l, "[") && strings.Contains(l, "]") {
 			idx := strings.Index(l, "]")
 			rolePart := l[:idx+1]
 			msgPart := l[idx+1:]

@@ -279,32 +279,27 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 				if nodeErr != nil {
 					updateLiveNode(nodeID, "error")
 					appendLiveLog(fmt.Sprintf("[%s] ERROR: %v", n.Role, nodeErr))
-				} else {
-					updateLiveNode(nodeID, "completed")
-					
-					// Format the chat output nicely
-					cleanOut := strings.TrimSpace(nodeOut)
-					if len(cleanOut) > 500 {
-						cleanOut = cleanOut[:497] + "..."
-					}
-					appendLiveLog(fmt.Sprintf("[%s]: %s\n", n.Role, cleanOut))
-					
-					outputs[nodeID] = nodeOut
-					transcript = append(transcript, fmt.Sprintf("--- From [%s] ---\n%s\n", n.Role, nodeOut))
-				}
-				defer cond.Broadcast()
-				
-				running[nodeID] = false
-
-				if nodeErr != nil {
 					fatalErr = fmt.Errorf("node %s failed: %v", n.Role, nodeErr)
+					running[nodeID] = false
+					cond.Broadcast()
 					return
 				}
 
+				// Format the chat output nicely
+				cleanOut := strings.TrimSpace(nodeOut)
+				if len(cleanOut) > 500 {
+					cleanOut = cleanOut[:497] + "..."
+				}
+				appendLiveLog(fmt.Sprintf("[%s]: %s", n.Role, cleanOut))
+				transcript = append(transcript, fmt.Sprintf("--- From [%s] ---\n%s", n.Role, nodeOut))
+				outputs[nodeID] = nodeOut
+				completed[nodeID] = true
+				updateLiveNode(nodeID, "completed")
+				
 				isReject := false
-				trimmedOut := strings.TrimSpace(nodeOut)
-				if strings.HasPrefix(trimmedOut, "REJECT:") {
-					parts := strings.SplitN(trimmedOut, ":", 3)
+				if strings.Contains(nodeOut, "REJECT:") {
+					idx := strings.Index(nodeOut, "REJECT:")
+					parts := strings.SplitN(nodeOut[idx:], ":", 3)
 					if len(parts) >= 3 {
 						targetRole := strings.TrimSpace(parts[1])
 						critique := strings.TrimSpace(parts[2])
@@ -326,6 +321,7 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 								for _, childID := range children[id] {
 									if completed[childID] {
 										completed[childID] = false
+										updateLiveNode(childID, "pending")
 										invalidateChildren(childID)
 									}
 								}
@@ -333,6 +329,9 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 							invalidateChildren(targetID)
 							
 							isReject = true
+							appendLiveLog(fmt.Sprintf("[SYSTEM]: 🚨 %s REJECTED %s's work! Forcing revision loop.", n.Role, targetRole))
+							updateLiveNode(targetID, "rejected")
+							
 							fmt.Printf("STATUS: SYSTEM_MSG:[%s] REJECTED [%s]. Forcing revision.\n", n.Role, targetRole)
 							os.Stdout.Sync()
 						}
@@ -340,11 +339,12 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 				}
 
 				if !isReject {
-					outputs[nodeID] = nodeOut
-					completed[nodeID] = true
 					fmt.Printf("STATUS: TEAM_NODE_DONE:%s\n", n.Role)
 					os.Stdout.Sync()
 				}
+				
+				running[nodeID] = false
+				cond.Broadcast()
 			}(nid, myTranscript, myRevisions, myRunCount)
 		}
 		mu.Unlock()
