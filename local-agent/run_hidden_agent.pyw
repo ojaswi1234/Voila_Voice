@@ -2126,7 +2126,7 @@ def _draw_teams_section(dc, w, h):
                 widget.destroy()
             entries.clear()
             
-            groq_models = ["llama-3.1-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768", "gemma2-9b-it", "llama3-groq-70b-8192-tool-use-preview"]
+            groq_models = ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "groq/compound", "groq/compound-mini", "qwen/qwen3.8-27b", "allam-2-7b"]
             ollama_models = ["gemma4:31b", "gpt-oss:120b", "gpt-oss:20b", "nemotron-3-nano:30b", "nemotron-3-super", "nemotron-3-ultra"]
             
             for i, n in enumerate(editor_nodes):
@@ -2205,7 +2205,7 @@ def _draw_teams_section(dc, w, h):
             import time as _time
             new_id = f"node{int(_time.time()*1000)}"
             editor_nodes.append({
-                "id": new_id, "role": "Agent", "model": "llama-3.1-8b-instant\n(Groq)", 
+                "id": new_id, "role": "Agent", "model": "openai/gpt-oss-20b\n(Groq)", 
                 "prompt": "", "x": 250, "y": 200, "color": "#10B981", "outline": "#34D399", "r": 20
             })
             render_nodes()

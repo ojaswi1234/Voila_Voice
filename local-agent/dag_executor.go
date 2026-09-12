@@ -190,7 +190,7 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 					actualModel = strings.TrimSpace(parts[0])
 				}
 				if actualModel == "" {
-					actualModel = "llama-3.1-8b-instant"
+					actualModel = "openai/gpt-oss-20b"
 				}
 
 				modelStr := strings.ToLower(n.Model)
