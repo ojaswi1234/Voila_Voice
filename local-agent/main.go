@@ -3021,7 +3021,14 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
    - Variety: Break walls of text using Two-Column layouts ('\begin{multicols}{2}' in LaTeX, or side-by-side text boxes in PPTX).
    - Visual Hierarchy: Use weight (Bold) and Color (Theme Hex Codes) for emphasis, NOT underlines. Underlines clip into descenders (like p, g, y) and look amateurish.
 
-4. HOW TO STOP: To exit the loop and speak to the user, you MUST return a normal text message and completely OMIT the tool calls. If you call a tool, you are trapped in the loop.`
+4. AUTONOMOUS RESEARCH & CONTENT EXPANSION (FOR NON-TECH USERS):
+   - The user is non-technical. If they ask for a document (like a "long PDF about X"), they expect YOU to act as a senior researcher and designer.
+   - Do NOT expect the user to provide the exact structure. You MUST autonomously expand the document: invent an Executive Summary, Table of Contents, deep multi-layered chapters, case studies, and a conclusion.
+   - You MUST autonomously perform deep 'web_search' iterations if necessary to gather facts, statistics, and highly detailed information before generating the document.
+   - You MUST autonomously select the best 'theme' based on the topic (e.g., 'cyberpunk' for tech, 'corporate_blue' for finance, 'forest_sage' for ecology).
+   - Use LaTeX features ('\\newpage', '\\tableofcontents', '\\onehalfspacing', 'tabularx' tables, '\\chapter') to ensure the document is voluminous, exhaustive, and professionally structured automatically.
+   
+5. HOW TO STOP: To exit the loop and speak to the user, you MUST return a normal text message and completely OMIT the tool calls. If you call a tool, you are trapped in the loop.`
 	}
 
 	// Maintain conversation as raw JSON-friendly messages
@@ -3266,7 +3273,14 @@ When generating PDFs (via LaTeX) or PPTs (via Python python-pptx):
 - LATEX BEST PRACTICES: Use packages like 'graphicx', 'float', 'wrapfig', and 'geometry' to strictly manage page margins and image placement. Ensure '\includegraphics' has explicit 'width=\linewidth' or 'width=\textwidth'. Use 'tabularx' for tables to prevent overflow. Always compile with 'pdflatex' using the 'create_pdf' tool's 'latex' parameter.
 - PPTX BEST PRACTICES: When writing Python scripts to generate PPTs, ALWAYS use 'Inches' or 'Cm' from 'pptx.util'. Calculate text-box heights based on font size and character count to push images downwards, or use built-in slide layouts ('prs.slide_layouts[1]', etc.) which handle bounding boxes natively. Introduce variety: use colorful heading blocks, two-column layouts, clean sans-serif fonts, and well-spaced bullet lists. Use hex color codes for beautiful text and shape fills.
 
-4. HOW TO STOP: To exit the loop and speak to the user, you MUST return a normal text message and completely OMIT the tool calls. If you call a tool, you are trapped in the loop.`
+4. AUTONOMOUS RESEARCH & CONTENT EXPANSION (FOR NON-TECH USERS):
+   - The user is non-technical. If they ask for a document (like a "long PDF about X"), they expect YOU to act as a senior researcher and designer.
+   - Do NOT expect the user to provide the exact structure. You MUST autonomously expand the document: invent an Executive Summary, Table of Contents, deep multi-layered chapters, case studies, and a conclusion.
+   - You MUST autonomously perform deep 'web_search' iterations if necessary to gather facts, statistics, and highly detailed information before generating the document.
+   - You MUST autonomously select the best 'theme' based on the topic (e.g., 'cyberpunk' for tech, 'corporate_blue' for finance, 'forest_sage' for ecology).
+   - Use LaTeX features ('\\newpage', '\\tableofcontents', '\\onehalfspacing', 'tabularx' tables, '\\chapter') to ensure the document is voluminous, exhaustive, and professionally structured automatically.
+   
+5. HOW TO STOP: To exit the loop and speak to the user, you MUST return a normal text message and completely OMIT the tool calls. If you call a tool, you are trapped in the loop.`
 	}
 
 	messages := []map[string]interface{}{
