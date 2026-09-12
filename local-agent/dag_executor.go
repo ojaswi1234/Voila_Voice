@@ -16,6 +16,62 @@ type GraphNode struct {
 	Prompt string `json:"prompt"`
 }
 
+
+var (
+	liveStateMu sync.Mutex
+	currentLiveState LiveState
+)
+
+func initLiveState(nodes []GraphNode) {
+	liveStateMu.Lock()
+	defer liveStateMu.Unlock()
+	currentLiveState = LiveState{
+		Status: "running",
+		Nodes: make([]NodeLiveState, len(nodes)),
+	}
+	for i, n := range nodes {
+		currentLiveState.Nodes[i] = NodeLiveState{
+			ID: n.ID, Role: n.Role, Status: "pending", Model: n.Model,
+		}
+	}
+	writeLiveState()
+}
+
+func updateLiveNode(id string, status string) {
+	liveStateMu.Lock()
+	defer liveStateMu.Unlock()
+	for i, n := range currentLiveState.Nodes {
+		if n.ID == id {
+			currentLiveState.Nodes[i].Status = status
+			break
+		}
+	}
+	writeLiveState()
+}
+
+func appendLiveLog(log string) {
+	liveStateMu.Lock()
+	defer liveStateMu.Unlock()
+	currentLiveState.Logs = append(currentLiveState.Logs, log)
+	if len(currentLiveState.Logs) > 15 {
+		currentLiveState.Logs = currentLiveState.Logs[len(currentLiveState.Logs)-15:]
+	}
+	writeLiveState()
+}
+
+func finishLiveState(status string, errMsg string) {
+	liveStateMu.Lock()
+	defer liveStateMu.Unlock()
+	currentLiveState.Status = status
+	currentLiveState.ErrorMsg = errMsg
+	writeLiveState()
+}
+
+func writeLiveState() {
+	b, _ := json.Marshal(currentLiveState)
+	os.WriteFile("graphify_live.json", b, 0644)
+}
+
 type GraphState struct {
 	Nodes []GraphNode `json:"nodes"`
 	Edges [][]string  `json:"edges"`
@@ -37,6 +93,7 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 		return "", fmt.Errorf("failed to parse graph state: %v", err)
 	}
 
+	initLiveState(state.Nodes)
 	if len(state.Nodes) == 0 {
 		return "Graph is empty", nil
 	}
