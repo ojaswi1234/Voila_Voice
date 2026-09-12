@@ -1,0 +1,122 @@
+.theme-corporate_blue {
+  --font-heading: Segoe UI;
+  --font-body: Georgia;
+  --pdf-font-heading: Helvetica;
+  --pdf-font-body: Times;
+  --color-primary: rgb(16, 42, 67);
+  --color-accent: rgb(36, 86, 148);
+  --color-text: rgb(200, 215, 230);
+  --color-heading: rgb(255, 140, 80);
+  --color-card: rgb(22, 55, 88);
+  --color-card-border: rgb(36, 86, 148);
+  --spacing-unit: 0.5;
+}
+.theme-cyberpunk {
+  --font-heading: Segoe UI;
+  --font-body: Segoe UI;
+  --pdf-font-heading: Helvetica;
+  --pdf-font-body: Helvetica;
+  --color-primary: rgb(13, 2, 8);
+  --color-accent: rgb(255, 0, 85);
+  --color-text: rgb(220, 220, 220);
+  --color-heading: rgb(0, 255, 204);
+  --color-card: rgb(28, 6, 20);
+  --color-card-border: rgb(255, 0, 85);
+  --spacing-unit: 0.5;
+  --gradient-start: rgb(13, 2, 8);
+  --gradient-end: rgb(30, 5, 35);
+  --gradient-angle: 135;
+}
+.theme-minimalist {
+  --font-heading: Segoe UI;
+  --font-body: Georgia;
+  --pdf-font-heading: Helvetica;
+  --pdf-font-body: Times;
+  --color-primary: rgb(12, 12, 12);
+  --color-accent: rgb(220, 220, 220);
+  --color-text: rgb(180, 180, 180);
+  --color-heading: rgb(255, 255, 255);
+  --color-card: rgb(22, 22, 22);
+  --color-card-border: rgb(55, 55, 55);
+  --spacing-unit: 0.5;
+}
+.theme-modern_dark {
+  --font-heading: Segoe UI;
+  --font-body: Georgia;
+  --pdf-font-heading: Helvetica;
+  --pdf-font-body: Times;
+  --color-primary: rgb(22, 22, 30);
+  --color-accent: rgb(255, 110, 64);
+  --color-text: rgb(200, 200, 200);
+  --color-heading: rgb(255, 255, 255);
+  --color-card: rgb(32, 32, 42);
+  --color-card-border: rgb(60, 60, 80);
+  --spacing-unit: 0.5;
+  --gradient-start: rgb(22, 22, 30);
+  --gradient-end: rgb(14, 14, 20);
+  --gradient-angle: 90;
+}
+.theme-illustrated_light {
+  --font-heading: Calibri;
+  --font-body: Calibri;
+  --pdf-font-heading: Helvetica;
+  --pdf-font-body: Helvetica;
+  --color-primary: rgb(245, 243, 255);
+  --color-accent: rgb(109, 40, 217);
+  --color-text: rgb(30, 27, 75);
+  --color-heading: rgb(76, 29, 149);
+  --color-card: rgb(255, 255, 255);
+  --color-card-border: rgb(221, 214, 254);
+  --spacing-unit: 0.5;
+  --gradient-start: rgb(245, 243, 255);
+  --gradient-end: rgb(229, 222, 255);
+  --gradient-angle: 135;
+}
+.theme-warm_sunset {
+  --font-heading: Calibri;
+  --font-body: Calibri;
+  --pdf-font-heading: Helvetica;
+  --pdf-font-body: Helvetica;
+  --color-primary: rgb(255, 251, 245);
+  --color-accent: rgb(234, 88, 12);
+  --color-text: rgb(67, 20, 7);
+  --color-heading: rgb(154, 52, 18);
+  --color-card: rgb(255, 255, 255);
+  --color-card-border: rgb(254, 215, 170);
+  --spacing-unit: 0.5;
+  --gradient-start: rgb(255, 251, 245);
+  --gradient-end: rgb(254, 240, 218);
+  --gradient-angle: 135;
+}
+.theme-ocean_depth {
+  --font-heading: Segoe UI;
+  --font-body: Segoe UI;
+  --pdf-font-heading: Helvetica;
+  --pdf-font-body: Helvetica;
+  --color-primary: rgb(7, 52, 98);
+  --color-accent: rgb(6, 182, 212);
+  --color-text: rgb(186, 230, 253);
+  --color-heading: rgb(255, 255, 255);
+  --color-card: rgb(10, 70, 125);
+  --color-card-border: rgb(6, 182, 212);
+  --spacing-unit: 0.5;
+  --gradient-start: rgb(7, 52, 98);
+  --gradient-end: rgb(3, 35, 68);
+  --gradient-angle: 90;
+}
+.theme-forest_sage {
+  --font-heading: Calibri;
+  --font-body: Calibri;
+  --pdf-font-heading: Helvetica;
+  --pdf-font-body: Helvetica;
+  --color-primary: rgb(240, 253, 244);
+  --color-accent: rgb(22, 163, 74);
+  --color-text: rgb(20, 83, 45);
+  --color-heading: rgb(15, 118, 110);
+  --color-card: rgb(255, 255, 255);
+  --color-card-border: rgb(187, 247, 208);
+  --spacing-unit: 0.5;
+  --gradient-start: rgb(240, 253, 244);
+  --gradient-end: rgb(220, 252, 231);
+  --gradient-angle: 135;
+}

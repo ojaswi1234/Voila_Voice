@@ -1631,9 +1631,6 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				result, err := b.stopCommand(deviceID)
 				b.unlockDevice(deviceID, clientID)
 
-		if b.fcmClient != nil {
-			go b.sendFCMTaskCompletion(deviceID, "Task Finished", "Your executed command has finished.")
-		}
 				
 				if err != nil {
 					b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: "+err.Error()))
@@ -1660,9 +1657,6 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 			case "unlock_device":
 				err := b.unlockDevice(deviceID, clientID)
 
-		if b.fcmClient != nil {
-			go b.sendFCMTaskCompletion(deviceID, "Task Finished", "Your executed command has finished.")
-		}
 				if err != nil {
 					b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: "+err.Error()))
 				} else {

@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>{{ ir.meta.title }}</title>
+  <link rel="stylesheet" href="../../tokens.css">
+  <style>
+    @page {
+      size: {{ ir.page }};
+      margin: 2cm;
+    }
+    body {
+      font-family: var(--font-body);
+      background-color: var(--color-primary);
+      color: var(--color-text);
+      line-height: 1.6;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      font-family: var(--font-heading);
+      color: var(--color-heading);
+    }
+    .title-block { text-align: center; margin-bottom: 3rem; }
+    .title-block h1 { font-size: 3rem; margin-bottom: 0.5rem; }
+    .title-block .subtitle { font-size: 1.5rem; color: var(--color-accent); }
+    .title-block .author { font-size: 1.2rem; margin-top: 1rem; }
+    
+    table { width: 100%; border-collapse: collapse; margin: 2rem 0; }
+    th, td { padding: 12px; text-align: left; border-bottom: 1px solid var(--color-card-border); }
+    th { background-color: var(--color-card); font-family: var(--font-heading); color: var(--color-heading); }
+    
+    .stat-row { display: flex; justify-content: space-between; gap: 1rem; margin: 2rem 0; }
+    .stat-card { background: var(--color-card); border: 1px solid var(--color-card-border); padding: 1.5rem; border-radius: 8px; flex: 1; text-align: center; }
+    .stat-label { font-size: 0.9rem; color: var(--color-accent); text-transform: uppercase; font-family: var(--font-heading); }
+    .stat-value { font-size: 2rem; color: var(--color-heading); font-weight: bold; margin-top: 0.5rem; }
+    
+    .page-break { page-break-before: always; }
+    .footer { margin-top: 5rem; text-align: center; font-size: 0.8rem; color: var(--color-accent); }
+  </style>
+</head>
+<body class="theme-{{ ir.theme }}">
+  <div class="title-block">
+    <h1>{{ ir.meta.title }}</h1>
+    {% if ir.meta.subtitle %}<div class="subtitle">{{ ir.meta.subtitle }}</div>{% endif %}
+    {% if ir.meta.author %}<div class="author">{{ ir.meta.author }}</div>{% endif %}
+  </div>
+
+  {% for section in ir.document.sections %}
+    {% if section.type == 'heading' %}
+      <h{{ section.level|default(2) }}>{{ section.text }}</h{{ section.level|default(2) }}>
+    {% elif section.type == 'prose' %}
+      {% if section.title %}<h2>{{ section.title }}</h2>{% endif %}
+      <p>{{ section.body }}</p>
+    {% elif section.type == 'table' %}
+      {% if section.title %}<h2>{{ section.title }}</h2>{% endif %}
+      <table>
+        <thead><tr>{% for col in section.columns %}<th>{{ col }}</th>{% endfor %}</tr></thead>
+        <tbody>
+          {% for row in section.rows %}
+          <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% elif section.type == 'stat_row' %}
+      <div class="stat-row">
+        {% for item in section.items %}
+        <div class="stat-card">
+          <div class="stat-label">{{ item.label }}</div>
+          <div class="stat-value">{{ item.value }}</div>
+        </div>
+        {% endfor %}
+      </div>
+    {% elif section.type == 'bullets' %}
+      <ul>
+        {% for item in section.items %}
+        <li>{{ item }}</li>
+        {% endfor %}
+      </ul>
+    {% elif section.type == 'page_break' %}
+      <div class="page-break"></div>
+    {% endif %}
+  {% endfor %}
+  
+  <div class="footer">
+    Generated at: {{ ir.meta.generated_at }}
+  </div>
+</body>
+</html>

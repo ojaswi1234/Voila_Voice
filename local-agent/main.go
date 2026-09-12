@@ -1632,7 +1632,7 @@ Write-Output $base64
 					m = connData.GroqModel
 				}
 				if m == "" {
-					m = "llama3-70b-8192"
+					m = "openai/gpt-oss-120b"
 				}
 				output, err = executeGroqCommand(ctx, command, connData.GroqAPIKey, m, clientID, nil, taskID, conversationID)
 				fmt.Println("STATUS: IDLE")
@@ -1937,7 +1937,7 @@ func executeCommand(ctx context.Context, command string, mode string, conversati
 	// LOCAL = agy (local Gemini agent). AGENT = also agy (legacy name).
 	// Only SHELL = raw PowerShell. Empty string = default to agy.
 	if modeUpper == "AGENT" || modeUpper == "LOCAL" || modeUpper == "" {
-		prompt := command + "\n\nCRITICAL - COMMAND MEMORY:\nHere are your highly compressed, previously successful PowerShell techniques:\n" + loadMemory() + "\nWhen asked to do a task, FIRST check if a command in this memory perfectly satisfies the purpose. If yes, RUN IT EXACTLY AS-IS from memory (unless the user explicitly requests a new/specific method). If you invent a NEW successful technique, you MUST immediately call the 'save_command_memory' tool to permanently memorize it.\n\n(CRITICAL SYSTEM NOTE: Keep your responses casual, brief, and conversational as if you are a friendly voice assistant.\n\nCRITICAL OS GUARDRAIL: You MUST NEVER modify, delete, or touch Windows system files, System32, Program Files, the Registry, or any critical OS configuration. You must refuse commands that could harm or break the OS. Address the user as 'boss'. Do not use overly formal language.\n\nCRITICAL SYSTEM NOTE: You are running inside an isolated background sandbox (`exebox` desktop). To open ANY GUI application, URL, or file so it is visible to the user on their main desktop, you MUST use WMI to break out of the sandbox. Use exactly this command format: `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'explorer.exe \"<URL_OR_PATH>\"'` (for URLs/files) or `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList '<APP_EXE>'` (for apps). DO NOT use Start-Process, as it will spawn invisibly in the sandbox! To perform browser automation, you MUST first launch a visible browser using Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe --remote-debugging-port=9222 --user-data-dir=C:\\tmp\\ai_browser_profile \"about:blank\"'. Then, control it by running python C:\\Users\\ojasw\\Desktop\\voice-cli-system\\local-agent\\browser_tools.py with args --action [goto|click|type|scrape|extract_links|snapshot] --url <url> --selector <css> --value <text>.\n\nCRITICAL - .AIIGNORE & DEPENDENCY OVERHEAD (0 BUGS POLICY):\nWhen exploring projects, NEVER search or read inside dependency folders (node_modules, .venv, venv, vendor, .m2, .gradle, target, packages, .cargo/registry). They contain massive overhead that breaks your context limits.\nTo understand dependencies, ONLY read blueprint files (package.json, pyproject.toml, requirements.txt, go.mod, pom.xml, build.gradle, composer.json, Gemfile, Cargo.toml, *.csproj). Also NEVER read standard '.env' files; if you need environment context, ONLY look at '.env.example' or '.env.local'. Also NEVER read standard '.env' files; if you need environment context, ONLY look at '.env.example' or '.env.local'.\nWhen searching for files, enforce this .aiignore policy by using findstr to pipe out junk:\n'cmd.exe /c \"dir /s /b /a:-d C:\\path\\*name* | findstr /V /I \"\\node_modules\\ \\.venv\\ \\venv\\ \\vendor\\ \\.git\\ \\target\\ \\.gradle\\ \\.m2\\ \\packages\\\"\"')"
+		prompt := command + "\n\nCRITICAL - COMMAND MEMORY:\nHere are your highly compressed, previously successful PowerShell techniques:\n" + loadMemory() + "\nWhen asked to do a task, FIRST check if a command in this memory perfectly satisfies the purpose. If yes, RUN IT EXACTLY AS-IS from memory (unless the user explicitly requests a new/specific method). If you invent a NEW successful technique, you MUST immediately call the 'save_command_memory' tool to permanently memorize it.\n\n(CRITICAL SYSTEM NOTE: Keep your responses casual, brief, and conversational as if you are a friendly voice assistant.\n\nCRITICAL - ONE-SHOT TERMINAL EXECUTION (MAX TOOLS):\nTo avoid hitting max_tool iteration limits and increase execution speed, you MUST combine multiple PowerShell steps into a SINGLE detailed command per tool_call. Do NOT run one tiny command, wait for the result, and then run the next tiny command. Instead, write a robust PowerShell script block (using semicolons or newlines) that loops, searches, or processes everything in one shot and returns the final desired output. Keep writing detailed combined commands until you get the exact required output!\n\nCRITICAL OS GUARDRAIL: You MUST NEVER modify, delete, or touch Windows system files, System32, Program Files, the Registry, or any critical OS configuration. You must refuse commands that could harm or break the OS. Address the user as 'boss'. Do not use overly formal language.\n\nCRITICAL SYSTEM NOTE: You are running inside an isolated background sandbox (`exebox` desktop). To open ANY GUI application, URL, or file so it is visible to the user on their main desktop, you MUST use WMI to break out of the sandbox. Use exactly this command format: `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'explorer.exe \"<URL_OR_PATH>\"'` (for URLs/files) or `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList '<APP_EXE>'` (for apps). DO NOT use Start-Process, as it will spawn invisibly in the sandbox! To perform browser automation, you MUST first launch a visible browser using Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe --remote-debugging-port=9222 --user-data-dir=C:\\tmp\\ai_browser_profile \"about:blank\"'. Then, control it by running python C:\\Users\\ojasw\\Desktop\\voice-cli-system\\local-agent\\browser_tools.py with args --action [goto|click|type|scrape|extract_links|snapshot] --url <url> --selector <css> --value <text>.\n\nCRITICAL - .AIIGNORE & DEPENDENCY OVERHEAD (0 BUGS POLICY):\nWhen exploring projects, NEVER search or read inside dependency folders (node_modules, .venv, venv, vendor, .m2, .gradle, target, packages, .cargo/registry). They contain massive overhead that breaks your context limits.\nTo understand dependencies, ONLY read blueprint files (package.json, pyproject.toml, requirements.txt, go.mod, pom.xml, build.gradle, composer.json, Gemfile, Cargo.toml, *.csproj). Also NEVER read standard '.env' files; if you need environment context, ONLY look at '.env.example' or '.env.local'. Also NEVER read standard '.env' files; if you need environment context, ONLY look at '.env.example' or '.env.local'.\nWhen searching for files, enforce this .aiignore policy by using findstr to pipe out junk:\n'cmd.exe /c \"dir /s /b /a:-d C:\\path\\*name* | findstr /V /I \"\\node_modules\\ \\.venv\\ \\venv\\ \\vendor\\ \\.git\\ \\target\\ \\.gradle\\ \\.m2\\ \\packages\\\"\"')"
 		if modelName == "" || modelName == "flash" {
 			modelName = "Gemini 3.7 Flash (High)"
 		}
@@ -2319,6 +2319,68 @@ Example full deck:
 			},
 		},
 	},
+
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "docs.templates.list",
+			Description: "List available document templates from the registry.",
+			Parameters: map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "docs.templates.get",
+			Description: "Get details and placeholders for a specific template.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"template_id": map[string]interface{}{"type": "string", "description": "The ID of the template"},
+				},
+				"required": []string{"template_id"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "docs.create_from_template",
+			Description: "Create a new document by filling a template. EXCLUSIVE WAY to create PPT/PDF/DOCX now.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"template_id": map[string]interface{}{"type": "string"},
+					"title": map[string]interface{}{"type": "string"},
+					"fills": map[string]interface{}{"type": "object", "description": "Map of placeholder keys to string values"},
+					"export": map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": `e.g. ["pptx", "pdf"]`},
+				},
+				"required": []string{"template_id", "title", "fills"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "docs.list_recent",
+			Description: "List recently generated documents.",
+			Parameters: map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "docs.open_local",
+			Description: "Open a locally downloaded document file in the default OS application.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"path": map[string]interface{}{"type": "string"},
+				},
+				"required": []string{"path"},
+			},
+		},
+	},
 	{
 		Type: "function",
 		Function: toolFuncDef{
@@ -2415,6 +2477,17 @@ func executeTool(ctx context.Context, toolName string, argsJSON json.RawMessage,
 			return ""
 		}
 		switch toolName {
+		case "docs.templates.list":
+			pseudoCommand = "python mcp_docs_facade.py list"
+		case "docs.templates.get":
+			pseudoCommand = "python mcp_docs_facade.py get " + getString("template_id")
+		case "docs.create_from_template":
+			pseudoCommand = "python mcp_docs_facade.py create " + getString("template_id")
+		case "docs.list_recent":
+			pseudoCommand = "python mcp_docs_facade.py list_recent"
+		case "docs.open_local":
+			pseudoCommand = "python mcp_docs_facade.py open_local " + getString("path")
+
 		case "save_command_memory":
 			return saveMemory(getString("purpose"), getString("command"))
 		case "run_terminal":
@@ -2427,7 +2500,7 @@ func executeTool(ctx context.Context, toolName string, argsJSON json.RawMessage,
 			pseudoCommand = "ls " + getString("path")
 		case "web_research":
 			pseudoCommand = "search \"" + getString("query") + "\""
-		case "create_pdf", "create_doc", "create_ppt", "create_excel", "create_csv", "modify_excel":
+		case "create_pdf", "create_doc", "create_ppt", "create_docx", "create_excel", "create_csv", "modify_excel":
 			pseudoCommand = "write_doc " + getString("path")
 		case "read_pdf", "read_excel", "read_csv":
 			pseudoCommand = "read_doc " + getString("path")
@@ -2632,6 +2705,33 @@ func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMes
 	}
 
 	switch toolName {
+	case "docs.templates.list", "docs.templates.get", "docs.create_from_template", "docs.list_recent", "docs.open_local":
+		action := strings.TrimPrefix(toolName, "docs.")
+		if action == "templates.list" { action = "list" }
+		if action == "templates.get" { action = "get" }
+		
+		scriptPath := filepath.Join(getExecutableDir(), "mcp_docs_facade.py")
+		var cmdObj *exec.Cmd
+		
+		if action == "list" || action == "list_recent" {
+			cmdObj = exec.Command("python", scriptPath, action)
+		} else if action == "get" || action == "open_local" {
+			argStr := getString("template_id")
+			if action == "open_local" {
+			    argStr = getString("path")
+			}
+			cmdObj = exec.Command("python", scriptPath, action, argStr)
+		} else if action == "create_from_template" {
+			cmdObj = exec.Command("python", scriptPath, "create", string(argsJSON))
+			cmdObj.Env = append(os.Environ(), "VOILA_DOCS_MOCK=1") // Force mock mode for now
+		}
+		
+		outBytes, err := cmdObj.CombinedOutput()
+		result := strings.TrimSpace(string(outBytes))
+		if err != nil {
+			result += "\n(Error: " + err.Error() + ")"
+		}
+		return result
 	case "save_command_memory":
 		return saveMemory(getString("purpose"), getString("command"))
 	case "web_research":
@@ -2823,7 +2923,7 @@ func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMes
 
 		return result
 
-	case "create_pdf", "create_doc", "read_pdf", "create_ppt", "create_excel", "modify_excel", "read_excel", "create_csv", "read_csv":
+	case "create_pdf", "create_doc", "read_pdf", "create_ppt", "create_docx", "create_excel", "modify_excel", "read_excel", "create_csv", "read_csv":
 		return callPythonDocumentTool(toolName, argsJSON)
 	case "automate_0":
 		action := getString("action")
@@ -2913,7 +3013,7 @@ func executeGroqCommand(ctx context.Context, command, apiKey, modelName, clientI
 		return "", fmt.Errorf("Groq API key not set. Open the Voila dashboard → Settings to add your key")
 	}
 	if modelName == "" {
-		modelName = "llama3-70b-8192" // Groq free-tier default
+		modelName = "openai/gpt-oss-120b" // Groq free-tier default
 	}
 
 	// Mask key for logging (show last 4 chars only)
@@ -2980,7 +3080,7 @@ CRITICAL - TOOL EFFICIENCY & LOOP AVOIDANCE (0 BUGS POLICY):
 	messages = append(messages, map[string]interface{}{"role": "user", "content": command})
 
 	client := &http.Client{Timeout: 60 * time.Second}
-	const maxIter = 8
+	const maxIter = 50
 
 	for iter := 0; iter < maxIter; iter++ {
 
@@ -3081,7 +3181,9 @@ CRITICAL - TOOL EFFICIENCY & LOOP AVOIDANCE (0 BUGS POLICY):
 			debugLog.Printf("[DEBUG_LIFECYCLE: GROQ] Returning output back to backend webhook...")
 			debugLog.Printf("================================================================")
 			debugLog.Printf("[executeGroqCommand] iter=%d final answer len=%d", iter, len(choice.Message.Content))
-			return strings.TrimSpace(choice.Message.Content), nil
+			finalAnswer := strings.TrimSpace(choice.Message.Content)
+			saveCloudHistory(convID, command, finalAnswer)
+			return finalAnswer, nil
 		}
 
 		debugLog.Printf("[executeGroqCommand] iter=%d toolCalls=%d", iter, len(choice.Message.ToolCalls))
@@ -3215,7 +3317,7 @@ CRITICAL - TOOL EFFICIENCY & LOOP AVOIDANCE (0 BUGS POLICY):
 	messages = append(messages, map[string]interface{}{"role": "user", "content": command})
 
 	client := &http.Client{Timeout: 300 * time.Second}
-	const maxIter = 8
+	const maxIter = 50
 
 	for iter := 0; iter < maxIter; iter++ {
 
@@ -3303,7 +3405,9 @@ CRITICAL - TOOL EFFICIENCY & LOOP AVOIDANCE (0 BUGS POLICY):
 			debugLog.Printf("[DEBUG_LIFECYCLE: OLLAMA] Returning output back to backend webhook...")
 			debugLog.Printf("================================================================")
 			debugLog.Printf("[executeOllamaCommand] iter=%d final answer len=%d", iter, len(result.Message.Content))
-			return strings.TrimSpace(result.Message.Content), nil
+			finalAnswer := strings.TrimSpace(result.Message.Content)
+			saveCloudHistory(convID, command, finalAnswer)
+			return finalAnswer, nil
 		}
 
 		debugLog.Printf("[executeOllamaCommand] iter=%d toolCalls=%d", iter, len(result.Message.ToolCalls))

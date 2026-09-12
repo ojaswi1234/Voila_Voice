@@ -441,7 +441,7 @@ def update_expression():
 dashboard_active = False
 dashboard_transition_in_progress = False
 dashboard_transition_progress = 0.0
-original_pos = (0, 0)  # Store original position
+original_pos = (root.winfo_screenwidth() - 320, root.winfo_screenheight() - 120)  # Store original position
 original_size = (300, 90)  # Store original size
 usage_stats = {
     "commands_executed": 0,
@@ -455,7 +455,7 @@ usage_stats = {
 }
 current_section = "Dashboard"  # Current active section
 heatmap_cache = None
-DASHBOARD_W = 920
+DASHBOARD_W = 1050
 DASHBOARD_H = 620
 simulated_dash_time = 0.0
 
@@ -535,6 +535,7 @@ NAV_ITEMS = [
     ('Connections', 'Connect'),
     ('Analytics', 'Analytics'),
     ('Settings', 'Settings'),
+    ('Documents', 'Documents'),
     ('Teams', 'Teams'),
 ]
 
@@ -628,6 +629,9 @@ import json as _json_mod
 # ─── Settings widget state ────────────────────────────────────────────────
 _settings_frame_widget = None
 
+_documents_frame_widget = None
+
+
 def _make_btn(parent, text, cmd, bg='#374151', fg='#E5E7EB', width=8):
     return tk.Button(parent, text=text, command=cmd, bg=bg, fg=fg,
                      activebackground='#4B5563', activeforeground='#fff',
@@ -648,11 +652,98 @@ def _api_call(method, path, payload=None):
     except Exception as e:
         return {'error': str(e)}
 
+
+import json
+
+def _hide_documents_widgets():
+    global _documents_frame_widget
+    if _documents_frame_widget:
+        _documents_frame_widget.destroy()
+        _documents_frame_widget = None
+
+def _show_documents_widgets():
+    global _documents_frame_widget
+    _hide_documents_widgets()
+    
+    _documents_frame_widget = tk.Frame(dash_content, bg='#0F1115')
+    _documents_frame_widget.place(x=0, y=0, relwidth=1.0, relheight=1.0)
+    
+    canvas = tk.Canvas(_documents_frame_widget, bg='#0F1115', highlightthickness=0)
+    scrollbar = ttk.Scrollbar(_documents_frame_widget, orient="vertical", command=canvas.yview)
+    scrollable_frame = tk.Frame(canvas, bg='#0F1115')
+    
+    scrollable_frame.bind(
+        "<Configure>",
+        lambda e: canvas.configure(
+            scrollregion=canvas.bbox("all")
+        )
+    )
+    
+    canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+    canvas.configure(yscrollcommand=scrollbar.set)
+    
+    canvas.pack(side="left", fill="both", expand=True)
+    scrollbar.pack(side="right", fill="y")
+    
+    inner = tk.Frame(scrollable_frame, bg='#0F1115')
+    inner.pack(fill='both', expand=True, padx=4, pady=4)
+    
+    # Load registry
+    registry_path = os.path.join(os.path.dirname(__file__), 'templates', 'registry.json')
+    registry = {}
+    if os.path.exists(registry_path):
+        with open(registry_path, 'r', encoding='utf-8') as f:
+            registry = json.load(f)
+            
+    tk.Label(inner, text='Template Registry', bg='#0F1115', fg='#E5E7EB', font=('Segoe UI', 14, 'bold')).pack(anchor='w', pady=(10, 5))
+    
+    if not registry:
+        tk.Label(inner, text='No templates found in registry.json.', bg='#0F1115', fg='#EF4444').pack(anchor='w')
+    else:
+        for tid, tdata in registry.items():
+            card = tk.Frame(inner, bg='#1A1D23', bd=1, relief='solid')
+            card.pack(fill='x', pady=5, padx=5)
+            tk.Label(card, text=f"{tid} ({tdata.get('provider')})", bg='#1A1D23', fg='#6366F1', font=('Segoe UI', 10, 'bold')).pack(anchor='w', padx=10, pady=5)
+            tk.Label(card, text=f"Placeholders: {', '.join(tdata.get('placeholders', []))}", bg='#1A1D23', fg='#9CA3AF').pack(anchor='w', padx=10)
+            tk.Label(card, text=f"Tags: {', '.join(tdata.get('intent_tags', []))}", bg='#1A1D23', fg='#9CA3AF').pack(anchor='w', padx=10, pady=(0, 5))
+            
+    # Load recent docs
+    tk.Label(inner, text='Recent Documents', bg='#0F1115', fg='#E5E7EB', font=('Segoe UI', 14, 'bold')).pack(anchor='w', pady=(20, 5))
+    index_path = os.path.join(os.path.dirname(__file__), '..', 'artifacts', 'documents', 'index.json')
+    recent = []
+    if os.path.exists(index_path):
+        with open(index_path, 'r', encoding='utf-8') as f:
+            recent = json.load(f)
+            
+    if not recent:
+        tk.Label(inner, text='No recent documents.', bg='#0F1115', fg='#9CA3AF').pack(anchor='w')
+    else:
+        for doc in recent:
+            dcard = tk.Frame(inner, bg='#1A1D23', bd=1, relief='solid')
+            dcard.pack(fill='x', pady=5, padx=5)
+            tk.Label(dcard, text=doc.get('title', 'Untitled'), bg='#1A1D23', fg='#10B981', font=('Segoe UI', 10, 'bold')).pack(anchor='w', padx=10, pady=5)
+            tk.Label(dcard, text=f"Template: {doc.get('template_id')} | Created: {doc.get('created_at')}", bg='#1A1D23', fg='#9CA3AF').pack(anchor='w', padx=10)
+            
+            btn_frame = tk.Frame(dcard, bg='#1A1D23')
+            btn_frame.pack(anchor='w', padx=10, pady=5)
+            
+            for path in doc.get('paths', []):
+                def make_cmd(p=path):
+                    import subprocess
+                    if sys.platform == "win32": os.startfile(p)
+                    elif sys.platform == "darwin": subprocess.Popen(["open", p])
+                    else: subprocess.Popen(["xdg-open", p])
+                tk.Button(btn_frame, text=f"Open {os.path.basename(path)}", command=make_cmd, bg='#374151', fg='#E5E7EB', relief='flat').pack(side='left', padx=(0, 5))
+
+
 def _hide_settings_widgets():
     global _settings_frame_widget
     if _settings_frame_widget:
         _settings_frame_widget.destroy()
         _settings_frame_widget = None
+
+_documents_frame_widget = None
+
 
 def _show_settings_widgets():
     global _settings_frame_widget
@@ -722,16 +813,21 @@ def _show_settings_widgets():
         row=1, column=0, padx=12, pady=4, sticky='w')
     
     groq_models = [
+        "qwen/qwen3.8-27b",
+        "qwen/qwen3.6-27b",
+        "openai/gpt-oss-120b",
+        "openai/gpt-oss-20b",
+        "openai/gpt-oss-safeguard-20b",
+        "groq/compound",
+        "groq/compound-mini",
+        "allam-2-7b",
+        "meta-llama/llama-prompt-guard-2-86m",
+        "meta-llama/llama-prompt-guard-2-22m",
         "llama3-70b-8192",
-        "llama3-8b-8192",
         "llama-3.1-70b-versatile",
-        "llama-3.1-8b-instant",
-        "llama3-groq-70b-8192-tool-use-preview",
-        "llama3-groq-8b-8192-tool-use-preview",
-        "mixtral-8x7b-32768",
-        "gemma2-9b-it"
+        "mixtral-8x7b-32768"
     ]
-    groq_model_var = tk.StringVar(value=data.get('groq_model', 'llama3-70b-8192') or 'llama3-70b-8192')
+    groq_model_var = tk.StringVar(value=data.get('groq_model', 'openai/gpt-oss-120b') or 'openai/gpt-oss-120b')
     
     style = ttk.Style()
     style.theme_use('default')
@@ -787,7 +883,7 @@ def _show_settings_widgets():
     _make_btn(btn_row, '✓ Verify', on_groq_verify, bg='#10B981', width=9).pack(side='left', padx=(0, 6))
     _make_btn(btn_row, '🗑️ Delete', on_groq_delete, bg='#DC2626', width=9).pack(side='left')
 
-    tk.Label(groq_frame, text='Free models: llama3-70b-8192, llama3-8b-8192, mixtral-8x7b-32768, gemma2-9b-it',
+    tk.Label(groq_frame, text='Available models: qwen3.8-27b, gpt-oss-120b, compound, allam-2-7b, llama-3.1...',
              bg='#1A1D23', fg='#4B5563', font=('Segoe UI', 8, 'italic')).grid(
         row=3, column=0, columnspan=4, padx=12, pady=(0, 10), sticky='w')
 
@@ -934,6 +1030,8 @@ def refresh_dashboard_content():
     # Always destroy settings widget frame when refreshing (navigated away)
     if current_section != 'Settings':
         _hide_settings_widgets()
+    if current_section != 'Documents':
+        _hide_documents_widgets()
 
     build_dashboard_ui()
     dash_title_var.set(current_section)
@@ -954,6 +1052,9 @@ def refresh_dashboard_content():
         _draw_analytics_section(dash_canvas, w, h)
     elif current_section == 'Settings':
         _show_settings_widgets()
+        return
+    elif current_section == 'Documents':
+        _show_documents_widgets()
         return  # Settings are all widgets, not canvas drawing
     elif current_section == 'Teams':
         _draw_teams_section(dash_canvas, w, h)

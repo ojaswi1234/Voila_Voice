@@ -125,6 +125,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
 
   static const platform = MethodChannel('com.voila/intent');
   bool _showFlowchart = false;
+  bool _showTextInput = false;
   bool _isAssistant = false;
   String? _temporaryAssistantImage;
   Timer? _assistantImageTimer;
@@ -2854,14 +2855,36 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        // LEFT: Camera & Upload (Upload is dummy for Gemini look)
+                        // LEFT: Camera & Keyboard
                         Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
+                            AnimatedSize(
+                              duration: const Duration(milliseconds: 250),
+                              curve: Curves.easeInOut,
+                              child: _showTextInput 
+                                ? const SizedBox(width: 0)
+                                : Padding(
+                                    padding: const EdgeInsets.only(right: 12),
+                                    child: GestureDetector(
+                                      onTap: () {
+                                        _controller.text = "__SCREENSHOT__";
+                                        _sendMessage();
+                                      },
+                                      child: Container(
+                                        padding: const EdgeInsets.all(12),
+                                        decoration: const BoxDecoration(
+                                          color: Color(0xFF1E1E24),
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: const Icon(Icons.camera_alt_outlined, color: Colors.white, size: 22),
+                                      ),
+                                    ),
+                                  ),
+                            ),
                             GestureDetector(
                               onTap: () {
-                                _controller.text = "__SCREENSHOT__";
-                                _sendMessage();
+                                setState(() { _showTextInput = !_showTextInput; });
                               },
                               child: Container(
                                 padding: const EdgeInsets.all(12),
@@ -2869,76 +2892,120 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                                   color: Color(0xFF1E1E24),
                                   shape: BoxShape.circle,
                                 ),
-                                child: const Icon(Icons.camera_alt_outlined, color: Colors.white, size: 22),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            GestureDetector(
-                              onTap: () {},
-                              child: Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: colorScheme.secondary.withOpacity(0.2),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Icon(Icons.arrow_upward_rounded, color: colorScheme.secondary, size: 22),
+                                child: Icon(_showTextInput ? Icons.keyboard_hide : Icons.keyboard, color: Colors.white, size: 22),
                               ),
                             ),
                           ],
                         ),
                         
-                        // CENTER: Glowing Pill
+                        // CENTER: Glowing Pill OR Text Input (Animated)
                         Expanded(
-                          child: Container(
-                            height: 56,
-                            margin: const EdgeInsets.symmetric(horizontal: 16),
-                            child: AudioVisualizer(
-                              isListening: _isListening,
-                              isSpeaking: _isAiSpeaking,
-                              soundLevel: _currentSoundLevel,
+                          child: AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 300),
+                            switchInCurve: Curves.easeOutBack,
+                            switchOutCurve: Curves.easeIn,
+                            transitionBuilder: (child, animation) {
+                              return FadeTransition(
+                                opacity: animation,
+                                child: SlideTransition(
+                                  position: Tween<Offset>(
+                                    begin: const Offset(0.0, 0.2),
+                                    end: Offset.zero,
+                                  ).animate(animation),
+                                  child: child,
+                                ),
+                              );
+                            },
+                            child: Container(
+                              key: ValueKey<bool>(_showTextInput),
+                              height: 56,
+                              margin: const EdgeInsets.symmetric(horizontal: 16),
+                              child: _showTextInput
+                                  ? TextField(
+                                      controller: _controller,
+                                      style: const TextStyle(color: Colors.white, fontSize: 14),
+                                      decoration: InputDecoration(
+                                        hintText: 'Type your prompt...',
+                                        hintStyle: const TextStyle(color: Colors.white30),
+                                        filled: true,
+                                        fillColor: const Color(0xFF1E1E24),
+                                        contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                                        border: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(28),
+                                          borderSide: BorderSide.none,
+                                        ),
+                                      ),
+                                      onSubmitted: (_) {
+                                        _sendMessage();
+                                        setState(() { _showTextInput = false; });
+                                      },
+                                    )
+                                  : AudioVisualizer(
+                                      isListening: _isListening,
+                                      isSpeaking: _isAiSpeaking,
+                                      soundLevel: _currentSoundLevel,
+                                    ),
                             ),
                           ),
                         ),
                         
-                        // RIGHT: Mic & Close
+                        // RIGHT: Mic & Send/Stop Toggle
                         Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
+                            AnimatedSize(
+                              duration: const Duration(milliseconds: 250),
+                              curve: Curves.easeInOut,
+                              child: _showTextInput
+                                ? const SizedBox(width: 0)
+                                : Padding(
+                                    padding: const EdgeInsets.only(right: 12),
+                                    child: GestureDetector(
+                                      onTap: () {
+                                        if (_isLiveSession) {
+                                          _stopListening();
+                                          flutterTts.stop();
+                                          setState(() { _isAiSpeaking = false; _isLiveSession = false; });
+                                        } else {
+                                          setState(() => _isLiveSession = true);
+                                          _startListening();
+                                        }
+                                      },
+                                      child: Container(
+                                        padding: const EdgeInsets.all(12),
+                                        decoration: const BoxDecoration(
+                                          color: Color(0xFF1E1E24),
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: Icon(_isLiveSession ? Icons.mic_rounded : Icons.mic_off_rounded, color: Colors.white, size: 22),
+                                      ),
+                                    ),
+                                  ),
+                            ),
                             GestureDetector(
                               onTap: () {
-                                if (_isLiveSession) {
-                                  _stopListening();
-                                  flutterTts.stop();
-                                  setState(() => _isAiSpeaking = false);
+                                if (_isThinking) {
                                   _cancelBackendTask();
                                 } else {
-                                  setState(() => _isLiveSession = true);
-                                  _startListening();
+                                  if (_controller.text.isNotEmpty) {
+                                    _sendMessage();
+                                    setState(() { _showTextInput = false; });
+                                  } else {
+                                    setState(() { _showTextInput = true; });
+                                  }
                                 }
                               },
                               child: Container(
                                 padding: const EdgeInsets.all(12),
-                                decoration: const BoxDecoration(
-                                  color: Color(0xFF1E1E24),
+                                decoration: BoxDecoration(
+                                  color: _isThinking ? Colors.red.withOpacity(0.2) : colorScheme.secondary.withOpacity(0.2),
                                   shape: BoxShape.circle,
                                 ),
-                                child: Icon(_isLiveSession ? Icons.mic_rounded : Icons.mic_off_rounded, color: Colors.white, size: 22),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            GestureDetector(
-                              onTap: () {
-                                _stopListening();
-                                flutterTts.stop();
-                                setState(() { _isAiSpeaking = false; _isLiveSession = false; });
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: const BoxDecoration(
-                                  color: Color(0xFF1E1E24),
-                                  shape: BoxShape.circle,
+                                child: Icon(
+                                  _isThinking ? Icons.stop_rounded : Icons.arrow_upward_rounded, 
+                                  color: _isThinking ? Colors.red : colorScheme.secondary, 
+                                  size: 22
                                 ),
-                                child: const Icon(Icons.close_rounded, color: Colors.white, size: 22),
                               ),
                             ),
                           ],
