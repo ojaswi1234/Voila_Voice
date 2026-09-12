@@ -4011,7 +4011,10 @@ func main() {
 	for _, arg := range os.Args {
 		if arg == "--background" || arg == "-b" {
 			backgroundMode = true
-			break
+		}
+		if arg == "--tui" {
+			runGraphifyTUI()
+			return
 		}
 	}
 

@@ -1879,9 +1879,9 @@ import os
 if 'graph_state' not in globals():
     graph_state = {
         "nodes": [
-            {"id": "node1", "role": "Researcher", "model": "llama3-8b\n(Groq)", "prompt": "Analyze the request and propose an initial approach.", "x": 150, "y": 150, "color": "#2563EB", "outline": "#60A5FA", "r": 20},
-            {"id": "node2", "role": "Orchestrator", "model": "llama3-70b\n(Groq)", "prompt": "Resolve the debate and improve the approach.", "x": 350, "y": 250, "color": "#7C3AED", "outline": "#A78BFA", "r": 25},
-            {"id": "node3", "role": "Reviewer", "model": "llama3-8b\n(Groq)", "prompt": "Critique the approach and point out flaws.", "x": 550, "y": 150, "color": "#10B981", "outline": "#34D399", "r": 20}
+            {"id": "node1", "role": "Researcher", "model": "openai/gpt-oss-20b\n(Groq)", "prompt": "Analyze the request and propose an initial approach.", "x": 150, "y": 150, "color": "#2563EB", "outline": "#60A5FA", "r": 20},
+            {"id": "node2", "role": "Orchestrator", "model": "openai/gpt-oss-120b\n(Groq)", "prompt": "Resolve the debate and improve the approach.", "x": 350, "y": 250, "color": "#7C3AED", "outline": "#A78BFA", "r": 25},
+            {"id": "node3", "role": "Reviewer", "model": "openai/gpt-oss-20b\n(Groq)", "prompt": "Critique the approach and point out flaws.", "x": 550, "y": 150, "color": "#10B981", "outline": "#34D399", "r": 20}
         ],
         "edges": [
             ("node1", "node2"),
@@ -2246,8 +2246,8 @@ def _draw_teams_section(dc, w, h):
         global graph_state
         graph_state = {
             "nodes": [
-                {"id": "node1", "role": "Analyzer", "model": "llama3-8b\n(Groq)", "prompt": "Analyze", "x": 100, "y": 200, "color": "#F59E0B", "outline": "#FCD34D", "r": 20},
-                {"id": "node2", "role": "Writer", "model": "llama3-8b\n(Groq)", "prompt": "Write", "x": w//2, "y": 200, "color": "#3B82F6", "outline": "#93C5FD", "r": 20},
+                {"id": "node1", "role": "Analyzer", "model": "openai/gpt-oss-20b\n(Groq)", "prompt": "Analyze", "x": 100, "y": 200, "color": "#F59E0B", "outline": "#FCD34D", "r": 20},
+                {"id": "node2", "role": "Writer", "model": "openai/gpt-oss-20b\n(Groq)", "prompt": "Write", "x": w//2, "y": 200, "color": "#3B82F6", "outline": "#93C5FD", "r": 20},
             ],
             "edges": []
         }
