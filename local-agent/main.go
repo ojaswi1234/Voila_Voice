@@ -111,6 +111,7 @@ var (
 	currentCmd         *exec.Cmd
 	currentConvID      string
 	currentCancel      context.CancelFunc
+	isGraphifyRunning bool
 	circuitMu          sync.Mutex
 	circuitOpen        bool
 	execSemaphore      chan struct{} // Limit concurrent executions
@@ -1529,6 +1530,7 @@ Write-Output $base64
 				
 				cmdMu.Lock()
 				currentCancel = nil
+				isGraphifyRunning = false
 				cmdMu.Unlock()
 				
 				backendURL := strings.TrimRight(connData.BackendURL, "/") + "/webhook/result"
@@ -1594,6 +1596,7 @@ Write-Output $base64
 				<-execSemaphore // Release semaphore when done
 				cmdMu.Lock()
 				currentCancel = nil
+				isGraphifyRunning = false
 				cmdMu.Unlock()
 				cancel()
 			}()

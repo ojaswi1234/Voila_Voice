@@ -42,6 +42,9 @@ var (
 
 func runGraphifyTUI() {
 	// Pop open a visible console window!
+	// MUST free any existing hidden console inherited from Python's CREATE_NO_WINDOW first!
+	freeConsole.Call()
+	time.Sleep(100 * time.Millisecond) // Give OS a tiny moment
 	allocConsole.Call()
 	
 	// Bind std streams to the new console window
