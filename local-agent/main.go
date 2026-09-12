@@ -2262,13 +2262,17 @@ var availableTools = []toolDef{
 		Type: "function",
 		Function: toolFuncDef{
 			Name:        "create_doc",
-			Description: "Create a Word document with text content.",
+			Description: "Create an elegant, highly structured Word Document (DOCX). Autonomously structure the content with exhaustive detail, tables, and professional formatting.",
 			Parameters: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"path":    map[string]interface{}{"type": "string", "description": "Absolute path to save DOCX"},
 					"content": map[string]interface{}{"type": "string", "description": "Text content of the document"},
 					"theme":   map[string]interface{}{"type": "string", "description": "Theme name: corporate_blue, cyberpunk, minimalist, modern_dark"},
+					"design_strategy": map[string]interface{}{"type": "string", "description": `Select a Global Marketplace Skill Prompt to guide your DOCX generation:
+- "Harvard Business Case Study": Enforces strict academic tone, blockquotes for testimonies, and 12pt serif typography.
+- "Corporate Legal Contract": Enforces heavily numbered lists (1.1, 1.2), bolded definitions, and rigid section breaks.
+- "Modern Product Requirement Document (PRD)": Uses markdown-style headers, deep feature tables, and user story blocks.`},
 				},
 				"required": []string{"path", "content", "theme", "design_strategy"},
 			},
@@ -2334,14 +2338,18 @@ Example full deck:
 		Type: "function",
 		Function: toolFuncDef{
 			Name:        "create_excel",
-			Description: "Create an Excel file from data.",
+			Description: "Create a robust, deeply structured Excel Spreadsheet (XLSX). Do NOT just output a basic table. Autonomously invent multi-sheet structures, financial models, or dashboards based on the user's request.",
 			Parameters: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"path": map[string]interface{}{"type": "string", "description": "Absolute path to save XLSX"},
 					"data": map[string]interface{}{"type": "string", "description": "JSON string of array of objects representing rows"},
+					"design_strategy": map[string]interface{}{"type": "string", "description": `Select a Global Marketplace Skill Prompt to guide your Excel generation:
+- "Wall Street Financial Model": Enforces strict financial formatting, separate assumptions/calculations sheets, and YoY/QoQ variance columns.
+- "Silicon Valley SaaS Dashboard": Enforces MRR/ARR tracking, cohort analysis grids, and conditional formatting rules for churn.
+- "Project Management Gantt": Enforces timeline-based columns, status dropdowns, and color-coded priority blocks.`},
 				},
-				"required": []string{"path", "data"},
+				"required": []string{"path", "data", "design_strategy"},
 			},
 		},
 	},
@@ -2380,14 +2388,18 @@ Example full deck:
 		Type: "function",
 		Function: toolFuncDef{
 			Name:        "create_csv",
-			Description: "Create a CSV file.",
+			Description: "Create a large, highly realistic CSV file. Act as a senior data engineer: autonomously invent realistic schema columns and generate exhaustive rows of high-quality data.",
 			Parameters: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"path": map[string]interface{}{"type": "string", "description": "Absolute path to save CSV"},
 					"data": map[string]interface{}{"type": "string", "description": "JSON array of objects or raw CSV string"},
+					"design_strategy": map[string]interface{}{"type": "string", "description": `Select a Global Marketplace Skill Prompt to guide your CSV generation:
+- "Enterprise Database Seed": Enforces strict primary keys, UUIDs, ISO-8601 timestamps, and highly realistic mock data.
+- "Machine Learning Dataset": Enforces normalized continuous variables, encoded categorical labels, and train/test splits.
+- "Marketing CRM Export": Enforces standard lead schemas (First Name, Last Name, Email, LTV, Last Contacted).`},
 				},
-				"required": []string{"path", "data"},
+				"required": []string{"path", "data", "design_strategy"},
 			},
 		},
 	},
