@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -60,6 +61,21 @@ func tickCmd() tea.Cmd {
 func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		if msg.String() == "k" {
+			go func() {
+				connData, err := loadConnectionData()
+				if err == nil && connData.SecurityPhrase != "" {
+					expectedSecret := hashPhrase(connData.SecurityPhrase, connData.DeviceID)
+					req, _ := http.NewRequest("POST", "http://127.0.0.1:8080/stop", nil)
+					req.Header.Set("X-Exec-Secret", expectedSecret)
+					client := &http.Client{Timeout: 2 * time.Second}
+					client.Do(req)
+				}
+			}()
+			m.state.ErrorMsg = "FORCE KILLED BY USER"
+			m.state.Status = "error"
+			return m, nil
+		}
 		if msg.String() == "q" || msg.String() == "ctrl+c" || msg.String() == "esc" {
 			return m, tea.Quit
 		}
@@ -104,7 +120,7 @@ func (m tuiModel) View() string {
 	} else if m.state.Status == "error" {
 		header += lipgloss.NewStyle().Foreground(lipgloss.Color("#EF4444")).Render(" [ERROR - Press any key to exit]")
 	} else {
-		header += lipgloss.NewStyle().Foreground(lipgloss.Color("#F59E0B")).Render(" [RUNNING...]")
+		header += lipgloss.NewStyle().Foreground(lipgloss.Color("#F59E0B")).Render(" [RUNNING... (Press 'k' to KILL)]")
 	}
 
 	// Render nodes horizontally
