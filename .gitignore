@@ -44,6 +44,8 @@ mobile-agent/windows/
 mobile-agent/test/
 mobile-agent/lib/*.backup
 mobile-agent/assets/fonts/*.ttf
+mobile-agent/google-services.json
+
 
 # IDE
 .vscode/

@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "179855006674",
+    "project_id": "studio-5839644595-1e4dc",
+    "storage_bucket": "studio-5839644595-1e4dc.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:179855006674:android:55d3fc80f3b9c160fcc60b",
+        "android_client_info": {
+          "package_name": "com.voicecli.voice_cli_temp"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "179855006674-i74o6vjg7v2ug3988o66gi2bt3s6gojq.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBzAZbpxHH6utiMoKKNZrPzrY5ubLU4Gww"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "179855006674-i74o6vjg7v2ug3988o66gi2bt3s6gojq.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
