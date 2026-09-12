@@ -24,7 +24,7 @@ type GraphState struct {
 func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 	fmt.Printf("STATUS: GRAPHIFY\n")
 	os.Stdout.Sync()
-	fmt.Printf("STATUS: SYSTEM_MSG:Initializing Distributed DAG Execution...\n")
+	fmt.Printf("STATUS: SYSTEM_MSG:Initializing Dynamic Multi-Agent State Machine...\n")
 	os.Stdout.Sync()
 
 	data, err := os.ReadFile("graphify_state.json")
@@ -41,7 +41,6 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 		return "Graph is empty", nil
 	}
 
-	// Build adjacency maps
 	parents := make(map[string][]string)
 	children := make(map[string][]string)
 	nodeMap := make(map[string]GraphNode)
@@ -52,6 +51,7 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 		children[n.ID] = []string{}
 	}
 
+	// We no longer strictly forbid cycles, but the user UI usually outputs a DAG.
 	for _, edge := range state.Edges {
 		if len(edge) == 2 {
 			src := edge[0]
@@ -61,88 +61,122 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 		}
 	}
 
-	// Calculate Layers (Topological Sort + Leveling)
-	layers := make(map[string]int)
-	var calcLayer func(id string, visited map[string]bool) (int, error)
-	calcLayer = func(id string, visited map[string]bool) (int, error) {
-		if visited[id] {
-			return 0, fmt.Errorf("cycle detected in graph at node %s", nodeMap[id].Role)
-		}
-		if l, ok := layers[id]; ok {
-			return l, nil
-		}
-
-		visited[id] = true
-		maxParentLayer := -1
-		for _, p := range parents[id] {
-			pl, err := calcLayer(p, visited)
-			if err != nil {
-				return 0, err
-			}
-			if pl > maxParentLayer {
-				maxParentLayer = pl
-			}
-		}
-		visited[id] = false
-
-		layers[id] = maxParentLayer + 1
-		return layers[id], nil
-	}
-
-	maxLayer := 0
-	layerNodes := make(map[int][]string)
-	for _, n := range state.Nodes {
-		l, err := calcLayer(n.ID, make(map[string]bool))
-		if err != nil {
-			return "", err
-		}
-		layerNodes[l] = append(layerNodes[l], n.ID)
-		if l > maxLayer {
-			maxLayer = l
-		}
-	}
-
 	connData, err := loadConnectionData()
 	if err != nil {
 		return "", err
 	}
 
-	// Execution State
-	outputs := sync.Map{}
+	// ── State Machine Variables ──
+	var mu sync.Mutex
+	cond := sync.NewCond(&mu)
 	
-	// Execute Layer by Layer
-	for i := 0; i <= maxLayer; i++ {
-		nodesToRun := layerNodes[i]
-		if len(nodesToRun) == 0 {
+	outputs := make(map[string]string)
+	revisions := make(map[string][]string)
+	runCount := make(map[string]int)
+	running := make(map[string]bool)
+	completed := make(map[string]bool)
+	var fatalErr error
+
+	getReadyNodes := func() []string {
+		var ready []string
+		for _, n := range state.Nodes {
+			if completed[n.ID] || running[n.ID] {
+				continue
+			}
+			parentsDone := true
+			for _, p := range parents[n.ID] {
+				if !completed[p] {
+					parentsDone = false
+					break
+				}
+			}
+			if parentsDone {
+				ready = append(ready, n.ID)
+			}
+		}
+		return ready
+	}
+
+	for {
+		mu.Lock()
+		if fatalErr != nil {
+			mu.Unlock()
+			return "", fatalErr
+		}
+
+		allDone := true
+		for _, n := range state.Nodes {
+			if !completed[n.ID] {
+				allDone = false
+				break
+			}
+		}
+		if allDone {
+			mu.Unlock()
+			break
+		}
+
+		ready := getReadyNodes()
+		if len(ready) == 0 {
+			anyRunning := false
+			for _, n := range state.Nodes {
+				if running[n.ID] {
+					anyRunning = true
+					break
+				}
+			}
+			if !anyRunning {
+				mu.Unlock()
+				return "", fmt.Errorf("deadlock detected: no nodes are ready or running")
+			}
+			cond.Wait()
+			mu.Unlock()
 			continue
 		}
 
-		fmt.Printf("STATUS: SYSTEM_MSG:Executing DAG Layer %d (%d parallel nodes)\n", i, len(nodesToRun))
-		os.Stdout.Sync()
-
-		var wg sync.WaitGroup
-		errs := make(chan error, len(nodesToRun))
-
-		for _, nid := range nodesToRun {
-			wg.Add(1)
-			go func(nodeID string) {
-				defer wg.Done()
+		for _, nid := range ready {
+			running[nid] = true
+			runCount[nid]++
+			
+			// Copy state safely for the goroutine
+			parentOutputs := make(map[string]string)
+			for _, p := range parents[nid] {
+				parentOutputs[p] = outputs[p]
+			}
+			myRevisions := append([]string(nil), revisions[nid]...)
+			myRunCount := runCount[nid]
+			
+			go func(nodeID string, pOuts map[string]string, myRevs []string, rCount int) {
 				n := nodeMap[nodeID]
 
 				fmt.Printf("STATUS: TEAM_NODE_START:%s\n", n.Role)
 				os.Stdout.Sync()
 
-				// Build Context Prompt
 				promptBuilder := strings.Builder{}
 				promptBuilder.WriteString(fmt.Sprintf("You are %s. %s\n\n", n.Role, n.Prompt))
 
 				parentIDs := parents[nodeID]
 				if len(parentIDs) > 0 {
-					promptBuilder.WriteString("CONTEXT FROM PREVIOUS TEAM MEMBERS:\n")
+					promptBuilder.WriteString("TEAM MEMBER CONTEXT (You are reviewing/continuing their work):\n")
 					for _, pid := range parentIDs {
-						parentOut, _ := outputs.Load(pid)
-						promptBuilder.WriteString(fmt.Sprintf("--- From [%s] ---\n%v\n\n", nodeMap[pid].Role, parentOut))
+						promptBuilder.WriteString(fmt.Sprintf("--- From [%s] ---\n%v\n\n", nodeMap[pid].Role, pOuts[pid]))
 					}
+					
+					promptBuilder.WriteString("CRITICAL DEBATE INSTRUCTIONS:\n")
+					promptBuilder.WriteString("You are part of an iterative review loop. If the work from your team members is flawed, missing requirements, or incorrect, you MUST reject it.\n")
+					promptBuilder.WriteString("To reject and force a team member to revise their work, your response MUST start EXACTLY with this format:\n")
+					promptBuilder.WriteString("REJECT: [RoleName]: [Your detailed critique]\n")
+					promptBuilder.WriteString("For example: REJECT: Researcher: The data is outdated. Find 2024 statistics.\n")
+					promptBuilder.WriteString("If you reject, do NOT output anything else. If the work is acceptable, do NOT use the REJECT prefix; simply perform your task and output your final result.\n\n")
+				}
+
+				if len(myRevs) > 0 {
+					promptBuilder.WriteString("FEEDBACK / REVISIONS REQUIRED:\n")
+					promptBuilder.WriteString("Your previous work was rejected by a downstream reviewer. You MUST fix the issues below:\n")
+					for _, rev := range myRevs {
+						promptBuilder.WriteString(rev + "\n")
+					}
+					promptBuilder.WriteString("\n")
 				}
 
 				promptBuilder.WriteString("ORIGINAL USER TASK:\n")
@@ -150,23 +184,21 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 
 				finalCommand := promptBuilder.String()
 				
-				// Model Routing
 				modelStr := strings.ReplaceAll(n.Model, "\n", " ")
 				modelStr = strings.ToLower(modelStr)
 				
 				var nodeOut string
 				var nodeErr error
-				
 				taskID := fmt.Sprintf("node-%s", nodeID)
 
 				if strings.Contains(modelStr, "groq") {
-					actualModel := "llama3-70b-8192" // default fallback
+					actualModel := "llama3-70b-8192"
 					if strings.Contains(modelStr, "8b") {
 						actualModel = "llama3-8b-8192"
 					}
 					nodeOut, nodeErr = executeGroqCommand(ctx, finalCommand, connData.GroqAPIKey, actualModel, "dag-internal", nil, taskID, "")
 				} else {
-					actualModel := "gemma-2b" // default fallback
+					actualModel := "gemma-2b"
 					if strings.Contains(modelStr, "llama3") {
 						actualModel = "llama3:8b"
 					}
@@ -175,37 +207,72 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 					<-ollamaSemaphore
 				}
 
+				mu.Lock()
+				defer mu.Unlock()
+				defer cond.Broadcast()
+				
+				running[nodeID] = false
+
 				if nodeErr != nil {
-					errs <- fmt.Errorf("node %s failed: %v", n.Role, nodeErr)
+					fatalErr = fmt.Errorf("node %s failed: %v", n.Role, nodeErr)
 					return
 				}
 
-				outputs.Store(nodeID, nodeOut)
-				fmt.Printf("STATUS: TEAM_NODE_DONE:%s\n", n.Role)
-				os.Stdout.Sync()
+				isReject := false
+				trimmedOut := strings.TrimSpace(nodeOut)
+				if strings.HasPrefix(trimmedOut, "REJECT:") {
+					parts := strings.SplitN(trimmedOut, ":", 3)
+					if len(parts) >= 3 {
+						targetRole := strings.TrimSpace(parts[1])
+						critique := strings.TrimSpace(parts[2])
+						
+						var targetID string
+						for _, node := range state.Nodes {
+							if strings.EqualFold(strings.TrimSpace(node.Role), targetRole) {
+								targetID = node.ID
+								break
+							}
+						}
+						
+						if targetID != "" && runCount[targetID] < 3 {
+							revisions[targetID] = append(revisions[targetID], fmt.Sprintf("Critique from %s:\n%s", n.Role, critique))
+							completed[targetID] = false 
+							
+							var invalidateChildren func(id string)
+							invalidateChildren = func(id string) {
+								for _, childID := range children[id] {
+									if completed[childID] {
+										completed[childID] = false
+										invalidateChildren(childID)
+									}
+								}
+							}
+							invalidateChildren(targetID)
+							
+							isReject = true
+							fmt.Printf("STATUS: SYSTEM_MSG:[%s] REJECTED [%s]. Forcing revision.\n", n.Role, targetRole)
+							os.Stdout.Sync()
+						}
+					}
+				}
 
-			}(nid)
+				if !isReject {
+					outputs[nodeID] = nodeOut
+					completed[nodeID] = true
+					fmt.Printf("STATUS: TEAM_NODE_DONE:%s\n", n.Role)
+					os.Stdout.Sync()
+				}
+			}(nid, parentOutputs, myRevisions, myRunCount)
 		}
-		
-		wg.Wait()
-		close(errs)
-		
-		for e := range errs {
-			if e != nil {
-				return "", e
-			}
-		}
+		mu.Unlock()
 	}
 
-	// Gather output from sink nodes (nodes with no children)
 	var finalOutputs []string
 	for _, n := range state.Nodes {
 		if len(children[n.ID]) == 0 {
-			out, _ := outputs.Load(n.ID)
-			finalOutputs = append(finalOutputs, fmt.Sprintf("--- Final Output from [%s] ---\n%v", n.Role, out))
+			finalOutputs = append(finalOutputs, fmt.Sprintf("--- Final Output from [%s] ---\n%v", n.Role, outputs[n.ID]))
 		}
 	}
 
-	finalResult := strings.Join(finalOutputs, "\n\n")
-	return finalResult, nil
+	return strings.Join(finalOutputs, "\n\n"), nil
 }
