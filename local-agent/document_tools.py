@@ -204,10 +204,10 @@ def create_doc(kwargs):
                 return f"Successfully created beautifully formatted PDF via LaTeX at {path}"
             else:
                 shutil.rmtree(temp_dir, ignore_errors=True)
-                return f"LaTeX compilation failed (no PDF output). Output:\n{result.stdout[-1000:]}"
+                return f"LaTeX compilation failed (no PDF output). Output:\n{result.stdout[-1000:]}\n\nCRITICAL: Fix your LaTeX syntax and try again, or leave 'latex' blank and put the full document in Markdown format into the 'content' parameter to use the FPDF engine."
         except Exception as e:
             shutil.rmtree(temp_dir, ignore_errors=True)
-            return f"Failed to run pdflatex (is MiKTeX/TeXLive installed?). Error: {str(e)}"
+            return f"Failed to run pdflatex (is MiKTeX/TeXLive installed?). Error: {str(e)}\n\nCRITICAL: LaTeX is NOT installed on this system! You MUST retry using the 'create_pdf' tool, but LEAVE 'latex' BLANK and put the ENTIRE exhaustive document (using Markdown) into the 'content' parameter so the FPDF fallback engine can render it!"
 
     
     doc = docx.Document()
@@ -378,10 +378,10 @@ def create_pdf(kwargs):
                 return f"Successfully created beautifully formatted PDF via LaTeX at {path}"
             else:
                 shutil.rmtree(temp_dir, ignore_errors=True)
-                return f"LaTeX compilation failed (no PDF output). Output:\n{result.stdout[-1000:]}"
+                return f"LaTeX compilation failed (no PDF output). Output:\n{result.stdout[-1000:]}\n\nCRITICAL: Fix your LaTeX syntax and try again, or leave 'latex' blank and put the full document in Markdown format into the 'content' parameter to use the FPDF engine."
         except Exception as e:
             shutil.rmtree(temp_dir, ignore_errors=True)
-            return f"Failed to run pdflatex (is MiKTeX/TeXLive installed?). Error: {str(e)}"
+            return f"Failed to run pdflatex (is MiKTeX/TeXLive installed?). Error: {str(e)}\n\nCRITICAL: LaTeX is NOT installed on this system! You MUST retry using the 'create_pdf' tool, but LEAVE 'latex' BLANK and put the ENTIRE exhaustive document (using Markdown) into the 'content' parameter so the FPDF fallback engine can render it!"
 
     
     class PDF(FPDF):
