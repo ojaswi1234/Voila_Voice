@@ -159,6 +159,37 @@ def create_doc(kwargs):
 
     latex_content = kwargs.get('latex')
     if latex_content:
+        # Auto-inject theme colors and better formatting into LaTeX preamble
+        color_defs = """
+\\usepackage{xcolor}
+\\usepackage{titlesec}
+\\usepackage{geometry}
+\\geometry{a4paper, margin=1in}
+\\definecolor{themePrimary}{RGB}{theme_config['color_primary'][0], theme_config['color_primary'][1], theme_config['color_primary'][2]}
+\\definecolor{themeAccent}{RGB}{theme_config['color_accent'][0], theme_config['color_accent'][1], theme_config['color_accent'][2]}
+\\definecolor{themeHeading}{RGB}{theme_config['color_heading'][0], theme_config['color_heading'][1], theme_config['color_heading'][2]}
+\\definecolor{themeText}{RGB}{theme_config['color_text'][0], theme_config['color_text'][1], theme_config['color_text'][2]}
+\\pagecolor{themePrimary}
+\\color{themeText}
+\\titleformat{\\section}{\\normalfont\\Large\\bfseries\\color{themeHeading}}{\\thesection}{1em}{}[\\color{themeAccent}\\titlerule]
+"""
+        # Fix f-string brackets safely
+        color_defs = color_defs.replace("theme_config['color_primary'][0]", str(theme_config['color_primary'][0]))
+        color_defs = color_defs.replace("theme_config['color_primary'][1]", str(theme_config['color_primary'][1]))
+        color_defs = color_defs.replace("theme_config['color_primary'][2]", str(theme_config['color_primary'][2]))
+        color_defs = color_defs.replace("theme_config['color_accent'][0]", str(theme_config['color_accent'][0]))
+        color_defs = color_defs.replace("theme_config['color_accent'][1]", str(theme_config['color_accent'][1]))
+        color_defs = color_defs.replace("theme_config['color_accent'][2]", str(theme_config['color_accent'][2]))
+        color_defs = color_defs.replace("theme_config['color_heading'][0]", str(theme_config['color_heading'][0]))
+        color_defs = color_defs.replace("theme_config['color_heading'][1]", str(theme_config['color_heading'][1]))
+        color_defs = color_defs.replace("theme_config['color_heading'][2]", str(theme_config['color_heading'][2]))
+        color_defs = color_defs.replace("theme_config['color_text'][0]", str(theme_config['color_text'][0]))
+        color_defs = color_defs.replace("theme_config['color_text'][1]", str(theme_config['color_text'][1]))
+        color_defs = color_defs.replace("theme_config['color_text'][2]", str(theme_config['color_text'][2]))
+
+        if '\\begin{document}' in latex_content and '\\definecolor{themePrimary}' not in latex_content:
+            latex_content = latex_content.replace('\\begin{document}', color_defs + '\n\\begin{document}')
+        
         import subprocess, tempfile, shutil, os
         temp_dir = tempfile.mkdtemp()
         tex_path = os.path.join(temp_dir, 'doc.tex')
@@ -183,18 +214,23 @@ def create_doc(kwargs):
     
     # Apply theme-based styles
     styles = doc.styles
+    def ensure_dark(color):
+        if sum(color) > 382: return (max(0, 255-color[0]-50), max(0, 255-color[1]-50), max(0, 255-color[2]-50))
+        return color
+
     try:
+
         styles['Title'].font.name = theme_config['font_heading']
         styles['Title'].font.size = Pt(32)
-        styles['Title'].font.color.rgb = RGBColor(*theme_config['color_heading'])
+        styles['Title'].font.color.rgb = RGBColor(*ensure_dark(theme_config['color_heading']))
         
         styles['Heading 1'].font.name = theme_config['font_heading']
         styles['Heading 1'].font.size = Pt(20)
-        styles['Heading 1'].font.color.rgb = RGBColor(*theme_config['color_accent'])
+        styles['Heading 1'].font.color.rgb = RGBColor(*ensure_dark(theme_config['color_accent']))
         
         styles['Normal'].font.name = theme_config['font_body']
         styles['Normal'].font.size = Pt(11)
-        styles['Normal'].font.color.rgb = RGBColor(*theme_config['color_text'])
+        styles['Normal'].font.color.rgb = RGBColor(*ensure_dark(theme_config['color_text']))
     except: pass
     
     try:
@@ -202,7 +238,7 @@ def create_doc(kwargs):
         quote_style.font.name = theme_config['font_body']
         quote_style.font.italic = True
         quote_style.font.size = Pt(12)
-        quote_style.font.color.rgb = RGBColor(*theme_config['color_text'])
+        quote_style.font.color.rgb = RGBColor(*ensure_dark(theme_config['color_text']))
     except: quote_style = styles['Normal']
 
     in_code_block = False
@@ -245,7 +281,7 @@ def create_doc(kwargs):
             p = doc.add_paragraph(line)
             p.style.font.name = 'Consolas'
             p.style.font.size = Pt(9.5)
-            p.style.font.color.rgb = RGBColor(*theme_config['color_primary'])
+            p.style.font.color.rgb = RGBColor(*ensure_dark(theme_config['color_primary']))
             continue
             
         img_match = re.match(r'^!\[.*?\]\((.*?)\)$', stripped)
@@ -297,6 +333,37 @@ def create_pdf(kwargs):
 
     latex_content = kwargs.get('latex')
     if latex_content:
+        # Auto-inject theme colors and better formatting into LaTeX preamble
+        color_defs = """
+\\usepackage{xcolor}
+\\usepackage{titlesec}
+\\usepackage{geometry}
+\\geometry{a4paper, margin=1in}
+\\definecolor{themePrimary}{RGB}{theme_config['color_primary'][0], theme_config['color_primary'][1], theme_config['color_primary'][2]}
+\\definecolor{themeAccent}{RGB}{theme_config['color_accent'][0], theme_config['color_accent'][1], theme_config['color_accent'][2]}
+\\definecolor{themeHeading}{RGB}{theme_config['color_heading'][0], theme_config['color_heading'][1], theme_config['color_heading'][2]}
+\\definecolor{themeText}{RGB}{theme_config['color_text'][0], theme_config['color_text'][1], theme_config['color_text'][2]}
+\\pagecolor{themePrimary}
+\\color{themeText}
+\\titleformat{\\section}{\\normalfont\\Large\\bfseries\\color{themeHeading}}{\\thesection}{1em}{}[\\color{themeAccent}\\titlerule]
+"""
+        # Fix f-string brackets safely
+        color_defs = color_defs.replace("theme_config['color_primary'][0]", str(theme_config['color_primary'][0]))
+        color_defs = color_defs.replace("theme_config['color_primary'][1]", str(theme_config['color_primary'][1]))
+        color_defs = color_defs.replace("theme_config['color_primary'][2]", str(theme_config['color_primary'][2]))
+        color_defs = color_defs.replace("theme_config['color_accent'][0]", str(theme_config['color_accent'][0]))
+        color_defs = color_defs.replace("theme_config['color_accent'][1]", str(theme_config['color_accent'][1]))
+        color_defs = color_defs.replace("theme_config['color_accent'][2]", str(theme_config['color_accent'][2]))
+        color_defs = color_defs.replace("theme_config['color_heading'][0]", str(theme_config['color_heading'][0]))
+        color_defs = color_defs.replace("theme_config['color_heading'][1]", str(theme_config['color_heading'][1]))
+        color_defs = color_defs.replace("theme_config['color_heading'][2]", str(theme_config['color_heading'][2]))
+        color_defs = color_defs.replace("theme_config['color_text'][0]", str(theme_config['color_text'][0]))
+        color_defs = color_defs.replace("theme_config['color_text'][1]", str(theme_config['color_text'][1]))
+        color_defs = color_defs.replace("theme_config['color_text'][2]", str(theme_config['color_text'][2]))
+
+        if '\\begin{document}' in latex_content and '\\definecolor{themePrimary}' not in latex_content:
+            latex_content = latex_content.replace('\\begin{document}', color_defs + '\n\\begin{document}')
+        
         import subprocess, tempfile, shutil, os
         temp_dir = tempfile.mkdtemp()
         tex_path = os.path.join(temp_dir, 'doc.tex')
