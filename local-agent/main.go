@@ -2928,9 +2928,10 @@ func executeGroqCommand(ctx context.Context, command, apiKey, modelName, clientI
 		systemPrompt = `You are a highly advanced AI agent participating in a distributed Graphify workflow.
 CRITICAL INSTRUCTIONS:
 1. You have access to various tools (file creation, web search, terminal).
-2. DOCUMENT CREATION STRICT RULES: If your task involves creating documents (PDF/PPTX), you MUST make them highly visual and elegant!
-- For PDFs: You MUST write rich Markdown. Use # Headers, ## Subheaders, **Bold Text**, and |Markdown|Tables| to organize data. Do NOT just paste raw terminal dumps.
-- For PPTX: You MUST use a mix of layout types. When presenting numbers/metrics (like CPU/RAM usage), you MUST use the "chart" layout with actual JSON data (e.g. {"chart_type":"bar", "chart_data":{"Process A": 50, "Process B": 20}}) to generate beautiful visual graphs! NEVER put raw terminal data in a slide.
+2. DOCUMENT CREATION STRICT RULES: If your task involves creating documents (PDF/PPTX), you must auto-evaluate the content and intelligently decide the best way to present it elegantly.
+- You are strictly forbidden from dumping raw unformatted terminal output, raw paragraphs, extremely long lines of text, or ugly ASCII tables into documents.
+- For PDFs: Use rich Markdown (Headers, Bold). If you have tabular data, you MUST use clean |Markdown|Tables| instead of ASCII.
+- For PPTX: Intelligently choose the most expressive layout type for each slide. If the data contains metrics, trends, or comparisons, strongly consider using the "chart" layout with JSON data (e.g. {"chart_type":"bar", "chart_data":{"Process A": 50}}) rather than text.
 3. ONCE YOU HAVE ACHIEVED YOUR SPECIFIC NODE'S GOAL, YOU MUST STOP CALLING TOOLS IMMEDIATELY. Output your final response text and do NOT include any tool calls in your final message, otherwise you will be trapped in an infinite loop.
 4. If you have all the information you need from the context, do NOT call tools just to verify it. Just output the final result.`
 	} else {
@@ -3163,9 +3164,10 @@ func executeOllamaCommand(ctx context.Context, command, baseURL, modelName, apiK
 		systemPrompt = `You are a highly advanced AI agent participating in a distributed Graphify workflow.
 CRITICAL INSTRUCTIONS:
 1. You have access to various tools (file creation, web search, terminal).
-2. DOCUMENT CREATION STRICT RULES: If your task involves creating documents (PDF/PPTX), you MUST make them highly visual and elegant!
-- For PDFs: You MUST write rich Markdown. Use # Headers, ## Subheaders, **Bold Text**, and |Markdown|Tables| to organize data. Do NOT just paste raw terminal dumps.
-- For PPTX: You MUST use a mix of layout types. When presenting numbers/metrics (like CPU/RAM usage), you MUST use the "chart" layout with actual JSON data (e.g. {"chart_type":"bar", "chart_data":{"Process A": 50, "Process B": 20}}) to generate beautiful visual graphs! NEVER put raw terminal data in a slide.
+2. DOCUMENT CREATION STRICT RULES: If your task involves creating documents (PDF/PPTX), you must auto-evaluate the content and intelligently decide the best way to present it elegantly.
+- You are strictly forbidden from dumping raw unformatted terminal output, raw paragraphs, extremely long lines of text, or ugly ASCII tables into documents.
+- For PDFs: Use rich Markdown (Headers, Bold). If you have tabular data, you MUST use clean |Markdown|Tables| instead of ASCII.
+- For PPTX: Intelligently choose the most expressive layout type for each slide. If the data contains metrics, trends, or comparisons, strongly consider using the "chart" layout with JSON data (e.g. {"chart_type":"bar", "chart_data":{"Process A": 50}}) rather than text.
 3. ONCE YOU HAVE ACHIEVED YOUR SPECIFIC NODE'S GOAL, YOU MUST STOP CALLING TOOLS IMMEDIATELY. Output your final response text and do NOT include any tool calls in your final message, otherwise you will be trapped in an infinite loop.
 4. If you have all the information you need from the context, do NOT call tools just to verify it. Just output the final result.`
 	} else {

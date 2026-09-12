@@ -280,6 +280,8 @@ def create_pdf(kwargs):
             self.watermark_text = watermark_text
         
         def header(self):
+            self.set_fill_color(*self.theme_config['color_primary'])
+            self.rect(0, 0, 210, 297, 'F')
             self.set_draw_color(*self.theme_config['color_accent'])
             self.set_line_width(0.8)
             self.line(10, 15, 200, 15)
