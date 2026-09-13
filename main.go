@@ -292,6 +292,19 @@ func (b *Backend) sendFCMTaskCompletion(deviceID, title, body string) {
 			Data: map[string]string{
 				"type": "task_finished",
 			},
+			Android: &messaging.AndroidConfig{
+				Priority: "high",
+				Notification: &messaging.AndroidNotification{
+					Sound: "default",
+				},
+			},
+			APNS: &messaging.APNSConfig{
+				Payload: &messaging.APNSPayload{
+					Aps: &messaging.Aps{
+						Sound: "default",
+					},
+				},
+			},
 		}
 		
 		_, err := b.fcmClient.Send(ctx, msg)
@@ -335,6 +348,19 @@ func (b *Backend) sendFCMAlert(deviceID string, alert SecurityAlert) {
 				"alert_id": alert.ID,
 				"alert_type": alert.Type,
 				"severity": alert.Severity,
+			},
+			Android: &messaging.AndroidConfig{
+				Priority: "high",
+				Notification: &messaging.AndroidNotification{
+					Sound: "default",
+				},
+			},
+			APNS: &messaging.APNSConfig{
+				Payload: &messaging.APNSPayload{
+					Aps: &messaging.Aps{
+						Sound: "default",
+					},
+				},
 			},
 		}
 		
