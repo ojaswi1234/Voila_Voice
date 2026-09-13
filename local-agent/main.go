@@ -102,6 +102,17 @@ func stripMarkdownForTTS(input string) string {
 	return out
 }
 
+func resolveAgentPath(p string) string {
+	if filepath.IsAbs(p) {
+		return p
+	}
+	home, err := os.UserHomeDir()
+	if err == nil {
+		return filepath.Join(home, "Desktop", p)
+	}
+	return p
+}
+
 var (
 	localMockCount int
 	localMockMu    sync.Mutex
@@ -2496,17 +2507,17 @@ func executeTool(ctx context.Context, toolName string, argsJSON json.RawMessage,
 		case "run_terminal":
 			pseudoCommand = getString("command")
 		case "read_file":
-			pseudoCommand = "cat " + getString("path")
+			pseudoCommand = "cat " + resolveAgentPath(getString("path"))
 		case "write_file":
-			pseudoCommand = "echo '...' > " + getString("path")
+			pseudoCommand = "echo '...' > " + resolveAgentPath(getString("path"))
 		case "list_dir":
-			pseudoCommand = "ls " + getString("path")
+			pseudoCommand = "ls " + resolveAgentPath(getString("path"))
 		case "web_research":
 			pseudoCommand = "search \"" + getString("query") + "\""
 		case "create_pdf", "create_doc", "create_ppt", "create_docx", "create_excel", "create_csv", "modify_excel":
-			pseudoCommand = "write_doc " + getString("path")
+			pseudoCommand = "write_doc " + resolveAgentPath(getString("path"))
 		case "read_pdf", "read_excel", "read_csv":
-			pseudoCommand = "read_doc " + getString("path")
+			pseudoCommand = "read_doc " + resolveAgentPath(getString("path"))
 		case "automate_0":
 			pseudoCommand = "browser " + getString("action") + " " + getString("url") + getString("selector")
 		default:
@@ -2598,6 +2609,7 @@ func startTerminalSession() {
 
 	psWrapperFile := filepath.Join(os.TempDir(), "voila_ipc_server.ps1")
 	psCode := fmt.Sprintf(`$ErrorActionPreference = 'Continue'
+Set-Location -Path [Environment]::GetFolderPath('Desktop')
 $host.UI.RawUI.WindowTitle = 'Voila AI - Agent Session'
 [System.IO.File]::WriteAllText('%s', $PID.ToString())
 Clear-Host
