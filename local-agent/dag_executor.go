@@ -10,10 +10,15 @@ import (
 )
 
 type GraphNode struct {
-	ID     string `json:"id"`
-	Role   string `json:"role"`
-	Model  string `json:"model"`
-	Prompt string `json:"prompt"`
+	ID      string `json:"id"`
+	Role    string `json:"role"`
+	Model   string `json:"model"`
+	Prompt  string `json:"prompt"`
+	X       int    `json:"x"`
+	Y       int    `json:"y"`
+	R       int    `json:"r"`
+	Color   string `json:"color"`
+	Outline string `json:"outline"`
 }
 
 

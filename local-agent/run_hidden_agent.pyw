@@ -2073,6 +2073,7 @@ def _draw_teams_section(dc, w, h):
                 else:
                     graph_state['edges'].append(edge1)
                 interaction_state["selected_node"] = None
+                graph_state['is_custom'] = True
                 export_graphify_prompt()
                 _draw_teams_section(dc, w, h)
         else:

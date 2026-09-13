@@ -99,6 +99,28 @@ Rules:
 	}
 
 	generatedState.IsCustom = false
+	
+	// Safety net for Python UI: inject default visuals if LLM omitted them
+	colors := []string{"#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6", "#EC4899"}
+	outlines := []string{"#93C5FD", "#34D399", "#FCD34D", "#FCA5A5", "#C4B5FD", "#F9A8D4"}
+	
+	for i := range generatedState.Nodes {
+		if generatedState.Nodes[i].R == 0 {
+			generatedState.Nodes[i].R = 25
+		}
+		if generatedState.Nodes[i].X == 0 {
+			generatedState.Nodes[i].X = 100 + (i * 150)
+		}
+		if generatedState.Nodes[i].Y == 0 {
+			generatedState.Nodes[i].Y = 200 + ((i % 2) * 50)
+		}
+		if generatedState.Nodes[i].Color == "" {
+			generatedState.Nodes[i].Color = colors[i % len(colors)]
+		}
+		if generatedState.Nodes[i].Outline == "" {
+			generatedState.Nodes[i].Outline = outlines[i % len(outlines)]
+		}
+	}
 
 	outBytes, _ := json.MarshalIndent(generatedState, "", "  ")
 	os.WriteFile("graphify_state.json", outBytes, 0644)
