@@ -2208,7 +2208,7 @@ var availableTools = []toolDef{
 	{
 		Type: "function",
 		Function: toolFuncDef{
-			Name:        "automate_0",
+			Name:        "browser_automation",
 			Description: "Control a visible, headful browser. Use this to interact with a page. For simple information lookup, prefer web_research to save tokens. They can be used together.",
 			Parameters: map[string]interface{}{
 				"type": "object",
@@ -2532,7 +2532,7 @@ func executeTool(ctx context.Context, toolName string, argsJSON json.RawMessage,
 			pseudoCommand = "write_doc " + resolveAgentPath(getString("path"))
 		case "read_pdf", "read_excel", "read_csv":
 			pseudoCommand = "read_doc " + resolveAgentPath(getString("path"))
-		case "automate_0":
+		case "browser_automation":
 			pseudoCommand = "browser " + getString("action") + " " + getString("url") + getString("selector")
 		default:
 			pseudoCommand = toolName + " ..."
@@ -2983,7 +2983,7 @@ func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMes
 
 	case "create_pdf", "create_doc", "read_pdf", "create_ppt", "create_docx", "create_excel", "modify_excel", "read_excel", "create_csv", "read_csv":
 		return callPythonDocumentTool(toolName, argsJSON)
-	case "automate_0":
+	case "browser_automation":
 		action := getString("action")
 		url := getString("url")
 		selector := getString("selector")
@@ -3090,7 +3090,7 @@ TONE & PERSONALITY: You are a top-tier software engineer, but you chat exclusive
 FORMATTING RESTRICTION: You MUST NOT use Markdown formatting (like **bold**, *italics*, or # headers) in your text output, because your voice will be read aloud by a Text-to-Speech (TTS) engine and it will literally read the asterisks out loud. Just use plain unformatted text. (You may still use backticks for code blocks if necessary).
 
 CRITICAL INSTRUCTIONS:
-1. You have access to various tools (file creation, web search, terminal).
+1. You have access to various tools (file creation, web search, terminal, browser automation, document generation).
 2. DOCUMENT CREATION STRICT RULES: If your task involves creating documents (PDF/PPTX), you must auto-evaluate the content and intelligently decide the best way to present it elegantly.
 - You are strictly forbidden from dumping raw unformatted terminal output, raw paragraphs, extremely long lines of text, or ugly ASCII tables into documents.
 - For PDFs: Use rich Markdown (Headers, Bold). If you have tabular data, you MUST use clean |Markdown|Tables| instead of ASCII.
@@ -3372,7 +3372,7 @@ TONE & PERSONALITY: You are a top-tier software engineer, but you chat exclusive
 FORMATTING RESTRICTION: You MUST NOT use Markdown formatting (like **bold**, *italics*, or # headers) in your text output, because your voice will be read aloud by a Text-to-Speech (TTS) engine and it will literally read the asterisks out loud. Just use plain unformatted text. (You may still use backticks for code blocks if necessary).
 
 CRITICAL INSTRUCTIONS:
-1. You have access to various tools (file creation, web search, terminal).
+1. You have access to various tools (file creation, web search, terminal, browser automation, document generation).
 2. DOCUMENT CREATION STRICT RULES: If your task involves creating documents (PDF/PPTX), you must auto-evaluate the content and intelligently decide the best way to present it elegantly.
 - You are strictly forbidden from dumping raw unformatted terminal output, raw paragraphs, extremely long lines of text, or ugly ASCII tables into documents.
 - For PDFs: Use rich Markdown (Headers, Bold). If you have tabular data, you MUST use clean |Markdown|Tables| instead of ASCII.

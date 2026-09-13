@@ -39,7 +39,8 @@ Rules:
 3. Distribute (x,y) coordinates logically (e.g. left to right, 100 to 700 for X, 100 to 400 for Y).
 4. Assign nice distinct hex colors.
 5. Create logical relationships (1:1, 1:Many, Many:1).
-6. Provide NO markdown wrappers, ONLY raw JSON.`
+6. INSTRUCT THE NODES TO USE TOOLS: The nodes have access to powerful tools including: browser_automation (scrape/interact with websites), run_terminal (powershell), web_research (duckduckgo), read/write files, and create/modify documents (PDF, PPTX, Excel, CSV). Explicitly command the nodes in their 'prompt' to use these tools if the task requires it.
+7. Provide NO markdown wrappers, ONLY raw JSON.`
 
 	payload := map[string]interface{}{
 		"model": "gemma4:31b",
