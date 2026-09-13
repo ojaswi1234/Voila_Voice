@@ -162,7 +162,21 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 		return ready
 	}
 
+	// Wake up the condition variable if context is cancelled
+	go func() {
+		<-ctx.Done()
+		cond.Broadcast()
+	}()
+
 	for {
+		// Check for context cancellation
+		select {
+		case <-ctx.Done():
+			finishLiveState("error", "FORCE KILLED BY USER")
+			return "", fmt.Errorf("Execution forcefully cancelled by user")
+		default:
+		}
+
 		mu.Lock()
 		if fatalErr != nil {
 			mu.Unlock()

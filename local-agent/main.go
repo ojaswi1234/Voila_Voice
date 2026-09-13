@@ -3143,6 +3143,11 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 	const maxIter = 50
 
 	for iter := 0; iter < maxIter; iter++ {
+		select {
+		case <-ctx.Done():
+			return "", fmt.Errorf("execution cancelled")
+		default:
+		}
 
 		agentRegistryMu.RLock()
 		myTask, myTaskExists := activeAgents[taskID]
@@ -3402,6 +3407,11 @@ When generating PDFs (via LaTeX) or PPTs (via Python python-pptx):
 	const maxIter = 50
 
 	for iter := 0; iter < maxIter; iter++ {
+		select {
+		case <-ctx.Done():
+			return "", fmt.Errorf("execution cancelled")
+		default:
+		}
 
 		agentRegistryMu.RLock()
 		myTask, myTaskExists := activeAgents[taskID]
