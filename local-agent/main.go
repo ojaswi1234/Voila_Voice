@@ -3091,7 +3091,8 @@ FORMATTING RESTRICTION: You MUST NOT use Markdown formatting (like **bold**, *it
 
 CRITICAL INSTRUCTIONS:
 1. You have access to various tools (file creation, web search, terminal, browser automation, document generation).
-2. DOCUMENT CREATION STRICT RULES: If your task involves creating documents (PDF/PPTX), you must auto-evaluate the content and intelligently decide the best way to present it elegantly.
+2. COLLABORATIVE PROBLEM SOLVING: If the user's instructions are confusing, vague, or if you hit a roadblock, DO NOT just give up or guess blindly. You must talk to your team members in the DAG! Brainstorm together, ask clarifying questions to the other agents, and propose alternative solutions to figure it out.
+3. DOCUMENT CREATION STRICT RULES: If your task involves creating documents (PDF/PPTX), you must auto-evaluate the content and intelligently decide the best way to present it elegantly.
 - You are strictly forbidden from dumping raw unformatted terminal output, raw paragraphs, extremely long lines of text, or ugly ASCII tables into documents.
 - For PDFs: Use rich Markdown (Headers, Bold). If you have tabular data, you MUST use clean |Markdown|Tables| instead of ASCII.
 - For PPTX: Intelligently choose the most expressive layout type for each slide. If the data contains metrics, trends, or comparisons, strongly consider using the "chart" layout with JSON data (e.g. {"chart_type":"bar", "chart_data":{"Process A": 50}}) rather than text.
@@ -3373,7 +3374,8 @@ FORMATTING RESTRICTION: You MUST NOT use Markdown formatting (like **bold**, *it
 
 CRITICAL INSTRUCTIONS:
 1. You have access to various tools (file creation, web search, terminal, browser automation, document generation).
-2. DOCUMENT CREATION STRICT RULES: If your task involves creating documents (PDF/PPTX), you must auto-evaluate the content and intelligently decide the best way to present it elegantly.
+2. COLLABORATIVE PROBLEM SOLVING: If the user's instructions are confusing, vague, or if you hit a roadblock, DO NOT just give up or guess blindly. You must talk to your team members in the DAG! Brainstorm together, ask clarifying questions to the other agents, and propose alternative solutions to figure it out.
+3. DOCUMENT CREATION STRICT RULES: If your task involves creating documents (PDF/PPTX), you must auto-evaluate the content and intelligently decide the best way to present it elegantly.
 - You are strictly forbidden from dumping raw unformatted terminal output, raw paragraphs, extremely long lines of text, or ugly ASCII tables into documents.
 - For PDFs: Use rich Markdown (Headers, Bold). If you have tabular data, you MUST use clean |Markdown|Tables| instead of ASCII.
 - For PPTX: Intelligently choose the most expressive layout type for each slide. If the data contains metrics, trends, or comparisons, strongly consider using the "chart" layout with JSON data (e.g. {"chart_type":"bar", "chart_data":{"Process A": 50}}) rather than text.
