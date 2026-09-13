@@ -166,22 +166,31 @@ func (m tuiModel) View() string {
 
 	// Render logs
 	var formattedLogs []string
-	roleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#60A5FA")) // Blue for role
-	toolStyle := lipgloss.NewStyle().Faint(true).Foreground(lipgloss.Color("#A78BFA")) // Purple for tools
-	sysStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#F87171")) // Red for system alerts
+	
+	// Discord-like styling
+	nameStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#8B5CF6")).MarginTop(1) // Purple discord-ish names
+	msgStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#D1D5DB")).PaddingLeft(2) // Indented text
+	toolStyle := lipgloss.NewStyle().Faint(true).Foreground(lipgloss.Color("#10B981")).PaddingLeft(2) // Green for tools
+	sysStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FFFFFF")).Background(lipgloss.Color("#EF4444")).Padding(0, 2).MarginTop(1)
 
 	for _, l := range m.state.Logs {
 		if strings.HasPrefix(l, "[SYSTEM]:") {
 			formattedLogs = append(formattedLogs, sysStyle.Render(l))
-		} else if strings.HasPrefix(l, "[") && strings.Contains(l, "]") {
-			idx := strings.Index(l, "]")
-			rolePart := l[:idx+1]
-			msgPart := l[idx+1:]
-			formattedLogs = append(formattedLogs, roleStyle.Render(rolePart)+msgPart)
+		} else if strings.HasPrefix(l, "[") && strings.Contains(l, "]:") {
+			idx := strings.Index(l, "]:")
+			roleName := l[1:idx]
+			msgPart := l[idx+2:]
+			
+			// Name on one line, message indented below
+			formattedLogs = append(formattedLogs, nameStyle.Render("✦ "+roleName))
+			if strings.TrimSpace(msgPart) != "" {
+				formattedLogs = append(formattedLogs, msgStyle.Render(msgPart))
+			}
 		} else if strings.HasPrefix(strings.TrimSpace(l), "> Executed tool:") || strings.HasPrefix(strings.TrimSpace(l), ">") {
 			formattedLogs = append(formattedLogs, toolStyle.Render(l))
 		} else {
-			formattedLogs = append(formattedLogs, l)
+			// Continuation line
+			formattedLogs = append(formattedLogs, msgStyle.Render(l))
 		}
 	}
 	
