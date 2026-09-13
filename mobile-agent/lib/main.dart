@@ -629,7 +629,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                   return; // Intercept and DO NOT send to the AI
                }
                
-               _sendMessage();
+               // _sendMessage();
             }
           } else {
             // Partial result - update text field live

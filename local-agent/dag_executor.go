@@ -293,10 +293,41 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 
 				if strings.Contains(modelStr, "groq") {
 					nodeOut, nodeErr = executeGroqCommand(ctx, finalCommand, connData.GroqAPIKey, actualModel, "dag-internal", nil, taskID, "")
+					if nodeErr != nil && connData.GroqSecondaryAPIKey != "" {
+						fmt.Printf("STATUS: SYSTEM_MSG:Node %s primary Groq failed, trying secondary key...\n", nodeID)
+						os.Stdout.Sync()
+						nodeOut, nodeErr = executeGroqCommand(ctx, finalCommand, connData.GroqSecondaryAPIKey, actualModel, "dag-internal", nil, taskID, "")
+					}
+					// If Groq completely fails, fallback to Ollama
+					if nodeErr != nil {
+						fmt.Printf("STATUS: SYSTEM_MSG:Node %s Groq exhausted, falling back to Ollama gemma4:31b...\n", nodeID)
+						os.Stdout.Sync()
+						ollamaSemaphore <- struct{}{}
+						nodeOut, nodeErr = executeOllamaCommand(ctx, finalCommand, connData.OllamaBaseURL, "gemma4:31b", connData.OllamaAPIKey, nil, taskID, "")
+						if nodeErr != nil && connData.OllamaSecondaryAPIKey != "" {
+							nodeOut, nodeErr = executeOllamaCommand(ctx, finalCommand, connData.OllamaBaseURL, "gemma4:31b", connData.OllamaSecondaryAPIKey, nil, taskID, "")
+						}
+						<-ollamaSemaphore
+					}
 				} else {
 					ollamaSemaphore <- struct{}{}
 					nodeOut, nodeErr = executeOllamaCommand(ctx, finalCommand, connData.OllamaBaseURL, actualModel, connData.OllamaAPIKey, nil, taskID, "")
+					if nodeErr != nil && connData.OllamaSecondaryAPIKey != "" {
+						fmt.Printf("STATUS: SYSTEM_MSG:Node %s primary Ollama failed, trying secondary key...\n", nodeID)
+						os.Stdout.Sync()
+						nodeOut, nodeErr = executeOllamaCommand(ctx, finalCommand, connData.OllamaBaseURL, actualModel, connData.OllamaSecondaryAPIKey, nil, taskID, "")
+					}
 					<-ollamaSemaphore
+					
+					// If Ollama completely fails, fallback to Groq
+					if nodeErr != nil {
+						fmt.Printf("STATUS: SYSTEM_MSG:Node %s Ollama exhausted, falling back to Groq llama-3.1-70b-versatile...\n", nodeID)
+						os.Stdout.Sync()
+						nodeOut, nodeErr = executeGroqCommand(ctx, finalCommand, connData.GroqAPIKey, "llama-3.1-70b-versatile", "dag-internal", nil, taskID, "")
+						if nodeErr != nil && connData.GroqSecondaryAPIKey != "" {
+							nodeOut, nodeErr = executeGroqCommand(ctx, finalCommand, connData.GroqSecondaryAPIKey, "llama-3.1-70b-versatile", "dag-internal", nil, taskID, "")
+						}
+					}
 				}
 
 				mu.Lock()
