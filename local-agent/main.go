@@ -1538,8 +1538,10 @@ Write-Output $base64
 				
 				// Force spawn a completely independent Windows Terminal or PowerShell window
 				exe, _ := os.Executable()
+				exeDir := filepath.Dir(exe)
 				psScript := `
 $ErrorActionPreference = 'Continue'
+Set-Location -Path '` + exeDir + `'
 $host.UI.RawUI.WindowTitle = 'Voila AI - Graphify Tracker'
 Clear-Host
 & '` + exe + `' --tui
@@ -1560,8 +1562,14 @@ if ($LASTEXITCODE -ne 0) {
 					tuiCmd.Start()
 				}
 				
+				fmt.Println("STATUS: GRAPHIFY")
+				os.Stdout.Sync()
+
 				output, err := executeGraphifyDAG(ctx, command)
 				
+				fmt.Println("STATUS: IDLE")
+				os.Stdout.Sync()
+
 				cmdMu.Lock()
 				currentCancel = nil
 				isGraphifyRunning = false
