@@ -93,6 +93,15 @@ func initZeroOrphanJobObject() {
 
 // Styles
 
+func stripMarkdownForTTS(input string) string {
+	out := strings.ReplaceAll(input, "**", "")
+	out = strings.ReplaceAll(out, "__", "")
+	out = strings.ReplaceAll(out, "### ", "")
+	out = strings.ReplaceAll(out, "## ", "")
+	out = strings.ReplaceAll(out, "# ", "")
+	return out
+}
+
 var (
 	localMockCount int
 	localMockMu    sync.Mutex
@@ -1575,7 +1584,7 @@ if ($LASTEXITCODE -ne 0) {
 				if err != nil {
 					resultPayload["error"] = "DAG Execution Failed:\n" + err.Error()
 				} else {
-					resultPayload["output"] = output
+					resultPayload["output"] = stripMarkdownForTTS(output)
 				}
 
 				webhookPayload, _ := json.Marshal(resultPayload)
@@ -1720,7 +1729,7 @@ if ($LASTEXITCODE -ne 0) {
 			if err != nil {
 				resultPayload["error"] = "Command failed:\n" + err.Error()
 			} else {
-				resultPayload["output"] = output
+				resultPayload["output"] = stripMarkdownForTTS(output)
 			}
 
 			payloadBytes, _ := json.Marshal(resultPayload)
