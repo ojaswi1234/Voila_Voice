@@ -2820,40 +2820,15 @@ func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMes
 			return "image_url: " + bestURL
 		}
 
-		// Original text search logic (unchanged)
-		searchURL := "https://api.duckduckgo.com/?q=" + strings.ReplaceAll(query, " ", "+") + "&format=json&no_html=1&skip_disambig=1"
-		resp, err := http.Get(searchURL)
+		// Replaced fragile DDG API with reliable DDG Lite HTML scraper
+		exeDir, _ := os.Executable()
+		scriptPath := filepath.Join(filepath.Dir(exeDir), "ddg_lite.py")
+		cmdObj := exec.Command("python", scriptPath, query)
+		outBytes, err := cmdObj.CombinedOutput()
 		if err != nil {
-			return "web search failed: " + err.Error()
+			return "web search failed: " + err.Error() + "\n" + string(outBytes)
 		}
-		defer resp.Body.Close()
-		body, _ := io.ReadAll(resp.Body)
-
-		var ddg struct {
-			AbstractText  string `json:"AbstractText"`
-			RelatedTopics []struct {
-				Text string `json:"Text"`
-			} `json:"RelatedTopics"`
-		}
-		if err := json.Unmarshal(body, &ddg); err != nil {
-			return "web search: failed to parse response"
-		}
-
-		var parts []string
-		if ddg.AbstractText != "" {
-			parts = append(parts, ddg.AbstractText)
-		} else {
-			parts = append(parts, "(No direct answer found — see related topics below)")
-		}
-		for i, rt := range ddg.RelatedTopics {
-			if i >= 3 {
-				break
-			}
-			if rt.Text != "" {
-				parts = append(parts, rt.Text)
-			}
-		}
-		return strings.Join(parts, "\n")
+		return strings.TrimSpace(string(outBytes))
 
 	case "read_file":
 		path := getString("path")

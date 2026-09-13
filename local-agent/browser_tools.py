@@ -26,7 +26,7 @@ import keyboard
 from playwright.sync_api import sync_playwright
 
 # --- Session daemon -----------------------------------------------------------
-DAEMON_PORT  = 19876          # Local-only TCP port for IPC
+DAEMON_PORT  = 19877          # Local-only TCP port for IPC
 DAEMON_TOKEN = "voila-browser-daemon-v1"
 IDLE_TIMEOUT = 120            # Seconds of inactivity before daemon exits
 
@@ -103,8 +103,9 @@ def _get_page(browser):
     """Return the active page (creating one if needed)."""
     contexts = browser.contexts
     if not contexts:
-        raise RuntimeError("No browser context found.")
-    context = contexts[0]
+        context = browser.new_context()
+    else:
+        context = contexts[0]
     pages   = context.pages
     if not pages:
         return context.new_page()
