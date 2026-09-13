@@ -887,7 +887,7 @@ def _show_settings_widgets():
             groq_status_lbl.config(fg='#6B7280')
 
     btn_row = tk.Frame(groq_frame, bg='#1A1D23')
-    btn_row.grid(row=4, column=0, columnspan=4, padx=12, pady=(0, 10), sticky='w')
+    btn_row.grid(row=3, column=0, columnspan=4, padx=12, pady=(0, 10), sticky='w')
     _make_btn(btn_row, '💾 Save', on_groq_save, bg='#6366F1', width=9).pack(side='left', padx=(0, 6))
     _make_btn(btn_row, '✓ Verify', on_groq_verify, bg='#10B981', width=9).pack(side='left', padx=(0, 6))
     _make_btn(btn_row, '🗑️ Delete', on_groq_delete, bg='#DC2626', width=9).pack(side='left')
@@ -1009,7 +1009,7 @@ def _show_settings_widgets():
             ollama_status_lbl.config(fg='#6B7280')
 
     obtn_row = tk.Frame(ollama_frame, bg='#1A1D23')
-    obtn_row.grid(row=6, column=0, columnspan=4, padx=12, pady=(0, 10), sticky='w')
+    obtn_row.grid(row=5, column=0, columnspan=4, padx=12, pady=(0, 10), sticky='w')
     _make_btn(obtn_row, '💾 Save', on_ollama_save, bg='#D97706', width=9).pack(side='left', padx=(0, 6))
     _make_btn(obtn_row, '✓ Verify', on_ollama_verify, bg='#10B981', width=9).pack(side='left', padx=(0, 6))
     _make_btn(obtn_row, '🗑️ Delete', on_ollama_delete, bg='#DC2626', width=9).pack(side='left')
