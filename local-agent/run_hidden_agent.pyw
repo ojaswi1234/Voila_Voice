@@ -843,8 +843,8 @@ def _show_settings_widgets():
     style.configure('TCombobox', fieldbackground='#2D3039', background='#1A1D23', foreground='white')
     
     groq_model_cb = ttk.Combobox(groq_frame, textvariable=groq_model_var, values=groq_models, width=38, font=('Segoe UI', 9))
-    groq_model_cb.grid(row=1, column=1, columnspan=2, padx=6, pady=4, sticky='w')
-    tk.Label(groq_frame, text='(Free tier + tool calling)', bg='#1A1D23', fg='#6B7280', font=('Segoe UI', 8)).grid(row=1, column=3, sticky='w')
+    groq_model_cb.grid(row=2, column=1, columnspan=2, padx=6, pady=4, sticky='w')
+    tk.Label(groq_frame, text='(Free tier + tool calling)', bg='#1A1D23', fg='#6B7280', font=('Segoe UI', 8)).grid(row=2, column=3, sticky='w')
 
     def on_groq_save():
         key = groq_key_var.get().strip()
@@ -910,7 +910,7 @@ def _show_settings_widgets():
         row=0, column=1, columnspan=3, padx=6, pady=8, sticky='ew')
 
     tk.Label(ollama_frame, text='Model:', bg='#1A1D23', fg='#9CA3AF', font=('Segoe UI', 9)).grid(
-        row=1, column=0, padx=12, pady=4, sticky='w')
+        row=3, column=0, padx=12, pady=4, sticky='w')
     ollama_model_var = tk.StringVar(value=data.get('ollama_model', 'gemma4:31b'))
     
     ollama_models = [
@@ -922,15 +922,23 @@ def _show_settings_widgets():
         "nemotron-3-ultra"
     ]
     ollama_model_cb = ttk.Combobox(ollama_frame, textvariable=ollama_model_var, values=ollama_models, width=40, font=('Segoe UI', 9))
-    ollama_model_cb.grid(row=1, column=1, columnspan=2, padx=6, pady=4, sticky='w')
-    tk.Label(ollama_frame, text='(Free tier + tool calling)', bg='#1A1D23', fg='#6B7280', font=('Segoe UI', 8)).grid(row=1, column=3, sticky='w')
+    ollama_model_cb.grid(row=3, column=1, columnspan=2, padx=6, pady=4, sticky='w')
+    tk.Label(ollama_frame, text='(Free tier + tool calling)', bg='#1A1D23', fg='#6B7280', font=('Segoe UI', 8)).grid(row=3, column=3, sticky='w')
 
     tk.Label(ollama_frame, text='API Key (Opt):', bg='#1A1D23', fg='#9CA3AF', font=('Segoe UI', 9)).grid(
-        row=2, column=0, padx=12, pady=4, sticky='w')
+        row=1, column=0, padx=12, pady=4, sticky='w')
     ollama_key_var = tk.StringVar(value=data.get('ollama_api_key_set') == 'true' and '********' or '')
     tk.Entry(ollama_frame, textvariable=ollama_key_var, bg='#2D3039', fg='#E5E7EB',
              insertbackground='#E5E7EB', relief='flat', font=('Segoe UI', 9), width=42, show='*').grid(
-        row=2, column=1, columnspan=3, padx=6, pady=4, sticky='ew')
+        row=1, column=1, columnspan=3, padx=6, pady=4, sticky='ew')
+
+    tk.Label(ollama_frame, text='Sec Key:', bg='#1A1D23', fg='#9CA3AF', font=('Segoe UI', 9)).grid(
+        row=2, column=0, padx=12, pady=4, sticky='w')
+    ollama_sec_key_var = tk.StringVar(value=data.get('ollama_secondary_api_key_set') == 'true' and '********' or '')
+    ollama_sec_entry = tk.Entry(ollama_frame, textvariable=ollama_sec_key_var, bg='#2D3039', fg='#E5E7EB',
+                          insertbackground='#E5E7EB', relief='flat', font=('Segoe UI', 9), width=40, show='*')
+    ollama_sec_entry.grid(row=2, column=1, padx=6, pady=4, sticky='ew')
+    tk.Label(ollama_frame, text='(Optional)', bg='#1A1D23', fg='#6B7280', font=('Segoe UI', 8)).grid(row=2, column=2, sticky='w')
 
     def _on_ollama_key_change(*args):
         k = ollama_key_var.get().strip()
@@ -958,7 +966,9 @@ def _show_settings_widgets():
             ollama_status_var.set('⚠️ Enter Base URL first')
             ollama_status_lbl.config(fg='#F59E0B')
             return
-        res = _api_call('POST', '/api-keys', {'ollama_base_url': url, 'ollama_model': model, 'ollama_api_key': key, 'action': 'save'})
+        sec_key = ollama_sec_key_var.get().strip()
+        sec_key = '' if sec_key == '********' else sec_key
+        res = _api_call('POST', '/api-keys', {'ollama_base_url': url, 'ollama_model': model, 'ollama_api_key': key, 'ollama_secondary_api_key': sec_key, 'action': 'save'})
         if 'error' in res:
             ollama_status_var.set(f'⚡ {res["error"][:40]}')
             ollama_status_lbl.config(fg='#EF4444')
