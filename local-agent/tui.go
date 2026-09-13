@@ -174,6 +174,8 @@ func (m tuiModel) View() string {
 	sysStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FFFFFF")).Background(lipgloss.Color("#EF4444")).Padding(0, 2).MarginTop(1)
 
 	for _, l := range m.state.Logs {
+		l = strings.ReplaceAll(l, "**", "")
+		l = strings.ReplaceAll(l, "🔎", "")
 		if strings.HasPrefix(l, "[SYSTEM]:") {
 			formattedLogs = append(formattedLogs, sysStyle.Render(l))
 		} else if strings.HasPrefix(l, "[") && strings.Contains(l, "]:") {

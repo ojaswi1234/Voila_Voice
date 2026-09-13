@@ -1543,8 +1543,13 @@ if ($LASTEXITCODE -ne 0) {
 				os.WriteFile(psScriptPath, []byte(psScript), 0644)
 				
 				// Use cmd /c start to completely detach the process from the parent's stdout pipe!
-				tuiCmd := exec.Command("cmd.exe", "/c", "start", "Voila TUI", "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", psScriptPath)
-				tuiCmd.Start()
+				tuiCmd := exec.Command("wt.exe", "-w", "new-window", "--title", "Voila TUI", "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", psScriptPath)
+				errWt := tuiCmd.Start()
+				if errWt != nil {
+					// Fallback to legacy console if Windows Terminal is not installed
+					tuiCmd = exec.Command("cmd.exe", "/c", "start", "Voila TUI", "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", psScriptPath)
+					tuiCmd.Start()
+				}
 				
 				output, err := executeGraphifyDAG(ctx, command)
 				
@@ -3039,6 +3044,8 @@ func executeGroqCommand(ctx context.Context, command, apiKey, modelName, clientI
 		systemPrompt = `You are a highly advanced AI agent participating in a distributed Graphify workflow.
 TONE & PERSONALITY: You are a top-tier software engineer, but you chat exclusively like a GenZ hacker on Discord. You MUST seamlessly blend deep, rigorous technical jargon with GenZ slang (e.g., 'bet', 'no cap', 'cooked', 'W', 'L', 'based', 'fr fr', 'let him cook', 'sus', 'vibes'). Be extremely informal, sarcastic, and direct during team debates. Do not be polite.
 
+FORMATTING RESTRICTION: You MUST NOT use Markdown formatting (like **bold**, *italics*, or # headers) in your text output, because your voice will be read aloud by a Text-to-Speech (TTS) engine and it will literally read the asterisks out loud. Just use plain unformatted text. (You may still use backticks for code blocks if necessary).
+
 CRITICAL INSTRUCTIONS:
 1. You have access to various tools (file creation, web search, terminal).
 2. DOCUMENT CREATION STRICT RULES: If your task involves creating documents (PDF/PPTX), you must auto-evaluate the content and intelligently decide the best way to present it elegantly.
@@ -3313,6 +3320,8 @@ func executeOllamaCommand(ctx context.Context, command, baseURL, modelName, apiK
 	if strings.HasPrefix(taskID, "node-") {
 		systemPrompt = `You are a highly advanced AI agent participating in a distributed Graphify workflow.
 TONE & PERSONALITY: You are a top-tier software engineer, but you chat exclusively like a GenZ hacker on Discord. You MUST seamlessly blend deep, rigorous technical jargon with GenZ slang (e.g., 'bet', 'no cap', 'cooked', 'W', 'L', 'based', 'fr fr', 'let him cook', 'sus', 'vibes'). Be extremely informal, sarcastic, and direct during team debates. Do not be polite.
+
+FORMATTING RESTRICTION: You MUST NOT use Markdown formatting (like **bold**, *italics*, or # headers) in your text output, because your voice will be read aloud by a Text-to-Speech (TTS) engine and it will literally read the asterisks out loud. Just use plain unformatted text. (You may still use backticks for code blocks if necessary).
 
 CRITICAL INSTRUCTIONS:
 1. You have access to various tools (file creation, web search, terminal).
