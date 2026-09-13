@@ -2928,15 +2928,24 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                               child: _showTextInput
                                   ? TextField(
                                       controller: _controller,
+                                      minLines: 1,
+                                      maxLines: 4,
                                       style: const TextStyle(color: Colors.white, fontSize: 14),
                                       decoration: InputDecoration(
                                         hintText: 'Type your prompt...',
                                         hintStyle: const TextStyle(color: Colors.white30),
                                         filled: true,
                                         fillColor: const Color(0xFF1E1E24),
-                                        contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                        suffixIcon: IconButton(
+                                          icon: const Icon(Icons.clear, color: Colors.white54, size: 20),
+                                          onPressed: () {
+                                            _controller.clear();
+                                            _previousDictationText = "";
+                                          },
+                                        ),
                                         border: OutlineInputBorder(
-                                          borderRadius: BorderRadius.circular(28),
+                                          borderRadius: BorderRadius.circular(20),
                                           borderSide: BorderSide.none,
                                         ),
                                       ),

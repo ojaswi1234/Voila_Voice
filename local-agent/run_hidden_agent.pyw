@@ -636,7 +636,7 @@ def _make_btn(parent, text, cmd, bg='#374151', fg='#E5E7EB', width=8):
     return tk.Button(parent, text=text, command=cmd, bg=bg, fg=fg,
                      activebackground='#4B5563', activeforeground='#fff',
                      relief='flat', bd=0, font=('Segoe UI', 9), cursor='hand2',
-                     padx=6, pady=4, width=width)
+                     padx=10, pady=8, width=width)
 
 def _api_call(method, path, payload=None):
     """Call the local voila.exe HTTP server synchronously."""
@@ -814,7 +814,7 @@ def _show_settings_widgets():
     groq_sec_entry = tk.Entry(groq_frame, textvariable=groq_sec_key_var, bg='#2D3039', fg='#E5E7EB',
                           insertbackground='#E5E7EB', relief='flat', font=('Segoe UI', 9),
                           width=40, show='●')
-    groq_sec_entry.grid(row=1, column=1, padx=6, pady=4, sticky='ew')
+    groq_sec_entry.grid(row=1, column=1, padx=10, pady=8, sticky='ew')
     tk.Label(groq_frame, text='(Optional)', bg='#1A1D23', fg='#6B7280', font=('Segoe UI', 8)).grid(row=1, column=3, sticky='w')
 
     # Groq Model Dropdown
@@ -843,7 +843,7 @@ def _show_settings_widgets():
     style.configure('TCombobox', fieldbackground='#2D3039', background='#1A1D23', foreground='white')
     
     groq_model_cb = ttk.Combobox(groq_frame, textvariable=groq_model_var, values=groq_models, width=38, font=('Segoe UI', 9))
-    groq_model_cb.grid(row=2, column=1, columnspan=2, padx=6, pady=4, sticky='w')
+    groq_model_cb.grid(row=2, column=1, columnspan=2, padx=10, pady=8, sticky='w')
     tk.Label(groq_frame, text='(Free tier + tool calling)', bg='#1A1D23', fg='#6B7280', font=('Segoe UI', 8)).grid(row=2, column=3, sticky='w')
 
     def on_groq_save():
@@ -887,14 +887,14 @@ def _show_settings_widgets():
             groq_status_lbl.config(fg='#6B7280')
 
     btn_row = tk.Frame(groq_frame, bg='#1A1D23')
-    btn_row.grid(row=3, column=0, columnspan=4, padx=12, pady=(0, 10), sticky='w')
+    btn_row.grid(row=3, column=0, columnspan=4, padx=12, pady=(15, 15), sticky='w')
     _make_btn(btn_row, '💾 Save', on_groq_save, bg='#6366F1', width=9).pack(side='left', padx=(0, 6))
     _make_btn(btn_row, '✓ Verify', on_groq_verify, bg='#10B981', width=9).pack(side='left', padx=(0, 6))
     _make_btn(btn_row, '🗑️ Delete', on_groq_delete, bg='#DC2626', width=9).pack(side='left')
 
     tk.Label(groq_frame, text='Available models: qwen3.8-27b, gpt-oss-120b, compound, allam-2-7b, llama-3.1...',
              bg='#1A1D23', fg='#4B5563', font=('Segoe UI', 8, 'italic')).grid(
-        row=4, column=0, columnspan=4, padx=12, pady=(0, 10), sticky='w')
+        row=4, column=0, columnspan=4, padx=12, pady=(15, 15), sticky='w')
 
     # ─── OLLAMA SECTION ──────────────────────────────────────────────────────
     ollama_frame = tk.LabelFrame(inner, text=' Ollama (Local / Ollama Cloud free tier) ',
@@ -922,7 +922,7 @@ def _show_settings_widgets():
         "nemotron-3-ultra"
     ]
     ollama_model_cb = ttk.Combobox(ollama_frame, textvariable=ollama_model_var, values=ollama_models, width=40, font=('Segoe UI', 9))
-    ollama_model_cb.grid(row=3, column=1, columnspan=2, padx=6, pady=4, sticky='w')
+    ollama_model_cb.grid(row=3, column=1, columnspan=2, padx=10, pady=8, sticky='w')
     tk.Label(ollama_frame, text='(Free tier + tool calling)', bg='#1A1D23', fg='#6B7280', font=('Segoe UI', 8)).grid(row=3, column=3, sticky='w')
 
     tk.Label(ollama_frame, text='API Key (Opt):', bg='#1A1D23', fg='#9CA3AF', font=('Segoe UI', 9)).grid(
@@ -930,14 +930,14 @@ def _show_settings_widgets():
     ollama_key_var = tk.StringVar(value=data.get('ollama_api_key_set') == 'true' and '********' or '')
     tk.Entry(ollama_frame, textvariable=ollama_key_var, bg='#2D3039', fg='#E5E7EB',
              insertbackground='#E5E7EB', relief='flat', font=('Segoe UI', 9), width=42, show='*').grid(
-        row=1, column=1, columnspan=3, padx=6, pady=4, sticky='ew')
+        row=1, column=1, columnspan=3, padx=10, pady=8, sticky='ew')
 
     tk.Label(ollama_frame, text='Sec Key:', bg='#1A1D23', fg='#9CA3AF', font=('Segoe UI', 9)).grid(
         row=2, column=0, padx=12, pady=4, sticky='w')
     ollama_sec_key_var = tk.StringVar(value=data.get('ollama_secondary_api_key_set') == 'true' and '********' or '')
     ollama_sec_entry = tk.Entry(ollama_frame, textvariable=ollama_sec_key_var, bg='#2D3039', fg='#E5E7EB',
                           insertbackground='#E5E7EB', relief='flat', font=('Segoe UI', 9), width=40, show='*')
-    ollama_sec_entry.grid(row=2, column=1, padx=6, pady=4, sticky='ew')
+    ollama_sec_entry.grid(row=2, column=1, padx=10, pady=8, sticky='ew')
     tk.Label(ollama_frame, text='(Optional)', bg='#1A1D23', fg='#6B7280', font=('Segoe UI', 8)).grid(row=2, column=2, sticky='w')
 
     def _on_ollama_key_change(*args):
@@ -1009,14 +1009,14 @@ def _show_settings_widgets():
             ollama_status_lbl.config(fg='#6B7280')
 
     obtn_row = tk.Frame(ollama_frame, bg='#1A1D23')
-    obtn_row.grid(row=5, column=0, columnspan=4, padx=12, pady=(0, 10), sticky='w')
+    obtn_row.grid(row=5, column=0, columnspan=4, padx=12, pady=(15, 15), sticky='w')
     _make_btn(obtn_row, '💾 Save', on_ollama_save, bg='#D97706', width=9).pack(side='left', padx=(0, 6))
     _make_btn(obtn_row, '✓ Verify', on_ollama_verify, bg='#10B981', width=9).pack(side='left', padx=(0, 6))
     _make_btn(obtn_row, '🗑️ Delete', on_ollama_delete, bg='#DC2626', width=9).pack(side='left')
 
     tk.Label(ollama_frame, text='Ollama Cloud free models: gemma4:31b, gpt-oss:120b, nemotron-3-nano:30b, ...',
              bg='#1A1D23', fg='#4B5563', font=('Segoe UI', 8, 'italic')).grid(
-        row=6, column=0, columnspan=4, padx=12, pady=(0, 10), sticky='w')
+        row=6, column=0, columnspan=4, padx=12, pady=(15, 15), sticky='w')
 
     # ─── Info footer ─────────────────────────────────────────────────────────
 
