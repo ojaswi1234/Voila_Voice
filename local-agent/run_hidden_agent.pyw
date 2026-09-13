@@ -808,9 +808,18 @@ def _show_settings_widgets():
                                 bg='#1A1D23', fg=groq_status_color, font=('Segoe UI', 9))
     groq_status_lbl.grid(row=0, column=3, padx=8, pady=8)
 
+    tk.Label(groq_frame, text='Sec Key:', bg='#1A1D23', fg='#9CA3AF', font=('Segoe UI', 9)).grid(
+        row=1, column=0, padx=12, pady=4, sticky='w')
+    groq_sec_key_var = tk.StringVar()
+    groq_sec_entry = tk.Entry(groq_frame, textvariable=groq_sec_key_var, bg='#2D3039', fg='#E5E7EB',
+                          insertbackground='#E5E7EB', relief='flat', font=('Segoe UI', 9),
+                          width=40, show='●')
+    groq_sec_entry.grid(row=1, column=1, padx=6, pady=4, sticky='ew')
+    tk.Label(groq_frame, text='(Optional)', bg='#1A1D23', fg='#6B7280', font=('Segoe UI', 8)).grid(row=1, column=3, sticky='w')
+
     # Groq Model Dropdown
     tk.Label(groq_frame, text='Model:', bg='#1A1D23', fg='#9CA3AF', font=('Segoe UI', 9)).grid(
-        row=1, column=0, padx=12, pady=4, sticky='w')
+        row=2, column=0, padx=12, pady=4, sticky='w')
     
     groq_models = [
         "qwen/qwen3.8-27b",
@@ -844,7 +853,7 @@ def _show_settings_widgets():
             groq_status_var.set('⚠️ Enter a key first')
             groq_status_lbl.config(fg='#F59E0B')
             return
-        res = _api_call('POST', '/api-keys', {'groq_api_key': key, 'groq_model': model, 'action': 'save'})
+        res = _api_call('POST', '/api-keys', {'groq_api_key': key, 'groq_secondary_api_key': groq_sec_key_var.get().strip(), 'groq_model': model, 'action': 'save'})
         if 'error' in res:
             groq_status_var.set(f'⚡ {res["error"][:40]}')
             groq_status_lbl.config(fg='#EF4444')
@@ -1886,7 +1895,8 @@ if 'graph_state' not in globals():
         "edges": [
             ("node1", "node2"),
             ("node2", "node3")
-        ]
+        ],
+        "is_custom": False
     }
     drag_data = {"node_id": None, "last_x": 0, "last_y": 0}
     interaction_state = {"selected_node": None}
@@ -2234,6 +2244,7 @@ def _draw_teams_section(dc, w, h):
             graph_state['nodes'] = editor_nodes
             
             valid_ids = {n['id'] for n in editor_nodes}
+            graph_state['is_custom'] = True
             graph_state['edges'] = [e for e in graph_state['edges'] if e[0] in valid_ids and e[1] in valid_ids]
             
             export_graphify_prompt()
@@ -2249,7 +2260,7 @@ def _draw_teams_section(dc, w, h):
                 {"id": "node1", "role": "Analyzer", "model": "openai/gpt-oss-20b\n(Groq)", "prompt": "Analyze", "x": 100, "y": 200, "color": "#F59E0B", "outline": "#FCD34D", "r": 20},
                 {"id": "node2", "role": "Writer", "model": "openai/gpt-oss-20b\n(Groq)", "prompt": "Write", "x": w//2, "y": 200, "color": "#3B82F6", "outline": "#93C5FD", "r": 20},
             ],
-            "edges": []
+            "edges": [], "is_custom": True
         }
         interaction_state["selected_node"] = None
         export_graphify_prompt()

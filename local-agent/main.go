@@ -370,11 +370,13 @@ type ConnectionData struct {
 	Connected         bool   `json:"connected"`
 	LastConnected     string `json:"last_connected"`
 	// Cloud API keys (stored locally, never sent to backend)
-	GroqAPIKey    string `json:"groq_api_key,omitempty"`
-	GroqModel     string `json:"groq_model,omitempty"`
-	OllamaBaseURL string `json:"ollama_base_url,omitempty"` // e.g. https://api.ollama.ai
-	OllamaAPIKey  string `json:"ollama_api_key,omitempty"`  // optional auth
-	OllamaModel   string `json:"ollama_model,omitempty"`    // e.g. llama3.2:1b
+	GroqAPIKey           string `json:"groq_api_key,omitempty"`
+	GroqSecondaryAPIKey  string `json:"groq_secondary_api_key,omitempty"`
+	GroqModel            string `json:"groq_model,omitempty"`
+	OllamaBaseURL        string `json:"ollama_base_url,omitempty"` // e.g. https://api.ollama.ai
+	OllamaAPIKey         string `json:"ollama_api_key,omitempty"`  // optional auth
+	OllamaSecondaryAPIKey string `json:"ollama_secondary_api_key,omitempty"`
+	OllamaModel          string `json:"ollama_model,omitempty"`    // e.g. llama3.2:1b
 	ActiveMode    string `json:"active_mode,omitempty"`
 }
 
@@ -1291,10 +1293,12 @@ func startHTTPServer() {
 			resp := map[string]string{
 				"groq_api_key_masked":   groqMasked,
 				"groq_api_key_set":      fmt.Sprintf("%v", connData.GroqAPIKey != ""),
+				"groq_secondary_api_key_set": fmt.Sprintf("%v", connData.GroqSecondaryAPIKey != ""),
 				"groq_model":            connData.GroqModel,
 				"ollama_base_url":       connData.OllamaBaseURL,
 				"ollama_api_key_masked": ollamaMasked,
 				"ollama_api_key_set":    fmt.Sprintf("%v", connData.OllamaAPIKey != ""),
+				"ollama_secondary_api_key_set": fmt.Sprintf("%v", connData.OllamaSecondaryAPIKey != ""),
 				"ollama_model":          connData.OllamaModel,
 				"active_mode":           connData.ActiveMode,
 			}
@@ -1302,12 +1306,14 @@ func startHTTPServer() {
 
 		case http.MethodPost:
 			var payload struct {
-				GroqAPIKey    string `json:"groq_api_key"`
-				GroqModel     string `json:"groq_model"`
-				OllamaBaseURL string `json:"ollama_base_url"`
-				OllamaAPIKey  string `json:"ollama_api_key"`
-				OllamaModel   string `json:"ollama_model"`
-				Action        string `json:"action"` // "save" or "delete_groq" or "delete_ollama"
+				GroqAPIKey           string `json:"groq_api_key"`
+				GroqSecondaryAPIKey  string `json:"groq_secondary_api_key"`
+				GroqModel            string `json:"groq_model"`
+				OllamaBaseURL        string `json:"ollama_base_url"`
+				OllamaAPIKey         string `json:"ollama_api_key"`
+				OllamaSecondaryAPIKey string `json:"ollama_secondary_api_key"`
+				OllamaModel          string `json:"ollama_model"`
+				Action               string `json:"action"` // "save" or "delete_groq" or "delete_ollama"
 			}
 			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 				http.Error(w, "Bad request", http.StatusBadRequest)
@@ -1317,10 +1323,12 @@ func startHTTPServer() {
 			switch payload.Action {
 			case "delete_groq":
 				connData.GroqAPIKey = ""
+				connData.GroqSecondaryAPIKey = ""
 				connData.GroqModel = ""
 			case "delete_ollama":
 				connData.OllamaBaseURL = ""
 				connData.OllamaAPIKey = ""
+				connData.OllamaSecondaryAPIKey = ""
 				connData.OllamaModel = ""
 			default: // "save"
 				if payload.GroqAPIKey != "" {
@@ -1337,6 +1345,12 @@ func startHTTPServer() {
 				}
 				if payload.OllamaModel != "" {
 					connData.OllamaModel = payload.OllamaModel
+				}
+				if payload.GroqSecondaryAPIKey != "" {
+					connData.GroqSecondaryAPIKey = payload.GroqSecondaryAPIKey
+				}
+				if payload.OllamaSecondaryAPIKey != "" {
+					connData.OllamaSecondaryAPIKey = payload.OllamaSecondaryAPIKey
 				}
 			}
 

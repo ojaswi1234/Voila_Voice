@@ -80,8 +80,9 @@ func writeLiveState() {
 }
 
 type GraphState struct {
-	Nodes []GraphNode `json:"nodes"`
-	Edges [][]string  `json:"edges"`
+	Nodes    []GraphNode `json:"nodes"`
+	Edges    [][]string  `json:"edges"`
+	IsCustom bool        `json:"is_custom"`
 }
 
 func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
@@ -89,6 +90,11 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 	os.Stdout.Sync()
 	fmt.Printf("STATUS: SYSTEM_MSG:Initializing Dynamic Multi-Agent State Machine...\n")
 	os.Stdout.Sync()
+
+	connData, err := loadConnectionData()
+	if err != nil {
+		return "", err
+	}
 
 	data, err := os.ReadFile("graphify_state.json")
 	if err != nil {
@@ -98,6 +104,17 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 	var state GraphState
 	if err := json.Unmarshal(data, &state); err != nil {
 		return "", fmt.Errorf("failed to parse graph state: %v", err)
+	}
+
+	if !state.IsCustom {
+		if err := autoGenerateGraphifyState(ctx, command, connData); err == nil {
+			// Re-read after auto generation
+			data, _ = os.ReadFile("graphify_state.json")
+			json.Unmarshal(data, &state)
+		} else {
+			fmt.Printf("STATUS: SYSTEM_MSG:Auto-generation failed: %v\n", err)
+			os.Stdout.Sync()
+		}
 	}
 
 	initLiveState(state.Nodes)
@@ -123,11 +140,6 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 			children[src] = append(children[src], tgt)
 			parents[tgt] = append(parents[tgt], src)
 		}
-	}
-
-	connData, err := loadConnectionData()
-	if err != nil {
-		return "", err
 	}
 
 	// ── State Machine Variables ──
