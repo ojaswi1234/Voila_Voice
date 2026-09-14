@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -15,7 +16,7 @@ import (
 type LiveState struct {
 	Status   string          `json:"status"` // "running", "done", "error"
 	Nodes    []NodeLiveState `json:"nodes"`
-	Edges    [][]string      `json:"edges"`  // e.g. [["node1","node2"],["node1","node3"]]
+	Edges    [][]string      `json:"edges"` // e.g. [["node1","node2"],["node1","node3"]]
 	Logs     []string        `json:"logs"`
 	ErrorMsg string          `json:"error"`
 }
@@ -30,16 +31,13 @@ type NodeLiveState struct {
 }
 
 type tuiModel struct {
-	state     LiveState
-	err       error
-	termWidth int
+	state      LiveState
+	err        error
+	termWidth  int
 	termHeight int
 }
 
 type graphifyTickMsg time.Time
-
-
-
 
 func runGraphifyTUI() {
 	p := tea.NewProgram(tuiModel{}, tea.WithAltScreen())
@@ -48,7 +46,6 @@ func runGraphifyTUI() {
 		os.Exit(1)
 	}
 }
-
 
 func (m tuiModel) Init() tea.Cmd {
 	return tea.Batch(
@@ -115,11 +112,11 @@ func (m tuiModel) View() string {
 
 	// Styles
 	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#10B981")).MarginBottom(1)
-	
-	pendingStyle   := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#4B5563")).Padding(0, 1).Foreground(lipgloss.Color("#9CA3AF")).Width(38)
-	runningStyle   := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#F59E0B")).Padding(0, 1).Foreground(lipgloss.Color("#FCD34D")).Width(38)
-	completedStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#10B981")).Padding(0, 1).Foreground(lipgloss.Color("#34D399")).Width(38)
-	rejectedStyle  := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#EF4444")).Padding(0, 1).Foreground(lipgloss.Color("#FCA5A5")).Width(38)
+
+	pendingStyle   := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#4B5563")).Padding(0, 1).Foreground(lipgloss.Color("#9CA3AF")).Width(36)
+	runningStyle   := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#F59E0B")).Padding(0, 1).Foreground(lipgloss.Color("#FCD34D")).Width(36)
+	completedStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#10B981")).Padding(0, 1).Foreground(lipgloss.Color("#34D399")).Width(36)
+	rejectedStyle  := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#EF4444")).Padding(0, 1).Foreground(lipgloss.Color("#FCA5A5")).Width(36)
 
 	logStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#D1D5DB")).MarginTop(1)
 
@@ -139,18 +136,16 @@ func (m tuiModel) View() string {
 		"rejected":  rejectedStyle,
 	}
 
-	teamView := renderSpatialGraph(m, nodeStyles)
-	connectionsView := "" // Replaced by true 2D edges in canvas
-
+	teamView := renderDAGGraph(m.state, nodeStyles, m.termWidth)
 
 	// Render logs
 	var formattedLogs []string
-	
+
 	// Discord-like styling
-	nameStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#8B5CF6")).MarginTop(1) // Purple discord-ish names
-	msgStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#D1D5DB")).PaddingLeft(2) // Indented text
-	toolStyle := lipgloss.NewStyle().Faint(true).Foreground(lipgloss.Color("#10B981")).PaddingLeft(2) // Green for tools
-	sysStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FFFFFF")).Background(lipgloss.Color("#EF4444")).Padding(0, 2).MarginTop(1)
+	nameStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#8B5CF6")).MarginTop(1)
+	msgStyle  := lipgloss.NewStyle().Foreground(lipgloss.Color("#D1D5DB")).PaddingLeft(2)
+	toolStyle := lipgloss.NewStyle().Faint(true).Foreground(lipgloss.Color("#10B981")).PaddingLeft(2)
+	sysStyle  := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FFFFFF")).Background(lipgloss.Color("#EF4444")).Padding(0, 2).MarginTop(1)
 
 	for _, l := range m.state.Logs {
 		l = strings.ReplaceAll(l, "**", "")
@@ -160,9 +155,7 @@ func (m tuiModel) View() string {
 		} else if strings.HasPrefix(l, "[") && strings.Contains(l, "]:") {
 			idx := strings.Index(l, "]:")
 			roleName := l[1:idx]
-			msgPart := l[idx+2:]
-			
-			// Name on one line, message indented below
+			msgPart  := l[idx+2:]
 			formattedLogs = append(formattedLogs, nameStyle.Render("✦ "+roleName))
 			if strings.TrimSpace(msgPart) != "" {
 				formattedLogs = append(formattedLogs, msgStyle.Render(msgPart))
@@ -170,198 +163,189 @@ func (m tuiModel) View() string {
 		} else if strings.HasPrefix(strings.TrimSpace(l), "> Executed tool:") || strings.HasPrefix(strings.TrimSpace(l), ">") {
 			formattedLogs = append(formattedLogs, toolStyle.Render(l))
 		} else {
-			// Continuation line
 			formattedLogs = append(formattedLogs, msgStyle.Render(l))
 		}
 	}
-	
+
 	logs := strings.Join(formattedLogs, "\n")
 	if m.state.ErrorMsg != "" {
 		logs += "\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("#EF4444")).Render("FATAL ERROR: "+m.state.ErrorMsg)
 	}
 	logsView := logStyle.Render(logs)
 
-	return lipgloss.JoinVertical(lipgloss.Left, header, teamView, connectionsView, logsView)
+	return lipgloss.JoinVertical(lipgloss.Left, header, teamView, logsView)
 }
 
-
-
-// ── 2D GRAPH RENDERER ───────────────────────────────────────────────────────
-func renderSpatialGraph(m tuiModel, nodeStyles map[string]lipgloss.Style) string {
-	state := m.state
+// ── DAG TOPOLOGY GRAPH RENDERER ──────────────────────────────────────────────
+// This renders the graph as a proper layered DAG:
+//   Layer 0 (roots) → Layer 1 → Layer 2 → ... (sinks)
+// Each layer is a column of nodes rendered side-by-side with lipgloss.
+// Between columns, directional ASCII arrows are drawn.
+// This avoids all ANSI string compositing issues.
+func renderDAGGraph(state LiveState, nodeStyles map[string]lipgloss.Style, termW int) string {
 	if len(state.Nodes) == 0 {
 		return "Loading graph..."
 	}
 
-	termW := m.termWidth
-	if termW < 80 { termW = 80 }
-	termH := m.termHeight
-	if termH < 20 { termH = 30 }
-
-	canvasW := termW
-	canvasH := termH - 18 // Reserve space for header and logs
-	if canvasH < 15 { canvasH = 15 }
-
-	// Normalize X,Y bounds
-	minX, maxX, minY, maxY := 99999, -99999, 99999, -99999
+	// Build adjacency maps
+	nodeMap  := make(map[string]NodeLiveState)
+	children := make(map[string][]string)
+	parents  := make(map[string][]string)
 	for _, n := range state.Nodes {
-		if n.X < minX { minX = n.X }
-		if n.X > maxX { maxX = n.X }
-		if n.Y < minY { minY = n.Y }
-		if n.Y > maxY { maxY = n.Y }
+		nodeMap[n.ID]   = n
+		children[n.ID]  = []string{}
+		parents[n.ID]   = []string{}
 	}
-	if maxX-minX < 10 { maxX = minX + 100 }
-	if maxY-minY < 10 { maxY = minY + 100 }
+	for _, e := range state.Edges {
+		if len(e) < 2 { continue }
+		from, to := e[0], e[1]
+		children[from] = append(children[from], to)
+		parents[to]    = append(parents[to], from)
+	}
 
-	nodeW, nodeH := 38, 5
-
-	// Create 2D canvas of runes (blank spaces)
-	canvas := make([][]rune, canvasH)
-	for r := 0; r < canvasH; r++ {
-		canvas[r] = make([]rune, canvasW)
-		for c := 0; c < canvasW; c++ {
-			canvas[r][c] = ' '
+	// BFS to assign depth levels (topological layering)
+	depth := make(map[string]int)
+	for id := range nodeMap {
+		depth[id] = -1
+	}
+	// Start from roots (nodes with no parents)
+	queue := []string{}
+	for _, n := range state.Nodes {
+		if len(parents[n.ID]) == 0 {
+			depth[n.ID] = 0
+			queue = append(queue, n.ID)
 		}
 	}
-
-	// Map node ID to canvas coordinates (center of box)
-	type Coord struct { x, y int }
-	positions := make(map[string]Coord)
-
-	for _, n := range state.Nodes {
-		// Normalize to 0-1
-		normX := float64(n.X-minX) / float64(maxX-minX)
-		normY := float64(n.Y-minY) / float64(maxY-minY)
-
-		// Map to canvas (leaving margin for box width/height)
-		cx := int(normX * float64(canvasW-nodeW-4)) + (nodeW/2) + 2
-		cy := int(normY * float64(canvasH-nodeH-2)) + (nodeH/2) + 1
-		
-		positions[n.ID] = Coord{x: cx, y: cy}
+	// If no roots (cycle), assign all depth 0
+	if len(queue) == 0 {
+		for _, n := range state.Nodes {
+			depth[n.ID] = 0
+			queue = append(queue, n.ID)
+		}
 	}
-
-	// Draw Edges using Bresenham's line algorithm
-	for _, edge := range state.Edges {
-		if len(edge) < 2 { continue }
-		p1, ok1 := positions[edge[0]]
-		p2, ok2 := positions[edge[1]]
-		if !ok1 || !ok2 { continue }
-
-		x0, y0 := p1.x, p1.y
-		x1, y1 := p2.x, p2.y
-		
-		dx := x1 - x0
-		if dx < 0 { dx = -dx }
-		dy := y1 - y0
-		if dy < 0 { dy = -dy }
-		
-		sx := 1
-		if x0 > x1 { sx = -1 }
-		sy := 1
-		if y0 > y1 { sy = -1 }
-		
-		err := dx - dy
-		
-		for {
-			if y0 >= 0 && y0 < canvasH && x0 >= 0 && x0 < canvasW {
-				// Use arrows based on direction
-				ch := '·'
-				if sx > 0 && sy == 0 { ch = '─' }
-				if sx < 0 && sy == 0 { ch = '─' }
-				if sx == 0 && sy > 0 { ch = '│' }
-				if sx == 0 && sy < 0 { ch = '│' }
-				if sx > 0 && sy > 0 { ch = '╲' }
-				if sx < 0 && sy < 0 { ch = '╲' }
-				if sx > 0 && sy < 0 { ch = '╱' }
-				if sx < 0 && sy > 0 { ch = '╱' }
-				canvas[y0][x0] = ch
-			}
-			if x0 == x1 && y0 == y1 { break }
-			e2 := 2 * err
-			if e2 > -dy {
-				err -= dy
-				x0 += sx
-			}
-			if e2 < dx {
-				err += dx
-				y0 += sy
+	for len(queue) > 0 {
+		cur := queue[0]
+		queue = queue[1:]
+		for _, child := range children[cur] {
+			if depth[child] < depth[cur]+1 {
+				depth[child] = depth[cur]+1
+				queue = append(queue, child)
 			}
 		}
-		// Draw Arrow head at target
-		if y1 >= 0 && y1 < canvasH && x1 >= 0 && x1 < canvasW {
-			canvas[y1][x1] = '▶'
-			if sx < 0 { canvas[y1][x1] = '◀' }
-			if sy > 0 && sx == 0 { canvas[y1][x1] = '▼' }
-			if sy < 0 && sx == 0 { canvas[y1][x1] = '▲' }
-		}
+	}
+	// Assign any unvisited nodes
+	for id := range nodeMap {
+		if depth[id] == -1 { depth[id] = 0 }
 	}
 
-	// Now we construct the lines as string arrays to prevent ANSI length corruption
-	stringCanvas := make([][][]string, canvasH)
-	for r := 0; r < canvasH; r++ {
-		stringCanvas[r] = make([][]string, canvasW)
-		for c := 0; c < canvasW; c++ {
-			stringCanvas[r][c] = []string{string(canvas[r][c])}
-		}
+	// Group nodes by layer
+	maxDepth := 0
+	for _, d := range depth {
+		if d > maxDepth { maxDepth = d }
+	}
+	layers := make([][]string, maxDepth+1)
+	for id, d := range depth {
+		layers[d] = append(layers[d], id)
+	}
+	// Sort each layer for stable rendering
+	for i := range layers {
+		sort.Strings(layers[i])
 	}
 
-	// Now embed the styled boxes at their coordinates
-	// Sort nodes by Z-index or just render them
-	for _, n := range state.Nodes {
-		pos := positions[n.ID]
-		left := pos.x - (nodeW/2)
-		top := pos.y - (nodeH/2)
-
-		// Generate the lipgloss box
+	// Render each node as a styled box
+	renderNode := func(n NodeLiveState) string {
 		title := lipgloss.NewStyle().Bold(true).Render(n.Role)
 		modelParts := strings.SplitN(n.Model, "\n", 2)
 		modelLine1 := strings.TrimSpace(modelParts[0])
 		modelLine2 := ""
 		if len(modelParts) > 1 { modelLine2 = strings.TrimSpace(modelParts[1]) }
-		if len(modelLine1) > 34 { modelLine1 = modelLine1[:32] + ".." }
-		
+		if len(modelLine1) > 32 { modelLine1 = modelLine1[:30] + ".." }
 		modelLabel := modelLine1
-		if modelLine2 != "" { modelLabel = modelLine1 + "\n" + lipgloss.NewStyle().Faint(true).Italic(true).Render(modelLine2) }
-		sub := lipgloss.NewStyle().Faint(true).Render(modelLabel)
-		
-		content := fmt.Sprintf("%s\n%s\n[%s]", title, sub, strings.ToUpper(n.Status))
-		
-		var box string
-		switch n.Status {
-		case "running":   box = nodeStyles["running"].Render(content)
-		case "completed": box = nodeStyles["completed"].Render(content)
-		case "rejected":  box = nodeStyles["rejected"].Render(content)
-		default:          box = nodeStyles["pending"].Render(content)
+		if modelLine2 != "" {
+			modelLabel = modelLine1 + "\n" + lipgloss.NewStyle().Faint(true).Italic(true).Render(modelLine2)
 		}
+		sub     := lipgloss.NewStyle().Faint(true).Render(modelLabel)
+		content := fmt.Sprintf("%s\n%s\n[%s]", title, sub, strings.ToUpper(n.Status))
+		switch n.Status {
+		case "running":   return nodeStyles["running"].Render(content)
+		case "completed": return nodeStyles["completed"].Render(content)
+		case "rejected":  return nodeStyles["rejected"].Render(content)
+		default:          return nodeStyles["pending"].Render(content)
+		}
+	}
 
-		boxLines := strings.Split(box, "\n")
-		for r, bline := range boxLines {
-			rIdx := top + r
-			if rIdx >= 0 && rIdx < canvasH {
-				blineWidth := lipgloss.Width(bline)
-				if left >= 0 && left < canvasW {
-					stringCanvas[rIdx][left] = []string{bline}
-					// Clear the cells visually occluded by this box
-					for i := 1; i < blineWidth; i++ {
-						if left+i < canvasW {
-							stringCanvas[rIdx][left+i] = []string{""}
-						}
+	// Build column views and connector arrows
+	// connectorStyle for the arrow column between layers
+	arrowStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#F59E0B")).Bold(true)
+	connStyle  := lipgloss.NewStyle().Foreground(lipgloss.Color("#4B5563"))
+
+	var columns []string
+	for layerIdx, layerIDs := range layers {
+		// Stack all nodes in this layer vertically
+		var nodeBoxes []string
+		for _, id := range layerIDs {
+			if n, ok := nodeMap[id]; ok {
+				nodeBoxes = append(nodeBoxes, renderNode(n))
+			}
+		}
+		col := lipgloss.JoinVertical(lipgloss.Left, nodeBoxes...)
+		columns = append(columns, col)
+
+		// Add connector column between this layer and next
+		if layerIdx < len(layers)-1 {
+			// Find all edges crossing this gap
+			var edgeLines []string
+			for _, fromID := range layerIDs {
+				for _, toID := range children[fromID] {
+					if depth[toID] == layerIdx+1 {
+						fromRole := nodeMap[fromID].Role
+						toRole   := nodeMap[toID].Role
+						if len(fromRole) > 12 { fromRole = fromRole[:10] + ".." }
+						if len(toRole) > 12   { toRole   = toRole[:10] + ".." }
+						edgeLines = append(edgeLines, connStyle.Render("·"))
+						edgeLines = append(edgeLines, arrowStyle.Render("──▶"))
+						_ = fromRole
+						_ = toRole
 					}
 				}
 			}
+			// Build the arrow connector column
+			// Height matches the taller of the two adjacent columns
+			arrowBlock := arrowStyle.Render("  ──▶  ")
+			connector  := lipgloss.NewStyle().Padding(3, 0).Render(arrowBlock)
+			columns = append(columns, connector)
 		}
 	}
 
-	var finalLines []string
-	for r := 0; r < canvasH; r++ {
-		var rowStr string
-		for c := 0; c < canvasW; c++ {
-			if len(stringCanvas[r][c]) > 0 {
-				rowStr += stringCanvas[r][c][0]
-			}
-		}
-		finalLines = append(finalLines, rowStr)
+	if len(columns) == 0 {
+		return "No graph to display"
 	}
 
-	return strings.Join(finalLines, "\n")
+	// Join all columns horizontally
+	graphView := lipgloss.JoinHorizontal(lipgloss.Center, columns...)
+
+	// Add edge relationship legend below graph
+	connHeaderStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#6366F1")).Bold(true).MarginTop(1)
+	edgeLegendLines := []string{connHeaderStyle.Render("── CONNECTIONS & RELATIONSHIPS ──")}
+
+	idToRole := make(map[string]string)
+	for _, n := range state.Nodes {
+		idToRole[n.ID] = n.Role
+	}
+	for _, e := range state.Edges {
+		if len(e) < 2 { continue }
+		fromRole := idToRole[e[0]]
+		toRole   := idToRole[e[1]]
+		if fromRole == "" { fromRole = e[0] }
+		if toRole   == "" { toRole   = e[1] }
+		line := fmt.Sprintf("  %s  %s  %s",
+			lipgloss.NewStyle().Foreground(lipgloss.Color("#818CF8")).Render("["+fromRole+"]"),
+			arrowStyle.Render("──▶"),
+			lipgloss.NewStyle().Foreground(lipgloss.Color("#34D399")).Render("["+toRole+"]"),
+		)
+		edgeLegendLines = append(edgeLegendLines, line)
+	}
+	edgeLegend := strings.Join(edgeLegendLines, "\n")
+
+	return lipgloss.JoinVertical(lipgloss.Left, graphView, edgeLegend)
 }
