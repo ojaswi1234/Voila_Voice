@@ -292,6 +292,19 @@ func (b *Backend) sendFCMTaskCompletion(deviceID, title, body string) {
 			Data: map[string]string{
 				"type": "task_finished",
 			},
+			Android: &messaging.AndroidConfig{
+				Priority: "high",
+				Notification: &messaging.AndroidNotification{
+					Sound: "default",
+				},
+			},
+			APNS: &messaging.APNSConfig{
+				Payload: &messaging.APNSPayload{
+					Aps: &messaging.Aps{
+						Sound: "default",
+					},
+				},
+			},
 		}
 		
 		_, err := b.fcmClient.Send(ctx, msg)
@@ -335,6 +348,19 @@ func (b *Backend) sendFCMAlert(deviceID string, alert SecurityAlert) {
 				"alert_id": alert.ID,
 				"alert_type": alert.Type,
 				"severity": alert.Severity,
+			},
+			Android: &messaging.AndroidConfig{
+				Priority: "high",
+				Notification: &messaging.AndroidNotification{
+					Sound: "default",
+				},
+			},
+			APNS: &messaging.APNSConfig{
+				Payload: &messaging.APNSPayload{
+					Aps: &messaging.Aps{
+						Sound: "default",
+					},
+				},
 			},
 		}
 		
@@ -1179,7 +1205,15 @@ func handleWebhookResult(b *Backend) http.HandlerFunc {
 		b.unlockDevice(deviceID, clientID)
 
 		if b.fcmClient != nil {
-			go b.sendFCMTaskCompletion(deviceID, "Task Finished", "Your executed command has finished.")
+			isCancelled := strings.Contains(strings.ToLower(errorMsg), "cancel") || strings.Contains(strings.ToLower(errorMsg), "killed")
+			if errorMsg != "" {
+				if !isCancelled {
+					go b.sendFCMTaskCompletion(deviceID, "Task Failed", "An error occurred during execution.")
+				}
+				// If cancelled, deliberately send no push notification
+			} else {
+				go b.sendFCMTaskCompletion(deviceID, "Task Finished", "Your executed command has finished.")
+			}
 		}
 
 		outputEnc, _ := req["output_enc"].(string)

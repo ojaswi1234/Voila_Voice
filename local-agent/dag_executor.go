@@ -10,15 +10,84 @@ import (
 )
 
 type GraphNode struct {
-	ID     string `json:"id"`
-	Role   string `json:"role"`
-	Model  string `json:"model"`
-	Prompt string `json:"prompt"`
+	ID      string `json:"id"`
+	Role    string `json:"role"`
+	Model   string `json:"model"`
+	Prompt  string `json:"prompt"`
+	X       int    `json:"x"`
+	Y       int    `json:"y"`
+	R       int    `json:"r"`
+	Color   string `json:"color"`
+	Outline string `json:"outline"`
+}
+
+
+var (
+	liveStateMu sync.Mutex
+	currentLiveState LiveState
+)
+
+func initLiveState(nodes []GraphNode) {
+	liveStateMu.Lock()
+	defer liveStateMu.Unlock()
+	currentLiveState = LiveState{
+		Status: "running",
+		Nodes: make([]NodeLiveState, len(nodes)),
+	}
+	for i, n := range nodes {
+		currentLiveState.Nodes[i] = NodeLiveState{
+			ID: n.ID, Role: n.Role, Status: "pending", Model: n.Model,
+		}
+	}
+	writeLiveState()
+}
+
+func updateLiveNode(id string, status string) {
+	liveStateMu.Lock()
+	defer liveStateMu.Unlock()
+	for i, n := range currentLiveState.Nodes {
+		if n.ID == id {
+			currentLiveState.Nodes[i].Status = status
+			break
+		}
+	}
+	writeLiveState()
+}
+
+func appendLiveLog(log string) {
+	liveStateMu.Lock()
+	defer liveStateMu.Unlock()
+	
+	lines := strings.Split(log, "\n")
+	for _, l := range lines {
+		if strings.TrimSpace(l) != "" {
+			currentLiveState.Logs = append(currentLiveState.Logs, l)
+		}
+	}
+	
+	if len(currentLiveState.Logs) > 40 {
+		currentLiveState.Logs = currentLiveState.Logs[len(currentLiveState.Logs)-40:]
+	}
+	writeLiveState()
+}
+
+func finishLiveState(status string, errMsg string) {
+	liveStateMu.Lock()
+	defer liveStateMu.Unlock()
+	currentLiveState.Status = status
+	currentLiveState.ErrorMsg = errMsg
+	writeLiveState()
+}
+
+func writeLiveState() {
+	b, _ := json.Marshal(currentLiveState)
+	os.WriteFile("graphify_live.json", b, 0644)
 }
 
 type GraphState struct {
-	Nodes []GraphNode `json:"nodes"`
-	Edges [][]string  `json:"edges"`
+	Nodes    []GraphNode `json:"nodes"`
+	Edges    [][]string  `json:"edges"`
+	IsCustom bool        `json:"is_custom"`
 }
 
 func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
@@ -26,6 +95,11 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 	os.Stdout.Sync()
 	fmt.Printf("STATUS: SYSTEM_MSG:Initializing Dynamic Multi-Agent State Machine...\n")
 	os.Stdout.Sync()
+
+	connData, err := loadConnectionData()
+	if err != nil {
+		return "", err
+	}
 
 	data, err := os.ReadFile("graphify_state.json")
 	if err != nil {
@@ -37,6 +111,18 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 		return "", fmt.Errorf("failed to parse graph state: %v", err)
 	}
 
+	if !state.IsCustom {
+		if err := autoGenerateGraphifyState(ctx, command, connData); err == nil {
+			// Re-read after auto generation
+			data, _ = os.ReadFile("graphify_state.json")
+			json.Unmarshal(data, &state)
+		} else {
+			fmt.Printf("STATUS: SYSTEM_MSG:Auto-generation failed: %v\n", err)
+			os.Stdout.Sync()
+		}
+	}
+
+	initLiveState(state.Nodes)
 	if len(state.Nodes) == 0 {
 		return "Graph is empty", nil
 	}
@@ -61,16 +147,12 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 		}
 	}
 
-	connData, err := loadConnectionData()
-	if err != nil {
-		return "", err
-	}
-
 	// ── State Machine Variables ──
 	var mu sync.Mutex
 	cond := sync.NewCond(&mu)
 	
 	outputs := make(map[string]string)
+	var transcript []string
 	revisions := make(map[string][]string)
 	runCount := make(map[string]int)
 	running := make(map[string]bool)
@@ -97,7 +179,21 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 		return ready
 	}
 
+	// Wake up the condition variable if context is cancelled
+	go func() {
+		<-ctx.Done()
+		cond.Broadcast()
+	}()
+
 	for {
+		// Check for context cancellation
+		select {
+		case <-ctx.Done():
+			finishLiveState("error", "FORCE KILLED BY USER")
+			return "", fmt.Errorf("Execution forcefully cancelled by user")
+		default:
+		}
+
 		mu.Lock()
 		if fatalErr != nil {
 			mu.Unlock()
@@ -113,6 +209,7 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 		}
 		if allDone {
 			mu.Unlock()
+			finishLiveState("done", "")
 			break
 		}
 
@@ -127,6 +224,7 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 			}
 			if !anyRunning {
 				mu.Unlock()
+				finishLiveState("error", "deadlock detected: no nodes are ready or running")
 				return "", fmt.Errorf("deadlock detected: no nodes are ready or running")
 			}
 			cond.Wait()
@@ -138,16 +236,15 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 			running[nid] = true
 			runCount[nid]++
 			
-			// Copy state safely for the goroutine
-			parentOutputs := make(map[string]string)
-			for _, p := range parents[nid] {
-				parentOutputs[p] = outputs[p]
-			}
+			myTranscript := append([]string(nil), transcript...)
 			myRevisions := append([]string(nil), revisions[nid]...)
 			myRunCount := runCount[nid]
 			
-			go func(nodeID string, pOuts map[string]string, myRevs []string, rCount int) {
+			go func(nodeID string, history []string, myRevs []string, rCount int) {
 				n := nodeMap[nodeID]
+				
+				updateLiveNode(nodeID, "running")
+				appendLiveLog(fmt.Sprintf("[%s] Node execution started...", n.Role))
 
 				fmt.Printf("STATUS: TEAM_NODE_START:%s\n", n.Role)
 				os.Stdout.Sync()
@@ -155,19 +252,19 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 				promptBuilder := strings.Builder{}
 				promptBuilder.WriteString(fmt.Sprintf("You are %s. %s\n\n", n.Role, n.Prompt))
 
-				parentIDs := parents[nodeID]
-				if len(parentIDs) > 0 {
-					promptBuilder.WriteString("TEAM MEMBER CONTEXT (You are reviewing/continuing their work):\n")
-					for _, pid := range parentIDs {
-						promptBuilder.WriteString(fmt.Sprintf("--- From [%s] ---\n%v\n\n", nodeMap[pid].Role, pOuts[pid]))
+				if len(history) > 0 {
+					promptBuilder.WriteString("TEAM DISCUSSION SO FAR (Context from other team members):\n")
+					for _, msg := range history {
+						promptBuilder.WriteString(msg + "\n")
 					}
 					
 					promptBuilder.WriteString("CRITICAL DEBATE INSTRUCTIONS:\n")
-					promptBuilder.WriteString("You are part of an iterative review loop. If the work from your team members is flawed, missing requirements, or incorrect, you MUST reject it.\n")
+					promptBuilder.WriteString("You are part of an iterative team discussion. You can see everyone's work above.\n")
+					promptBuilder.WriteString("If the work from your team members is flawed, missing requirements, or incorrect, you MUST reject it.\n")
 					promptBuilder.WriteString("To reject and force a team member to revise their work, your response MUST start EXACTLY with this format:\n")
 					promptBuilder.WriteString("REJECT: [RoleName]: [Your detailed critique]\n")
 					promptBuilder.WriteString("For example: REJECT: Researcher: The data is outdated. Find 2024 statistics.\n")
-					promptBuilder.WriteString("If you reject, do NOT output anything else. If the work is acceptable, do NOT use the REJECT prefix; simply perform your task and output your final result.\n\n")
+					promptBuilder.WriteString("If you reject, do NOT output anything else. If the work is acceptable, or if you are just adding your own contribution, do NOT use the REJECT prefix; simply perform your task and output your final result.\n\n")
 				}
 
 				if len(myRevs) > 0 {
@@ -201,27 +298,70 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 
 				if strings.Contains(modelStr, "groq") {
 					nodeOut, nodeErr = executeGroqCommand(ctx, finalCommand, connData.GroqAPIKey, actualModel, "dag-internal", nil, taskID, "")
+					if nodeErr != nil && connData.GroqSecondaryAPIKey != "" {
+						fmt.Printf("STATUS: SYSTEM_MSG:Node %s primary Groq failed, trying secondary key...\n", nodeID)
+						os.Stdout.Sync()
+						nodeOut, nodeErr = executeGroqCommand(ctx, finalCommand, connData.GroqSecondaryAPIKey, actualModel, "dag-internal", nil, taskID, "")
+					}
+					// If Groq completely fails, fallback to Ollama
+					if nodeErr != nil {
+						fmt.Printf("STATUS: SYSTEM_MSG:Node %s Groq exhausted, falling back to Ollama gemma4:31b...\n", nodeID)
+						os.Stdout.Sync()
+						ollamaSemaphore <- struct{}{}
+						nodeOut, nodeErr = executeOllamaCommand(ctx, finalCommand, connData.OllamaBaseURL, "gemma4:31b", connData.OllamaAPIKey, nil, taskID, "")
+						if nodeErr != nil && connData.OllamaSecondaryAPIKey != "" {
+							nodeOut, nodeErr = executeOllamaCommand(ctx, finalCommand, connData.OllamaBaseURL, "gemma4:31b", connData.OllamaSecondaryAPIKey, nil, taskID, "")
+						}
+						<-ollamaSemaphore
+					}
 				} else {
 					ollamaSemaphore <- struct{}{}
 					nodeOut, nodeErr = executeOllamaCommand(ctx, finalCommand, connData.OllamaBaseURL, actualModel, connData.OllamaAPIKey, nil, taskID, "")
+					if nodeErr != nil && connData.OllamaSecondaryAPIKey != "" {
+						fmt.Printf("STATUS: SYSTEM_MSG:Node %s primary Ollama failed, trying secondary key...\n", nodeID)
+						os.Stdout.Sync()
+						nodeOut, nodeErr = executeOllamaCommand(ctx, finalCommand, connData.OllamaBaseURL, actualModel, connData.OllamaSecondaryAPIKey, nil, taskID, "")
+					}
 					<-ollamaSemaphore
+					
+					// If Ollama completely fails, fallback to Groq
+					if nodeErr != nil {
+						fmt.Printf("STATUS: SYSTEM_MSG:Node %s Ollama exhausted, falling back to Groq llama-3.1-70b-versatile...\n", nodeID)
+						os.Stdout.Sync()
+						nodeOut, nodeErr = executeGroqCommand(ctx, finalCommand, connData.GroqAPIKey, "llama-3.1-70b-versatile", "dag-internal", nil, taskID, "")
+						if nodeErr != nil && connData.GroqSecondaryAPIKey != "" {
+							nodeOut, nodeErr = executeGroqCommand(ctx, finalCommand, connData.GroqSecondaryAPIKey, "llama-3.1-70b-versatile", "dag-internal", nil, taskID, "")
+						}
+					}
 				}
 
 				mu.Lock()
 				defer mu.Unlock()
-				defer cond.Broadcast()
 				
-				running[nodeID] = false
-
 				if nodeErr != nil {
+					updateLiveNode(nodeID, "error")
+					appendLiveLog(fmt.Sprintf("[%s] ERROR: %v", n.Role, nodeErr))
 					fatalErr = fmt.Errorf("node %s failed: %v", n.Role, nodeErr)
+					running[nodeID] = false
+					cond.Broadcast()
 					return
 				}
 
+				// Format the chat output nicely
+				cleanOut := strings.TrimSpace(nodeOut)
+				if len(cleanOut) > 500 {
+					cleanOut = cleanOut[:497] + "..."
+				}
+				appendLiveLog(fmt.Sprintf("[%s]: %s", n.Role, cleanOut))
+				transcript = append(transcript, fmt.Sprintf("--- From [%s] ---\n%s", n.Role, nodeOut))
+				outputs[nodeID] = nodeOut
+				completed[nodeID] = true
+				updateLiveNode(nodeID, "completed")
+				
 				isReject := false
-				trimmedOut := strings.TrimSpace(nodeOut)
-				if strings.HasPrefix(trimmedOut, "REJECT:") {
-					parts := strings.SplitN(trimmedOut, ":", 3)
+				if strings.Contains(nodeOut, "REJECT:") {
+					idx := strings.Index(nodeOut, "REJECT:")
+					parts := strings.SplitN(nodeOut[idx:], ":", 3)
 					if len(parts) >= 3 {
 						targetRole := strings.TrimSpace(parts[1])
 						critique := strings.TrimSpace(parts[2])
@@ -243,6 +383,7 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 								for _, childID := range children[id] {
 									if completed[childID] {
 										completed[childID] = false
+										updateLiveNode(childID, "pending")
 										invalidateChildren(childID)
 									}
 								}
@@ -250,6 +391,9 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 							invalidateChildren(targetID)
 							
 							isReject = true
+							appendLiveLog(fmt.Sprintf("[SYSTEM]: 🚨 %s REJECTED %s's work! Forcing revision loop.", n.Role, targetRole))
+							updateLiveNode(targetID, "rejected")
+							
 							fmt.Printf("STATUS: SYSTEM_MSG:[%s] REJECTED [%s]. Forcing revision.\n", n.Role, targetRole)
 							os.Stdout.Sync()
 						}
@@ -257,12 +401,13 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 				}
 
 				if !isReject {
-					outputs[nodeID] = nodeOut
-					completed[nodeID] = true
 					fmt.Printf("STATUS: TEAM_NODE_DONE:%s\n", n.Role)
 					os.Stdout.Sync()
 				}
-			}(nid, parentOutputs, myRevisions, myRunCount)
+				
+				running[nodeID] = false
+				cond.Broadcast()
+			}(nid, myTranscript, myRevisions, myRunCount)
 		}
 		mu.Unlock()
 	}

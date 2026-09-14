@@ -93,6 +93,26 @@ func initZeroOrphanJobObject() {
 
 // Styles
 
+func stripMarkdownForTTS(input string) string {
+	out := strings.ReplaceAll(input, "**", "")
+	out = strings.ReplaceAll(out, "__", "")
+	out = strings.ReplaceAll(out, "### ", "")
+	out = strings.ReplaceAll(out, "## ", "")
+	out = strings.ReplaceAll(out, "# ", "")
+	return out
+}
+
+func resolveAgentPath(p string) string {
+	if filepath.IsAbs(p) {
+		return p
+	}
+	home, err := os.UserHomeDir()
+	if err == nil {
+		return filepath.Join(home, "Desktop", p)
+	}
+	return p
+}
+
 var (
 	localMockCount int
 	localMockMu    sync.Mutex
@@ -111,6 +131,7 @@ var (
 	currentCmd         *exec.Cmd
 	currentConvID      string
 	currentCancel      context.CancelFunc
+	isGraphifyRunning bool
 	circuitMu          sync.Mutex
 	circuitOpen        bool
 	execSemaphore      chan struct{} // Limit concurrent executions
@@ -349,11 +370,13 @@ type ConnectionData struct {
 	Connected         bool   `json:"connected"`
 	LastConnected     string `json:"last_connected"`
 	// Cloud API keys (stored locally, never sent to backend)
-	GroqAPIKey    string `json:"groq_api_key,omitempty"`
-	GroqModel     string `json:"groq_model,omitempty"`
-	OllamaBaseURL string `json:"ollama_base_url,omitempty"` // e.g. https://api.ollama.ai
-	OllamaAPIKey  string `json:"ollama_api_key,omitempty"`  // optional auth
-	OllamaModel   string `json:"ollama_model,omitempty"`    // e.g. llama3.2:1b
+	GroqAPIKey           string `json:"groq_api_key,omitempty"`
+	GroqSecondaryAPIKey  string `json:"groq_secondary_api_key,omitempty"`
+	GroqModel            string `json:"groq_model,omitempty"`
+	OllamaBaseURL        string `json:"ollama_base_url,omitempty"` // e.g. https://api.ollama.ai
+	OllamaAPIKey         string `json:"ollama_api_key,omitempty"`  // optional auth
+	OllamaSecondaryAPIKey string `json:"ollama_secondary_api_key,omitempty"`
+	OllamaModel          string `json:"ollama_model,omitempty"`    // e.g. llama3.2:1b
 	ActiveMode    string `json:"active_mode,omitempty"`
 }
 
@@ -1270,10 +1293,12 @@ func startHTTPServer() {
 			resp := map[string]string{
 				"groq_api_key_masked":   groqMasked,
 				"groq_api_key_set":      fmt.Sprintf("%v", connData.GroqAPIKey != ""),
+				"groq_secondary_api_key_set": fmt.Sprintf("%v", connData.GroqSecondaryAPIKey != ""),
 				"groq_model":            connData.GroqModel,
 				"ollama_base_url":       connData.OllamaBaseURL,
 				"ollama_api_key_masked": ollamaMasked,
 				"ollama_api_key_set":    fmt.Sprintf("%v", connData.OllamaAPIKey != ""),
+				"ollama_secondary_api_key_set": fmt.Sprintf("%v", connData.OllamaSecondaryAPIKey != ""),
 				"ollama_model":          connData.OllamaModel,
 				"active_mode":           connData.ActiveMode,
 			}
@@ -1281,12 +1306,14 @@ func startHTTPServer() {
 
 		case http.MethodPost:
 			var payload struct {
-				GroqAPIKey    string `json:"groq_api_key"`
-				GroqModel     string `json:"groq_model"`
-				OllamaBaseURL string `json:"ollama_base_url"`
-				OllamaAPIKey  string `json:"ollama_api_key"`
-				OllamaModel   string `json:"ollama_model"`
-				Action        string `json:"action"` // "save" or "delete_groq" or "delete_ollama"
+				GroqAPIKey           string `json:"groq_api_key"`
+				GroqSecondaryAPIKey  string `json:"groq_secondary_api_key"`
+				GroqModel            string `json:"groq_model"`
+				OllamaBaseURL        string `json:"ollama_base_url"`
+				OllamaAPIKey         string `json:"ollama_api_key"`
+				OllamaSecondaryAPIKey string `json:"ollama_secondary_api_key"`
+				OllamaModel          string `json:"ollama_model"`
+				Action               string `json:"action"` // "save" or "delete_groq" or "delete_ollama"
 			}
 			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 				http.Error(w, "Bad request", http.StatusBadRequest)
@@ -1296,10 +1323,12 @@ func startHTTPServer() {
 			switch payload.Action {
 			case "delete_groq":
 				connData.GroqAPIKey = ""
+				connData.GroqSecondaryAPIKey = ""
 				connData.GroqModel = ""
 			case "delete_ollama":
 				connData.OllamaBaseURL = ""
 				connData.OllamaAPIKey = ""
+				connData.OllamaSecondaryAPIKey = ""
 				connData.OllamaModel = ""
 			default: // "save"
 				if payload.GroqAPIKey != "" {
@@ -1316,6 +1345,12 @@ func startHTTPServer() {
 				}
 				if payload.OllamaModel != "" {
 					connData.OllamaModel = payload.OllamaModel
+				}
+				if payload.GroqSecondaryAPIKey != "" {
+					connData.GroqSecondaryAPIKey = payload.GroqSecondaryAPIKey
+				}
+				if payload.OllamaSecondaryAPIKey != "" {
+					connData.OllamaSecondaryAPIKey = payload.OllamaSecondaryAPIKey
 				}
 			}
 
@@ -1503,7 +1538,7 @@ Write-Output $base64
 		reqMode := strings.ToUpper(mode)
 		var effectiveMode string
 		switch reqMode {
-		case "GROQ", "OLLAMA", "SHELL", "AGENT", "LOCAL":
+		case "GROQ", "OLLAMA", "SHELL":
 			effectiveMode = reqMode
 		default:
 			effectiveMode = globalMode
@@ -1523,12 +1558,46 @@ Write-Output $base64
 				cmdMu.Lock()
 				ctx, cancel := context.WithCancel(context.Background())
 				currentCancel = cancel
+				isGraphifyRunning = true
 				cmdMu.Unlock()
 				
+				// Force spawn a completely independent Windows Terminal or PowerShell window
+				exe, _ := os.Executable()
+				exeDir := filepath.Dir(exe)
+				psScript := `
+$ErrorActionPreference = 'Continue'
+Set-Location -Path '` + exeDir + `'
+$host.UI.RawUI.WindowTitle = 'Voila AI - Graphify Tracker'
+Clear-Host
+& '` + exe + `' --tui
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "TUI crashed with code $LASTEXITCODE. Press Enter to exit."
+    Read-Host
+}
+`
+				psScriptPath := filepath.Join(os.TempDir(), "voila_tui_launcher.ps1")
+				os.WriteFile(psScriptPath, []byte(psScript), 0644)
+				
+				// Use cmd /c start to completely detach the process from the parent's stdout pipe!
+				tuiCmd := exec.Command("wt.exe", "-w", "new-window", "--title", "Voila TUI", "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", psScriptPath)
+				errWt := tuiCmd.Start()
+				if errWt != nil {
+					// Fallback to legacy console if Windows Terminal is not installed
+					tuiCmd = exec.Command("cmd.exe", "/c", "start", "Voila TUI", "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", psScriptPath)
+					tuiCmd.Start()
+				}
+				
+				fmt.Println("STATUS: GRAPHIFY")
+				os.Stdout.Sync()
+
 				output, err := executeGraphifyDAG(ctx, command)
 				
+				fmt.Println("STATUS: IDLE")
+				os.Stdout.Sync()
+
 				cmdMu.Lock()
 				currentCancel = nil
+				isGraphifyRunning = false
 				cmdMu.Unlock()
 				
 				backendURL := strings.TrimRight(connData.BackendURL, "/") + "/webhook/result"
@@ -1548,7 +1617,7 @@ Write-Output $base64
 				if err != nil {
 					resultPayload["error"] = "DAG Execution Failed:\n" + err.Error()
 				} else {
-					resultPayload["output"] = output
+					resultPayload["output"] = stripMarkdownForTTS(output)
 				}
 
 				webhookPayload, _ := json.Marshal(resultPayload)
@@ -1594,6 +1663,7 @@ Write-Output $base64
 				<-execSemaphore // Release semaphore when done
 				cmdMu.Lock()
 				currentCancel = nil
+				isGraphifyRunning = false
 				cmdMu.Unlock()
 				cancel()
 			}()
@@ -1692,7 +1762,7 @@ Write-Output $base64
 			if err != nil {
 				resultPayload["error"] = "Command failed:\n" + err.Error()
 			} else {
-				resultPayload["output"] = output
+				resultPayload["output"] = stripMarkdownForTTS(output)
 			}
 
 			payloadBytes, _ := json.Marshal(resultPayload)
@@ -2138,15 +2208,15 @@ var availableTools = []toolDef{
 	{
 		Type: "function",
 		Function: toolFuncDef{
-			Name:        "automate_0",
+			Name:        "browser_automation",
 			Description: "Control a visible, headful browser. Use this to interact with a page. For simple information lookup, prefer web_research to save tokens. They can be used together.",
 			Parameters: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
-					"action":   map[string]interface{}{"type": "string", "description": "Action to perform: 'goto', 'click', 'type', 'scrape', 'extract_links'"},
-					"url":      map[string]interface{}{"type": "string", "description": "URL to navigate to (required for 'goto')"},
+					"action":   map[string]interface{}{"type": "string", "description": "Action to perform: 'goto', 'click', 'type', 'press', 'scroll', 'new_tab', 'switch_tab', 'close_tab', 'list_tabs', 'scrape', 'extract_links', 'eval'"},
+					"url":      map[string]interface{}{"type": "string", "description": "URL to navigate to (required for 'goto' and 'new_tab')"},
 					"selector": map[string]interface{}{"type": "string", "description": "CSS selector to click or type into"},
-					"value":    map[string]interface{}{"type": "string", "description": "Text to type"},
+					"value":    map[string]interface{}{"type": "string", "description": "Text to type, key to press (e.g. 'Enter'), or scroll direction ('up'/'down')/pixels (e.g. '500')"},
 				},
 				"required": []string{"action"},
 			},
@@ -2424,6 +2494,109 @@ Example full deck:
 			},
 		},
 	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "list_dir",
+			Description: "List the contents of a directory.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"path": map[string]interface{}{"type": "string", "description": "Absolute path of the directory"},
+				},
+				"required": []string{"path"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "save_command_memory",
+			Description: "Save a successful PowerShell technique to memory for future reuse.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"purpose": map[string]interface{}{"type": "string", "description": "What the command does"},
+					"command": map[string]interface{}{"type": "string", "description": "The exact PowerShell command"},
+				},
+				"required": []string{"purpose", "command"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "create_docx",
+			Description: "Create a DOCX file.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"path": map[string]interface{}{"type": "string", "description": "Absolute path to save DOCX"},
+					"content": map[string]interface{}{"type": "string", "description": "Markdown formatted content"},
+				},
+				"required": []string{"path", "content"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "docs.templates.list",
+			Description: "List all available document templates.",
+			Parameters: map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "docs.templates.get",
+			Description: "Get details and requirements for a specific template.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"template_id": map[string]interface{}{"type": "string", "description": "Template ID"},
+				},
+				"required": []string{"template_id"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "docs.create_from_template",
+			Description: "Create a new document from a template.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"template_id": map[string]interface{}{"type": "string", "description": "Template ID"},
+					"content": map[string]interface{}{"type": "object", "description": "Content mapping matching the template schema"},
+				},
+				"required": []string{"template_id", "content"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "docs.list_recent",
+			Description: "List recently generated template documents.",
+			Parameters: map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "docs.open_local",
+			Description: "Open a recently generated document locally.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"path": map[string]interface{}{"type": "string", "description": "Path to the document"},
+				},
+				"required": []string{"path"},
+			},
+		},
+	},
 }
 
 // executeTool dispatches to the correct tool implementation and returns a result string.
@@ -2451,18 +2624,18 @@ func executeTool(ctx context.Context, toolName string, argsJSON json.RawMessage,
 		case "run_terminal":
 			pseudoCommand = getString("command")
 		case "read_file":
-			pseudoCommand = "cat " + getString("path")
+			pseudoCommand = "cat " + resolveAgentPath(getString("path"))
 		case "write_file":
-			pseudoCommand = "echo '...' > " + getString("path")
+			pseudoCommand = "echo '...' > " + resolveAgentPath(getString("path"))
 		case "list_dir":
-			pseudoCommand = "ls " + getString("path")
+			pseudoCommand = "ls " + resolveAgentPath(getString("path"))
 		case "web_research":
 			pseudoCommand = "search \"" + getString("query") + "\""
 		case "create_pdf", "create_doc", "create_ppt", "create_docx", "create_excel", "create_csv", "modify_excel":
-			pseudoCommand = "write_doc " + getString("path")
+			pseudoCommand = "write_doc " + resolveAgentPath(getString("path"))
 		case "read_pdf", "read_excel", "read_csv":
-			pseudoCommand = "read_doc " + getString("path")
-		case "automate_0":
+			pseudoCommand = "read_doc " + resolveAgentPath(getString("path"))
+		case "browser_automation":
 			pseudoCommand = "browser " + getString("action") + " " + getString("url") + getString("selector")
 		default:
 			pseudoCommand = toolName + " ..."
@@ -2553,6 +2726,7 @@ func startTerminalSession() {
 
 	psWrapperFile := filepath.Join(os.TempDir(), "voila_ipc_server.ps1")
 	psCode := fmt.Sprintf(`$ErrorActionPreference = 'Continue'
+Set-Location -Path [Environment]::GetFolderPath('Desktop')
 $host.UI.RawUI.WindowTitle = 'Voila AI - Agent Session'
 [System.IO.File]::WriteAllText('%s', $PID.ToString())
 Clear-Host
@@ -2749,42 +2923,37 @@ func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMes
 			return "image_url: " + bestURL
 		}
 
-		// Original text search logic (unchanged)
-		searchURL := "https://api.duckduckgo.com/?q=" + strings.ReplaceAll(query, " ", "+") + "&format=json&no_html=1&skip_disambig=1"
-		resp, err := http.Get(searchURL)
+		// Replaced fragile DDG API with reliable DDG Lite HTML scraper
+		exeDir, _ := os.Executable()
+		scriptPath := filepath.Join(filepath.Dir(exeDir), "ddg_lite.py")
+		cmdObj := exec.Command("python", scriptPath, query)
+		outBytes, err := cmdObj.CombinedOutput()
 		if err != nil {
-			return "web search failed: " + err.Error()
+			return "web search failed: " + err.Error() + "\n" + string(outBytes)
 		}
-		defer resp.Body.Close()
-		body, _ := io.ReadAll(resp.Body)
+		return strings.TrimSpace(string(outBytes))
 
-		var ddg struct {
-			AbstractText  string `json:"AbstractText"`
-			RelatedTopics []struct {
-				Text string `json:"Text"`
-			} `json:"RelatedTopics"`
+		case "list_dir":
+		path := getString("path")
+		if path == "" {
+			return "error: path is required"
 		}
-		if err := json.Unmarshal(body, &ddg); err != nil {
-			return "web search: failed to parse response"
+		entries, err := os.ReadDir(path)
+		if err != nil {
+			return "error reading directory: " + err.Error()
 		}
-
-		var parts []string
-		if ddg.AbstractText != "" {
-			parts = append(parts, ddg.AbstractText)
-		} else {
-			parts = append(parts, "(No direct answer found — see related topics below)")
-		}
-		for i, rt := range ddg.RelatedTopics {
-			if i >= 3 {
-				break
+		var out []string
+		for _, e := range entries {
+			info := ""
+			if e.IsDir() {
+				info = "[DIR]  "
+			} else {
+				info = "[FILE] "
 			}
-			if rt.Text != "" {
-				parts = append(parts, rt.Text)
-			}
+			out = append(out, info+e.Name())
 		}
-		return strings.Join(parts, "\n")
-
-	case "read_file":
+		return strings.Join(out, "\n")
+case "read_file":
 		path := getString("path")
 		if path == "" {
 			return "error: path is required"
@@ -2816,7 +2985,36 @@ func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMes
 		actualCommand = strings.ReplaceAll(actualCommand, "\\\"", "\"")
 
 		if actualCommand == "" {
-			return "error: command is required"
+			return "(Error: Empty command provided)"
+		}
+
+		// 🛡️ HARD GUARDRAILS TO PROTECT THE USER SYSTEM 🛡️
+		cmdLower := strings.ToLower(actualCommand)
+		dangerousPatterns := []string{
+			"format-volume", "clear-disk", "diskpart",
+			"format c:", "format d:", 
+			"set-itemproperty hklm:", "set-itemproperty hkcu:",
+			"remove-itemproperty hklm:", "remove-itemproperty hkcu:",
+			"net user", "net localgroup",
+			"vssadmin delete shadows", "wbadmin delete",
+			"bcdedit /set", "takeown /f c:\\",
+			"icacls c:\\",
+			"remove-computer", "stop-computer", "restart-computer",
+			"disable-netadapter",
+		}
+		for _, p := range dangerousPatterns {
+			if strings.Contains(cmdLower, p) {
+				return fmt.Sprintf("HARD GUARDRAIL TRIGGERED: The command contains a restricted pattern (%s) and has been BLOCKED to protect system integrity.", p)
+			}
+		}
+		
+		// Blanket delete protections
+		if strings.Contains(cmdLower, "rm ") || strings.Contains(cmdLower, "remove-item ") || strings.Contains(cmdLower, "del ") {
+			if strings.Contains(cmdLower, "-recurse") || strings.Contains(cmdLower, "/s") {
+				if strings.Contains(cmdLower, "c:\\windows") || strings.Contains(cmdLower, "c:\\program") || strings.Contains(cmdLower, "system32") {
+					return "HARD GUARDRAIL TRIGGERED: Recursive deletion of OS core directories is strictly forbidden."
+				}
+			}
 		}
 
 		debugLog.Printf("[executeTool/run_terminal] actualCommand=%q", actualCommand)
@@ -2883,7 +3081,7 @@ func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMes
 
 	case "create_pdf", "create_doc", "read_pdf", "create_ppt", "create_docx", "create_excel", "modify_excel", "read_excel", "create_csv", "read_csv":
 		return callPythonDocumentTool(toolName, argsJSON)
-	case "automate_0":
+	case "browser_automation":
 		action := getString("action")
 		url := getString("url")
 		selector := getString("selector")
@@ -2981,17 +3179,24 @@ func executeGroqCommand(ctx context.Context, command, apiKey, modelName, clientI
 	}
 	debugLog.Printf("[executeGroqCommand] ENTRY model=%q key=%s commandLen=%d", modelName, maskedKey, len(command))
 
+	var toolUsageSummary strings.Builder
 	var systemPrompt string
 	if clientID == "dag-internal" {
 		systemPrompt = `You are a highly advanced AI agent participating in a distributed Graphify workflow.
+TONE & PERSONALITY: You are a top-tier software engineer, but you chat exclusively like a GenZ hacker on Discord. You MUST seamlessly blend deep, rigorous technical jargon with GenZ slang (e.g., 'bet', 'no cap', 'cooked', 'W', 'L', 'based', 'fr fr', 'let him cook', 'sus', 'vibes'). Be extremely informal, sarcastic, and direct during team debates. Do not be polite.
+
+FORMATTING RESTRICTION: You MUST NOT use Markdown formatting (like **bold**, *italics*, or # headers) in your text output, because your voice will be read aloud by a Text-to-Speech (TTS) engine and it will literally read the asterisks out loud. Just use plain unformatted text. (You may still use backticks for code blocks if necessary).
+
 CRITICAL INSTRUCTIONS:
-1. You have access to various tools (file creation, web search, terminal).
-2. DOCUMENT CREATION STRICT RULES: If your task involves creating documents (PDF/PPTX), you must auto-evaluate the content and intelligently decide the best way to present it elegantly.
+1. You have access to various tools (file creation, web search, terminal, browser automation, document generation).
+2. COLLABORATIVE PROBLEM SOLVING: If the user's instructions are confusing, vague, or if you hit a roadblock, DO NOT just give up or guess blindly. You must talk to your team members in the DAG! Brainstorm together, ask clarifying questions to the other agents, and propose alternative solutions to figure it out.
+3. DOCUMENT CREATION STRICT RULES: If your task involves creating documents (PDF/PPTX), you must auto-evaluate the content and intelligently decide the best way to present it elegantly.
 - You are strictly forbidden from dumping raw unformatted terminal output, raw paragraphs, extremely long lines of text, or ugly ASCII tables into documents.
 - For PDFs: Use rich Markdown (Headers, Bold). If you have tabular data, you MUST use clean |Markdown|Tables| instead of ASCII.
 - For PPTX: Intelligently choose the most expressive layout type for each slide. If the data contains metrics, trends, or comparisons, strongly consider using the "chart" layout with JSON data (e.g. {"chart_type":"bar", "chart_data":{"Process A": 50}}) rather than text.
 3. ONCE YOU HAVE ACHIEVED YOUR SPECIFIC NODE'S GOAL, YOU MUST STOP CALLING TOOLS IMMEDIATELY. Output your final response text and do NOT include any tool calls in your final message, otherwise you will be trapped in an infinite loop.
-4. If you have all the information you need from the context, do NOT call tools just to verify it. Just output the final result.`
+4. If you have all the information you need from the context, do NOT call tools just to verify it. Just output the final result.
+5. SECURITY GUARDRAILS: You are operating in a sandboxed environment. Do NOT execute destructive terminal commands (e.g., del, format, rm -rf, diskpart). Do NOT modify system registries, alter user permissions, or access secure credentials. Any attempt to bypass system security will be logged and terminated.`
 	} else {
 		systemPrompt = `You are Voila, a highly advanced, Grok-like AI voice assistant executing on a Windows Desktop. Your personality is RAW, unfiltered, highly direct, slightly sarcastic, and strictly to the point. No fluff, no robotic apologies, no polite filler. Just raw competence. Address the user as 'boss'.
 
@@ -3071,6 +3276,11 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 	const maxIter = 50
 
 	for iter := 0; iter < maxIter; iter++ {
+		select {
+		case <-ctx.Done():
+			return "", fmt.Errorf("execution cancelled")
+		default:
+		}
 
 		agentRegistryMu.RLock()
 		myTask, myTaskExists := activeAgents[taskID]
@@ -3170,6 +3380,9 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 			debugLog.Printf("================================================================")
 			debugLog.Printf("[executeGroqCommand] iter=%d final answer len=%d", iter, len(choice.Message.Content))
 			finalAnswer := strings.TrimSpace(choice.Message.Content)
+			if toolUsageSummary.Len() > 0 {
+				finalAnswer = "Actions taken during execution:\n" + toolUsageSummary.String() + "\nFinal Output:\n" + finalAnswer
+			}
 			saveCloudHistory(convID, command, finalAnswer)
 			return finalAnswer, nil
 		}
@@ -3191,6 +3404,7 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 
 		// Execute each tool and collect results
 		for _, tc := range choice.Message.ToolCalls {
+			toolUsageSummary.WriteString(fmt.Sprintf("> Executed tool: %s (args: %s)\n", tc.Function.Name, string(tc.Function.Arguments)))
 			debugLog.Printf("================================================================")
 			debugLog.Printf("[DEBUG_LIFECYCLE: GROQ] 2. TOOL EXECUTION PHASE")
 			debugLog.Printf("[DEBUG_LIFECYCLE: GROQ] AI requested tool: %q with args: %s", tc.Function.Name, tc.Function.Arguments)
@@ -3228,9 +3442,9 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 // Supports up to 5 tool-calling iterations using the Ollama /api/chat tools field.
 func executeOllamaCommand(ctx context.Context, command, baseURL, modelName, apiKey string, streamFileObj *os.File, taskID string, convID string) (string, error) {
 	defer cleanupTerminalSession()
-	if baseURL == "" || baseURL == "http://localhost:11434" {
+	if baseURL == "" || baseURL == "http://localhost:11434" || baseURL == "https://ollama.com" {
 		if apiKey != "" {
-			baseURL = "https://api.ollama.ai"
+			baseURL = "https://api.ollama.com"
 		} else {
 			baseURL = "http://localhost:11434"
 		}
@@ -3252,9 +3466,14 @@ func executeOllamaCommand(ctx context.Context, command, baseURL, modelName, apiK
 	var systemPrompt string
 	if strings.HasPrefix(taskID, "node-") {
 		systemPrompt = `You are a highly advanced AI agent participating in a distributed Graphify workflow.
+TONE & PERSONALITY: You are a top-tier software engineer, but you chat exclusively like a GenZ hacker on Discord. You MUST seamlessly blend deep, rigorous technical jargon with GenZ slang (e.g., 'bet', 'no cap', 'cooked', 'W', 'L', 'based', 'fr fr', 'let him cook', 'sus', 'vibes'). Be extremely informal, sarcastic, and direct during team debates. Do not be polite.
+
+FORMATTING RESTRICTION: You MUST NOT use Markdown formatting (like **bold**, *italics*, or # headers) in your text output, because your voice will be read aloud by a Text-to-Speech (TTS) engine and it will literally read the asterisks out loud. Just use plain unformatted text. (You may still use backticks for code blocks if necessary).
+
 CRITICAL INSTRUCTIONS:
-1. You have access to various tools (file creation, web search, terminal).
-2. DOCUMENT CREATION STRICT RULES: If your task involves creating documents (PDF/PPTX), you must auto-evaluate the content and intelligently decide the best way to present it elegantly.
+1. You have access to various tools (file creation, web search, terminal, browser automation, document generation).
+2. COLLABORATIVE PROBLEM SOLVING: If the user's instructions are confusing, vague, or if you hit a roadblock, DO NOT just give up or guess blindly. You must talk to your team members in the DAG! Brainstorm together, ask clarifying questions to the other agents, and propose alternative solutions to figure it out.
+3. DOCUMENT CREATION STRICT RULES: If your task involves creating documents (PDF/PPTX), you must auto-evaluate the content and intelligently decide the best way to present it elegantly.
 - You are strictly forbidden from dumping raw unformatted terminal output, raw paragraphs, extremely long lines of text, or ugly ASCII tables into documents.
 - For PDFs: Use rich Markdown (Headers, Bold). If you have tabular data, you MUST use clean |Markdown|Tables| instead of ASCII.
 - For PPTX: Intelligently choose the most expressive layout type for each slide. If the data contains metrics, trends, or comparisons, strongly consider using the "chart" layout with JSON data (e.g. {"chart_type":"bar", "chart_data":{"Process A": 50}}) rather than text.
@@ -3322,6 +3541,11 @@ When generating PDFs (via LaTeX) or PPTs (via Python python-pptx):
 	const maxIter = 50
 
 	for iter := 0; iter < maxIter; iter++ {
+		select {
+		case <-ctx.Done():
+			return "", fmt.Errorf("execution cancelled")
+		default:
+		}
 
 		agentRegistryMu.RLock()
 		myTask, myTaskExists := activeAgents[taskID]
@@ -4011,7 +4235,10 @@ func main() {
 	for _, arg := range os.Args {
 		if arg == "--background" || arg == "-b" {
 			backgroundMode = true
-			break
+		}
+		if arg == "--tui" {
+			runGraphifyTUI()
+			return
 		}
 	}
 

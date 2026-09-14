@@ -148,6 +148,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   FlutterTts flutterTts = FlutterTts();
   
   String _activeDevice = '';
+  String _previousDictationText = "";
   bool _isConnected = false;
   bool _isHealthy = false;
   bool _localAgentConnected = false;
@@ -505,6 +506,10 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     if (!hasPermission) return;
     if (!mounted) return;  // BUG-13 fix
     
+    _previousDictationText = _controller.text;
+    if (_previousDictationText.isNotEmpty && !_previousDictationText.endsWith(' ')) {
+        _previousDictationText += ' ';
+    }
     setState(() {
       _isListening = true;
       _silenceWarningCount = 0;
@@ -588,7 +593,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
           if (result.finalResult) {
             String finalWords = _normalizeGenZSlang(result.recognizedWords);
             setState(() {
-              _controller.text = finalWords;
+              _controller.text = _previousDictationText + finalWords;
               _isListening = false;
             });
             
@@ -629,12 +634,12 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                   return; // Intercept and DO NOT send to the AI
                }
                
-               _sendMessage();
+               // _sendMessage();
             }
           } else {
             // Partial result - update text field live
             setState(() {
-              _controller.text = _normalizeGenZSlang(result.recognizedWords);
+              _controller.text = _previousDictationText + _normalizeGenZSlang(result.recognizedWords);
             });
           }
         },
@@ -2337,7 +2342,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     normalized = normalized.replaceAllMapped(RegExp(r'\.([A-Za-z])'), (match) => '. ${match.group(1)}');
     
     // Replace newlines with ellipses to force TTS engines to pause between lines
-    normalized = normalized.replaceAll('\n', ' ... ');
+    normalized = normalized.replaceAll('\n', '. ');
     
     // Clean up extra spaces
     normalized = normalized.replaceAll(RegExp(r'\s+'), ' ').trim();
@@ -2923,15 +2928,24 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                               child: _showTextInput
                                   ? TextField(
                                       controller: _controller,
+                                      minLines: 1,
+                                      maxLines: 4,
                                       style: const TextStyle(color: Colors.white, fontSize: 14),
                                       decoration: InputDecoration(
                                         hintText: 'Type your prompt...',
                                         hintStyle: const TextStyle(color: Colors.white30),
                                         filled: true,
                                         fillColor: const Color(0xFF1E1E24),
-                                        contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                        suffixIcon: IconButton(
+                                          icon: const Icon(Icons.clear, color: Colors.white54, size: 20),
+                                          onPressed: () {
+                                            _controller.clear();
+                                            _previousDictationText = "";
+                                          },
+                                        ),
                                         border: OutlineInputBorder(
-                                          borderRadius: BorderRadius.circular(28),
+                                          borderRadius: BorderRadius.circular(20),
                                           borderSide: BorderSide.none,
                                         ),
                                       ),
