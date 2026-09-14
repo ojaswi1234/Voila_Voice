@@ -15,6 +15,7 @@ import (
 type LiveState struct {
 	Status   string          `json:"status"` // "running", "done", "error"
 	Nodes    []NodeLiveState `json:"nodes"`
+	Edges    [][]string      `json:"edges"`  // e.g. [["node1","node2"],["node1","node3"]]
 	Logs     []string        `json:"logs"`
 	ErrorMsg string          `json:"error"`
 }
@@ -27,8 +28,9 @@ type NodeLiveState struct {
 }
 
 type tuiModel struct {
-	state LiveState
-	err   error
+	state     LiveState
+	err       error
+	termWidth int
 }
 
 type graphifyTickMsg time.Time
@@ -60,6 +62,9 @@ func tickCmd() tea.Cmd {
 
 func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.termWidth = msg.Width
+		return m, nil
 	case tea.KeyMsg:
 		if msg.String() == "k" {
 			go func() {
@@ -160,28 +165,69 @@ func (m tuiModel) View() string {
 
 	var teamView string
 	if len(nodeViews) > 0 {
-		// Responsive grid wrap instead of hardcoded horizontal chain
-		// This prevents UI clipping on large graphs
+		// Dynamically calculate how many nodes fit per row based on terminal width
+		// Each node box = 38 wide + 4 space between = 42. Default to 2 if unknown.
+		nodeWidth := 42
+		chunkSize := 2
+		if m.termWidth > 0 {
+			chunkSize = m.termWidth / nodeWidth
+			if chunkSize < 1 {
+				chunkSize = 1
+			}
+			if chunkSize > 4 {
+				chunkSize = 4
+			}
+		}
+
 		var chunks []string
-		chunkSize := 3
 		for i := 0; i < len(nodeViews); i += chunkSize {
 			end := i + chunkSize
-			if end > len(nodeViews) { end = len(nodeViews) }
+			if end > len(nodeViews) {
+				end = len(nodeViews)
+			}
 			rowArgs := nodeViews[i:end]
 			var rowView []string
 			for j, nv := range rowArgs {
 				rowView = append(rowView, nv)
 				if j < len(rowArgs)-1 {
-					rowView = append(rowView, lipgloss.NewStyle().Padding(1, 1).Render("  "))
+					rowView = append(rowView, lipgloss.NewStyle().Padding(2, 1).Render(""))
 				}
 			}
 			chunks = append(chunks, lipgloss.JoinHorizontal(lipgloss.Top, rowView...))
-			chunks = append(chunks, lipgloss.NewStyle().Padding(1, 0).Render("")) // spacer row
+			chunks = append(chunks, "")
 		}
 		teamView = lipgloss.JoinVertical(lipgloss.Left, chunks...)
 	} else {
 		teamView = "Loading team layout..."
 	}
+
+	// ── CONNECTIONS PANEL ──────────────────────────────────────────────────────
+	// Build a role-name lookup from node ID
+	idToRole := make(map[string]string)
+	for _, n := range m.state.Nodes {
+		idToRole[n.ID] = n.Role
+	}
+	var edgeLines []string
+	connStyle  := lipgloss.NewStyle().Foreground(lipgloss.Color("#6366F1")).Bold(true)
+	arrowStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#F59E0B"))
+	if len(m.state.Edges) > 0 {
+		edgeLines = append(edgeLines, connStyle.Render("── CONNECTIONS & RELATIONSHIPS ──"))
+		for _, edge := range m.state.Edges {
+			if len(edge) >= 2 {
+				fromRole := idToRole[edge[0]]
+				toRole   := idToRole[edge[1]]
+				if fromRole == "" { fromRole = edge[0] }
+				if toRole   == "" { toRole   = edge[1] }
+				line := fmt.Sprintf("  %s  %s  %s",
+					lipgloss.NewStyle().Foreground(lipgloss.Color("#818CF8")).Render("["+fromRole+"]"),
+					arrowStyle.Render("──▶"),
+					lipgloss.NewStyle().Foreground(lipgloss.Color("#34D399")).Render("["+toRole+"]"),
+				)
+				edgeLines = append(edgeLines, line)
+			}
+		}
+	}
+	connectionsView := strings.Join(edgeLines, "\n")
 
 	// Render logs
 	var formattedLogs []string
@@ -221,5 +267,5 @@ func (m tuiModel) View() string {
 	}
 	logsView := logStyle.Render(logs)
 
-	return lipgloss.JoinVertical(lipgloss.Left, header, teamView, logsView)
+	return lipgloss.JoinVertical(lipgloss.Left, header, teamView, connectionsView, logsView)
 }

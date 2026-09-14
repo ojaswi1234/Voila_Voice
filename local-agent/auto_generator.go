@@ -35,7 +35,10 @@ Return EXACTLY AND ONLY a valid JSON object matching this schema:
 }
 Rules:
 1. "id" must be unique (e.g. node1, node2).
-2. "model" MUST be exactly one of: "openai/gpt-oss-120b\n(Groq)", "openai/gpt-oss-20b\n(Groq)", "qwen/qwen3.6-27b\n(Groq)", "gemma4:31b\n(Ollama)".
+2. "model" MUST be exactly one of these 7 options. You MUST use a DIVERSE MIX — at minimum 2 Ollama nodes per team:
+   Groq (fast cloud):   "openai/gpt-oss-120b\n(Groq)"  |  "openai/gpt-oss-20b\n(Groq)"  |  "qwen/qwen3.6-27b\n(Groq)"
+   Ollama (local/cloud): "gemma4:31b\n(Ollama)"  |  "qwen2.5:14b\n(Ollama)"  |  "mistral:7b\n(Ollama)"  |  "llama3.2:3b\n(Ollama)"
+   DO NOT assign more than 2 Groq models in a team of 4+ nodes. Spread workloads across both providers.
 3. Distribute (x,y) coordinates logically (e.g. left to right, 100 to 700 for X, 100 to 400 for Y).
 4. Assign nice distinct hex colors.
 5. ARCHITECTURE: Create highly parallel, collaborative MESH/Graph topologies where multiple agents (e.g. 2-3 researchers or specialists) work concurrently on different parts of the problem before converging. DO NOT make a simple sequential chain if the task can be parallelized! Maximize parallel execution.

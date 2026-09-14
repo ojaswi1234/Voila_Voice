@@ -27,12 +27,13 @@ var (
 	currentLiveState LiveState
 )
 
-func initLiveState(nodes []GraphNode) {
+func initLiveState(nodes []GraphNode, edges [][]string) {
 	liveStateMu.Lock()
 	defer liveStateMu.Unlock()
 	currentLiveState = LiveState{
 		Status: "running",
-		Nodes: make([]NodeLiveState, len(nodes)),
+		Nodes:  make([]NodeLiveState, len(nodes)),
+		Edges:  edges,
 	}
 	for i, n := range nodes {
 		currentLiveState.Nodes[i] = NodeLiveState{
@@ -122,7 +123,7 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 		}
 	}
 
-	initLiveState(state.Nodes)
+	initLiveState(state.Nodes, state.Edges)
 	if len(state.Nodes) == 0 {
 		return "Graph is empty", nil
 	}
