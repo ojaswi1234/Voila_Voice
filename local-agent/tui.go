@@ -107,10 +107,10 @@ func (m tuiModel) View() string {
 	// Styles
 	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#10B981")).MarginBottom(1)
 	
-	pendingStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#4B5563")).Padding(0, 1).Foreground(lipgloss.Color("#9CA3AF")).Width(35)
-	runningStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#F59E0B")).Padding(0, 1).Foreground(lipgloss.Color("#FCD34D")).Width(35)
-	completedStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#10B981")).Padding(0, 1).Foreground(lipgloss.Color("#34D399")).Width(35)
-	rejectedStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#EF4444")).Padding(0, 1).Foreground(lipgloss.Color("#FCA5A5")).Width(35)
+	pendingStyle   := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#4B5563")).Padding(0, 1).Foreground(lipgloss.Color("#9CA3AF")).Width(38)
+	runningStyle   := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#F59E0B")).Padding(0, 1).Foreground(lipgloss.Color("#FCD34D")).Width(38)
+	completedStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#10B981")).Padding(0, 1).Foreground(lipgloss.Color("#34D399")).Width(38)
+	rejectedStyle  := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#EF4444")).Padding(0, 1).Foreground(lipgloss.Color("#FCA5A5")).Width(38)
 
 	logStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#D1D5DB")).MarginTop(1)
 
@@ -128,22 +128,33 @@ func (m tuiModel) View() string {
 	for _, n := range m.state.Nodes {
 		var box string
 		title := lipgloss.NewStyle().Bold(true).Render(n.Role)
-		
-		modelName := n.Model
-		if len(modelName) > 16 {
-			modelName = modelName[:14] + ".."
+
+		// Model string is "modelname\n(Provider)" — split and display both lines cleanly
+		modelParts := strings.SplitN(n.Model, "\n", 2)
+		modelLine1 := strings.TrimSpace(modelParts[0])
+		modelLine2 := ""
+		if len(modelParts) > 1 {
+			modelLine2 = strings.TrimSpace(modelParts[1])
 		}
-		sub := lipgloss.NewStyle().Faint(true).Render(modelName)
-		
+		// Ensure model name never overflows box width (38 - 2 padding = 36)
+		if len(modelLine1) > 34 {
+			modelLine1 = modelLine1[:32] + ".."
+		}
+		modelLabel := modelLine1
+		if modelLine2 != "" {
+			modelLabel = modelLine1 + "\n" + lipgloss.NewStyle().Faint(true).Italic(true).Render(modelLine2)
+		}
+		sub := lipgloss.NewStyle().Faint(true).Render(modelLabel)
+
 		content := fmt.Sprintf("%s\n%s\n[%s]", title, sub, strings.ToUpper(n.Status))
-		
+
 		switch n.Status {
-		case "running": box = runningStyle.Render(content)
+		case "running":   box = runningStyle.Render(content)
 		case "completed": box = completedStyle.Render(content)
-		case "rejected": box = rejectedStyle.Render(content)
-		default: box = pendingStyle.Render(content)
+		case "rejected":  box = rejectedStyle.Render(content)
+		default:          box = pendingStyle.Render(content)
 		}
-		
+
 		nodeViews = append(nodeViews, box)
 	}
 
