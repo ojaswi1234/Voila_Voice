@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -34,12 +35,14 @@ type tuiModel struct {
 	err        error
 	termWidth  int
 	termHeight int
+	vp         viewport.Model
+	ready      bool
 }
 
 type graphifyTickMsg time.Time
 
 func runGraphifyTUI() {
-	p := tea.NewProgram(tuiModel{}, tea.WithAltScreen())
+	p := tea.NewProgram(tuiModel{}, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("Error: %v", err)
 		os.Exit(1)
@@ -57,10 +60,23 @@ func tickCmd() tea.Cmd {
 }
 
 func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var (
+		cmd  tea.Cmd
+		cmds []tea.Cmd
+	)
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.termWidth = msg.Width
 		m.termHeight = msg.Height
+		
+		if !m.ready {
+			m.vp = viewport.New(msg.Width, msg.Height)
+			m.ready = true
+		} else {
+			m.vp.Width = msg.Width
+			m.vp.Height = msg.Height
+		}
 		return m, nil
 	case tea.KeyMsg:
 		if msg.String() == "k" {
@@ -80,9 +96,6 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.String() == "q" || msg.String() == "ctrl+c" || msg.String() == "esc" {
 			return m, tea.Quit
 		}
-		if m.state.Status == "done" || m.state.Status == "error" {
-			return m, tea.Quit
-		}
 	case graphifyTickMsg:
 		data, err := os.ReadFile("graphify_live.json")
 		if err == nil {
@@ -93,7 +106,13 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tickCmd()
 	}
-	return m, nil
+	
+	if m.ready {
+		m.vp, cmd = m.vp.Update(msg)
+		cmds = append(cmds, cmd)
+	}
+	
+	return m, tea.Batch(cmds...)
 }
 
 func (m tuiModel) View() string {
@@ -110,9 +129,9 @@ func (m tuiModel) View() string {
 	header := titleStyle.Render("🤖 VOILA GRAPHIFY : LIVE TEAM TRACKER")
 	switch m.state.Status {
 	case "done":
-		header += lipgloss.NewStyle().Foreground(lipgloss.Color("#10B981")).Render(" [FINISHED - Press any key to exit]")
+		header += lipgloss.NewStyle().Foreground(lipgloss.Color("#10B981")).Render(" [FINISHED - Press 'q' to exit]")
 	case "error":
-		header += lipgloss.NewStyle().Foreground(lipgloss.Color("#EF4444")).Render(" [ERROR - Press any key to exit]")
+		header += lipgloss.NewStyle().Foreground(lipgloss.Color("#EF4444")).Render(" [ERROR - Press 'q' to exit]")
 	default:
 		header += lipgloss.NewStyle().Foreground(lipgloss.Color("#F59E0B")).Render(" [RUNNING... (Press 'k' to KILL)]")
 	}
@@ -155,7 +174,13 @@ func (m tuiModel) View() string {
 	}
 	logsView := lipgloss.NewStyle().Foreground(lipgloss.Color("#D1D5DB")).MarginTop(1).Render(logs)
 
-	return lipgloss.JoinVertical(lipgloss.Left, header, graphView, logsView)
+	content := lipgloss.JoinVertical(lipgloss.Left, header, graphView, logsView)
+	
+	if !m.ready {
+		return content
+	}
+	m.vp.SetContent(content)
+	return m.vp.View()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
