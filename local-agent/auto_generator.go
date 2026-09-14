@@ -35,13 +35,13 @@ Return EXACTLY AND ONLY a valid JSON object matching this schema:
 }
 Rules:
 1. "id" must be unique (e.g. node1, node2).
-2. "model" MUST be exactly one of these 7 options. You MUST use a DIVERSE MIX — at minimum 2 Ollama nodes per team:
-   Groq (fast cloud):   "openai/gpt-oss-120b\n(Groq)"  |  "openai/gpt-oss-20b\n(Groq)"  |  "qwen/qwen3.6-27b\n(Groq)"
-   Ollama (local/cloud): "gemma4:31b\n(Ollama)"  |  "qwen2.5:14b\n(Ollama)"  |  "mistral:7b\n(Ollama)"  |  "llama3.2:3b\n(Ollama)"
-   DO NOT assign more than 2 Groq models in a team of 4+ nodes. Spread workloads across both providers.
+2. "model" MUST be exactly one of these options based on the provider (Groq or Ollama). You MUST use a DIVERSE MIX — spread workloads across both providers (minimum 2 Ollama nodes per team of 4+):
+   Groq models (append "\n(Groq)"): "qwen/qwen3.8-27b", "qwen/qwen3.6-27b", "openai/gpt-oss-120b", "openai/gpt-oss-20b", "openai/gpt-oss-safeguard-20b", "groq/compound", "groq/compound-mini", "allam-2-7b", "meta-llama/llama-prompt-guard-2-86m", "meta-llama/llama-prompt-guard-2-22m", "llama3-70b-8192", "llama-3.1-70b-versatile", "mixtral-8x7b-32768"
+   Ollama models (append "\n(Ollama)"): "gemma4:31b", "gpt-oss:120b", "gpt-oss:20b", "nemotron-3-nano:30b", "nemotron-3-super", "nemotron-3-ultra"
 3. Distribute (x,y) coordinates logically (e.g. left to right, 100 to 700 for X, 100 to 400 for Y).
 4. Assign nice distinct hex colors.
-5. ARCHITECTURE: Create highly parallel, collaborative MESH/Graph topologies where multiple agents (e.g. 2-3 researchers or specialists) work concurrently on different parts of the problem before converging. DO NOT make a simple sequential chain if the task can be parallelized! Maximize parallel execution.
+5. ARCHITECTURE & RELATIONSHIPS: Create highly parallel, collaborative MESH/Graph topologies where multiple agents (e.g. 2-3 researchers or specialists) work concurrently on different parts of the problem before converging. DO NOT make a simple sequential chain if the task can be parallelized! Maximize parallel execution.
+   The connections & relationship mapping MUST ONLY be: 1:Many, Many:1, Many:Many, or 1:1.
 6. INSTRUCT THE NODES TO USE TOOLS: The nodes have access to powerful tools including: browser_automation (scrape/interact with websites), run_terminal (powershell), web_research (duckduckgo), read/write files, and create/modify documents (PDF, PPTX, Excel, CSV). Explicitly command the nodes in their 'prompt' to use these tools if the task requires it.
 7. Provide NO markdown wrappers, ONLY raw JSON.`
 
