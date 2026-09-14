@@ -26,7 +26,7 @@ import keyboard
 from playwright.sync_api import sync_playwright
 
 # --- Session daemon -----------------------------------------------------------
-DAEMON_PORT  = 19878          # Local-only TCP port for IPC
+DAEMON_PORT  = 19879          # Local-only TCP port for IPC
 DAEMON_TOKEN = "voila-browser-daemon-v1"
 IDLE_TIMEOUT = 120            # Seconds of inactivity before daemon exits
 
@@ -37,6 +37,8 @@ def kill_script():
 keyboard.add_hotkey("ctrl+alt+b", kill_script)
 
 # ── daemon server (runs in a background process / separate thread) ────────────
+
+_active_page_id = None
 
 def _run_daemon():
     """Persistent daemon: keeps one Playwright browser connection alive and
@@ -91,6 +93,9 @@ def _run_daemon():
                     conn.sendall((json.dumps({"error": str(e)}) + "\n").encode())
                 except Exception:
                     pass
+                if not browser.is_connected():
+                    print("Browser disconnected, exiting daemon to force cold-boot")
+                    break
             finally:
                 conn.close()
 
@@ -101,26 +106,34 @@ def _run_daemon():
 
 def _get_page(browser):
     """Return the active page (creating one if needed)."""
+    global _active_page_id
     contexts = browser.contexts
     if not contexts:
         context = browser.new_context()
     else:
         context = contexts[0]
-    pages   = context.pages
+    pages = context.pages
     if not pages:
-        return context.new_page()
-    # Filter out extension onboarding / installation tabs
+        p = context.new_page()
+        _active_page_id = id(p)
+        return p
+    
+    # Check if our tracked active page still exists
+    for p in pages:
+        if id(p) == _active_page_id:
+            try:
+                p.bring_to_front()
+            except: pass
+            return p
+            
+    # Fallback: Filter out extension onboarding tabs
     filtered = [p for p in pages if not any(x in p.url for x in ["petasittek.com", "simplycodes.com", "edge://extensions"])]
-    if filtered:
-        # Prefer page with youtube if available or the last opened relevant page
-        yt_pages = [p for p in filtered if "youtube.com" in p.url]
-        page = yt_pages[-1] if yt_pages else filtered[-1]
-    else:
-        page = pages[-1]
+    page = filtered[-1] if filtered else pages[-1]
+    
+    _active_page_id = id(page)
     try:
         page.bring_to_front()
-    except Exception:
-        pass
+    except: pass
     return page
 
 
@@ -221,6 +234,35 @@ def _handle_action(browser, args: dict) -> dict:
         page.close()
         result["closed"] = True
 
+    elif action == "new_tab":
+        url = args.get("url", "about:blank")
+        ctx = browser.contexts[0] if browser.contexts else browser.new_context()
+        new_p = ctx.new_page()
+        new_p.goto(url, timeout=25000)
+        global _active_page_id
+        _active_page_id = id(new_p)
+        new_p.bring_to_front()
+        result["url"] = new_p.url
+        result["title"] = new_p.title()
+
+    elif action == "switch_tab":
+        val = args.get("value")
+        if not val:
+            raise ValueError("value (url or title substring) is required for switch_tab")
+        target = None
+        for ctx in browser.contexts:
+            for p in ctx.pages:
+                if val.lower() in p.url.lower() or val.lower() in p.title().lower():
+                    target = p
+                    break
+        if target:
+            _active_page_id = id(target)
+            target.bring_to_front()
+            result["url"] = target.url
+            result["title"] = target.title()
+        else:
+            raise ValueError(f"No matching tab found for: {val}")
+
     elif action == "list_tabs":
         tabs = []
         for ctx in browser.contexts:
@@ -231,6 +273,8 @@ def _handle_action(browser, args: dict) -> dict:
     elif action == "scrape":
         text = page.evaluate("document.body.innerText")
         result["content"] = text[:3000]
+        result["url"] = page.url
+        result["title"] = page.title()
 
     elif action == "extract_links":
         # Bug #12 Fix: Limit the initial querySelectorAll to 300 nodes before
@@ -257,6 +301,8 @@ def _handle_action(browser, args: dict) -> dict:
             .slice(0, MAX_RESULTS);
         }''')
         result["elements"] = links
+        result["url"] = page.url
+        result["title"] = page.title()
 
     elif action == "snapshot":
         path = "snapshot.png"
@@ -320,7 +366,7 @@ def main():
     parser = argparse.ArgumentParser(description="Browser Automation Tool (persistent session)")
     parser.add_argument("--url",       type=str)
     parser.add_argument("--action",    type=str,
-                        choices=["goto", "click", "type", "press", "scroll", "close_tab", "list_tabs", "scrape", "snapshot", "extract_links", "eval"],
+                        choices=["goto", "click", "type", "press", "scroll", "close_tab", "new_tab", "switch_tab", "list_tabs", "scrape", "snapshot", "extract_links", "eval"],
                         required=True)
     parser.add_argument("--selector",  type=str)
     parser.add_argument("--value",     type=str)

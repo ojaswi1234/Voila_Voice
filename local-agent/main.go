@@ -2213,8 +2213,8 @@ var availableTools = []toolDef{
 			Parameters: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
-					"action":   map[string]interface{}{"type": "string", "description": "Action to perform: 'goto', 'click', 'type', 'press', 'scroll', 'close_tab', 'list_tabs', 'scrape', 'extract_links', 'eval'"},
-					"url":      map[string]interface{}{"type": "string", "description": "URL to navigate to (required for 'goto')"},
+					"action":   map[string]interface{}{"type": "string", "description": "Action to perform: 'goto', 'click', 'type', 'press', 'scroll', 'new_tab', 'switch_tab', 'close_tab', 'list_tabs', 'scrape', 'extract_links', 'eval'"},
+					"url":      map[string]interface{}{"type": "string", "description": "URL to navigate to (required for 'goto' and 'new_tab')"},
 					"selector": map[string]interface{}{"type": "string", "description": "CSS selector to click or type into"},
 					"value":    map[string]interface{}{"type": "string", "description": "Text to type, key to press (e.g. 'Enter'), or scroll direction ('up'/'down')/pixels (e.g. '500')"},
 				},
