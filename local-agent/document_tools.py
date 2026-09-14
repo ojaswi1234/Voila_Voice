@@ -196,7 +196,7 @@ def create_doc(kwargs):
         with open(tex_path, 'w', encoding='utf-8') as f:
             f.write(latex_content)
         try:
-            result = subprocess.run(['pdflatex', '-interaction=nonstopmode', '-disable-installer', '-output-directory', temp_dir, tex_path], capture_output=True, text=True)
+            result = subprocess.run(['pdflatex', '-interaction=nonstopmode', '-output-directory', temp_dir, tex_path], capture_output=True, text=True)
             pdf_path = os.path.join(temp_dir, 'doc.pdf')
             if os.path.exists(pdf_path):
                 shutil.copy(pdf_path, path)
@@ -370,7 +370,7 @@ def create_pdf(kwargs):
         with open(tex_path, 'w', encoding='utf-8') as f:
             f.write(latex_content)
         try:
-            result = subprocess.run(['pdflatex', '-interaction=nonstopmode', '-disable-installer', '-output-directory', temp_dir, tex_path], capture_output=True, text=True)
+            result = subprocess.run(['pdflatex', '-interaction=nonstopmode', '-output-directory', temp_dir, tex_path], capture_output=True, text=True)
             pdf_path = os.path.join(temp_dir, 'doc.pdf')
             if os.path.exists(pdf_path):
                 shutil.copy(pdf_path, path)

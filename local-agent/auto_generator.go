@@ -38,7 +38,7 @@ Rules:
 2. "model" MUST be exactly one of: "openai/gpt-oss-120b\n(Groq)", "openai/gpt-oss-20b\n(Groq)", "qwen/qwen3.6-27b\n(Groq)", "gemma4:31b\n(Ollama)".
 3. Distribute (x,y) coordinates logically (e.g. left to right, 100 to 700 for X, 100 to 400 for Y).
 4. Assign nice distinct hex colors.
-5. Create logical relationships (1:1, 1:Many, Many:1).
+5. ARCHITECTURE: Create highly parallel, collaborative MESH/Graph topologies where multiple agents (e.g. 2-3 researchers or specialists) work concurrently on different parts of the problem before converging. DO NOT make a simple sequential chain if the task can be parallelized! Maximize parallel execution.
 6. INSTRUCT THE NODES TO USE TOOLS: The nodes have access to powerful tools including: browser_automation (scrape/interact with websites), run_terminal (powershell), web_research (duckduckgo), read/write files, and create/modify documents (PDF, PPTX, Excel, CSV). Explicitly command the nodes in their 'prompt' to use these tools if the task requires it.
 7. Provide NO markdown wrappers, ONLY raw JSON.`
 

@@ -107,10 +107,10 @@ func (m tuiModel) View() string {
 	// Styles
 	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#10B981")).MarginBottom(1)
 	
-	pendingStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#4B5563")).Padding(0, 1).Foreground(lipgloss.Color("#9CA3AF")).Width(20)
-	runningStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#F59E0B")).Padding(0, 1).Foreground(lipgloss.Color("#FCD34D")).Width(20)
-	completedStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#10B981")).Padding(0, 1).Foreground(lipgloss.Color("#34D399")).Width(20)
-	rejectedStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#EF4444")).Padding(0, 1).Foreground(lipgloss.Color("#FCA5A5")).Width(20)
+	pendingStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#4B5563")).Padding(0, 1).Foreground(lipgloss.Color("#9CA3AF")).Width(35)
+	runningStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#F59E0B")).Padding(0, 1).Foreground(lipgloss.Color("#FCD34D")).Width(35)
+	completedStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#10B981")).Padding(0, 1).Foreground(lipgloss.Color("#34D399")).Width(35)
+	rejectedStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#EF4444")).Padding(0, 1).Foreground(lipgloss.Color("#FCA5A5")).Width(35)
 
 	logStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#D1D5DB")).MarginTop(1)
 
@@ -149,17 +149,25 @@ func (m tuiModel) View() string {
 
 	var teamView string
 	if len(nodeViews) > 0 {
-		arrow := lipgloss.NewStyle().Foreground(lipgloss.Color("#4B5563")).Padding(1, 1).Render(" ──> ")
-		
-		// To properly join horizontally, we interleave the arrows and pass as variadic args
-		var horizontalArgs []string
-		for i, nv := range nodeViews {
-			horizontalArgs = append(horizontalArgs, nv)
-			if i < len(nodeViews)-1 {
-				horizontalArgs = append(horizontalArgs, arrow)
+		// Responsive grid wrap instead of hardcoded horizontal chain
+		// This prevents UI clipping on large graphs
+		var chunks []string
+		chunkSize := 3
+		for i := 0; i < len(nodeViews); i += chunkSize {
+			end := i + chunkSize
+			if end > len(nodeViews) { end = len(nodeViews) }
+			rowArgs := nodeViews[i:end]
+			var rowView []string
+			for j, nv := range rowArgs {
+				rowView = append(rowView, nv)
+				if j < len(rowArgs)-1 {
+					rowView = append(rowView, lipgloss.NewStyle().Padding(1, 1).Render("  "))
+				}
 			}
+			chunks = append(chunks, lipgloss.JoinHorizontal(lipgloss.Top, rowView...))
+			chunks = append(chunks, lipgloss.NewStyle().Padding(1, 0).Render("")) // spacer row
 		}
-		teamView = lipgloss.JoinHorizontal(lipgloss.Center, horizontalArgs...)
+		teamView = lipgloss.JoinVertical(lipgloss.Left, chunks...)
 	} else {
 		teamView = "Loading team layout..."
 	}
