@@ -67,11 +67,10 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			go func() {
 				connData, err := loadConnectionData()
 				if err == nil && connData.SecurityPhrase != "" {
-					expectedSecret := hashPhrase(connData.SecurityPhrase, connData.DeviceID)
+					secret := hashPhrase(connData.SecurityPhrase, connData.DeviceID)
 					req, _ := http.NewRequest("POST", "http://127.0.0.1:8080/stop", nil)
-					req.Header.Set("X-Exec-Secret", expectedSecret)
-					client := &http.Client{Timeout: 2 * time.Second}
-					client.Do(req)
+					req.Header.Set("X-Exec-Secret", secret)
+					(&http.Client{Timeout: 2 * time.Second}).Do(req)
 				}
 			}()
 			m.state.ErrorMsg = "FORCE KILLED BY USER"
@@ -87,9 +86,9 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case graphifyTickMsg:
 		data, err := os.ReadFile("graphify_live.json")
 		if err == nil {
-			var newState LiveState
-			if err2 := json.Unmarshal(data, &newState); err2 == nil {
-				m.state = newState
+			var s LiveState
+			if err2 := json.Unmarshal(data, &s); err2 == nil {
+				m.state = s
 			}
 		}
 		return m, tickCmd()
@@ -103,11 +102,10 @@ func (m tuiModel) View() string {
 	}
 
 	titleStyle    := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#10B981")).MarginBottom(1)
-	pendingStyle  := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#4B5563")).Padding(0, 1).Foreground(lipgloss.Color("#9CA3AF")).Width(34)
-	runningStyle  := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#F59E0B")).Padding(0, 1).Foreground(lipgloss.Color("#FCD34D")).Width(34)
-	completedStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#10B981")).Padding(0, 1).Foreground(lipgloss.Color("#34D399")).Width(34)
-	rejectedStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#EF4444")).Padding(0, 1).Foreground(lipgloss.Color("#FCA5A5")).Width(34)
-	logStyle      := lipgloss.NewStyle().Foreground(lipgloss.Color("#D1D5DB")).MarginTop(1)
+	pendingStyle  := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#4B5563")).Padding(0, 1).Foreground(lipgloss.Color("#9CA3AF")).Width(30)
+	runningStyle  := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#F59E0B")).Padding(0, 1).Foreground(lipgloss.Color("#FCD34D")).Width(30)
+	completedStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#10B981")).Padding(0, 1).Foreground(lipgloss.Color("#34D399")).Width(30)
+	rejectedStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#EF4444")).Padding(0, 1).Foreground(lipgloss.Color("#FCA5A5")).Width(30)
 
 	header := titleStyle.Render("🤖 VOILA GRAPHIFY : LIVE TEAM TRACKER")
 	switch m.state.Status {
@@ -123,280 +121,404 @@ func (m tuiModel) View() string {
 		"pending": pendingStyle, "running": runningStyle,
 		"completed": completedStyle, "rejected": rejectedStyle,
 	}
-
 	termW := m.termWidth
-	if termW < 80 {
-		termW = 120
-	}
+	if termW < 80 { termW = 120 }
 
 	graphView := renderMeshGraph(m.state, nodeStyles, termW)
 
-	// Logs
 	nameStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#8B5CF6")).MarginTop(1)
 	msgStyle  := lipgloss.NewStyle().Foreground(lipgloss.Color("#D1D5DB")).PaddingLeft(2)
 	toolStyle := lipgloss.NewStyle().Faint(true).Foreground(lipgloss.Color("#10B981")).PaddingLeft(2)
 	sysStyle  := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FFFFFF")).Background(lipgloss.Color("#EF4444")).Padding(0, 2).MarginTop(1)
 
-	var formattedLogs []string
+	var logLines []string
 	for _, l := range m.state.Logs {
 		l = strings.ReplaceAll(l, "**", "")
 		l = strings.ReplaceAll(l, "🔎", "")
 		if strings.HasPrefix(l, "[SYSTEM]:") {
-			formattedLogs = append(formattedLogs, sysStyle.Render(l))
+			logLines = append(logLines, sysStyle.Render(l))
 		} else if strings.HasPrefix(l, "[") && strings.Contains(l, "]:") {
-			idx      := strings.Index(l, "]:")
-			roleName := l[1:idx]
-			msgPart  := l[idx+2:]
-			formattedLogs = append(formattedLogs, nameStyle.Render("✦ "+roleName))
-			if strings.TrimSpace(msgPart) != "" {
-				formattedLogs = append(formattedLogs, msgStyle.Render(msgPart))
+			idx := strings.Index(l, "]:")
+			logLines = append(logLines, nameStyle.Render("✦ "+l[1:idx]))
+			if p := strings.TrimSpace(l[idx+2:]); p != "" {
+				logLines = append(logLines, msgStyle.Render(p))
 			}
 		} else if strings.HasPrefix(strings.TrimSpace(l), ">") {
-			formattedLogs = append(formattedLogs, toolStyle.Render(l))
+			logLines = append(logLines, toolStyle.Render(l))
 		} else {
-			formattedLogs = append(formattedLogs, msgStyle.Render(l))
+			logLines = append(logLines, msgStyle.Render(l))
 		}
 	}
-	logs := strings.Join(formattedLogs, "\n")
+	logs := strings.Join(logLines, "\n")
 	if m.state.ErrorMsg != "" {
 		logs += "\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("#EF4444")).Render("FATAL ERROR: "+m.state.ErrorMsg)
 	}
-	logsView := logStyle.Render(logs)
+	logsView := lipgloss.NewStyle().Foreground(lipgloss.Color("#D1D5DB")).MarginTop(1).Render(logs)
 
 	return lipgloss.JoinVertical(lipgloss.Left, header, graphView, logsView)
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// renderMeshGraph: TRUE 2D NETWORK TOPOLOGY GRAPH
+// ─────────────────────────────────────────────────────────────────────────────
+// MESH GRAPH RENDERER — Pure 2D grid with rich ASCII connector art
 //
-// Strategy:
-//   1. Normalize node X,Y → grid cells (gridCol, gridRow)
-//   2. For each grid row, render a horizontal strip of node boxes + plain-text
-//      horizontal connectors between boxes in the same row (safe, no ANSI mix)
-//   3. Between grid rows, render a separate connector zone of plain ASCII
-//      characters (│ ╲ ╱ ▼) showing cross-row connections
-//   4. Join everything with strings.Join("\n")
+// Layout: nodes placed in a 2D grid based on their (x,y) coordinates.
+// Connections rendered as ASCII art WITHOUT overlapping node boxes:
 //
-// Node boxes are rendered by lipgloss independently per box.
-// Connector lines are plain ASCII rune arrays — no ANSI, no corruption.
-// ──────────────────────────────────────────────────────────────────────────────
-func renderMeshGraph(state LiveState, nodeStyles map[string]lipgloss.Style, termW int) string {
+//   • Same-row adjacent nodes:  connector in the gap between boxes
+//   • Same-row non-adjacent:    bypass U-arc routed BELOW the row
+//   • Cross-row same-col:       vertical line in connector zone
+//   • Cross-row diagonal:       diagonal line in connector zone
+//   • Bidirectional (A↔B):      ◀══▶  (double thick)
+//   • Many:Many fanout/fanin:   ──▷   (open arrowhead)
+//   • 1:1 simple:               ──▶   (solid arrowhead)
+//   • Curved corners:           ╭╮╰╯  on bends and bypasses
+// ─────────────────────────────────────────────────────────────────────────────
+
+const (
+	nodeVisW = 32 // visual width of node box (matches Width(30) + 2 border)
+	hGap     = 8  // horizontal gap chars between nodes
+	colW     = 40 // nodeVisW + hGap
+	vConnH   = 4  // vertical connector zone height (lines between grid rows)
+	bypassH  = 2  // bypass arc height (for same-row non-adjacent connections)
+)
+
+func renderMeshGraph(state LiveState, styles map[string]lipgloss.Style, termW int) string {
 	if len(state.Nodes) == 0 {
-		return "Waiting for graph data..."
+		return "  Waiting for graph data..."
 	}
 
-	const nodeVisualW = 36 // matches Width(34) + 2 border chars
-	const hGap        = 6  // horizontal gap between nodes (plain spaces/connectors)
-	const colStride   = nodeVisualW + hGap // 42 chars per grid column
-	const connRows    = 3  // terminal lines between grid rows for vertical connections
+	// ── Build index structures ─────────────────────────────────────────────
+	nodeMap  := make(map[string]NodeLiveState)
+	outEdges := make(map[string][]string)   // who I point to
+	inEdges  := make(map[string][]string)   // who points to me
+	edgeSet  := make(map[string]bool)       // "from->to" lookup
+	bidir    := make(map[string]bool)       // "a<->b" (canonical a<b)
 
-	// Max grid columns based on terminal width
-	maxCols := termW / colStride
+	for _, n := range state.Nodes {
+		nodeMap[n.ID] = n
+		outEdges[n.ID] = []string{}
+		inEdges[n.ID] = []string{}
+	}
+	for _, e := range state.Edges {
+		if len(e) < 2 { continue }
+		a, b := e[0], e[1]
+		edgeSet[a+"->"+b] = true
+		outEdges[a] = append(outEdges[a], b)
+		inEdges[b]  = append(inEdges[b], a)
+	}
+	for _, e := range state.Edges {
+		if len(e) < 2 { continue }
+		a, b := e[0], e[1]
+		if edgeSet[b+"->"+a] { // bidirectional
+			key := a + "<->" + b
+			if a > b { key = b + "<->" + a }
+			bidir[key] = true
+		}
+	}
+	isBidir := func(a, b string) bool {
+		key := a + "<->" + b
+		if a > b { key = b + "<->" + a }
+		return bidir[key]
+	}
+
+	// ── Classify edge "weight" ─────────────────────────────────────────────
+	// Returns: "bidir" | "many" | "standard"
+	edgeClass := func(from, to string) string {
+		if isBidir(from, to) { return "bidir" }
+		if len(outEdges[from]) > 1 || len(inEdges[to]) > 1 { return "many" }
+		return "standard"
+	}
+
+	// ── Build 2D grid ─────────────────────────────────────────────────────
+	maxCols := termW / colW
 	if maxCols < 1 { maxCols = 1 }
 	if maxCols > 5 { maxCols = 5 }
 
-	// Build node map and edge set
-	nodeMap := make(map[string]NodeLiveState)
-	for _, n := range state.Nodes {
-		nodeMap[n.ID] = n
-	}
-	edgeSet := make(map[string]bool)
-	for _, e := range state.Edges {
-		if len(e) >= 2 {
-			edgeSet[e[0]+"->"+e[1]] = true
-		}
-	}
-
-	// Normalize X,Y → gridCol, gridRow
 	minX, maxX, minY, maxY := 99999, -99999, 99999, -99999
 	for _, n := range state.Nodes {
-		if n.X < minX { minX = n.X }
-		if n.X > maxX { maxX = n.X }
-		if n.Y < minY { minY = n.Y }
-		if n.Y > maxY { maxY = n.Y }
+		if n.X < minX { minX = n.X }; if n.X > maxX { maxX = n.X }
+		if n.Y < minY { minY = n.Y }; if n.Y > maxY { maxY = n.Y }
 	}
 	if maxX == minX { maxX = minX + 1 }
 	if maxY == minY { maxY = minY + 1 }
 
 	maxGridRows := 0
-	gridPos := make(map[string][2]int) // nodeID → [col, row]
+	gridPos := make(map[string][2]int)
 	for _, n := range state.Nodes {
 		normX := float64(n.X-minX) / float64(maxX-minX)
 		normY := float64(n.Y-minY) / float64(maxY-minY)
-		gc    := int(normX * float64(maxCols-1) + 0.5)
-		gr    := int(normY * 3.0 + 0.5)
+		gc    := int(normX*float64(maxCols-1) + 0.5)
+		gr    := int(normY*3 + 0.5)
 		if gc >= maxCols { gc = maxCols - 1 }
 		if gr > maxGridRows { maxGridRows = gr }
 		gridPos[n.ID] = [2]int{gc, gr}
 	}
 	maxGridRows++
 
-	// Place nodes into grid, handling collisions
 	grid := make([][]string, maxGridRows)
-	for r := range grid {
-		grid[r] = make([]string, maxCols)
-	}
+	for r := range grid { grid[r] = make([]string, maxCols) }
 	for _, n := range state.Nodes {
-		pos := gridPos[n.ID]
-		gc, gr := pos[0], pos[1]
-		// Resolve collision: try bumping right, then wrap
-		attempts := 0
-		for grid[gr][gc] != "" && attempts < maxCols {
+		pos     := gridPos[n.ID]
+		gc, gr  := pos[0], pos[1]
+		for attempts := 0; grid[gr][gc] != "" && attempts < maxCols; attempts++ {
 			gc = (gc + 1) % maxCols
-			attempts++
 		}
 		grid[gr][gc] = n.ID
 		gridPos[n.ID] = [2]int{gc, gr}
 	}
 
-	// Render one node as a lipgloss box (returns a multi-line string)
+	// ── Node box renderer ──────────────────────────────────────────────────
 	renderBox := func(n NodeLiveState) string {
 		title := lipgloss.NewStyle().Bold(true).Render(n.Role)
 		parts  := strings.SplitN(n.Model, "\n", 2)
 		m1 := strings.TrimSpace(parts[0])
 		m2 := ""
 		if len(parts) > 1 { m2 = strings.TrimSpace(parts[1]) }
-		if len(m1) > 30 { m1 = m1[:28] + ".." }
+		if len(m1) > 26 { m1 = m1[:24] + ".." }
 		ml := m1
 		if m2 != "" { ml = m1 + "\n" + lipgloss.NewStyle().Faint(true).Italic(true).Render(m2) }
 		content := fmt.Sprintf("%s\n%s\n[%s]", title, lipgloss.NewStyle().Faint(true).Render(ml), strings.ToUpper(n.Status))
 		switch n.Status {
-		case "running":   return nodeStyles["running"].Render(content)
-		case "completed": return nodeStyles["completed"].Render(content)
-		case "rejected":  return nodeStyles["rejected"].Render(content)
-		default:          return nodeStyles["pending"].Render(content)
+		case "running":   return styles["running"].Render(content)
+		case "completed": return styles["completed"].Render(content)
+		case "rejected":  return styles["rejected"].Render(content)
+		default:          return styles["pending"].Render(content)
 		}
 	}
 
-	// Measure actual box height from a sample render
-	sampleBox   := nodeStyles["pending"].Render("A\nB\nC\nD")
-	boxH        := strings.Count(sampleBox, "\n") + 1
-	midLine     := boxH / 2
+	// Measure box height
+	sample := styles["pending"].Render("A\nB\nC\nD")
+	boxH   := strings.Count(sample, "\n") + 1
+	midH   := boxH / 2
 
-	// Helper: blank placeholder, same height as a box
-	blankBox := func() string {
+	// Blank placeholder matching box height
+	blank := func() string {
 		rows := make([]string, boxH)
-		for i := range rows { rows[i] = strings.Repeat(" ", nodeVisualW) }
+		for i := range rows { rows[i] = strings.Repeat(" ", nodeVisW) }
 		return strings.Join(rows, "\n")
 	}
 
-	// Helper: build a hGap-wide, boxH-tall connector column
-	// If edge exists between fromID and toID (same row), draws ──▶── on midLine
-	hConnector := func(fromID, toID string) string {
+	// ── Horizontal gap connector ───────────────────────────────────────────
+	// Fills the hGap-wide, boxH-tall column between two nodes.
+	// Draws styled arrow on mid line if edge exists.
+	// If from→to (adjacent): standard/many/bidir arrow
+	// If no direct edge: just spaces (non-adjacent handled via bypass zone)
+	hConn := func(fromID, toID string) string {
 		rows := make([]string, boxH)
 		for i := range rows { rows[i] = strings.Repeat(" ", hGap) }
-		if fromID != "" && toID != "" && edgeSet[fromID+"->"+toID] {
-			arrow := "──▶───"
-			if len(arrow) > hGap { arrow = arrow[:hGap] }
-			for len(arrow) < hGap { arrow += "─" }
-			rows[midLine] = arrow
+
+		if fromID == "" || toID == "" || !edgeSet[fromID+"->"+toID] {
+			return strings.Join(rows, "\n")
 		}
+
+		var arrow string
+		switch edgeClass(fromID, toID) {
+		case "bidir":
+			// Bidirectional: double-line with arrowheads both ways  ◀══▶
+			arrow = "◀══▶════"
+		case "many":
+			// Fan-out/fan-in: open arrowhead  ──▷──
+			arrow = "───▷────"
+		default:
+			// Standard 1:1:  ──▶──
+			arrow = "───▶────"
+		}
+		if len([]rune(arrow)) > hGap { arrow = string([]rune(arrow)[:hGap]) }
+		for len([]rune(arrow)) < hGap { arrow += "─" }
+
+		rows[midH] = arrow
+		// Add subtle routing lines above/below mid
+		if midH > 0            { rows[midH-1] = strings.Repeat("·", hGap) }
+		if midH < boxH-1       { rows[midH+1] = strings.Repeat("·", hGap) }
+
 		return strings.Join(rows, "\n")
 	}
 
-	// Build the full connector zone between grid row r and r+1
-	// Returns connRows terminal lines as a plain []string
-	buildConnZone := func(rowAbove, rowBelow []string) []string {
-		// Total visual width of the strip
-		stripW := maxCols*nodeVisualW + (maxCols-1)*hGap
-		if stripW < 10 { stripW = 80 }
-
-		lines := make([][]rune, connRows)
-		for i := range lines {
-			lines[i] = []rune(strings.Repeat(" ", stripW))
+	// ── Rune canvas helper ─────────────────────────────────────────────────
+	// Creates a plain-ASCII rune canvas of given width and height.
+	type Canvas struct {
+		data [][]rune
+		w, h int
+	}
+	newCanvas := func(w, h int) *Canvas {
+		data := make([][]rune, h)
+		for i := range data {
+			data[i] = []rune(strings.Repeat(" ", w))
 		}
-
-		// Center X of each column slot
-		centerX := func(col int) int {
-			return col*colStride + nodeVisualW/2
-		}
-
-		setChar := func(lineIdx, x int, ch rune) {
-			if lineIdx >= 0 && lineIdx < connRows && x >= 0 && x < stripW {
-				lines[lineIdx][x] = ch
-			}
-		}
-
-		for colA := 0; colA < maxCols; colA++ {
-			fromID := rowAbove[colA]
-			if fromID == "" { continue }
-			cx := centerX(colA)
-
-			for colB := 0; colB < maxCols; colB++ {
-				toID := rowBelow[colB]
-				if toID == "" || !edgeSet[fromID+"->"+toID] { continue }
-				tx := centerX(colB)
-
-				// Draw connRows lines tracing from (cx, top) to (tx, bottom)
-				for li := 0; li < connRows; li++ {
-					// Interpolate x position
-					t  := float64(li) / float64(connRows-1)
-					x  := cx + int(float64(tx-cx)*t+0.5)
-					ch := rune('|')
-					if tx > cx { ch = '\\' }
-					if tx < cx { ch = '/' }
-					if tx == cx { ch = '|' }
-					setChar(li, x, ch)
-				}
-				// Arrowhead on the last line pointing into target
-				setChar(connRows-1, tx, 'v')
-			}
-		}
-
-		result := make([]string, connRows)
-		for i, runes := range lines {
-			result[i] = string(runes)
-		}
-		return result
+		return &Canvas{data: data, w: w, h: h}
+	}
+	setR := func(c *Canvas, x, y int, ch rune) {
+		if y >= 0 && y < c.h && x >= 0 && x < c.w { c.data[y][x] = ch }
+	}
+	getString := func(c *Canvas) string {
+		rows := make([]string, c.h)
+		for i, r := range c.data { rows[i] = string(r) }
+		return strings.Join(rows, "\n")
 	}
 
-	// Assemble all output lines
-	var outputLines []string
+	// ── Column center X on canvas ──────────────────────────────────────────
+	centerX := func(col int) int { return col*colW + nodeVisW/2 }
+
+	// ── Vertical connector zone (between grid rows) ────────────────────────
+	buildVConn := func(rowAbove, rowBelow []string) string {
+		stripW := maxCols*nodeVisW + (maxCols-1)*hGap + 2
+		if stripW < 10 { stripW = 80 }
+		c := newCanvas(stripW, vConnH)
+
+		for ca := 0; ca < maxCols; ca++ {
+			fromID := rowAbove[ca]
+			if fromID == "" { continue }
+			fx := centerX(ca)
+
+			for cb := 0; cb < maxCols; cb++ {
+				toID := rowBelow[cb]
+				if toID == "" || !edgeSet[fromID+"->"+toID] { continue }
+				tx := centerX(cb)
+
+				cls := edgeClass(fromID, toID)
+
+				// Draw path line from (fx,0) to (tx,vConnH-1)
+				for li := 0; li < vConnH; li++ {
+					t  := float64(li) / float64(vConnH-1)
+					px := fx + int(float64(tx-fx)*t+0.5)
+
+					var ch rune
+					switch {
+					case tx > fx:
+						ch = '╲'
+						if cls == "bidir" { ch = '⟍' }
+					case tx < fx:
+						ch = '╱'
+						if cls == "bidir" { ch = '⟋' }
+					default:
+						ch = '│'
+						if cls == "bidir" { ch = '║' }
+						if cls == "many"  { ch = '┃' }
+					}
+					setR(c, px, li, ch)
+				}
+
+				// Arrowhead at bottom pointing into target
+				arrow := '▼'
+				if cls == "bidir" { setR(c, fx, 0, '▲') } // upward arrowhead at source too
+				setR(c, tx, vConnH-1, arrow)
+
+				// Rounded corner hints at top and bottom for diagonal lines
+				if tx != fx {
+					if tx > fx { setR(c, fx, 0, '╮'); setR(c, tx, vConnH-1, '╰') } else
+					{ setR(c, fx, 0, '╭'); setR(c, tx, vConnH-1, '╯') }
+				}
+			}
+		}
+		return getString(c)
+	}
+
+	// ── Bypass zone (below a node row, for same-row non-adjacent edges) ────
+	// Draws U-arc curves like:  ╰─────────────────────▶
+	// for edges A→C that skip over B in the same row.
+	buildBypass := func(row []string) string {
+		stripW := maxCols*nodeVisW + (maxCols-1)*hGap + 2
+		if stripW < 10 { stripW = 80 }
+		c := newCanvas(stripW, bypassH)
+
+		for ca := 0; ca < maxCols; ca++ {
+			fromID := row[ca]
+			if fromID == "" { continue }
+			fx := centerX(ca)
+
+			for cb := 0; cb < maxCols; cb++ {
+				if cb == ca || cb == ca+1 { continue } // skip adjacent (handled in gap)
+				toID := row[cb]
+				if toID == "" || !edgeSet[fromID+"->"+toID] { continue }
+				tx := centerX(cb)
+
+				cls := edgeClass(fromID, toID)
+
+				// Draw a U-arc:
+				//   Line 0:  ╰────────────────────╮   (bottom of node row)
+				//   Line 1:  (below the row)
+
+				// Corner at source side
+				if tx > fx {
+					setR(c, fx, 0, '╰')
+					setR(c, tx, 0, '╮')
+				} else {
+					setR(c, fx, 0, '╯')
+					setR(c, tx, 0, '╭')
+				}
+
+				// Horizontal run across line 0
+				lx, rx := fx, tx
+				if lx > rx { lx, rx = rx, lx }
+				lineChar := '─'
+				if cls == "bidir" { lineChar = '═' }
+				if cls == "many"  { lineChar = '━' }
+				for x := lx + 1; x < rx; x++ { setR(c, x, 0, lineChar) }
+
+				// Arrowhead pointing at target
+				if tx > fx { setR(c, tx-1, 0, '▶') } else { setR(c, tx+1, 0, '◀') }
+			}
+		}
+		return getString(c)
+	}
+
+	// ── Assemble complete graph ────────────────────────────────────────────
+	var outLines []string
 
 	for rowIdx := 0; rowIdx < maxGridRows; rowIdx++ {
-		// Build node strip for this grid row
-		var rowParts []string
+		// Node strip
+		var parts []string
 		for colIdx := 0; colIdx < maxCols; colIdx++ {
-			nodeID := grid[rowIdx][colIdx]
-			if nodeID != "" {
-				rowParts = append(rowParts, renderBox(nodeMap[nodeID]))
+			id := grid[rowIdx][colIdx]
+			if id != "" {
+				parts = append(parts, renderBox(nodeMap[id]))
 			} else {
-				rowParts = append(rowParts, blankBox())
+				parts = append(parts, blank())
 			}
 			if colIdx < maxCols-1 {
-				rowParts = append(rowParts, hConnector(grid[rowIdx][colIdx], grid[rowIdx][colIdx+1]))
+				parts = append(parts, hConn(grid[rowIdx][colIdx], grid[rowIdx][colIdx+1]))
 			}
 		}
+		strip := lipgloss.JoinHorizontal(lipgloss.Top, parts...)
+		outLines = append(outLines, strings.Split(strip, "\n")...)
 
-		// JoinHorizontal correctly aligns multi-line box strings
-		nodeStrip := lipgloss.JoinHorizontal(lipgloss.Top, rowParts...)
-		stripLines := strings.Split(nodeStrip, "\n")
-		outputLines = append(outputLines, stripLines...)
+		// Bypass zone (same-row non-adjacent connections routed below)
+		bypassStr := buildBypass(grid[rowIdx])
+		// Only add if non-empty (has real connections)
+		if strings.ContainsAny(bypassStr, "╰╯╭╮─═━▶◀") {
+			outLines = append(outLines, strings.Split(bypassStr, "\n")...)
+		} else {
+			outLines = append(outLines, "") // thin spacer
+		}
 
-		// Vertical connector zone between this row and the next
+		// Vertical connector zone
 		if rowIdx < maxGridRows-1 {
-			connZone := buildConnZone(grid[rowIdx], grid[rowIdx+1])
-			outputLines = append(outputLines, connZone...)
+			vconn := buildVConn(grid[rowIdx], grid[rowIdx+1])
+			outLines = append(outLines, strings.Split(vconn, "\n")...)
 		}
 	}
 
-	// Edge legend
-	arrowSt := lipgloss.NewStyle().Foreground(lipgloss.Color("#F59E0B"))
+	// ── Edge legend ────────────────────────────────────────────────────────
+	outLines = append(outLines, "")
+	outLines = append(outLines, lipgloss.NewStyle().Foreground(lipgloss.Color("#6366F1")).Bold(true).Render(
+		"── CONNECTIONS  [══▶ many:many | ──▶ 1:1 | ─▷─ 1:many | ◀══▶ bidirectional] ──"))
 	idToRole := make(map[string]string)
 	for _, n := range state.Nodes { idToRole[n.ID] = n.Role }
 
-	outputLines = append(outputLines, "")
-	outputLines = append(outputLines, lipgloss.NewStyle().Foreground(lipgloss.Color("#6366F1")).Bold(true).Render("── CONNECTIONS ──"))
 	for _, e := range state.Edges {
 		if len(e) < 2 { continue }
 		from := idToRole[e[0]]; if from == "" { from = e[0] }
 		to   := idToRole[e[1]]; if to   == "" { to   = e[1] }
-		outputLines = append(outputLines, fmt.Sprintf("  %s  %s  %s",
+		cls  := edgeClass(e[0], e[1])
+		arrow := "──▶"
+		if cls == "bidir" { arrow = "◀══▶" }
+		if cls == "many"  { arrow = "──▷" }
+		outLines = append(outLines, fmt.Sprintf("  %s  %s  %s",
 			lipgloss.NewStyle().Foreground(lipgloss.Color("#818CF8")).Render("["+from+"]"),
-			arrowSt.Render("──▶"),
+			lipgloss.NewStyle().Foreground(lipgloss.Color("#F59E0B")).Render(arrow),
 			lipgloss.NewStyle().Foreground(lipgloss.Color("#34D399")).Render("["+to+"]"),
 		))
 	}
 
-	return strings.Join(outputLines, "\n")
+	return strings.Join(outLines, "\n")
 }
