@@ -26,7 +26,7 @@ import keyboard
 from playwright.sync_api import sync_playwright
 
 # --- Session daemon -----------------------------------------------------------
-DAEMON_PORT  = 19877          # Local-only TCP port for IPC
+DAEMON_PORT  = 19878          # Local-only TCP port for IPC
 DAEMON_TOKEN = "voila-browser-daemon-v1"
 IDLE_TIMEOUT = 120            # Seconds of inactivity before daemon exits
 
@@ -192,6 +192,42 @@ def _handle_action(browser, args: dict) -> dict:
         page.locator(sel).first.fill(val, timeout=10000)
         page.wait_for_timeout(args.get("wait_time", 1000))
 
+    elif action == "press":
+        sel = args.get("selector")
+        val = args.get("value")  # e.g. "Enter"
+        if not val:
+            raise ValueError("value (key name) is required for press")
+        if sel:
+            page.locator(sel).first.press(val, timeout=10000)
+        else:
+            page.keyboard.press(val)
+        page.wait_for_timeout(args.get("wait_time", 1000))
+
+    elif action == "scroll":
+        val = args.get("value") # e.g. "down", "up", or a number
+        if val == "up":
+            page.evaluate("window.scrollBy(0, -window.innerHeight)")
+        elif val == "down" or not val:
+            page.evaluate("window.scrollBy(0, window.innerHeight)")
+        else:
+            try:
+                px = int(val)
+                page.evaluate(f"window.scrollBy(0, {px})")
+            except:
+                page.evaluate("window.scrollBy(0, window.innerHeight)")
+        page.wait_for_timeout(args.get("wait_time", 1000))
+        
+    elif action == "close_tab":
+        page.close()
+        result["closed"] = True
+
+    elif action == "list_tabs":
+        tabs = []
+        for ctx in browser.contexts:
+            for p in ctx.pages:
+                tabs.append({"url": p.url, "title": p.title()})
+        result["tabs"] = tabs
+
     elif action == "scrape":
         text = page.evaluate("document.body.innerText")
         result["content"] = text[:3000]
@@ -284,7 +320,7 @@ def main():
     parser = argparse.ArgumentParser(description="Browser Automation Tool (persistent session)")
     parser.add_argument("--url",       type=str)
     parser.add_argument("--action",    type=str,
-                        choices=["goto", "click", "type", "scrape", "snapshot", "extract_links", "eval"],
+                        choices=["goto", "click", "type", "press", "scroll", "close_tab", "list_tabs", "scrape", "snapshot", "extract_links", "eval"],
                         required=True)
     parser.add_argument("--selector",  type=str)
     parser.add_argument("--value",     type=str)
