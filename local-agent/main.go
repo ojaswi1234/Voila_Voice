@@ -2494,6 +2494,109 @@ Example full deck:
 			},
 		},
 	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "list_dir",
+			Description: "List the contents of a directory.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"path": map[string]interface{}{"type": "string", "description": "Absolute path of the directory"},
+				},
+				"required": []string{"path"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "save_command_memory",
+			Description: "Save a successful PowerShell technique to memory for future reuse.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"purpose": map[string]interface{}{"type": "string", "description": "What the command does"},
+					"command": map[string]interface{}{"type": "string", "description": "The exact PowerShell command"},
+				},
+				"required": []string{"purpose", "command"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "create_docx",
+			Description: "Create a DOCX file.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"path": map[string]interface{}{"type": "string", "description": "Absolute path to save DOCX"},
+					"content": map[string]interface{}{"type": "string", "description": "Markdown formatted content"},
+				},
+				"required": []string{"path", "content"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "docs.templates.list",
+			Description: "List all available document templates.",
+			Parameters: map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "docs.templates.get",
+			Description: "Get details and requirements for a specific template.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"template_id": map[string]interface{}{"type": "string", "description": "Template ID"},
+				},
+				"required": []string{"template_id"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "docs.create_from_template",
+			Description: "Create a new document from a template.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"template_id": map[string]interface{}{"type": "string", "description": "Template ID"},
+					"content": map[string]interface{}{"type": "object", "description": "Content mapping matching the template schema"},
+				},
+				"required": []string{"template_id", "content"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "docs.list_recent",
+			Description: "List recently generated template documents.",
+			Parameters: map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "docs.open_local",
+			Description: "Open a recently generated document locally.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"path": map[string]interface{}{"type": "string", "description": "Path to the document"},
+				},
+				"required": []string{"path"},
+			},
+		},
+	},
 }
 
 // executeTool dispatches to the correct tool implementation and returns a result string.
@@ -2830,7 +2933,27 @@ func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMes
 		}
 		return strings.TrimSpace(string(outBytes))
 
-	case "read_file":
+		case "list_dir":
+		path := getString("path")
+		if path == "" {
+			return "error: path is required"
+		}
+		entries, err := os.ReadDir(path)
+		if err != nil {
+			return "error reading directory: " + err.Error()
+		}
+		var out []string
+		for _, e := range entries {
+			info := ""
+			if e.IsDir() {
+				info = "[DIR]  "
+			} else {
+				info = "[FILE] "
+			}
+			out = append(out, info+e.Name())
+		}
+		return strings.Join(out, "\n")
+case "read_file":
 		path := getString("path")
 		if path == "" {
 			return "error: path is required"
