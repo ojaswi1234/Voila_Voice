@@ -1,399 +1,261 @@
-"""
-browser_tools.py - Playwright CDP browser automation tool.
-
-Bug #11 Fix: The original script cold-booted Python + Playwright + a CDP WebSocket
-for EVERY SINGLE action (click, type, scrape...), adding seconds of latency per step.
-Now the script uses a socket-based session server: on first run it starts a persistent
-daemon that keeps a Playwright browser connection alive. Subsequent calls connect to
-the daemon over a local Unix/TCP socket and send JSON commands, returning results
-instantly without re-initializing the entire stack.
-
-Bug #12 Fix: The extract_links action ran querySelectorAll('a, button, input') with no
-DOM size limit, which could return tens of thousands of nodes from modern SPAs and
-crash the browser tab with OOM errors. Now limited to the first 300 DOM nodes before
-any filtering, plus a hard cap of 75 results.
-"""
-
+"""browser_tools.py - CDP Edge automation (compact P0 fix)."""
 import sys
 sys.stdout.reconfigure(encoding="utf-8")
-import os
-import json
-import time
-import socket
-import argparse
-import threading
-import keyboard
+import os, json, time, socket, argparse, threading, subprocess, urllib.request
+try:
+    import keyboard
+    keyboard.add_hotkey("ctrl+alt+b", lambda: (print(json.dumps({"ok": False, "error": "stopped"})), os._exit(1)))
+except Exception:
+    pass
 from playwright.sync_api import sync_playwright
 
-# --- Session daemon -----------------------------------------------------------
-DAEMON_PORT  = 19879          # Local-only TCP port for IPC
-DAEMON_TOKEN = "voila-browser-daemon-v1"
-IDLE_TIMEOUT = 120            # Seconds of inactivity before daemon exits
-
-def kill_script():
-    print(json.dumps({"error": "Force stopped by user (Ctrl+Alt+B)"}))
-    os._exit(1)
-
-keyboard.add_hotkey("ctrl+alt+b", kill_script)
-
-# ── daemon server (runs in a background process / separate thread) ────────────
-
+DAEMON_PORT, CDP_URL, CDP_PORT = 19879, "http://127.0.0.1:9222", 9222
+USER_DATA_DIR = os.environ.get("VOILA_BROWSER_PROFILE", r"C:\tmp\ai_browser_profile")
 _active_page_id = None
 
-def _run_daemon():
-    """Persistent daemon: keeps one Playwright browser connection alive and
-    handles JSON-encoded action requests from client calls."""
-    CDP_URL = "http://localhost:9222"
-
-    with sync_playwright() as p:
-        # Connect with retry
-        browser = None
-        for _ in range(3):
-            try:
-                browser = p.chromium.connect_over_cdp(CDP_URL)
-                break
-            except Exception:
-                time.sleep(0.5)
-
-        if not browser:
-            # Fallback: Auto-launch a visible (headful) Edge browser to promote trust and transparency!
-            browser = p.chromium.launch(channel="msedge", headless=False)
-
-        server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        server_sock.bind(("127.0.0.1", DAEMON_PORT))
-        server_sock.listen(5)
-        server_sock.settimeout(IDLE_TIMEOUT)
-
-        last_activity = time.time()
-
-        while True:
-            try:
-                conn, _ = server_sock.accept()
-            except socket.timeout:
-                # No activity for IDLE_TIMEOUT seconds — exit cleanly
-                break
-
-            last_activity = time.time()
-            try:
-                raw = b""
-                while True:
-                    chunk = conn.recv(65536)
-                    if not chunk:
-                        break
-                    raw += chunk
-                    if b"\n" in raw:
-                        break
-
-                request = json.loads(raw.strip())
-                result  = _handle_action(browser, request)
-                conn.sendall((json.dumps(result) + "\n").encode())
-            except Exception as e:
-                try:
-                    conn.sendall((json.dumps({"error": str(e)}) + "\n").encode())
-                except Exception:
-                    pass
-                if not browser.is_connected():
-                    print("Browser disconnected, exiting daemon to force cold-boot")
-                    break
-            finally:
-                conn.close()
-
-        try:
-            browser.close()
-        except Exception:
-            pass
-
-def _get_page(browser):
-    """Return the active page (creating one if needed)."""
-    global _active_page_id
-    contexts = browser.contexts
-    if not contexts:
-        context = browser.new_context()
-    else:
-        context = contexts[0]
-    pages = context.pages
-    if not pages:
-        p = context.new_page()
-        _active_page_id = id(p)
-        return p
-    
-    # Check if our tracked active page still exists
-    for p in pages:
-        if id(p) == _active_page_id:
-            try:
-                p.bring_to_front()
-            except: pass
-            return p
-            
-    # Fallback: Filter out extension onboarding tabs
-    filtered = [p for p in pages if not any(x in p.url for x in ["petasittek.com", "simplycodes.com", "edge://extensions"])]
-    page = filtered[-1] if filtered else pages[-1]
-    
-    _active_page_id = id(page)
+def _cdp_ok(t=1.0):
     try:
-        page.bring_to_front()
-    except: pass
-    return page
-
-
-
-def _inject_ad_skipper(page):
-    try:
-        if "youtube.com" in page.url:
-            page.evaluate('''() => {
-                if (!window._ytAdSkipperInjected) {
-                    window._ytAdSkipperInjected = true;
-                    setInterval(() => {
-                        // 1. Click skip buttons if they exist
-                        const skipBtn = document.querySelector('.ytp-ad-skip-button-modern, .ytp-ad-skip-button, .ytp-skip-ad-button, .ytp-ad-skip-button-text');
-                        if (skipBtn) {
-                            skipBtn.click();
-                        }
-                        
-                        // 2. Click overlay banners
-                        const overlayCloseBtn = document.querySelector('.ytp-ad-overlay-close-button');
-                        if (overlayCloseBtn) {
-                            overlayCloseBtn.click();
-                        }
-                        
-                        // 3. Ultimate unskippable ad killer: Fast forward the video if an ad is playing
-                        const isAdShowing = document.querySelector('.ad-showing, .ad-interrupting, .ytp-ad-player-overlay');
-                        const video = document.querySelector('video');
-                        if (isAdShowing && video && !isNaN(video.duration)) {
-                            video.currentTime = video.duration;
-                            // Sometimes setting currentTime isn't enough, we also need to click skip if it appears after fast forward
-                            const skipAfter = document.querySelector('.ytp-ad-skip-button-modern');
-                            if (skipAfter) skipAfter.click();
-                        }
-                    }, 500);
-                }
-            }''')
+        with urllib.request.urlopen(CDP_URL + "/json/version", timeout=t) as r:
+            return r.status == 200
     except Exception:
-        pass
-
-def _handle_action(browser, args: dict) -> dict:
-    """Execute one browser action and return a result dict."""
-    action = args.get("action", "")
-    result = {"status": "success", "action": action}
-
-    page = _get_page(browser)
-    _inject_ad_skipper(page)
-
-    if action == "goto":
-        url = args.get("url", "")
-        if not url:
-            raise ValueError("url is required for goto")
-        page.goto(url, timeout=25000)
-        page.wait_for_timeout(args.get("wait_time", 1000))
-        result["url"]   = page.url
-        result["title"] = page.title()
-
-    elif action == "click":
-        sel = args.get("selector")
-        if not sel:
-            raise ValueError("selector is required for click")
-        page.locator(sel).first.click(timeout=10000)
-        page.wait_for_timeout(args.get("wait_time", 1000))
-        result["url"] = page.url
-
-    elif action == "type":
-        sel = args.get("selector")
-        val = args.get("value")
-        if not sel or val is None:
-            raise ValueError("selector and value are required for type")
-        page.locator(sel).first.fill(val, timeout=10000)
-        page.wait_for_timeout(args.get("wait_time", 1000))
-
-    elif action == "press":
-        sel = args.get("selector")
-        val = args.get("value")  # e.g. "Enter"
-        if not val:
-            raise ValueError("value (key name) is required for press")
-        if sel:
-            page.locator(sel).first.press(val, timeout=10000)
-        else:
-            page.keyboard.press(val)
-        page.wait_for_timeout(args.get("wait_time", 1000))
-
-    elif action == "scroll":
-        val = args.get("value") # e.g. "down", "up", or a number
-        if val == "up":
-            page.evaluate("window.scrollBy(0, -window.innerHeight)")
-        elif val == "down" or not val:
-            page.evaluate("window.scrollBy(0, window.innerHeight)")
-        else:
-            try:
-                px = int(val)
-                page.evaluate(f"window.scrollBy(0, {px})")
-            except:
-                page.evaluate("window.scrollBy(0, window.innerHeight)")
-        page.wait_for_timeout(args.get("wait_time", 1000))
-        
-    elif action == "close_tab":
-        page.close()
-        result["closed"] = True
-
-    elif action == "new_tab":
-        url = args.get("url", "about:blank")
-        ctx = browser.contexts[0] if browser.contexts else browser.new_context()
-        new_p = ctx.new_page()
-        new_p.goto(url, timeout=25000)
-        global _active_page_id
-        _active_page_id = id(new_p)
-        new_p.bring_to_front()
-        result["url"] = new_p.url
-        result["title"] = new_p.title()
-
-    elif action == "switch_tab":
-        val = args.get("value")
-        if not val:
-            raise ValueError("value (url or title substring) is required for switch_tab")
-        target = None
-        for ctx in browser.contexts:
-            for p in ctx.pages:
-                if val.lower() in p.url.lower() or val.lower() in p.title().lower():
-                    target = p
-                    break
-        if target:
-            _active_page_id = id(target)
-            target.bring_to_front()
-            result["url"] = target.url
-            result["title"] = target.title()
-        else:
-            raise ValueError(f"No matching tab found for: {val}")
-
-    elif action == "list_tabs":
-        tabs = []
-        for ctx in browser.contexts:
-            for p in ctx.pages:
-                tabs.append({"url": p.url, "title": p.title()})
-        result["tabs"] = tabs
-
-    elif action == "scrape":
-        text = page.evaluate("document.body.innerText")
-        result["content"] = text[:3000]
-        result["url"] = page.url
-        result["title"] = page.title()
-
-    elif action == "extract_links":
-        # Bug #12 Fix: Limit the initial querySelectorAll to 300 nodes before
-        # processing, preventing OOM crashes on heavy SPAs with thousands of DOM
-        # nodes. The final result is capped at 75 elements.
-        links = page.evaluate('''() => {
-            const MAX_SCAN    = 300;
-            const MAX_RESULTS = 75;
-            const elements = Array.from(
-                document.querySelectorAll("a, button, input")
-            ).slice(0, MAX_SCAN);
-            return elements.map(el => {
-                let text = el.innerText || el.value || el.title || el.name || el.id || "";
-                let type = el.tagName.toLowerCase();
-                if (type === "input") type += `[${el.type}]`;
-                let selector = "";
-                if (el.id)                        { selector = `#${el.id}`; }
-                else if (el.name)                  { selector = `${el.tagName.toLowerCase()}[name="${el.name}"]`; }
-                else if (el.getAttribute("href")) { selector = `${el.tagName.toLowerCase()}[href="${el.getAttribute("href")}"]`; }
-                else                               { selector = el.tagName.toLowerCase(); }
-                return {type, text: text.trim().substring(0, 150), selector};
-            })
-            .filter(e => e.text.length > 5)
-            .slice(0, MAX_RESULTS);
-        }''')
-        result["elements"] = links
-        result["url"] = page.url
-        result["title"] = page.title()
-
-    elif action == "snapshot":
-        path = "snapshot.png"
-        page.screenshot(path=path)
-        result["snapshot_path"] = os.path.abspath(path)
-
-    elif action == "eval":
-        val = args.get("value")
-        res = page.evaluate(val)
-        result["result"] = res
-
-    else:
-        raise ValueError(f"Unknown action: {action}")
-
-    _inject_ad_skipper(page)
-    return result
-
-
-# ── client: send one request to the daemon ────────────────────────────────────
-
-def _send_to_daemon(request: dict) -> dict:
-    """Connect to the running daemon and execute one action."""
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.settimeout(30)
-    sock.connect(("127.0.0.1", DAEMON_PORT))
-    sock.sendall((json.dumps(request) + "\n").encode())
-    raw = b""
-    while b"\n" not in raw:
-        chunk = sock.recv(65536)
-        if not chunk:
-            break
-        raw += chunk
-    sock.close()
-    return json.loads(raw.strip())
-
-
-def _is_daemon_running() -> bool:
-    try:
-        s = socket.create_connection(("127.0.0.1", DAEMON_PORT), timeout=1)
-        s.close()
-        return True
-    except OSError:
         return False
 
+def _edge():
+    for c in [os.environ.get("VOILA_EDGE_PATH", ""),
+              r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+              r"C:\Program Files\Microsoft\Edge\Application\msedge.exe"]:
+        if c and os.path.isfile(c):
+            return c
+    return r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
 
-def _start_daemon_background():
-    """Spawn the daemon in a background thread (same process, daemon=True)."""
-    t = threading.Thread(target=_run_daemon, daemon=True)
-    t.start()
-    # Wait up to 5 seconds for it to start listening
+def _launch(url="https://www.google.com"):
+    if _cdp_ok():
+        return
+    if not url or url.lower() in ("about:blank", "blank"):
+        url = "https://www.google.com"
+    os.makedirs(USER_DATA_DIR, exist_ok=True)
+    args = [_edge(), f"--remote-debugging-port={CDP_PORT}", f"--user-data-dir={USER_DATA_DIR}",
+            "--no-first-run", "--no-default-browser-check", url]
+    flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0
+    subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=flags, close_fds=True)
+
+def _connect(p, hint=None):
+    if not _cdp_ok(0.8):
+        _launch(hint or "https://www.google.com")
+    err = None
+    for i in range(40):
+        try:
+            if _cdp_ok(0.5):
+                return p.chromium.connect_over_cdp(CDP_URL), "cdp"
+        except Exception as e:
+            err = e
+        if i == 5 and not _cdp_ok():
+            _launch(hint or "https://www.google.com")
+        time.sleep(0.5)
+    raise RuntimeError(f"CDP connect failed: {err}")
+
+def _info(page):
+    u = t = ""
+    try: u = page.url or ""
+    except Exception: pass
+    try: t = page.title() or ""
+    except Exception: pass
+    return {"url": u, "title": t}
+
+def _ok(a, page, **k):
+    d = {"ok": True, "action": a, **_info(page)}; d.update(k); return d
+
+def _err(a, msg, page=None, **k):
+    d = {"ok": False, "action": a, "error": msg}
+    if page is not None: d.update(_info(page))
+    d.update(k); return d
+
+def _page(browser):
+    global _active_page_id
+    ctxs = browser.contexts
+    if not ctxs:
+        p = browser.new_context().new_page(); _active_page_id = id(p); return p
+    ctx, pages = ctxs[0], list(ctxs[0].pages)
+    if _active_page_id:
+        for p in pages:
+            if id(p) == _active_page_id: return p
+    for p in pages:
+        try:
+            u = (p.url or "").lower()
+            if u and u not in ("about:blank", "chrome://newtab/", "edge://newtab/"):
+                _active_page_id = id(p); return p
+        except Exception: pass
+    if pages:
+        _active_page_id = id(pages[-1]); return pages[-1]
+    p = ctx.new_page(); _active_page_id = id(p); return p
+
+def _handle(browser, args):
+    global _active_page_id
+    action = (args.get("action") or "").strip().lower()
+    page = _page(browser)
+    wt = int(args.get("wait_time") or 1000)
+    try:
+        if action == "goto":
+            url = (args.get("url") or "").strip()
+            if not url: return _err(action, "url required", page)
+            if url.lower() in ("about:blank", "blank"):
+                return _err(action, "Refusing about:blank — use real https URL", page)
+            if not url.startswith("http"): url = "https://" + url
+            page.goto(url, timeout=45000, wait_until="domcontentloaded")
+            try: page.wait_for_timeout(min(wt, 3000))
+            except Exception: pass
+            return _ok(action, page, navigated_to=url)
+        if action == "click":
+            sel = args.get("selector")
+            if not sel: return _err(action, "selector required", page)
+            page.locator(sel).first.click(timeout=20000)
+            return _ok(action, page, selector=sel)
+        if action == "type":
+            sel, val = args.get("selector"), args.get("value")
+            if not sel or val is None: return _err(action, "selector and value required", page)
+            page.locator(sel).first.fill(str(val), timeout=20000)
+            return _ok(action, page, selector=sel)
+        if action == "press":
+            val, sel = args.get("value") or args.get("key"), args.get("selector")
+            if not val: return _err(action, "value (key) required", page)
+            if sel: page.locator(sel).first.press(val, timeout=10000)
+            else: page.keyboard.press(val)
+            return _ok(action, page, key=val)
+        if action == "scroll":
+            val = (args.get("value") or "down").lower()
+            if val in ("up", "pageup"): page.evaluate("window.scrollBy(0,-window.innerHeight)")
+            elif val in ("down", "pagedown"): page.evaluate("window.scrollBy(0,window.innerHeight)")
+            else:
+                try: page.evaluate(f"window.scrollBy(0,{int(val)})")
+                except Exception: page.evaluate("window.scrollBy(0,window.innerHeight)")
+            return _ok(action, page)
+        if action == "new_tab":
+            url = (args.get("url") or "").strip()
+            if not url or url.lower() in ("about:blank", "blank"): url = "https://www.google.com"
+            if not url.startswith("http"): url = "https://" + url
+            ctx = browser.contexts[0] if browser.contexts else browser.new_context()
+            np = ctx.new_page(); _active_page_id = id(np)
+            np.goto(url, timeout=45000, wait_until="domcontentloaded")
+            return _ok(action, np, navigated_to=url)
+        if action == "list_tabs":
+            tabs = []
+            if browser.contexts:
+                for i, p in enumerate(browser.contexts[0].pages):
+                    tabs.append({"index": i, **_info(p)})
+            return {"ok": True, "action": action, "tabs": tabs}
+        if action == "close_tab":
+            pages = browser.contexts[0].pages if browser.contexts else []
+            if len(pages) <= 1: return _err(action, "refusing to close last tab", page)
+            page.close()
+            rem = browser.contexts[0].pages
+            _active_page_id = id(rem[-1]) if rem else None
+            return {"ok": True, "action": action, "tabs_left": len(rem)}
+        if action == "switch_tab":
+            val = str(args.get("value") or args.get("index") or "0")
+            try:
+                i = int(val)
+                pages = browser.contexts[0].pages if browser.contexts else []
+                if i < 0 or i >= len(pages): return _err(action, "index out of range", page)
+                _active_page_id = id(pages[i]); pages[i].bring_to_front()
+                return _ok(action, pages[i], tab_index=i)
+            except ValueError:
+                for ctx in browser.contexts:
+                    for p in ctx.pages:
+                        if val.lower() in (p.url or "").lower() or val.lower() in (p.title() or "").lower():
+                            _active_page_id = id(p); p.bring_to_front(); return _ok(action, p)
+                return _err(action, f"no tab match: {val}", page)
+        if action == "scrape":
+            sel = args.get("selector")
+            if sel: return _ok(action, page, texts=page.locator(sel).all_inner_texts()[:50])
+            return _ok(action, page, text=(page.inner_text("body") or "")[:8000])
+        if action in ("snapshot", "extract_links"):
+            links = page.evaluate("""() => Array.from(document.querySelectorAll('a,button,input,[role=button]')).slice(0,300).map(el => {
+              const text=(el.innerText||el.value||el.getAttribute('aria-label')||'').trim().slice(0,120);
+              let sel=el.id?'#'+el.id:el.tagName.toLowerCase();
+              return {type:el.tagName.toLowerCase(), text, selector:sel};
+            }).filter(x=>x.text.length>0).slice(0,75)""")
+            return _ok(action, page, elements=links)
+        if action == "eval":
+            expr = args.get("value")
+            if not expr: return _err(action, "value required", page)
+            return _ok(action, page, result=page.evaluate(expr))
+        if action == "ensure":
+            return _ok(action, page, cdp=True)
+        return _err(action or "unknown", f"Unknown action: {action}", page)
+    except Exception as e:
+        return _err(action, str(e), page)
+
+def _daemon(hint=None):
+    with sync_playwright() as p:
+        browser, mode = _connect(p, hint)
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try: s.bind(("127.0.0.1", DAEMON_PORT))
+        except OSError: return
+        s.listen(5); s.settimeout(180)
+        while True:
+            try: conn, _ = s.accept()
+            except socket.timeout: break
+            try:
+                raw = b""
+                while b"\n" not in raw:
+                    ch = conn.recv(65536)
+                    if not ch: break
+                    raw += ch
+                req = json.loads(raw.strip() or b"{}")
+                if not browser.is_connected():
+                    browser, mode = _connect(p, req.get("url"))
+                res = _handle(browser, req); res["connection"] = mode
+                conn.sendall((json.dumps(res, default=str) + "\n").encode())
+            except Exception as e:
+                try: conn.sendall((json.dumps({"ok": False, "error": str(e)}) + "\n").encode())
+                except Exception: pass
+            finally:
+                try: conn.close()
+                except Exception: pass
+        try: browser.close()
+        except Exception: pass
+        try: s.close()
+        except Exception: pass
+
+def _send(req):
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(60); sock.connect(("127.0.0.1", DAEMON_PORT))
+    sock.sendall((json.dumps(req) + "\n").encode())
+    raw = b""
+    while b"\n" not in raw:
+        ch = sock.recv(65536)
+        if not ch: break
+        raw += ch
+    sock.close()
+    return json.loads(raw.strip().decode("utf-8", errors="replace"))
+
+def _running():
+    try:
+        s = socket.create_connection(("127.0.0.1", DAEMON_PORT), timeout=0.4); s.close(); return True
+    except OSError: return False
+
+def _start(hint=None):
+    threading.Thread(target=_daemon, args=(hint,), daemon=True).start()
     for _ in range(50):
-        if _is_daemon_running():
-            return
-        time.sleep(0.1)
-    raise RuntimeError("Browser daemon failed to start within 5 seconds.")
-
-
-# ── main entry point ──────────────────────────────────────────────────────────
+        time.sleep(0.2)
+        if _running(): return
+    raise RuntimeError("daemon failed to start")
 
 def main():
-    parser = argparse.ArgumentParser(description="Browser Automation Tool (persistent session)")
-    parser.add_argument("--url",       type=str)
-    parser.add_argument("--action",    type=str,
-                        choices=["goto", "click", "type", "press", "scroll", "close_tab", "new_tab", "switch_tab", "list_tabs", "scrape", "snapshot", "extract_links", "eval"],
-                        required=True)
-    parser.add_argument("--selector",  type=str)
-    parser.add_argument("--value",     type=str)
-    parser.add_argument("--wait_time", type=int, default=1000)
-    args = parser.parse_args()
-
-    request = {
-        "action":    args.action,
-        "url":       args.url,
-        "selector":  args.selector,
-        "value":     args.value,
-        "wait_time": args.wait_time,
-    }
-
-    # Bug #11 Fix: If daemon is already running, connect directly — zero cold-boot.
-    # If not running, start it in a background thread first (one-time cost).
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--url"); ap.add_argument("--action", required=True)
+    ap.add_argument("--selector"); ap.add_argument("--value"); ap.add_argument("--wait_time", type=int, default=1000)
+    a = ap.parse_args()
+    req = {"action": a.action, "url": a.url, "selector": a.selector, "value": a.value, "wait_time": a.wait_time}
     try:
-        if not _is_daemon_running():
-            _start_daemon_background()
-
-        result = _send_to_daemon(request)
-        print(json.dumps(result))
-        # Do NOT call os._exit() — daemon thread keeps living for next call
+        if not _running():
+            _start(a.url if a.action in ("goto", "new_tab") else None)
+        r = _send(req)
+        print(json.dumps(r, default=str))
+        if isinstance(r, dict) and r.get("ok") is False: sys.exit(2)
     except Exception as e:
-        print(json.dumps({"error": str(e)}))
-        sys.exit(1)
-
+        print(json.dumps({"ok": False, "error": str(e), "action": a.action})); sys.exit(1)
 
 if __name__ == "__main__":
     main()
