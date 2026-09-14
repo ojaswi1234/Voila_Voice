@@ -296,13 +296,17 @@ func renderSpatialGraph(m tuiModel, nodeStyles map[string]lipgloss.Style) string
 		}
 	}
 
-	// Now we construct the lines as strings
-	lines := make([]string, canvasH)
+	// Now we construct the lines as string arrays to prevent ANSI length corruption
+	stringCanvas := make([][][]string, canvasH)
 	for r := 0; r < canvasH; r++ {
-		lines[r] = string(canvas[r])
+		stringCanvas[r] = make([][]string, canvasW)
+		for c := 0; c < canvasW; c++ {
+			stringCanvas[r][c] = []string{string(canvas[r][c])}
+		}
 	}
 
 	// Now embed the styled boxes at their coordinates
+	// Sort nodes by Z-index or just render them
 	for _, n := range state.Nodes {
 		pos := positions[n.ID]
 		left := pos.x - (nodeW/2)
@@ -310,17 +314,17 @@ func renderSpatialGraph(m tuiModel, nodeStyles map[string]lipgloss.Style) string
 
 		// Generate the lipgloss box
 		title := lipgloss.NewStyle().Bold(true).Render(n.Role)
-		modelParts := strings.SplitN(n.Model, "\\n", 2)
+		modelParts := strings.SplitN(n.Model, "\n", 2)
 		modelLine1 := strings.TrimSpace(modelParts[0])
 		modelLine2 := ""
 		if len(modelParts) > 1 { modelLine2 = strings.TrimSpace(modelParts[1]) }
 		if len(modelLine1) > 34 { modelLine1 = modelLine1[:32] + ".." }
 		
 		modelLabel := modelLine1
-		if modelLine2 != "" { modelLabel = modelLine1 + "\\n" + lipgloss.NewStyle().Faint(true).Italic(true).Render(modelLine2) }
+		if modelLine2 != "" { modelLabel = modelLine1 + "\n" + lipgloss.NewStyle().Faint(true).Italic(true).Render(modelLine2) }
 		sub := lipgloss.NewStyle().Faint(true).Render(modelLabel)
 		
-		content := fmt.Sprintf("%s\\n%s\\n[%s]", title, sub, strings.ToUpper(n.Status))
+		content := fmt.Sprintf("%s\n%s\n[%s]", title, sub, strings.ToUpper(n.Status))
 		
 		var box string
 		switch n.Status {
@@ -330,34 +334,34 @@ func renderSpatialGraph(m tuiModel, nodeStyles map[string]lipgloss.Style) string
 		default:          box = nodeStyles["pending"].Render(content)
 		}
 
-		boxLines := strings.Split(box, "\\n")
+		boxLines := strings.Split(box, "\n")
 		for r, bline := range boxLines {
 			rIdx := top + r
 			if rIdx >= 0 && rIdx < canvasH {
-				// We must replace characters in lines[rIdx] with the ANSI string,
-				// but because ANSI has hidden length, we calculate exact byte slice injection based on rune width.
-				// For simplicity, we just slice the raw space string and insert the ANSI block.
-				// Since we know the canvas was pure spaces/runes, character index == byte index mostly (except our ascii lines)
-				
-				// Let's convert line to runes to slice it by character safely
-				runes := []rune(lines[rIdx])
-				if left < 0 { left = 0 }
-				if left >= len(runes) { continue }
-				
-				// The box is strictly `nodeW` wide visually
-				right := left + nodeW
-				if right > len(runes) { right = len(runes) }
-				
-				prefix := string(runes[:left])
-				suffix := ""
-				if right < len(runes) {
-					suffix = string(runes[right:])
+				blineWidth := lipgloss.Width(bline)
+				if left >= 0 && left < canvasW {
+					stringCanvas[rIdx][left] = []string{bline}
+					// Clear the cells visually occluded by this box
+					for i := 1; i < blineWidth; i++ {
+						if left+i < canvasW {
+							stringCanvas[rIdx][left+i] = []string{""}
+						}
+					}
 				}
-				
-				lines[rIdx] = prefix + bline + suffix
 			}
 		}
 	}
 
-	return strings.Join(lines, "\\n")
+	var finalLines []string
+	for r := 0; r < canvasH; r++ {
+		var rowStr string
+		for c := 0; c < canvasW; c++ {
+			if len(stringCanvas[r][c]) > 0 {
+				rowStr += stringCanvas[r][c][0]
+			}
+		}
+		finalLines = append(finalLines, rowStr)
+	}
+
+	return strings.Join(finalLines, "\n")
 }
