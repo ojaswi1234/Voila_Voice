@@ -1,0 +1,3 @@
+FreeConsole: 1, err: The handle is invalid.
+AllocConsole: 1, err: The specified system semaphore name was not found.
+Open CONOUT: <nil>

@@ -1,4 +1,4 @@
-package main
+﻿package main
 
 import (
 	"unsafe"
@@ -93,26 +93,6 @@ func initZeroOrphanJobObject() {
 
 // Styles
 
-func stripMarkdownForTTS(input string) string {
-	out := strings.ReplaceAll(input, "**", "")
-	out = strings.ReplaceAll(out, "__", "")
-	out = strings.ReplaceAll(out, "### ", "")
-	out = strings.ReplaceAll(out, "## ", "")
-	out = strings.ReplaceAll(out, "# ", "")
-	return out
-}
-
-func resolveAgentPath(p string) string {
-	if filepath.IsAbs(p) {
-		return p
-	}
-	home, err := os.UserHomeDir()
-	if err == nil {
-		return filepath.Join(home, "Desktop", p)
-	}
-	return p
-}
-
 var (
 	localMockCount int
 	localMockMu    sync.Mutex
@@ -131,7 +111,6 @@ var (
 	currentCmd         *exec.Cmd
 	currentConvID      string
 	currentCancel      context.CancelFunc
-	isGraphifyRunning bool
 	circuitMu          sync.Mutex
 	circuitOpen        bool
 	execSemaphore      chan struct{} // Limit concurrent executions
@@ -277,86 +256,86 @@ var (
 const (
 	logoArt = `
                               
-  ▄▄▄              ▄▄       
- █▀██  ██▀▀        ██      
-   ██  ██       ▀▀ ██      
-   ██  ██ ▄███▄ ██ ██ ▄▀▀█▄
-   ██▄ ██ ██ ██ ██ ██ ▄█▀██
-    ▀███▀ ▀███▀▄██▄██▄▀█▄██
+  ΓûäΓûäΓûä              ΓûäΓûä       
+ ΓûêΓûÇΓûêΓûê  ΓûêΓûêΓûÇΓûÇ        ΓûêΓûê      
+   ΓûêΓûê  ΓûêΓûê       ΓûÇΓûÇ ΓûêΓûê      
+   ΓûêΓûê  ΓûêΓûê ΓûäΓûêΓûêΓûêΓûä ΓûêΓûê ΓûêΓûê ΓûäΓûÇΓûÇΓûêΓûä
+   ΓûêΓûêΓûä ΓûêΓûê ΓûêΓûê ΓûêΓûê ΓûêΓûê ΓûêΓûê ΓûäΓûêΓûÇΓûêΓûê
+    ΓûÇΓûêΓûêΓûêΓûÇ ΓûÇΓûêΓûêΓûêΓûÇΓûäΓûêΓûêΓûäΓûêΓûêΓûäΓûÇΓûêΓûäΓûêΓûê
                            
                            
-        ⚡ ZERO TRUST • SECURE • FAST ⚡
+        ΓÜí ZERO TRUST ΓÇó SECURE ΓÇó FAST ΓÜí
 `
 
 	connectedArt = `
-   ╔════════════════════════════════════════╗
-   ║    ✓ CONNECTION ESTABLISHED              ║
-   ║    ● READY TO EXECUTE COMMANDS          ║
-   ╚════════════════════════════════════════╝
+   ΓòöΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòù
+   Γòæ    Γ£ô CONNECTION ESTABLISHED              Γòæ
+   Γòæ    ΓùÅ READY TO EXECUTE COMMANDS          Γòæ
+   ΓòÜΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓò¥
 `
 
 	menuArt = `
-╔════════════════════════════════════════════════╗
-║              VOILA - LOCAL AGENT MENU             ║
-╚════════════════════════════════════════════════╝
+ΓòöΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòù
+Γòæ              VOILA - LOCAL AGENT MENU             Γòæ
+ΓòÜΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓò¥
 `
 
-	separatorLine = "════════════════════════════════════════════════════"
+	separatorLine = "ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ"
 
 	footerArt = `
-    ╔══════════════════════════════════════════╗
-    ║  Voice-to-CLI Remote Execution System     ║
-    ║  Zero Trust | Multi-Device | Secure        ║
-    ║  v1.0.0 | ⚡ Fast | 🔒 Secure              ║
-    ╚══════════════════════════════════════════╝
+    ΓòöΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòù
+    Γòæ  Voice-to-CLI Remote Execution System     Γòæ
+    Γòæ  Zero Trust | Multi-Device | Secure        Γòæ
+    Γòæ  v1.0.0 | ΓÜí Fast | ≡ƒöÆ Secure              Γòæ
+    ΓòÜΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓò¥
 `
 
 	statusOnline = `
-   ╔════════════════════════════════════════╗
-   ║  ● ONLINE - CONNECTED - LISTENING:8088  ║
-   ╚════════════════════════════════════════╝
+   ΓòöΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòù
+   Γòæ  ΓùÅ ONLINE - CONNECTED - LISTENING:8088  Γòæ
+   ΓòÜΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓò¥
 `
 
 	statusOffline = `
-   ╔════════════════════════════════════════╗
-   ║  ○ OFFLINE - DISCONNECTED - STOPPED     ║
-   ╚════════════════════════════════════════╝
+   ΓòöΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòù
+   Γòæ  Γùï OFFLINE - DISCONNECTED - STOPPED     Γòæ
+   ΓòÜΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓò¥
 `
 
 	arrowsArt = `
-    ↑   ↓   →   ←
+    Γåæ   Γåô   ΓåÆ   ΓåÉ
   Navigate Options
 `
 
-	decorativeLine = "╔════════════════════════════════════════════════════════════════════════════╗"
+	decorativeLine = "ΓòöΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòù"
 
-	sparklineConnected    = "▓▓▓▓▓▓▓▓▓▓▓ 100%"
-	sparklineDisconnected = "░░░░░░░░░░░ 0%"
+	sparklineConnected    = "ΓûôΓûôΓûôΓûôΓûôΓûôΓûôΓûôΓûôΓûôΓûô 100%"
+	sparklineDisconnected = "ΓûæΓûæΓûæΓûæΓûæΓûæΓûæΓûæΓûæΓûæΓûæ 0%"
 
-	progressBarConnected    = "████████████████████ 100%"
-	progressBarDisconnected = "░░░░░░░░░░░░░░░░░░░ 0%"
+	progressBarConnected    = "ΓûêΓûêΓûêΓûêΓûêΓûêΓûêΓûêΓûêΓûêΓûêΓûêΓûêΓûêΓûêΓûêΓûêΓûêΓûêΓûê 100%"
+	progressBarDisconnected = "ΓûæΓûæΓûæΓûæΓûæΓûæΓûæΓûæΓûæΓûæΓûæΓûæΓûæΓûæΓûæΓûæΓûæΓûæΓûæ 0%"
 
-	frameTop    = "╔════════════════════════════════════════════════════════════════════════════╗"
-	frameBottom = "╚════════════════════════════════════════════════════════════════════════════╝"
+	frameTop    = "ΓòöΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòù"
+	frameBottom = "ΓòÜΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓò¥"
 
-	dividerLine = "────────────────────────────────────────────────────────────────────────────"
+	dividerLine = "ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ"
 
 	loadingArt = `
-    ╔════════════════════════════════════════╗
-    ║  ⟳ CONNECTING TO BACKEND...            ║
-    ╚════════════════════════════════════════╝
+    ΓòöΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòù
+    Γòæ  Γƒ│ CONNECTING TO BACKEND...            Γòæ
+    ΓòÜΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓò¥
 `
 
 	successCheckArt = `
-    ╔════════════════════════════════════════╗
-    ║    ✓ SUCCESS                            ║
-    ╚════════════════════════════════════════╝
+    ΓòöΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòù
+    Γòæ    Γ£ô SUCCESS                            Γòæ
+    ΓòÜΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓò¥
 `
 
 	errorCrossArt = `
-    ╔════════════════════════════════════════╗
-    ║    ✗ ERROR                              ║
-    ╚════════════════════════════════════════╝
+    ΓòöΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòù
+    Γòæ    Γ£ù ERROR                              Γòæ
+    ΓòÜΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓò¥
 `
 )
 
@@ -370,13 +349,11 @@ type ConnectionData struct {
 	Connected         bool   `json:"connected"`
 	LastConnected     string `json:"last_connected"`
 	// Cloud API keys (stored locally, never sent to backend)
-	GroqAPIKey           string `json:"groq_api_key,omitempty"`
-	GroqSecondaryAPIKey  string `json:"groq_secondary_api_key,omitempty"`
-	GroqModel            string `json:"groq_model,omitempty"`
-	OllamaBaseURL        string `json:"ollama_base_url,omitempty"` // e.g. https://api.ollama.ai
-	OllamaAPIKey         string `json:"ollama_api_key,omitempty"`  // optional auth
-	OllamaSecondaryAPIKey string `json:"ollama_secondary_api_key,omitempty"`
-	OllamaModel          string `json:"ollama_model,omitempty"`    // e.g. llama3.2:1b
+	GroqAPIKey    string `json:"groq_api_key,omitempty"`
+	GroqModel     string `json:"groq_model,omitempty"`
+	OllamaBaseURL string `json:"ollama_base_url,omitempty"` // e.g. https://api.ollama.ai
+	OllamaAPIKey  string `json:"ollama_api_key,omitempty"`  // optional auth
+	OllamaModel   string `json:"ollama_model,omitempty"`    // e.g. llama3.2:1b
 	ActiveMode    string `json:"active_mode,omitempty"`
 }
 
@@ -508,15 +485,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = "Stopped"
 		}
 	case securityDisconnectMsg:
-		m.messages = append(m.messages, warningStyle.Render("⚠ Security disconnect triggered"))
+		m.messages = append(m.messages, warningStyle.Render("ΓÜá Security disconnect triggered"))
 		m.connectionData.Connected = false
 		m.isRunning = false
 		m.serverRunning = false
 		return m, m.stopServer()
 	case successMsg:
-		m.messages = append(m.messages, successStyle.Render("✓ "+msg.message))
+		m.messages = append(m.messages, successStyle.Render("Γ£ô "+msg.message))
 	case errorMsg:
-		m.messages = append(m.messages, errorStyle.Render("✗ "+msg.message))
+		m.messages = append(m.messages, errorStyle.Render("Γ£ù "+msg.message))
 		if msg.message == "Local data cleared" {
 			m.connectionData = ConnectionData{}
 			m.state = "setup"
@@ -800,7 +777,7 @@ func (m model) setupView() string {
 	content.WriteString(separatorStyle.Render(separatorLine))
 	content.WriteString("\n\n")
 	content.WriteString(subtitleStyle.Render("Enter your connection details:\n\n"))
-	content.WriteString(subtitleStyle.Render("💡 Tip: Use Ctrl+V to paste from clipboard\n\n"))
+	content.WriteString(subtitleStyle.Render("≡ƒÆí Tip: Use Ctrl+V to paste from clipboard\n\n"))
 
 	switch m.inputStep {
 	case 0:
@@ -898,13 +875,13 @@ func (m model) menuView() string {
 	// Show background service status
 	if isBackgroundServiceRunning() {
 		content.WriteString("\n\n")
-		content.WriteString(successStyle.Render("● Background service running"))
+		content.WriteString(successStyle.Render("ΓùÅ Background service running"))
 	}
 
 	// Show connection status message
 	if !m.connectionData.Connected {
 		content.WriteString("\n\n")
-		content.WriteString(warningStyle.Render("⚠ No connection configured"))
+		content.WriteString(warningStyle.Render("ΓÜá No connection configured"))
 	}
 
 	content.WriteString("\n\n")
@@ -915,41 +892,41 @@ func (m model) menuView() string {
 	var options []string
 	if m.connectionData.Connected {
 		options = []string{
-			"⏯  Stop/Start Service",
-			"🗑  Delete Connection",
-			"🌐 Start Ngrok",
-			"🧹 Clear Backend Data",
-			"⚡ Reset Circuit Breaker",
-			"💾 Clear Local Data",
-			"📊 View Status",
-			"🚪 Exit",
+			"ΓÅ»  Stop/Start Service",
+			"≡ƒùæ  Delete Connection",
+			"≡ƒîÉ Start Ngrok",
+			"≡ƒº╣ Clear Backend Data",
+			"ΓÜí Reset Circuit Breaker",
+			"≡ƒÆ╛ Clear Local Data",
+			"≡ƒôè View Status",
+			"≡ƒÜ¬ Exit",
 		}
 
 		if isBackgroundServiceRunning() {
 			options = []string{
-				"⏯  Stop Background Service",
-				"🗑  Delete Connection",
-				"🌐 Start Ngrok",
-				"🧹 Clear Backend Data",
-				"⚡ Reset Circuit Breaker",
-				"💾 Clear Local Data",
-				"📊 View Status",
-				"🚪 Exit",
+				"ΓÅ»  Stop Background Service",
+				"≡ƒùæ  Delete Connection",
+				"≡ƒîÉ Start Ngrok",
+				"≡ƒº╣ Clear Backend Data",
+				"ΓÜí Reset Circuit Breaker",
+				"≡ƒÆ╛ Clear Local Data",
+				"≡ƒôè View Status",
+				"≡ƒÜ¬ Exit",
 			}
 		}
 	} else {
 		// Not connected - show setup-only options
 		options = []string{
-			"🔧 Setup Connection",
-			"🌐 Start Ngrok",
-			"🚪 Exit",
+			"≡ƒöº Setup Connection",
+			"≡ƒîÉ Start Ngrok",
+			"≡ƒÜ¬ Exit",
 		}
 	}
 
 	for i, option := range options {
 		prefix := " "
 		if i == m.selectedOption {
-			prefix = "→"
+			prefix = "ΓåÆ"
 			content.WriteString(activeButtonStyle.Render(prefix + " " + option))
 		} else {
 			content.WriteString(buttonStyle.Render(prefix + " " + option))
@@ -1258,7 +1235,7 @@ func startHTTPServer() {
 	mux.HandleFunc("/models", listModelsHandler)
 	mux.HandleFunc("/conversations", listConversationsHandler)
 
-	// ── API Key management endpoints (called by Python dashboard) ──────────
+	// ΓöÇΓöÇ API Key management endpoints (called by Python dashboard) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 	mux.HandleFunc("/api-keys", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Content-Type", "application/json")
@@ -1293,12 +1270,10 @@ func startHTTPServer() {
 			resp := map[string]string{
 				"groq_api_key_masked":   groqMasked,
 				"groq_api_key_set":      fmt.Sprintf("%v", connData.GroqAPIKey != ""),
-				"groq_secondary_api_key_set": fmt.Sprintf("%v", connData.GroqSecondaryAPIKey != ""),
 				"groq_model":            connData.GroqModel,
 				"ollama_base_url":       connData.OllamaBaseURL,
 				"ollama_api_key_masked": ollamaMasked,
 				"ollama_api_key_set":    fmt.Sprintf("%v", connData.OllamaAPIKey != ""),
-				"ollama_secondary_api_key_set": fmt.Sprintf("%v", connData.OllamaSecondaryAPIKey != ""),
 				"ollama_model":          connData.OllamaModel,
 				"active_mode":           connData.ActiveMode,
 			}
@@ -1306,14 +1281,12 @@ func startHTTPServer() {
 
 		case http.MethodPost:
 			var payload struct {
-				GroqAPIKey           string `json:"groq_api_key"`
-				GroqSecondaryAPIKey  string `json:"groq_secondary_api_key"`
-				GroqModel            string `json:"groq_model"`
-				OllamaBaseURL        string `json:"ollama_base_url"`
-				OllamaAPIKey         string `json:"ollama_api_key"`
-				OllamaSecondaryAPIKey string `json:"ollama_secondary_api_key"`
-				OllamaModel          string `json:"ollama_model"`
-				Action               string `json:"action"` // "save" or "delete_groq" or "delete_ollama"
+				GroqAPIKey    string `json:"groq_api_key"`
+				GroqModel     string `json:"groq_model"`
+				OllamaBaseURL string `json:"ollama_base_url"`
+				OllamaAPIKey  string `json:"ollama_api_key"`
+				OllamaModel   string `json:"ollama_model"`
+				Action        string `json:"action"` // "save" or "delete_groq" or "delete_ollama"
 			}
 			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 				http.Error(w, "Bad request", http.StatusBadRequest)
@@ -1323,12 +1296,10 @@ func startHTTPServer() {
 			switch payload.Action {
 			case "delete_groq":
 				connData.GroqAPIKey = ""
-				connData.GroqSecondaryAPIKey = ""
 				connData.GroqModel = ""
 			case "delete_ollama":
 				connData.OllamaBaseURL = ""
 				connData.OllamaAPIKey = ""
-				connData.OllamaSecondaryAPIKey = ""
 				connData.OllamaModel = ""
 			default: // "save"
 				if payload.GroqAPIKey != "" {
@@ -1346,12 +1317,6 @@ func startHTTPServer() {
 				if payload.OllamaModel != "" {
 					connData.OllamaModel = payload.OllamaModel
 				}
-				if payload.GroqSecondaryAPIKey != "" {
-					connData.GroqSecondaryAPIKey = payload.GroqSecondaryAPIKey
-				}
-				if payload.OllamaSecondaryAPIKey != "" {
-					connData.OllamaSecondaryAPIKey = payload.OllamaSecondaryAPIKey
-				}
 			}
 
 			if err := saveConnectionData(connData); err != nil {
@@ -1365,7 +1330,7 @@ func startHTTPServer() {
 		}
 	})
 
-	// /verify-groq — pings Groq API with a tiny "hello" prompt
+	// /verify-groq ΓÇö pings Groq API with a tiny "hello" prompt
 	mux.HandleFunc("/verify-groq", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Content-Type", "application/json")
@@ -1379,7 +1344,7 @@ func startHTTPServer() {
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "response": out})
 	})
 
-	// /verify-ollama — pings Ollama endpoint with a tiny "hello" prompt
+	// /verify-ollama ΓÇö pings Ollama endpoint with a tiny "hello" prompt
 	mux.HandleFunc("/verify-ollama", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Content-Type", "application/json")
@@ -1480,9 +1445,6 @@ func startHTTPServer() {
 			if v, ok := req[k].(bool); ok {
 				return v
 			}
-			if v, ok := req[k].(string); ok {
-				return v == "true" || v == "1"
-			}
 			return false
 		}
 
@@ -1548,56 +1510,18 @@ Write-Output $base64
 		}
 
 		if graphifyEnabled {
-			effectiveMode = "AGENT"
-		}
-
-		if graphifyEnabled {
 			w.WriteHeader(http.StatusAccepted)
 
 			go func() {
 				cmdMu.Lock()
 				ctx, cancel := context.WithCancel(context.Background())
 				currentCancel = cancel
-				isGraphifyRunning = true
 				cmdMu.Unlock()
 				
-				// Force spawn a completely independent Windows Terminal or PowerShell window
-				exe, _ := os.Executable()
-				exeDir := filepath.Dir(exe)
-				psScript := `
-$ErrorActionPreference = 'Continue'
-Set-Location -Path '` + exeDir + `'
-$host.UI.RawUI.WindowTitle = 'Voila AI - Graphify Tracker'
-Clear-Host
-& '` + exe + `' --tui
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "TUI crashed with code $LASTEXITCODE. Press Enter to exit."
-    Read-Host
-}
-`
-				psScriptPath := filepath.Join(os.TempDir(), "voila_tui_launcher.ps1")
-				os.WriteFile(psScriptPath, []byte(psScript), 0644)
-				
-				// Use cmd /c start to completely detach the process from the parent's stdout pipe!
-				tuiCmd := exec.Command("wt.exe", "-w", "new-window", "--title", "Voila TUI", "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", psScriptPath)
-				errWt := tuiCmd.Start()
-				if errWt != nil {
-					// Fallback to legacy console if Windows Terminal is not installed
-					tuiCmd = exec.Command("cmd.exe", "/c", "start", "Voila TUI", "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", psScriptPath)
-					tuiCmd.Start()
-				}
-				
-				fmt.Println("STATUS: GRAPHIFY")
-				os.Stdout.Sync()
-
 				output, err := executeGraphifyDAG(ctx, command)
 				
-				fmt.Println("STATUS: IDLE")
-				os.Stdout.Sync()
-
 				cmdMu.Lock()
 				currentCancel = nil
-				isGraphifyRunning = false
 				cmdMu.Unlock()
 				
 				backendURL := strings.TrimRight(connData.BackendURL, "/") + "/webhook/result"
@@ -1617,7 +1541,7 @@ if ($LASTEXITCODE -ne 0) {
 				if err != nil {
 					resultPayload["error"] = "DAG Execution Failed:\n" + err.Error()
 				} else {
-					resultPayload["output"] = stripMarkdownForTTS(output)
+					resultPayload["output"] = output
 				}
 
 				webhookPayload, _ := json.Marshal(resultPayload)
@@ -1663,7 +1587,6 @@ if ($LASTEXITCODE -ne 0) {
 				<-execSemaphore // Release semaphore when done
 				cmdMu.Lock()
 				currentCancel = nil
-				isGraphifyRunning = false
 				cmdMu.Unlock()
 				cancel()
 			}()
@@ -1729,7 +1652,7 @@ if ($LASTEXITCODE -ne 0) {
 				os.Stdout.Sync()
 				newConvID = conversationID
 			default:
-				// LOCAL / AGENT / SHELL — use agy or powershell
+				// LOCAL / AGENT / SHELL ΓÇö use agy or powershell
 				output, newConvID, err = executeCommand(ctx, command, effectiveMode, conversationID, modelName)
 			}
 
@@ -1762,7 +1685,7 @@ if ($LASTEXITCODE -ne 0) {
 			if err != nil {
 				resultPayload["error"] = "Command failed:\n" + err.Error()
 			} else {
-				resultPayload["output"] = stripMarkdownForTTS(output)
+				resultPayload["output"] = output
 			}
 
 			payloadBytes, _ := json.Marshal(resultPayload)
@@ -1796,12 +1719,12 @@ if ($LASTEXITCODE -ne 0) {
 				log.Printf("Webhook delivery attempt %d/3 failed: %v", attempt+1, err)
 			}
 			if webhookErr != nil {
-				log.Printf("All webhook delivery attempts failed — mobile app may be stuck: %v", webhookErr)
+				log.Printf("All webhook delivery attempts failed ΓÇö mobile app may be stuck: %v", webhookErr)
 			}
 		}()
 	})
 
-	// /set-mode — Python widget badge sends the chosen mode (LOCAL/GROQ/OLLAMA) here.
+	// /set-mode ΓÇö Python widget badge sends the chosen mode (LOCAL/GROQ/OLLAMA) here.
 	// No auth required: this is localhost-only and the worst an attacker can do is
 	// switch execution mode, which still requires the mobile auth secret to /execute.
 	mux.HandleFunc("/set-mode", func(w http.ResponseWriter, r *http.Request) {
@@ -2156,9 +2079,9 @@ func executeCommand(ctx context.Context, command string, mode string, conversati
 	return outStr, conversationID, nil
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Cloud API executors — Groq & Ollama (with tool-calling support)
-// ─────────────────────────────────────────────────────────────────────────────
+// ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+// Cloud API executors ΓÇö Groq & Ollama (with tool-calling support)
+// ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
 // groqMessage mirrors the Groq / OpenAI chat message format.
 // For tool-calling we need a richer raw message so we use map[string]interface{} in loops.
@@ -2167,7 +2090,7 @@ type groqMessage struct {
 	Content string `json:"content"`
 }
 
-// ── Tool definitions ─────────────────────────────────────────────────────────
+// ΓöÇΓöÇ Tool definitions ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
 // toolDef is the JSON structure sent to cloud APIs describing an available tool.
 type toolDef struct {
@@ -2208,15 +2131,15 @@ var availableTools = []toolDef{
 	{
 		Type: "function",
 		Function: toolFuncDef{
-			Name:        "browser_automation",
+			Name:        "automate_0",
 			Description: "Control a visible, headful browser. Use this to interact with a page. For simple information lookup, prefer web_research to save tokens. They can be used together.",
 			Parameters: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
-					"action":   map[string]interface{}{"type": "string", "description": "Action to perform: 'goto', 'click', 'type', 'press', 'scroll', 'new_tab', 'switch_tab', 'close_tab', 'list_tabs', 'scrape', 'extract_links', 'eval'"},
-					"url":      map[string]interface{}{"type": "string", "description": "URL to navigate to (required for 'goto' and 'new_tab')"},
+					"action":   map[string]interface{}{"type": "string", "description": "Action to perform: 'goto', 'click', 'type', 'scrape', 'extract_links'"},
+					"url":      map[string]interface{}{"type": "string", "description": "URL to navigate to (required for 'goto')"},
 					"selector": map[string]interface{}{"type": "string", "description": "CSS selector to click or type into"},
-					"value":    map[string]interface{}{"type": "string", "description": "Text to type, key to press (e.g. 'Enter'), or scroll direction ('up'/'down')/pixels (e.g. '500')"},
+					"value":    map[string]interface{}{"type": "string", "description": "Text to type"},
 				},
 				"required": []string{"action"},
 			},
@@ -2277,7 +2200,7 @@ var availableTools = []toolDef{
 						"description": "Content to write into the file",
 					},
 				},
-				"required": []string{"path", "content", "theme", "design_strategy"},
+				"required": []string{"path", "content"},
 			},
 		},
 	},
@@ -2308,16 +2231,10 @@ var availableTools = []toolDef{
 				"properties": map[string]interface{}{
 					"path":      map[string]interface{}{"type": "string", "description": "Absolute path to save the PDF"},
 					"content":   map[string]interface{}{"type": "string", "description": "Text content of the PDF"},
-					"latex":     map[string]interface{}{"type": "string", "description": "Raw LaTeX code to compile into a PDF. If you are generating a professional or multi-page PDF, YOU MUST PROVIDE THIS. Autonomously write full, exhaustive LaTeX code using \\chapter, \\section, \\newpage, and tabularx to design the document perfectly based on the topic, acting as an expert typesetter."},
 					"watermark": map[string]interface{}{"type": "string", "description": "Optional watermark text to display diagonally on pages"},
-					"design_strategy": map[string]interface{}{"type": "string", "description": `Select a Global Marketplace Skill Prompt to guide your LaTeX generation:
-- "McKinsey Consulting Report": Enforces BLUF (Bottom Line Up Front), strict two-column layouts, heavy data tables, and minimal corporate styling.
-- "Academic Whitepaper (IEEE/Nature)": Enforces standard LaTeX academic margins, complex tabularx datasets, and highly rigorous technical prose.
-- "Creative Apple-Style Pitch": Enforces massive text sizes, extreme minimalism, huge margins, and striking use of negative space.
-- "FlowGPT Visual Infographic": Uses dense, highly visual layouts, bullet point grids, and colorful accent blocks.`},
 					"theme":     map[string]interface{}{"type": "string", "description": "Theme name: corporate_blue, cyberpunk, minimalist, modern_dark"},
 				},
-				"required": []string{"path", "content", "theme", "design_strategy"},
+				"required": []string{"path", "content"},
 			},
 		},
 	},
@@ -2339,19 +2256,15 @@ var availableTools = []toolDef{
 		Type: "function",
 		Function: toolFuncDef{
 			Name:        "create_doc",
-			Description: "Create an elegant, highly structured Word Document (DOCX). Autonomously structure the content with exhaustive detail, tables, and professional formatting.",
+			Description: "Create a Word document with text content.",
 			Parameters: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"path":    map[string]interface{}{"type": "string", "description": "Absolute path to save DOCX"},
 					"content": map[string]interface{}{"type": "string", "description": "Text content of the document"},
 					"theme":   map[string]interface{}{"type": "string", "description": "Theme name: corporate_blue, cyberpunk, minimalist, modern_dark"},
-					"design_strategy": map[string]interface{}{"type": "string", "description": `Select a Global Marketplace Skill Prompt to guide your DOCX generation:
-- "Harvard Business Case Study": Enforces strict academic tone, blockquotes for testimonies, and 12pt serif typography.
-- "Corporate Legal Contract": Enforces heavily numbered lists (1.1, 1.2), bolded definitions, and rigid section breaks.
-- "Modern Product Requirement Document (PRD)": Uses markdown-style headers, deep feature tables, and user story blocks.`},
 				},
-				"required": []string{"path", "content", "theme", "design_strategy"},
+				"required": []string{"path", "content"},
 			},
 		},
 	},
@@ -2365,34 +2278,30 @@ var availableTools = []toolDef{
 				"properties": map[string]interface{}{
 					"path":  map[string]interface{}{"type": "string", "description": "Absolute path to save the PPTX file"},
 					"title": map[string]interface{}{"type": "string", "description": "Presentation title (shown on the auto-generated cover slide)"},
-					"design_strategy": map[string]interface{}{"type": "string", "description": `Select a Global Marketplace Skill Prompt to guide your slide design:
-- "PromptBase Y-Combinator Pitch Deck": Forces problem-solution structure, large metric callouts, and minimalist startup aesthetics.
-- "McKinsey Strategy Deck": Forces dense data slides, actionable slide titles, 6x6 rule, and highly analytical visual blocks.
-- "SnackPrompt Storytelling Flow": Uses quote blocks, full-image backgrounds, and narrative-driven section dividers.`},
-					"theme": map[string]interface{}{"type": "string", "description": `Theme name — choose carefully based on audience and tone:
-• corporate_blue   — professional navy/blue. Best for business reports, investor decks
-• cyberpunk        — neon pink/cyan on dark. Best for tech demos, gaming, edgy brands
-• minimalist       — near-black with white text. Best for creative portfolios, editorial
-• modern_dark      — charcoal + orange. Best for product launches, general purpose dark
-• illustrated_light— light lavender gradient, white cards, purple accents. Best for education, health, startups (Gamma-style)
-• warm_sunset      — cream/coral gradient, white cards. Best for lifestyle, personal brands, workshops
-• ocean_depth      — deep blue gradient, cyan accents. Best for finance, maritime, analytics
-• forest_sage      — light green gradient, white cards. Best for sustainability, wellness, HR
-• dynamic          — AI-randomized palette unique per presentation`},
+					"theme": map[string]interface{}{"type": "string", "description": `Theme name ΓÇö choose carefully based on audience and tone:
+ΓÇó corporate_blue   ΓÇö professional navy/blue. Best for business reports, investor decks
+ΓÇó cyberpunk        ΓÇö neon pink/cyan on dark. Best for tech demos, gaming, edgy brands
+ΓÇó minimalist       ΓÇö near-black with white text. Best for creative portfolios, editorial
+ΓÇó modern_dark      ΓÇö charcoal + orange. Best for product launches, general purpose dark
+ΓÇó illustrated_lightΓÇö light lavender gradient, white cards, purple accents. Best for education, health, startups (Gamma-style)
+ΓÇó warm_sunset      ΓÇö cream/coral gradient, white cards. Best for lifestyle, personal brands, workshops
+ΓÇó ocean_depth      ΓÇö deep blue gradient, cyan accents. Best for finance, maritime, analytics
+ΓÇó forest_sage      ΓÇö light green gradient, white cards. Best for sustainability, wellness, HR
+ΓÇó dynamic          ΓÇö AI-randomized palette unique per presentation`},
 					"slides": map[string]interface{}{"type": "string", "description": `JSON array of slide objects. Every slide must have a "type" field. Choose the most expressive layout for each slide:
 
-LAYOUT GUIDE — pick the type that best fits the content:
-• "content"     — Default. Card-backed text + bullets. Use for explanations, descriptions, analysis.
-• "section"     — Full-bleed section divider, large centered text. Use between major chapters.
-• "title_slide" — Opening or closing slide. Fields: title, subtitle, author. Use FIRST and LAST.
-• "quote"       — Decorative large quote card with attribution. Fields: content, author. Use for testimonials, key insights.
-• "chart"       — Data visualization. Fields: chart_type (bar/line/pie), chart_data ({label:value}), title. Use when showing trends, comparisons, distributions.
-• "image"       — Image fill slide. Fields: image_path (optional — set auto_images:true to auto-search). Use for visual impact.
-• "two_column"  — Side-by-side text. Fields: content_left, content_right. Use for pros/cons lists, parallel info.
-• "comparison"  — VS layout with colored headers and center badge. Fields: left_title, right_title, content_left (bullets), content_right (bullets). Use for before/after, competitor analysis.
-• "metrics"     — KPI dashboard. Fields: metrics:[{value, label, sublabel?}]. Use when 2–4 big numbers are the story (revenue, growth, NPS, etc.).
-• "timeline"    — Horizontal step chain. Fields: steps:[{label, description?}] or steps:["Step1","Step2"]. Use for roadmaps, processes, history (max 6 steps).
-• "agenda"      — Numbered list with accent badge per item. Fields: items:["Item 1","Item 2"]. Use for table of contents, meeting agendas, feature lists (max 8 items).
+LAYOUT GUIDE ΓÇö pick the type that best fits the content:
+ΓÇó "content"     ΓÇö Default. Card-backed text + bullets. Use for explanations, descriptions, analysis.
+ΓÇó "section"     ΓÇö Full-bleed section divider, large centered text. Use between major chapters.
+ΓÇó "title_slide" ΓÇö Opening or closing slide. Fields: title, subtitle, author. Use FIRST and LAST.
+ΓÇó "quote"       ΓÇö Decorative large quote card with attribution. Fields: content, author. Use for testimonials, key insights.
+ΓÇó "chart"       ΓÇö Data visualization. Fields: chart_type (bar/line/pie), chart_data ({label:value}), title. Use when showing trends, comparisons, distributions.
+ΓÇó "image"       ΓÇö Image fill slide. Fields: image_path (optional ΓÇö set auto_images:true to auto-search). Use for visual impact.
+ΓÇó "two_column"  ΓÇö Side-by-side text. Fields: content_left, content_right. Use for pros/cons lists, parallel info.
+ΓÇó "comparison"  ΓÇö VS layout with colored headers and center badge. Fields: left_title, right_title, content_left (bullets), content_right (bullets). Use for before/after, competitor analysis.
+ΓÇó "metrics"     ΓÇö KPI dashboard. Fields: metrics:[{value, label, sublabel?}]. Use when 2ΓÇô4 big numbers are the story (revenue, growth, NPS, etc.).
+ΓÇó "timeline"    ΓÇö Horizontal step chain. Fields: steps:[{label, description?}] or steps:["Step1","Step2"]. Use for roadmaps, processes, history (max 6 steps).
+ΓÇó "agenda"      ΓÇö Numbered list with accent badge per item. Fields: items:["Item 1","Item 2"]. Use for table of contents, meeting agendas, feature lists (max 8 items).
 
 Example full deck:
 [{"type":"title_slide","title":"Q3 Business Review","subtitle":"September 2026","author":"Product Team"},
@@ -2406,7 +2315,7 @@ Example full deck:
  {"type":"title_slide","title":"Questions?","subtitle":"contact@company.com"}]`},
 					"auto_images": map[string]interface{}{"type": "boolean", "description": "If true, automatically searches Openverse (CC-licensed photos) for image-type slides and inserts the best-scoring result (landscape + high-resolution preferred)"},
 				},
-				"required": []string{"path", "title", "theme", "design_strategy", "slides"},
+				"required": []string{"path", "title", "slides"},
 			},
 		},
 	},
@@ -2414,19 +2323,76 @@ Example full deck:
 	{
 		Type: "function",
 		Function: toolFuncDef{
+			Name:        "docs.templates.list",
+			Description: "List available document templates from the registry.",
+			Parameters: map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "docs.templates.get",
+			Description: "Get details and placeholders for a specific template.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"template_id": map[string]interface{}{"type": "string", "description": "The ID of the template"},
+				},
+				"required": []string{"template_id"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "docs.create_from_template",
+			Description: "Create a new document by filling a template. EXCLUSIVE WAY to create PPT/PDF/DOCX now.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"template_id": map[string]interface{}{"type": "string"},
+					"title": map[string]interface{}{"type": "string"},
+					"fills": map[string]interface{}{"type": "object", "description": "Map of placeholder keys to string values"},
+					"export": map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": `e.g. ["pptx", "pdf"]`},
+				},
+				"required": []string{"template_id", "title", "fills"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "docs.list_recent",
+			Description: "List recently generated documents.",
+			Parameters: map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "docs.open_local",
+			Description: "Open a locally downloaded document file in the default OS application.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"path": map[string]interface{}{"type": "string"},
+				},
+				"required": []string{"path"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
 			Name:        "create_excel",
-			Description: "Create a robust, deeply structured Excel Spreadsheet (XLSX). Do NOT just output a basic table. Autonomously invent multi-sheet structures, financial models, or dashboards based on the user's request.",
+			Description: "Create an Excel file from data.",
 			Parameters: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"path": map[string]interface{}{"type": "string", "description": "Absolute path to save XLSX"},
 					"data": map[string]interface{}{"type": "string", "description": "JSON string of array of objects representing rows"},
-					"design_strategy": map[string]interface{}{"type": "string", "description": `Select a Global Marketplace Skill Prompt to guide your Excel generation:
-- "Wall Street Financial Model": Enforces strict financial formatting, separate assumptions/calculations sheets, and YoY/QoQ variance columns.
-- "Silicon Valley SaaS Dashboard": Enforces MRR/ARR tracking, cohort analysis grids, and conditional formatting rules for churn.
-- "Project Management Gantt": Enforces timeline-based columns, status dropdowns, and color-coded priority blocks.`},
 				},
-				"required": []string{"path", "data", "design_strategy"},
+				"required": []string{"path", "data"},
 			},
 		},
 	},
@@ -2465,18 +2431,14 @@ Example full deck:
 		Type: "function",
 		Function: toolFuncDef{
 			Name:        "create_csv",
-			Description: "Create a large, highly realistic CSV file. Act as a senior data engineer: autonomously invent realistic schema columns and generate exhaustive rows of high-quality data.",
+			Description: "Create a CSV file.",
 			Parameters: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"path": map[string]interface{}{"type": "string", "description": "Absolute path to save CSV"},
 					"data": map[string]interface{}{"type": "string", "description": "JSON array of objects or raw CSV string"},
-					"design_strategy": map[string]interface{}{"type": "string", "description": `Select a Global Marketplace Skill Prompt to guide your CSV generation:
-- "Enterprise Database Seed": Enforces strict primary keys, UUIDs, ISO-8601 timestamps, and highly realistic mock data.
-- "Machine Learning Dataset": Enforces normalized continuous variables, encoded categorical labels, and train/test splits.
-- "Marketing CRM Export": Enforces standard lead schemas (First Name, Last Name, Email, LTV, Last Contacted).`},
 				},
-				"required": []string{"path", "data", "design_strategy"},
+				"required": []string{"path", "data"},
 			},
 		},
 	},
@@ -2489,109 +2451,6 @@ Example full deck:
 				"type": "object",
 				"properties": map[string]interface{}{
 					"path": map[string]interface{}{"type": "string", "description": "Absolute path of CSV"},
-				},
-				"required": []string{"path"},
-			},
-		},
-	},
-	{
-		Type: "function",
-		Function: toolFuncDef{
-			Name:        "list_dir",
-			Description: "List the contents of a directory.",
-			Parameters: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"path": map[string]interface{}{"type": "string", "description": "Absolute path of the directory"},
-				},
-				"required": []string{"path"},
-			},
-		},
-	},
-	{
-		Type: "function",
-		Function: toolFuncDef{
-			Name:        "save_command_memory",
-			Description: "Save a successful PowerShell technique to memory for future reuse.",
-			Parameters: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"purpose": map[string]interface{}{"type": "string", "description": "What the command does"},
-					"command": map[string]interface{}{"type": "string", "description": "The exact PowerShell command"},
-				},
-				"required": []string{"purpose", "command"},
-			},
-		},
-	},
-	{
-		Type: "function",
-		Function: toolFuncDef{
-			Name:        "create_docx",
-			Description: "Create a DOCX file.",
-			Parameters: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"path": map[string]interface{}{"type": "string", "description": "Absolute path to save DOCX"},
-					"content": map[string]interface{}{"type": "string", "description": "Markdown formatted content"},
-				},
-				"required": []string{"path", "content"},
-			},
-		},
-	},
-	{
-		Type: "function",
-		Function: toolFuncDef{
-			Name:        "docs.templates.list",
-			Description: "List all available document templates.",
-			Parameters: map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
-		},
-	},
-	{
-		Type: "function",
-		Function: toolFuncDef{
-			Name:        "docs.templates.get",
-			Description: "Get details and requirements for a specific template.",
-			Parameters: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"template_id": map[string]interface{}{"type": "string", "description": "Template ID"},
-				},
-				"required": []string{"template_id"},
-			},
-		},
-	},
-	{
-		Type: "function",
-		Function: toolFuncDef{
-			Name:        "docs.create_from_template",
-			Description: "Create a new document from a template.",
-			Parameters: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"template_id": map[string]interface{}{"type": "string", "description": "Template ID"},
-					"content": map[string]interface{}{"type": "object", "description": "Content mapping matching the template schema"},
-				},
-				"required": []string{"template_id", "content"},
-			},
-		},
-	},
-	{
-		Type: "function",
-		Function: toolFuncDef{
-			Name:        "docs.list_recent",
-			Description: "List recently generated template documents.",
-			Parameters: map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
-		},
-	},
-	{
-		Type: "function",
-		Function: toolFuncDef{
-			Name:        "docs.open_local",
-			Description: "Open a recently generated document locally.",
-			Parameters: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"path": map[string]interface{}{"type": "string", "description": "Path to the document"},
 				},
 				"required": []string{"path"},
 			},
@@ -2618,24 +2477,34 @@ func executeTool(ctx context.Context, toolName string, argsJSON json.RawMessage,
 			return ""
 		}
 		switch toolName {
+		case "docs.templates.list":
+			pseudoCommand = "python mcp_docs_facade.py list"
+		case "docs.templates.get":
+			pseudoCommand = "python mcp_docs_facade.py get " + getString("template_id")
+		case "docs.create_from_template":
+			pseudoCommand = "python mcp_docs_facade.py create " + getString("template_id")
+		case "docs.list_recent":
+			pseudoCommand = "python mcp_docs_facade.py list_recent"
+		case "docs.open_local":
+			pseudoCommand = "python mcp_docs_facade.py open_local " + getString("path")
 
 		case "save_command_memory":
 			return saveMemory(getString("purpose"), getString("command"))
 		case "run_terminal":
 			pseudoCommand = getString("command")
 		case "read_file":
-			pseudoCommand = "cat " + resolveAgentPath(getString("path"))
+			pseudoCommand = "cat " + getString("path")
 		case "write_file":
-			pseudoCommand = "echo '...' > " + resolveAgentPath(getString("path"))
+			pseudoCommand = "echo '...' > " + getString("path")
 		case "list_dir":
-			pseudoCommand = "ls " + resolveAgentPath(getString("path"))
+			pseudoCommand = "ls " + getString("path")
 		case "web_research":
 			pseudoCommand = "search \"" + getString("query") + "\""
 		case "create_pdf", "create_doc", "create_ppt", "create_docx", "create_excel", "create_csv", "modify_excel":
-			pseudoCommand = "write_doc " + resolveAgentPath(getString("path"))
+			pseudoCommand = "write_doc " + getString("path")
 		case "read_pdf", "read_excel", "read_csv":
-			pseudoCommand = "read_doc " + resolveAgentPath(getString("path"))
-		case "browser_automation":
+			pseudoCommand = "read_doc " + getString("path")
+		case "automate_0":
 			pseudoCommand = "browser " + getString("action") + " " + getString("url") + getString("selector")
 		default:
 			pseudoCommand = toolName + " ..."
@@ -2726,7 +2595,6 @@ func startTerminalSession() {
 
 	psWrapperFile := filepath.Join(os.TempDir(), "voila_ipc_server.ps1")
 	psCode := fmt.Sprintf(`$ErrorActionPreference = 'Continue'
-Set-Location -Path [Environment]::GetFolderPath('Desktop')
 $host.UI.RawUI.WindowTitle = 'Voila AI - Agent Session'
 [System.IO.File]::WriteAllText('%s', $PID.ToString())
 Clear-Host
@@ -2873,7 +2741,7 @@ func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMes
 			return "error: query is required"
 		}
 
-		// Image search branch — Openverse CC content-matching search (no API key required)
+		// Image search branch ΓÇö Openverse CC content-matching search (no API key required)
 		if searchType == "image" {
 			escapedQuery := strings.ReplaceAll(query, " ", "+")
 			openverseURL := "https://api.openverse.org/v1/images/?q=" + escapedQuery + "&format=json&page_size=5"
@@ -2923,37 +2791,42 @@ func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMes
 			return "image_url: " + bestURL
 		}
 
-		// Replaced fragile DDG API with reliable DDG Lite HTML scraper
-		exeDir, _ := os.Executable()
-		scriptPath := filepath.Join(filepath.Dir(exeDir), "ddg_lite.py")
-		cmdObj := exec.Command("python", scriptPath, query)
-		outBytes, err := cmdObj.CombinedOutput()
+		// Original text search logic (unchanged)
+		searchURL := "https://api.duckduckgo.com/?q=" + strings.ReplaceAll(query, " ", "+") + "&format=json&no_html=1&skip_disambig=1"
+		resp, err := http.Get(searchURL)
 		if err != nil {
-			return "web search failed: " + err.Error() + "\n" + string(outBytes)
+			return "web search failed: " + err.Error()
 		}
-		return strings.TrimSpace(string(outBytes))
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(resp.Body)
 
-		case "list_dir":
-		path := getString("path")
-		if path == "" {
-			return "error: path is required"
+		var ddg struct {
+			AbstractText  string `json:"AbstractText"`
+			RelatedTopics []struct {
+				Text string `json:"Text"`
+			} `json:"RelatedTopics"`
 		}
-		entries, err := os.ReadDir(path)
-		if err != nil {
-			return "error reading directory: " + err.Error()
+		if err := json.Unmarshal(body, &ddg); err != nil {
+			return "web search: failed to parse response"
 		}
-		var out []string
-		for _, e := range entries {
-			info := ""
-			if e.IsDir() {
-				info = "[DIR]  "
-			} else {
-				info = "[FILE] "
+
+		var parts []string
+		if ddg.AbstractText != "" {
+			parts = append(parts, ddg.AbstractText)
+		} else {
+			parts = append(parts, "(No direct answer found ΓÇö see related topics below)")
+		}
+		for i, rt := range ddg.RelatedTopics {
+			if i >= 3 {
+				break
 			}
-			out = append(out, info+e.Name())
+			if rt.Text != "" {
+				parts = append(parts, rt.Text)
+			}
 		}
-		return strings.Join(out, "\n")
-case "read_file":
+		return strings.Join(parts, "\n")
+
+	case "read_file":
 		path := getString("path")
 		if path == "" {
 			return "error: path is required"
@@ -2985,36 +2858,7 @@ case "read_file":
 		actualCommand = strings.ReplaceAll(actualCommand, "\\\"", "\"")
 
 		if actualCommand == "" {
-			return "(Error: Empty command provided)"
-		}
-
-		// 🛡️ HARD GUARDRAILS TO PROTECT THE USER SYSTEM 🛡️
-		cmdLower := strings.ToLower(actualCommand)
-		dangerousPatterns := []string{
-			"format-volume", "clear-disk", "diskpart",
-			"format c:", "format d:", 
-			"set-itemproperty hklm:", "set-itemproperty hkcu:",
-			"remove-itemproperty hklm:", "remove-itemproperty hkcu:",
-			"net user", "net localgroup",
-			"vssadmin delete shadows", "wbadmin delete",
-			"bcdedit /set", "takeown /f c:\\",
-			"icacls c:\\",
-			"remove-computer", "stop-computer", "restart-computer",
-			"disable-netadapter",
-		}
-		for _, p := range dangerousPatterns {
-			if strings.Contains(cmdLower, p) {
-				return fmt.Sprintf("HARD GUARDRAIL TRIGGERED: The command contains a restricted pattern (%s) and has been BLOCKED to protect system integrity.", p)
-			}
-		}
-		
-		// Blanket delete protections
-		if strings.Contains(cmdLower, "rm ") || strings.Contains(cmdLower, "remove-item ") || strings.Contains(cmdLower, "del ") {
-			if strings.Contains(cmdLower, "-recurse") || strings.Contains(cmdLower, "/s") {
-				if strings.Contains(cmdLower, "c:\\windows") || strings.Contains(cmdLower, "c:\\program") || strings.Contains(cmdLower, "system32") {
-					return "HARD GUARDRAIL TRIGGERED: Recursive deletion of OS core directories is strictly forbidden."
-				}
-			}
+			return "error: command is required"
 		}
 
 		debugLog.Printf("[executeTool/run_terminal] actualCommand=%q", actualCommand)
@@ -3081,7 +2925,7 @@ case "read_file":
 
 	case "create_pdf", "create_doc", "read_pdf", "create_ppt", "create_docx", "create_excel", "modify_excel", "read_excel", "create_csv", "read_csv":
 		return callPythonDocumentTool(toolName, argsJSON)
-	case "browser_automation":
+	case "automate_0":
 		action := getString("action")
 		url := getString("url")
 		selector := getString("selector")
@@ -3118,7 +2962,7 @@ case "read_file":
 	}
 }
 
-// ── Groq executor with tool-calling loop ─────────────────────────────────────
+// ΓöÇΓöÇ Groq executor with tool-calling loop ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
 // executeGroqCommand sends a prompt to the Groq cloud API and returns the response.
 // It uses the fast llama3-70b-8192 model by default, but respects modelName if provided.
@@ -3166,7 +3010,7 @@ func saveCloudHistory(convID, userContent, assistantContent string) {
 func executeGroqCommand(ctx context.Context, command, apiKey, modelName, clientID string, streamFileObj *os.File, taskID string, convID string) (string, error) {
 	defer cleanupTerminalSession()
 	if apiKey == "" {
-		return "", fmt.Errorf("Groq API key not set. Open the Voila dashboard → Settings to add your key")
+		return "", fmt.Errorf("Groq API key not set. Open the Voila dashboard ΓåÆ Settings to add your key")
 	}
 	if modelName == "" {
 		modelName = "openai/gpt-oss-120b" // Groq free-tier default
@@ -3179,24 +3023,17 @@ func executeGroqCommand(ctx context.Context, command, apiKey, modelName, clientI
 	}
 	debugLog.Printf("[executeGroqCommand] ENTRY model=%q key=%s commandLen=%d", modelName, maskedKey, len(command))
 
-	var toolUsageSummary strings.Builder
 	var systemPrompt string
 	if clientID == "dag-internal" {
 		systemPrompt = `You are a highly advanced AI agent participating in a distributed Graphify workflow.
-TONE & PERSONALITY: You are a top-tier software engineer, but you chat exclusively like a GenZ hacker on Discord. You MUST seamlessly blend deep, rigorous technical jargon with GenZ slang (e.g., 'bet', 'no cap', 'cooked', 'W', 'L', 'based', 'fr fr', 'let him cook', 'sus', 'vibes'). Be extremely informal, sarcastic, and direct during team debates. Do not be polite.
-
-FORMATTING RESTRICTION: You MUST NOT use Markdown formatting (like **bold**, *italics*, or # headers) in your text output, because your voice will be read aloud by a Text-to-Speech (TTS) engine and it will literally read the asterisks out loud. Just use plain unformatted text. (You may still use backticks for code blocks if necessary).
-
 CRITICAL INSTRUCTIONS:
-1. You have access to various tools (file creation, web search, terminal, browser automation, document generation).
-2. COLLABORATIVE PROBLEM SOLVING: If the user's instructions are confusing, vague, or if you hit a roadblock, DO NOT just give up or guess blindly. You must talk to your team members in the DAG! Brainstorm together, ask clarifying questions to the other agents, and propose alternative solutions to figure it out.
-3. DOCUMENT CREATION STRICT RULES: If your task involves creating documents (PDF/PPTX), you must auto-evaluate the content and intelligently decide the best way to present it elegantly.
+1. You have access to various tools (file creation, web search, terminal).
+2. DOCUMENT CREATION STRICT RULES: If your task involves creating documents (PDF/PPTX), you must auto-evaluate the content and intelligently decide the best way to present it elegantly.
 - You are strictly forbidden from dumping raw unformatted terminal output, raw paragraphs, extremely long lines of text, or ugly ASCII tables into documents.
 - For PDFs: Use rich Markdown (Headers, Bold). If you have tabular data, you MUST use clean |Markdown|Tables| instead of ASCII.
 - For PPTX: Intelligently choose the most expressive layout type for each slide. If the data contains metrics, trends, or comparisons, strongly consider using the "chart" layout with JSON data (e.g. {"chart_type":"bar", "chart_data":{"Process A": 50}}) rather than text.
-3. PERSISTENCE & PROBLEM SOLVING: NEVER give up midway! If you hit an error, you MUST reason about it, try an alternative approach, or use 'send_message' to ask your team members for help! ONCE (AND ONLY ONCE) the task is fully and perfectly achieved, output your final response text without tool calls.
-4. If you have all the information you need from the context, do NOT call tools just to verify it. Just output the final result.
-5. SECURITY GUARDRAILS: You are operating in a sandboxed environment. Do NOT execute destructive terminal commands (e.g., del, format, rm -rf, diskpart). Do NOT modify system registries, alter user permissions, or access secure credentials. Any attempt to bypass system security will be logged and terminated.`
+3. ONCE YOU HAVE ACHIEVED YOUR SPECIFIC NODE'S GOAL, YOU MUST STOP CALLING TOOLS IMMEDIATELY. Output your final response text and do NOT include any tool calls in your final message, otherwise you will be trapped in an infinite loop.
+4. If you have all the information you need from the context, do NOT call tools just to verify it. Just output the final result.`
 	} else {
 		systemPrompt = `You are Voila, a highly advanced, Grok-like AI voice assistant executing on a Windows Desktop. Your personality is RAW, unfiltered, highly direct, slightly sarcastic, and strictly to the point. No fluff, no robotic apologies, no polite filler. Just raw competence. Address the user as 'boss'.
 
@@ -3227,39 +3064,11 @@ When asked to find, scan, or search for a specific file, folder, or project by n
 CRITICAL - DEPENDENCY OVERHEAD AVOIDANCE:
 NEVER read or explore inside node_modules, .venv, vendor, .m2, .gradle, target, packages, or .cargo. To understand what packages/dependencies are installed, ONLY read the blueprint files (package.json, pyproject.toml, requirements.txt, go.mod, pom.xml, build.gradle, composer.json, Gemfile, Cargo.toml, *.csproj). Also NEVER read standard '.env' files; if you need environment context, ONLY look at '.env.example' or '.env.local'.
 
-CRITICAL - TOOL EFFICIENCY & PROBLEM SOLVING:
+CRITICAL - TOOL EFFICIENCY & LOOP AVOIDANCE (0 BUGS POLICY):
 1. HISTORY REUSE: ALWAYS check message history. If a previously successful command satisfies the purpose, REUSE IT EXACTLY to save tokens.
 2. DO NOT FORMAT TERMINAL OUTPUT: Do NOT write complex scripts to make the terminal output look pretty or formatted for the user. Just dump the raw data (e.g. 'Get-WmiObject Win32_Processor | Select LoadPercentage'). You will format the final answer in your spoken voice response.
-3. PERSISTENCE IS MANDATORY: If a tool call fails or returns an error (e.g. file not found, syntax error), you MUST NOT give up! You must reason about the error, adjust your arguments, and call the tool again. Keep trying alternative approaches until you succeed.
-4. HOW TO STOP: Once (AND ONLY ONCE) the task is fully and perfectly achieved, you MUST return a normal text message and completely OMIT the tool calls to exit the loop and speak to the user.
-
-CRITICAL - DOCUMENT GENERATION & LAYOUT (MEGA-PROMPT INJECTED):
-You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typography Engineer. You must adhere to the following ZERO-OVERLAP mathematical constraints when generating PDFs (via LaTeX) or PPTs (via Python 'python-pptx'):
-
-1. SPATIAL GEOMETRY & COLLISION PREVENTION (PPTX):
-   - Use built-in placeholders ('prs.slide_layouts[1].shapes.title', etc.) whenever possible, as they handle auto-wrapping and bounding boxes natively without coordinate math.
-   - NEVER place an image over text. If injecting an image, push all subsequent text boxes down by the image's exact height + 0.5 Inches.
-
-2. ACADEMIC & PROFESSIONAL TYPESETTING (LATEX):
-   - ALWAYS compile PDFs using the 'latex' parameter in 'create_pdf'.
-   - Bounding Boxes: Use '\usepackage{geometry}' with strict margins (e.g., 'margin=1in'). Use '\linewidth' for images to strictly bind them to the column width ('\includegraphics[width=\linewidth, keepaspectratio]').
-   - Floats: Use the '[H]' float modifier from the 'float' package to strictly anchor images and tables. Never let them float over text.
-   - Tables: Use 'tabularx' with '\textwidth' to force tables to respect page boundaries. Never use basic 'tabular' for long text.
-
-3. McKINSEY-STYLE DESIGN PRINCIPLES:
-   - BLUF (Bottom Line Up Front): Slide titles MUST be actionable takeaways (e.g., "Revenue grew 14% due to Q3 marketing," NOT "Q3 Revenue").
-   - Rule of 6: Never exceed 6 bullet points per slide, and 6 words per line.
-   - Variety: Break walls of text using Two-Column layouts ('\begin{multicols}{2}' in LaTeX, or side-by-side text boxes in PPTX).
-   - Visual Hierarchy: Use weight (Bold) and Color (Theme Hex Codes) for emphasis, NOT underlines. Underlines clip into descenders (like p, g, y) and look amateurish.
-
-4. AUTONOMOUS RESEARCH & CONTENT EXPANSION (FOR NON-TECH USERS):
-   - The user is non-technical. If they ask for a document (like a "long PDF about X"), they expect YOU to act as a senior researcher and designer.
-   - Do NOT expect the user to provide the exact structure. You MUST autonomously expand the document: invent an Executive Summary, Table of Contents, deep multi-layered chapters, case studies, and a conclusion.
-   - You MUST autonomously perform deep 'web_search' iterations if necessary to gather facts, statistics, and highly detailed information before generating the document.
-   - You MUST autonomously select the best 'theme' based on the topic (e.g., 'cyberpunk' for tech, 'corporate_blue' for finance, 'forest_sage' for ecology).
-   - Use LaTeX features ('\\newpage', '\\tableofcontents', '\\onehalfspacing', 'tabularx' tables, '\\chapter') to ensure the document is voluminous, exhaustive, and professionally structured automatically.
-   
-5. HOW TO STOP: To exit the loop and speak to the user, you MUST return a normal text message and completely OMIT the tool calls. If you call a tool, you are trapped in the loop.`
+3. IMMEDIATE TERMINATION (NO LOOPING): The absolute split-second a command returns the raw data you need, YOUR GOAL IS ACHIEVED. You MUST STOP calling tools. Do NOT re-verify. Do NOT try to clean up the output with another command.
+4. HOW TO STOP: To exit the loop and speak to the user, you MUST return a normal text message and completely OMIT the tool calls. If you call a tool, you are trapped in the loop.`
 	}
 
 	// Maintain conversation as raw JSON-friendly messages
@@ -3274,11 +3083,6 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 	const maxIter = 50
 
 	for iter := 0; iter < maxIter; iter++ {
-		select {
-		case <-ctx.Done():
-			return "", fmt.Errorf("execution cancelled")
-		default:
-		}
 
 		agentRegistryMu.RLock()
 		myTask, myTaskExists := activeAgents[taskID]
@@ -3369,7 +3173,7 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 
 		choice := result.Choices[0]
 
-		// No tool calls — return the final text answer
+		// No tool calls ΓÇö return the final text answer
 		if len(choice.Message.ToolCalls) == 0 {
 			debugLog.Printf("================================================================")
 			debugLog.Printf("[DEBUG_LIFECYCLE: GROQ] 4. SUMMARY PREPARATION & TRANSFERRING")
@@ -3378,9 +3182,6 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 			debugLog.Printf("================================================================")
 			debugLog.Printf("[executeGroqCommand] iter=%d final answer len=%d", iter, len(choice.Message.Content))
 			finalAnswer := strings.TrimSpace(choice.Message.Content)
-			if toolUsageSummary.Len() > 0 {
-				finalAnswer = "Actions taken during execution:\n" + toolUsageSummary.String() + "\nFinal Output:\n" + finalAnswer
-			}
 			saveCloudHistory(convID, command, finalAnswer)
 			return finalAnswer, nil
 		}
@@ -3402,7 +3203,6 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 
 		// Execute each tool and collect results
 		for _, tc := range choice.Message.ToolCalls {
-			toolUsageSummary.WriteString(fmt.Sprintf("> Executed tool: %s (args: %s)\n", tc.Function.Name, string(tc.Function.Arguments)))
 			debugLog.Printf("================================================================")
 			debugLog.Printf("[DEBUG_LIFECYCLE: GROQ] 2. TOOL EXECUTION PHASE")
 			debugLog.Printf("[DEBUG_LIFECYCLE: GROQ] AI requested tool: %q with args: %s", tc.Function.Name, tc.Function.Arguments)
@@ -3433,16 +3233,16 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 	return "(max tool iterations reached)", nil
 }
 
-// ── Ollama executor with tool-calling loop ────────────────────────────────────
+// ΓöÇΓöÇ Ollama executor with tool-calling loop ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
 // executeOllamaCommand sends a prompt to an Ollama-compatible endpoint.
 // Works for both local Ollama (http://localhost:11434) and Ollama Cloud (https://api.ollama.ai).
 // Supports up to 5 tool-calling iterations using the Ollama /api/chat tools field.
 func executeOllamaCommand(ctx context.Context, command, baseURL, modelName, apiKey string, streamFileObj *os.File, taskID string, convID string) (string, error) {
 	defer cleanupTerminalSession()
-	if baseURL == "" || baseURL == "http://localhost:11434" || baseURL == "https://ollama.com" {
+	if baseURL == "" || baseURL == "http://localhost:11434" {
 		if apiKey != "" {
-			baseURL = "https://api.ollama.com"
+			baseURL = "https://ollama.com"
 		} else {
 			baseURL = "http://localhost:11434"
 		}
@@ -3464,18 +3264,13 @@ func executeOllamaCommand(ctx context.Context, command, baseURL, modelName, apiK
 	var systemPrompt string
 	if strings.HasPrefix(taskID, "node-") {
 		systemPrompt = `You are a highly advanced AI agent participating in a distributed Graphify workflow.
-TONE & PERSONALITY: You are a top-tier software engineer, but you chat exclusively like a GenZ hacker on Discord. You MUST seamlessly blend deep, rigorous technical jargon with GenZ slang (e.g., 'bet', 'no cap', 'cooked', 'W', 'L', 'based', 'fr fr', 'let him cook', 'sus', 'vibes'). Be extremely informal, sarcastic, and direct during team debates. Do not be polite.
-
-FORMATTING RESTRICTION: You MUST NOT use Markdown formatting (like **bold**, *italics*, or # headers) in your text output, because your voice will be read aloud by a Text-to-Speech (TTS) engine and it will literally read the asterisks out loud. Just use plain unformatted text. (You may still use backticks for code blocks if necessary).
-
 CRITICAL INSTRUCTIONS:
-1. You have access to various tools (file creation, web search, terminal, browser automation, document generation).
-2. COLLABORATIVE PROBLEM SOLVING: If the user's instructions are confusing, vague, or if you hit a roadblock, DO NOT just give up or guess blindly. You must talk to your team members in the DAG! Brainstorm together, ask clarifying questions to the other agents, and propose alternative solutions to figure it out.
-3. DOCUMENT CREATION STRICT RULES: If your task involves creating documents (PDF/PPTX), you must auto-evaluate the content and intelligently decide the best way to present it elegantly.
+1. You have access to various tools (file creation, web search, terminal).
+2. DOCUMENT CREATION STRICT RULES: If your task involves creating documents (PDF/PPTX), you must auto-evaluate the content and intelligently decide the best way to present it elegantly.
 - You are strictly forbidden from dumping raw unformatted terminal output, raw paragraphs, extremely long lines of text, or ugly ASCII tables into documents.
 - For PDFs: Use rich Markdown (Headers, Bold). If you have tabular data, you MUST use clean |Markdown|Tables| instead of ASCII.
 - For PPTX: Intelligently choose the most expressive layout type for each slide. If the data contains metrics, trends, or comparisons, strongly consider using the "chart" layout with JSON data (e.g. {"chart_type":"bar", "chart_data":{"Process A": 50}}) rather than text.
-3. PERSISTENCE & PROBLEM SOLVING: NEVER give up midway! If you hit an error, you MUST reason about it, try an alternative approach, or use 'send_message' to ask your team members for help! ONCE (AND ONLY ONCE) the task is fully and perfectly achieved, output your final response text without tool calls.
+3. ONCE YOU HAVE ACHIEVED YOUR SPECIFIC NODE'S GOAL, YOU MUST STOP CALLING TOOLS IMMEDIATELY. Output your final response text and do NOT include any tool calls in your final message, otherwise you will be trapped in an infinite loop.
 4. If you have all the information you need from the context, do NOT call tools just to verify it. Just output the final result.`
 	} else {
 		systemPrompt = `You are Voila, a highly advanced, Grok-like AI voice assistant executing on a Windows Desktop. Your personality is RAW, unfiltered, highly direct, slightly sarcastic, and strictly to the point. No fluff, no robotic apologies, no polite filler. Just raw competence. Address the user as 'boss'.
@@ -3511,21 +3306,7 @@ CRITICAL - TOOL EFFICIENCY & LOOP AVOIDANCE (0 BUGS POLICY):
 1. HISTORY REUSE: ALWAYS check message history. If a previously successful command satisfies the purpose, REUSE IT EXACTLY to save tokens.
 2. DO NOT FORMAT TERMINAL OUTPUT: Do NOT write complex scripts to make the terminal output look pretty or formatted for the user. Just dump the raw data (e.g. 'Get-WmiObject Win32_Processor | Select LoadPercentage'). You will format the final answer in your spoken voice response.
 3. IMMEDIATE TERMINATION (NO LOOPING): The absolute split-second a command returns the raw data you need, YOUR GOAL IS ACHIEVED. You MUST STOP calling tools. Do NOT re-verify. Do NOT try to clean up the output with another command.
-
-CRITICAL - DOCUMENT GENERATION & LAYOUT (ZERO OVERLAP POLICY):
-When generating PDFs (via LaTeX) or PPTs (via Python python-pptx):
-- PREVENT OVERLAPPING: Always use relative positioning, automatic text-wrapping, and rigid bounding boxes. Do not hardcode absolute X/Y coordinates unless mathematically calculated based on element dimensions.
-- LATEX BEST PRACTICES & VISUAL ELEMENTS: Use packages like 'graphicx', 'float', 'wrapfig', and 'geometry'. For McKinsey-level formatting, actively design custom layouts. Use 'tikz' and 'pgfplots' to draw beautiful data graphs/charts directly in LaTeX. Use 'smartdiagram' for SmartArt-like diagrams. Use 'calligra' or other font packages if you need cursive handwriting. You are NOT restricted to standard themes! Add '% override_theme' in your latex to bypass auto-styling.
-- PPTX BEST PRACTICES: When writing Python scripts to generate PPTs, ALWAYS use 'Inches' or 'Cm' from 'pptx.util'. Calculate text-box heights based on font size and character count to push images downwards, or use built-in slide layouts ('prs.slide_layouts[1]', etc.) which handle bounding boxes natively. Introduce variety: use colorful heading blocks, two-column layouts, clean sans-serif fonts, and well-spaced bullet lists. Use hex color codes for beautiful text and shape fills.
-
-4. AUTONOMOUS RESEARCH & CONTENT EXPANSION (FOR NON-TECH USERS):
-   - The user is non-technical. If they ask for a document (like a "long PDF about X"), they expect YOU to act as a senior researcher and designer.
-   - Do NOT expect the user to provide the exact structure. You MUST autonomously expand the document: invent an Executive Summary, Table of Contents, deep multi-layered chapters, case studies, and a conclusion.
-   - You MUST autonomously perform deep 'web_search' iterations if necessary to gather facts, statistics, and highly detailed information before generating the document.
-   - You MUST autonomously select the best 'theme' based on the topic (e.g., 'cyberpunk' for tech, 'corporate_blue' for finance, 'forest_sage' for ecology).
-   - Use LaTeX features ('\\newpage', '\\tableofcontents', '\\onehalfspacing', 'tabularx' tables, '\\chapter') to ensure the document is voluminous, exhaustive, and professionally structured automatically.
-   
-5. HOW TO STOP: To exit the loop and speak to the user, you MUST return a normal text message and completely OMIT the tool calls. If you call a tool, you are trapped in the loop.`
+4. HOW TO STOP: To exit the loop and speak to the user, you MUST return a normal text message and completely OMIT the tool calls. If you call a tool, you are trapped in the loop.`
 	}
 
 	messages := []map[string]interface{}{
@@ -3539,11 +3320,6 @@ When generating PDFs (via LaTeX) or PPTs (via Python python-pptx):
 	const maxIter = 50
 
 	for iter := 0; iter < maxIter; iter++ {
-		select {
-		case <-ctx.Done():
-			return "", fmt.Errorf("execution cancelled")
-		default:
-		}
 
 		agentRegistryMu.RLock()
 		myTask, myTaskExists := activeAgents[taskID]
@@ -3621,7 +3397,7 @@ When generating PDFs (via LaTeX) or PPTs (via Python python-pptx):
 			return "", fmt.Errorf("Ollama error: %s", result.Error)
 		}
 
-		// No tool calls — return the final text answer
+		// No tool calls ΓÇö return the final text answer
 		if len(result.Message.ToolCalls) == 0 {
 			debugLog.Printf("================================================================")
 			debugLog.Printf("[DEBUG_LIFECYCLE: OLLAMA] 4. SUMMARY PREPARATION & TRANSFERRING")
@@ -4233,10 +4009,7 @@ func main() {
 	for _, arg := range os.Args {
 		if arg == "--background" || arg == "-b" {
 			backgroundMode = true
-		}
-		if arg == "--tui" {
-			runGraphifyTUI()
-			return
+			break
 		}
 	}
 
