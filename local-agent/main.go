@@ -3378,9 +3378,6 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 			debugLog.Printf("================================================================")
 			debugLog.Printf("[executeGroqCommand] iter=%d final answer len=%d", iter, len(choice.Message.Content))
 			finalAnswer := strings.TrimSpace(choice.Message.Content)
-			if toolUsageSummary.Len() > 0 {
-				finalAnswer = "Actions taken during execution:\n" + toolUsageSummary.String() + "\nFinal Output:\n" + finalAnswer
-			}
 			saveCloudHistory(convID, command, finalAnswer)
 			return finalAnswer, nil
 		}
@@ -3640,9 +3637,6 @@ When generating PDFs (via LaTeX) or PPTs (via Python python-pptx):
 			debugLog.Printf("================================================================")
 			debugLog.Printf("[executeOllamaCommand] iter=%d final answer len=%d", iter, len(result.Message.Content))
 			finalAnswer := strings.TrimSpace(result.Message.Content)
-			if toolUsageSummary.Len() > 0 {
-				finalAnswer = "Actions taken during execution:\n" + toolUsageSummary.String() + "\nFinal Output:\n" + finalAnswer
-			}
 			saveCloudHistory(convID, command, finalAnswer)
 			return finalAnswer, nil
 		}
