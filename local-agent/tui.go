@@ -42,7 +42,15 @@ type tuiModel struct {
 type graphifyTickMsg time.Time
 
 func runGraphifyTUI() {
-	p := tea.NewProgram(tuiModel{}, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	vp := viewport.New(120, 40)
+	vp.YPosition = 0
+	
+	p := tea.NewProgram(tuiModel{
+		vp:         vp,
+		ready:      true,
+		termWidth:  120,
+		termHeight: 40,
+	}, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("Error: %v", err)
 		os.Exit(1)
@@ -50,7 +58,7 @@ func runGraphifyTUI() {
 }
 
 func (m tuiModel) Init() tea.Cmd {
-	return tea.Batch(tea.EnterAltScreen, tickCmd())
+	return tickCmd()
 }
 
 func tickCmd() tea.Cmd {
@@ -102,6 +110,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var s LiveState
 			if err2 := json.Unmarshal(data, &s); err2 == nil {
 				m.state = s
+				m.vp.GotoBottom()
 			}
 		}
 		return m, tickCmd()
@@ -375,7 +384,7 @@ func renderMeshGraph(state LiveState, styles map[string]lipgloss.Style, termW in
 		if midH > 0            { rows[midH-1] = strings.Repeat("·", hGap) }
 		if midH < boxH-1       { rows[midH+1] = strings.Repeat("·", hGap) }
 
-		return strings.Join(rows, "\n")
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("#22C55E")).Render(strings.Join(rows, "\n"))
 	}
 
 	// ── Rune canvas helper ─────────────────────────────────────────────────
@@ -464,7 +473,7 @@ func renderMeshGraph(state LiveState, styles map[string]lipgloss.Style, termW in
 				}
 			}
 		}
-		return getString(c)
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("#22C55E")).Render(getString(c))
 	}
 
 	// ── Bypass zone (below a row, for non-adjacent nodes in same row) ──────
@@ -525,7 +534,7 @@ func renderMeshGraph(state LiveState, styles map[string]lipgloss.Style, termW in
 				}
 			}
 		}
-		return getString(c)
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("#22C55E")).Render(getString(c))
 	}
 
 	// ── Assemble complete graph ────────────────────────────────────────────
