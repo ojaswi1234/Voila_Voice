@@ -320,7 +320,7 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 					nodeOut, nodeErr = executeGroqCommand(ctx, finalCommand, connData.GroqAPIKey, actualModel, "dag-internal", nil, taskID, "")
 					
 					// Edge Case: Model doesn't support tools
-					if nodeErr != nil && (strings.Contains(strings.ToLower(nodeErr.Error()), "tool") || strings.Contains(strings.ToLower(nodeErr.Error()), "support")) {
+					if nodeErr != nil && (strings.Contains(strings.ToLower(nodeErr.Error()), "tool") || strings.Contains(strings.ToLower(nodeErr.Error()), "support") || strings.Contains(strings.ToLower(nodeErr.Error()), "parse")) {
 						fallbackGroq := "llama-3.1-70b-versatile"
 						gm := fetchGroqModels(connData.GroqAPIKey)
 						for _, m := range gm {
@@ -360,7 +360,7 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 					nodeOut, nodeErr = executeOllamaCommand(ctx, finalCommand, connData.OllamaBaseURL, actualModel, connData.OllamaAPIKey, nil, taskID, "")
 					
 					// Edge Case: Model doesn't support tools
-					if nodeErr != nil && (strings.Contains(strings.ToLower(nodeErr.Error()), "tool") || strings.Contains(strings.ToLower(nodeErr.Error()), "support")) {
+					if nodeErr != nil && (strings.Contains(strings.ToLower(nodeErr.Error()), "tool") || strings.Contains(strings.ToLower(nodeErr.Error()), "support") || strings.Contains(strings.ToLower(nodeErr.Error()), "parse")) {
 						fallbackOllama := "llama3.1:latest"
 						om := fetchOllamaModels(connData.OllamaBaseURL, connData.OllamaAPIKey)
 						for _, m := range om {
