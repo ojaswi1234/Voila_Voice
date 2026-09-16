@@ -326,7 +326,7 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 					// If Groq completely fails, fallback to Ollama
 					if nodeErr != nil {
 						fallbackOllama := "llama3.1:latest"
-						om := fetchOllamaModels(connData.OllamaBaseURL)
+						om := fetchOllamaModels(connData.OllamaBaseURL, connData.OllamaAPIKey)
 						if len(om) > 0 { fallbackOllama = strings.Trim(om[0], "\"") }
 						fmt.Printf("STATUS: SYSTEM_MSG:Node %s Groq exhausted, falling back to Ollama %s...\n", nodeID, fallbackOllama)
 						os.Stdout.Sync()

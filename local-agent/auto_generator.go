@@ -21,7 +21,7 @@ func autoGenerateGraphifyState(ctx context.Context, command string, connData Con
 		groqModels = []string{"\"llama-3.1-70b-versatile\"", "\"mixtral-8x7b-32768\"", "\"gemma2-9b-it\"", "\"llama3-8b-8192\""}
 	}
 	
-	ollamaModels := fetchOllamaModels(connData.OllamaBaseURL)
+	ollamaModels := fetchOllamaModels(connData.OllamaBaseURL, connData.OllamaAPIKey)
 	if len(ollamaModels) == 0 {
 		ollamaModels = []string{"\"llama3.1:latest\"", "\"gemma:7b\"", "\"mistral:latest\""}
 	}
@@ -244,9 +244,18 @@ func fetchGroqModels(apiKey string) []string {
 	return models
 }
 
-func fetchOllamaModels(baseURL string) []string {
-	if baseURL == "" { baseURL = "http://localhost:11434" }
+func fetchOllamaModels(baseURL string, apiKey string) []string {
+	if baseURL == "" || baseURL == "http://localhost:11434" || baseURL == "https://ollama.com" {
+		if apiKey != "" {
+			baseURL = "https://api.ollama.com"
+		} else {
+			baseURL = "http://localhost:11434"
+		}
+	}
 	req, _ := http.NewRequest("GET", strings.TrimRight(baseURL, "/")+"/api/tags", nil)
+	if apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
 	client := &http.Client{Timeout: 5 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil || resp.StatusCode != 200 { return nil }
