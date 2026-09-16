@@ -240,18 +240,14 @@ func renderMeshGraph(state LiveState, styles map[string]lipgloss.Style, termW in
 	if mode == "COMPACT" { nodeVisW = 24 }
 	if mode == "NANO" { nodeVisW = 16 }
 	
-	hGap := 6
+	hGap := 4
 	colW := nodeVisW + hGap
 	boxH := 5
 	if mode == "NANO" { boxH = 3 }
 	if mode == "COMPACT" { boxH = 4 }
 
-	maxCols := termW / colW
-	if maxCols < 1 { maxCols = 1 }
-	if maxCols > len(state.Nodes) { maxCols = len(state.Nodes) }
-
 	vGap := 6 
-	topMargin := 6 // Space at the top for backward routing
+	topMargin := 2
 
 	type NodeRect struct {
 		X, Y, W, H int
@@ -259,69 +255,131 @@ func renderMeshGraph(state LiveState, styles map[string]lipgloss.Style, termW in
 		Rendered []string
 	}
 	
-	rects := make(map[string]*NodeRect)
 	nodeMap := make(map[string]NodeLiveState)
 	for _, n := range state.Nodes { nodeMap[n.ID] = n }
 
-	row := 0
-	col := 0
+	// 1. Calculate Ranks (Levels)
+	inDegree := make(map[string]int)
+	adj := make(map[string][]string)
+	
 	for _, n := range state.Nodes {
-		rect := &NodeRect{
-			ID: n.ID,
-			W: nodeVisW,
-			H: boxH,
-			X: col * colW,
-			Y: topMargin + row * (boxH + vGap),
-		}
-		
-		title := n.Role
-		if title == "" { title = "Unknown" }
-		
-		var content string
-		if mode == "FULL" {
-			if len(title) > 28 { title = title[:25] + "..." }
-			tStr := lipgloss.NewStyle().Bold(true).Render(title)
-			parts  := strings.SplitN(n.Model, "\n", 2)
-			m1 := strings.TrimSpace(parts[0])
-			if len(m1) > 28 { m1 = m1[:25] + "..." }
-			content = fmt.Sprintf("%s\n%s\n[%s]", tStr, lipgloss.NewStyle().Faint(true).Render(m1), strings.ToUpper(n.Status))
-		} else if mode == "COMPACT" {
-			if len(title) > 20 { title = title[:17] + "..." }
-			tStr := lipgloss.NewStyle().Bold(true).Render(title)
-			content = fmt.Sprintf("%s\n[%s]", tStr, strings.ToUpper(n.Status))
-		} else {
-			if len(title) > 14 { title = title[:11] + "..." }
-			content = lipgloss.NewStyle().Bold(true).Render(title)
-		}
-		
-		st, ok := styles[n.Status]
-		if !ok { st = styles["pending"] }
-		
-		var renderedBox string
-		if mode == "NANO" {
-			c := ""
-			if n.Status == "completed" { c = "#10B981" } else if n.Status == "running" { c = "#F59E0B" } else if n.Status == "error" { c = "#EF4444" } else { c = "#9CA3AF" }
-			renderedBox = lipgloss.NewStyle().Background(lipgloss.Color(c)).Foreground(lipgloss.Color("#000000")).Padding(0, 1).Width(nodeVisW).Render(content)
-		} else {
-			renderedBox = st.Copy().Width(nodeVisW-2).Render(content)
-		}
-		
-		rect.Rendered = strings.Split(renderedBox, "\n")
-		rect.H = len(rect.Rendered) 
-		
-		rects[n.ID] = rect
-		col++
-		if col >= maxCols {
-			col = 0
-			row++
+		inDegree[n.ID] = 0
+	}
+	for _, e := range state.Edges {
+		if len(e) >= 2 {
+			adj[e[0]] = append(adj[e[0]], e[1])
+			inDegree[e[1]]++
 		}
 	}
 	
-	totalRows := row + 1
-	if col == 0 { totalRows = row }
+	levelMap := make(map[string]int)
+	var queue []string
+	for id, deg := range inDegree {
+		if deg == 0 {
+			queue = append(queue, id)
+			levelMap[id] = 0
+		}
+	}
 	
-	canvasW := maxCols * colW
-	canvasH := topMargin + totalRows * (boxH + vGap)
+	maxLevel := 0
+	for len(queue) > 0 {
+		curr := queue[0]
+		queue = queue[1:]
+		currLevel := levelMap[curr]
+		if currLevel > maxLevel { maxLevel = currLevel }
+		
+		for _, neighbor := range adj[curr] {
+			if currLevel+1 > levelMap[neighbor] {
+				levelMap[neighbor] = currLevel + 1
+			}
+			inDegree[neighbor]--
+			if inDegree[neighbor] == 0 {
+				queue = append(queue, neighbor)
+			}
+		}
+	}
+
+	// 2. Group by Level and calculate max width
+	levelNodes := make([][]string, maxLevel+1)
+	// fallback for cycles or disconnected nodes
+	for _, n := range state.Nodes {
+		lvl, ok := levelMap[n.ID]
+		if !ok { lvl = 0 } // default
+		levelNodes[lvl] = append(levelNodes[lvl], n.ID)
+	}
+
+	maxNodesInLevel := 0
+	for _, nodes := range levelNodes {
+		if len(nodes) > maxNodesInLevel { maxNodesInLevel = len(nodes) }
+	}
+	
+	// If the widest level exceeds terminal width, force NANO mode and recalculate
+	if maxNodesInLevel * colW > termW {
+		mode = "NANO"
+		nodeVisW = 16
+		boxH = 3
+		colW = nodeVisW + hGap
+	}
+	
+	canvasW := maxNodesInLevel * colW
+	if canvasW < termW-4 { canvasW = termW-4 } // use available space for centering
+	canvasH := topMargin + len(levelNodes) * (boxH + vGap)
+	
+	rects := make(map[string]*NodeRect)
+	
+	// 3. Place nodes centered in their levels
+	for lvl, nodes := range levelNodes {
+		levelW := len(nodes) * colW
+		startX := (canvasW - levelW) / 2
+		if startX < 0 { startX = 0 }
+		
+		for i, id := range nodes {
+			n := nodeMap[id]
+			rect := &NodeRect{
+				ID: n.ID,
+				W: nodeVisW,
+				H: boxH,
+				X: startX + i*colW,
+				Y: topMargin + lvl*(boxH + vGap),
+			}
+			
+			title := n.Role
+			if title == "" { title = "Unknown" }
+			
+			var content string
+			if mode == "FULL" {
+				if len(title) > 28 { title = title[:25] + "..." }
+				tStr := lipgloss.NewStyle().Bold(true).Render(title)
+				parts  := strings.SplitN(n.Model, "\n", 2)
+				m1 := strings.TrimSpace(parts[0])
+				if len(m1) > 28 { m1 = m1[:25] + "..." }
+				content = fmt.Sprintf("%s\n%s\n[%s]", tStr, lipgloss.NewStyle().Faint(true).Render(m1), strings.ToUpper(n.Status))
+			} else if mode == "COMPACT" {
+				if len(title) > 20 { title = title[:17] + "..." }
+				tStr := lipgloss.NewStyle().Bold(true).Render(title)
+				content = fmt.Sprintf("%s\n[%s]", tStr, strings.ToUpper(n.Status))
+			} else {
+				if len(title) > 14 { title = title[:11] + "..." }
+				content = lipgloss.NewStyle().Bold(true).Render(title)
+			}
+			
+			st, ok := styles[n.Status]
+			if !ok { st = styles["pending"] }
+			
+			var renderedBox string
+			if mode == "NANO" {
+				c := ""
+				if n.Status == "completed" { c = "#10B981" } else if n.Status == "running" { c = "#F59E0B" } else if n.Status == "error" { c = "#EF4444" } else { c = "#9CA3AF" }
+				renderedBox = lipgloss.NewStyle().Background(lipgloss.Color(c)).Foreground(lipgloss.Color("#000000")).Padding(0, 1).Width(nodeVisW).Render(content)
+			} else {
+				renderedBox = st.Copy().Width(nodeVisW-2).Render(content)
+			}
+			
+			rect.Rendered = strings.Split(renderedBox, "\n")
+			rect.H = len(rect.Rendered) 
+			rects[n.ID] = rect
+		}
+	}
 	
 	canvas := make([][]rune, canvasH)
 	for i := range canvas {
@@ -340,6 +398,7 @@ func renderMeshGraph(state LiveState, styles map[string]lipgloss.Style, termW in
 		if len(e) >= 2 { edgeSet[e[0]+"->"+e[1]] = true }
 	}
 
+	// Calculate stagger offsets
 	nodeIndex := make(map[string]int)
 	for i, n := range state.Nodes { nodeIndex[n.ID] = i }
 
@@ -351,53 +410,50 @@ func renderMeshGraph(state LiveState, styles map[string]lipgloss.Style, termW in
 		rDst, ok2 := rects[dst]
 		if !ok1 || !ok2 { continue }
 		
+		// Entry point is middle bottom of source
 		fx := rSrc.X + rSrc.W/2
 		fy := rSrc.Y + rSrc.H
 		
+		// Target point is middle top of destination
 		tx := rDst.X + rDst.W/2
 		ty := rDst.Y - 1 
 		
-		busOffset := (nodeIndex[src] % (vGap - 2)) + 1
+		// Stagger the horizontal bus to prevent merging
+		busOffset := (nodeIndex[dst] % (vGap - 2)) + 1
 		busY := rSrc.Y + rSrc.H + busOffset
-		if busY >= rDst.Y && rSrc.Y < rDst.Y {
+		if busY >= rDst.Y {
 			busY = rDst.Y - 1
 		}
 		
-		if rDst.Y <= rSrc.Y {
-			busY = rSrc.Y - busOffset - 1
-			if busY < 0 { busY = 0 }
-			fy = rSrc.Y - 1 
-			ty = rDst.Y + rDst.H
+		// Route downwards (Hierarchical DAG guarantees rDst.Y > rSrc.Y in most cases)
+		if rDst.Y > rSrc.Y {
+			// Vertical down to bus
+			for y := fy; y < busY; y++ { 
+				if canvas[y][fx] == ' ' || canvas[y][fx] == '─' { setR(fx, y, '│') }
+			}
+			setR(fx, busY, '│') // Corner joint
+			
+			// Horizontal bus
+			lx, rx := fx, tx
+			if lx > rx { lx, rx = rx, lx }
+			for x := lx + 1; x < rx; x++ { 
+				if canvas[busY][x] == ' ' || canvas[busY][x] == '│' { setR(x, busY, '─') }
+			}
+			
+			// Vertical down to target
+			for y := busY; y < ty; y++ {
+				if canvas[y][tx] == ' ' || canvas[y][tx] == '─' { setR(tx, y, '│') }
+			}
+			setR(tx, ty, '│')
+			
+			// Insert clean corners
+			if fx != tx {
+				if tx > fx { setR(fx, busY, '╰'); setR(tx, busY, '╮') } 
+				if tx < fx { setR(fx, busY, '╯'); setR(tx, busY, '╭') } 
+			}
+			// Arrowhead
+			setR(tx, ty, '▼')
 		}
-		
-		dir := 1
-		if fy > busY { dir = -1 }
-		for y := fy; y != busY; y += dir { 
-			if canvas[y][fx] == ' ' || canvas[y][fx] == '─' { setR(fx, y, '│') }
-		}
-		setR(fx, busY, '│') // Ensure target cell is drawn
-		
-		lx, rx := fx, tx
-		if lx > rx { lx, rx = rx, lx }
-		for x := lx + 1; x < rx; x++ { 
-			if canvas[busY][x] == ' ' || canvas[busY][x] == '│' { setR(x, busY, '─') }
-		}
-		
-		dir = 1
-		if busY > ty { dir = -1 }
-		for y := busY; y != ty; y += dir {
-			if canvas[y][tx] == ' ' || canvas[y][tx] == '─' { setR(tx, y, '│') }
-		}
-		setR(tx, ty, '│')
-		
-		if fx != tx {
-			if fy < busY && tx > fx { setR(fx, busY, '╰'); setR(tx, busY, '╮') } 
-			if fy < busY && tx < fx { setR(fx, busY, '╯'); setR(tx, busY, '╭') } 
-			if fy > busY && tx > fx { setR(fx, busY, '╭'); setR(tx, busY, '╯') } 
-			if fy > busY && tx < fx { setR(fx, busY, '╮'); setR(tx, busY, '╰') } 
-		}
-		
-		if ty >= busY { setR(tx, ty, '▼') } else { setR(tx, ty, '▲') }
 	}
 
 	for y := 0; y < canvasH; y++ {
@@ -435,7 +491,7 @@ func renderMeshGraph(state LiveState, styles map[string]lipgloss.Style, termW in
 	for y := 0; y < canvasH; y++ {
 		cells[y] = make([]Cell, canvasW)
 		for x := 0; x < canvasW; x++ {
-			cells[y][x] = Cell{Char: string(canvas[y][x]), W: 1, Color: "#22C55E"}
+			cells[y][x] = Cell{Char: string(canvas[y][x]), W: 1, Color: "#10B981"}
 		}
 	}
 	
