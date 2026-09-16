@@ -2875,10 +2875,29 @@ func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMes
 		return "error: failed to parse tool arguments: " + err.Error()
 	}
 
-	// Globally resolve all 'path' parameters so files save to Desktop instead of the hidden local-agent folder
+	// Globally resolve all 'path' parameters so files default to Desktop
 	if pathVal, exists := args["path"]; exists {
 		if pathStr, ok := pathVal.(string); ok {
-			args["path"] = resolveAgentPath(pathStr)
+			
+			// If it's a document generation tool, FORCE it to the Desktop regardless of what absolute path the AI hallucinated
+			isDocTool := false
+			docTools := []string{"create_pdf", "create_doc", "create_ppt", "create_docx", "create_excel", "create_csv"}
+			for _, dt := range docTools {
+				if toolName == dt {
+					isDocTool = true
+					break
+				}
+			}
+
+			if isDocTool {
+				homeDir, _ := os.UserHomeDir()
+				// Extract just the filename to strip out any project folder paths the AI tried to use
+				fileName := filepath.Base(pathStr)
+				args["path"] = filepath.Join(homeDir, "Desktop", fileName)
+			} else {
+				args["path"] = resolveAgentPath(pathStr)
+			}
+			
 			// Re-serialize args JSON so downstream Python tools get the resolved path
 			argsJSON, _ = json.Marshal(args)
 		}
@@ -3331,8 +3350,8 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
    - NEVER use LaTeX! The PDF engine is a Headless Chromium HTML/CSS Architecture.
    - For maximum elegance, output pure HTML. You have access to these CSS layout classes: '.page-break', '.cover-page', '.grid-2', '.grid-3', '.card', and '.callout'. 
    - DO NOT wrap your HTML in '<html>' or '<body>' tags. The backend injects it into a master themed body with auto page-numbering.
-   - **DIAGRAMS & WORKFLOWS**: You MUST use Mermaid.js for system designs, flowcharts, and architecture maps! The PDF engine will automatically render it into gorgeous SVG. Just use standard Markdown code blocks: '''mermaid <code here> '''.
-   - **HANDWRITTEN NOTES**: If you select the 'handwritten' or 'sketching' theme, format your text in a deeply conversational, personal "notebook" tone with lots of blockquotes ('>':) to simulate handwritten margin notes.
+   - **DIAGRAMS & WORKFLOWS**: DO NOT USE Mermaid! When asked for sketched, hand-drawn diagrams or system architecture maps, you MUST use our native AI Image generator by inserting an <img> tag with a prompt. Format: '<img src="https://image.pollinations.ai/prompt/detailed%20hand-drawn%20system%20architecture%20diagram%20on%20paper%20with%20technical%20labels">'. Be highly descriptive in the URL (use %20 for spaces) to generate beautiful, hyper-realistic hand-drawn sketches!
+   - **HANDWRITTEN NOTES**: If you select the 'handwritten' or 'sketching' theme, format your text in a deeply conversational, personal "notebook" tone with lots of blockquotes (using standard markdown '>') to simulate handwritten margin notes.
    - Select a visual CSS theme in the 'theme' parameter: 'origami', 'handwritten', 'sketching', 'pixelated', 'asciiart', or 'notebooklm'.
    - **MASSIVE DOCUMENT STRATEGY (30-40 PAGES)**: If the user asks for a detailed, large, or comprehensive PDF, you will hit token output limits if you try to write it all into the 'content' parameter at once. Instead, you MUST chunk your work:
      1. Research and write individual chapters to temporary text files using the 'write_file' tool (e.g., write 'chapter1.html', 'chapter2.html', etc.). Generate as much detailed data, tables, and SVG charts as possible.
