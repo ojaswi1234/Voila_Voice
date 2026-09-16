@@ -8,7 +8,9 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -223,28 +225,100 @@ func tryGroqConfig(ctx context.Context, apiKey string, body []byte) (string, err
 	return "", fmt.Errorf("no choices returned")
 }
 
+
+type CachedModels struct {
+	Timestamp time.Time `json:"timestamp"`
+	Models    []string  `json:"models"`
+}
+
 func fetchGroqModels(apiKey string) []string {
-	if apiKey == "" { return nil }
+	configDir := getConfigDir()
+	cachePath := filepath.Join(configDir, "groq_models_cache.json")
+	
+	// Check cache first (valid for 24h)
+	if data, err := os.ReadFile(cachePath); err == nil {
+		var cache CachedModels
+		if json.Unmarshal(data, &cache) == nil {
+			if time.Since(cache.Timestamp) < 24*time.Hour {
+				return cache.Models
+			}
+		}
+	}
+
 	req, _ := http.NewRequest("GET", "https://api.groq.com/openai/v1/models", nil)
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	client := &http.Client{Timeout: 5 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil || resp.StatusCode != 200 { return nil }
 	defer resp.Body.Close()
+	
 	var res struct {
 		Data []struct {
 			ID string `json:"id"`
 		} `json:"data"`
 	}
 	json.NewDecoder(resp.Body).Decode(&res)
-	var models []string
+	
+	var allModels []string
 	for _, m := range res.Data {
-		models = append(models, fmt.Sprintf("%q", m.ID))
+		allModels = append(allModels, m.ID)
 	}
-	return models
+
+	// Test models concurrently
+	var validModels []string
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	
+	payloadBytes := []byte(`{"model":"", "messages":[{"role":"user", "content":"Hi"}], "tools":[{"type":"function","function":{"name":"test","description":"test","parameters":{"type":"object","properties":{}}}}], "max_tokens":10}`)
+	
+	for _, modelID := range allModels {
+		wg.Add(1)
+		go func(mID string) {
+			defer wg.Done()
+			
+			// Replace model ID in payload
+			payload := strings.Replace(string(payloadBytes), `"model":""`, fmt.Sprintf(`"model":"%s"`, mID), 1)
+			
+			testReq, _ := http.NewRequest("POST", "https://api.groq.com/openai/v1/chat/completions", bytes.NewBuffer([]byte(payload)))
+			testReq.Header.Set("Authorization", "Bearer "+apiKey)
+			testReq.Header.Set("Content-Type", "application/json")
+			testClient := &http.Client{Timeout: 10 * time.Second}
+			testResp, testErr := testClient.Do(testReq)
+			
+			if testErr == nil {
+				defer testResp.Body.Close()
+				if testResp.StatusCode == 200 {
+					mu.Lock()
+					validModels = append(validModels, fmt.Sprintf("%q", mID))
+					mu.Unlock()
+				}
+			}
+		}(modelID)
+	}
+	wg.Wait()
+	
+	if len(validModels) > 0 {
+		cache := CachedModels{Timestamp: time.Now(), Models: validModels}
+		cacheBytes, _ := json.Marshal(cache)
+		os.WriteFile(cachePath, cacheBytes, 0644)
+	}
+	
+	return validModels
 }
 
 func fetchOllamaModels(baseURL string, apiKey string) []string {
+	configDir := getConfigDir()
+	cachePath := filepath.Join(configDir, "ollama_models_cache.json")
+	
+	if data, err := os.ReadFile(cachePath); err == nil {
+		var cache CachedModels
+		if json.Unmarshal(data, &cache) == nil {
+			if time.Since(cache.Timestamp) < 24*time.Hour {
+				return cache.Models
+			}
+		}
+	}
+
 	if baseURL == "" || baseURL == "http://localhost:11434" || baseURL == "https://ollama.com" {
 		if apiKey != "" {
 			baseURL = "https://api.ollama.com"
@@ -260,15 +334,57 @@ func fetchOllamaModels(baseURL string, apiKey string) []string {
 	resp, err := client.Do(req)
 	if err != nil || resp.StatusCode != 200 { return nil }
 	defer resp.Body.Close()
+	
 	var res struct {
 		Models []struct {
 			Name string `json:"name"`
 		} `json:"models"`
 	}
 	json.NewDecoder(resp.Body).Decode(&res)
-	var models []string
+	
+	var allModels []string
 	for _, m := range res.Models {
-		models = append(models, fmt.Sprintf("%q", m.Name))
+		allModels = append(allModels, m.Name)
 	}
-	return models
+
+	var validModels []string
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	
+	payloadBytes := []byte(`{"model":"", "messages":[{"role":"user", "content":"Hi"}], "tools":[{"type":"function","function":{"name":"test","description":"test","parameters":{"type":"object","properties":{}}}}], "stream":false}`)
+	
+	for _, modelID := range allModels {
+		wg.Add(1)
+		go func(mID string) {
+			defer wg.Done()
+			
+			payload := strings.Replace(string(payloadBytes), `"model":""`, fmt.Sprintf(`"model":"%s"`, mID), 1)
+			
+			testReq, _ := http.NewRequest("POST", strings.TrimRight(baseURL, "/")+"/api/chat", bytes.NewBuffer([]byte(payload)))
+			if apiKey != "" {
+				testReq.Header.Set("Authorization", "Bearer "+apiKey)
+			}
+			testReq.Header.Set("Content-Type", "application/json")
+			testClient := &http.Client{Timeout: 10 * time.Second}
+			testResp, testErr := testClient.Do(testReq)
+			
+			if testErr == nil {
+				defer testResp.Body.Close()
+				if testResp.StatusCode == 200 {
+					mu.Lock()
+					validModels = append(validModels, fmt.Sprintf("%q", mID))
+					mu.Unlock()
+				}
+			}
+		}(modelID)
+	}
+	wg.Wait()
+	
+	if len(validModels) > 0 {
+		cache := CachedModels{Timestamp: time.Now(), Models: validModels}
+		cacheBytes, _ := json.Marshal(cache)
+		os.WriteFile(cachePath, cacheBytes, 0644)
+	}
+	
+	return validModels
 }
