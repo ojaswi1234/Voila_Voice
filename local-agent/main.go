@@ -2333,7 +2333,7 @@ var availableTools = []toolDef{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"path":      map[string]interface{}{"type": "string", "description": "Absolute path to save the PDF"},
-					"content":   map[string]interface{}{"type": "string", "description": "Text content of the PDF"},
+					"content":   map[string]interface{}{"type": "string", "description": "The rich HTML or Markdown content of the PDF. Use HTML with inline SVGs for advanced layouts."},
 					"latex":     map[string]interface{}{"type": "string", "description": "Raw LaTeX code to compile into a PDF. If you are generating a professional or multi-page PDF, YOU MUST PROVIDE THIS. Autonomously write full, exhaustive LaTeX code using \\chapter, \\section, \\newpage, and tabularx to design the document perfectly based on the topic, acting as an expert typesetter."},
 					"watermark": map[string]interface{}{"type": "string", "description": "Optional watermark text to display diagonally on pages"},
 					"design_strategy": map[string]interface{}{"type": "string", "description": `Select a Global Marketplace Skill Prompt to guide your LaTeX generation:
@@ -3294,10 +3294,12 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
    - NEVER place an image over text. If injecting an image, push all subsequent text boxes down by the image's exact height + 0.5 Inches.
 
 2. PDF TYPESETTING & THEMES (CHROMIUM ENGINE):
-   - NEVER use LaTeX! The PDF engine has been upgraded to a Headless Chromium CSS Architecture.
-   - ALWAYS output exhaustive Markdown into the 'content' parameter. Use Markdown tables, bold headers, and lists.
-   - You MUST select one of our new visual CSS themes in the 'theme' parameter: 'origami', 'handwritten', 'sketching', 'pixelated', 'asciiart', or 'notebooklm'.
-   - The Chromium engine will automatically inject Google Fonts and structural CSS based on your theme choice. Do NOT provide HTML, just use massive, detailed Markdown.
+   - NEVER use LaTeX! The PDF engine is a Headless Chromium HTML/CSS Architecture.
+   - For simple text, you may use Markdown. However, for maximum elegance, you MUST output pure HTML (divs, spans, tables, CSS flexbox/grid) into the 'content' parameter.
+   - DO NOT wrap your HTML in '<html>' or '<body>' tags. The backend automatically wraps your HTML in a master themed body.
+   - You MUST generate SVG charts and diagrams inline inside your HTML for data visualizations!
+   - You MUST select one of our visual CSS themes in the 'theme' parameter: 'origami', 'handwritten', 'sketching', 'pixelated', 'asciiart', or 'notebooklm'.
+   - The Chromium engine will automatically inject Google Fonts, rich backgrounds, and typography CSS based on your theme choice.
 
 3. McKINSEY-STYLE DESIGN PRINCIPLES:
    - BLUF (Bottom Line Up Front): Slide titles MUST be actionable takeaways (e.g., "Revenue grew 14% due to Q3 marketing," NOT "Q3 Revenue").
