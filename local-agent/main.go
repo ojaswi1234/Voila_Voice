@@ -3400,6 +3400,13 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 		}
 		messages = append(messages, assistantMsg)
 
+		// ✨ RESTORE DEBATE & CHAT: If the model generated text before calling a tool, print it to the DAG live logs!
+		if strings.HasPrefix(taskID, "node-") && choice.Message.Content != "" {
+			cleanMsg := strings.TrimSpace(choice.Message.Content)
+			if len(cleanMsg) > 500 { cleanMsg = cleanMsg[:497] + "..." }
+			appendLiveLog(fmt.Sprintf("[%s - Discussion]: %s", strings.TrimPrefix(taskID, "node-"), cleanMsg))
+		}
+
 		// Execute each tool and collect results
 		for _, tc := range choice.Message.ToolCalls {
 			toolUsageSummary.WriteString(fmt.Sprintf("> Executed tool: %s (args: %s)\n", tc.Function.Name, string(tc.Function.Arguments)))
@@ -3654,6 +3661,13 @@ When generating PDFs (via LaTeX) or PPTs (via Python python-pptx):
 			"tool_calls": result.Message.ToolCalls,
 		}
 		messages = append(messages, assistantMsg)
+
+		// ✨ RESTORE DEBATE & CHAT: If the model generated text before calling a tool, print it to the DAG live logs!
+		if strings.HasPrefix(taskID, "node-") && result.Message.Content != "" {
+			cleanMsg := strings.TrimSpace(result.Message.Content)
+			if len(cleanMsg) > 500 { cleanMsg = cleanMsg[:497] + "..." }
+			appendLiveLog(fmt.Sprintf("[%s - Discussion]: %s", strings.TrimPrefix(taskID, "node-"), cleanMsg))
+		}
 
 		// Execute each tool and collect results
 		for _, tc := range result.Message.ToolCalls {

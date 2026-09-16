@@ -322,8 +322,11 @@ def create_doc(kwargs):
 
 # --- PDF CREATION ---
 def create_pdf(kwargs):
-    from fpdf import FPDF
     from design_tokens import get_theme
+    import markdown
+    from playwright.sync_api import sync_playwright
+    import os
+    import tempfile
     
     path = kwargs.get('path')
     content = kwargs.get('content', '')
@@ -331,200 +334,145 @@ def create_pdf(kwargs):
     theme = kwargs.get('theme', 'modern_dark')
     theme_config = get_theme(theme)
 
-    latex_content = kwargs.get('latex')
-    if latex_content:
-        # Auto-inject theme colors and better formatting into LaTeX preamble
-        color_defs = """
-\\usepackage{xcolor}
-\\usepackage{titlesec}
-\\usepackage{geometry}
-\\geometry{a4paper, margin=1in}
-\\definecolor{themePrimary}{RGB}{theme_config['color_primary'][0], theme_config['color_primary'][1], theme_config['color_primary'][2]}
-\\definecolor{themeAccent}{RGB}{theme_config['color_accent'][0], theme_config['color_accent'][1], theme_config['color_accent'][2]}
-\\definecolor{themeHeading}{RGB}{theme_config['color_heading'][0], theme_config['color_heading'][1], theme_config['color_heading'][2]}
-\\definecolor{themeText}{RGB}{theme_config['color_text'][0], theme_config['color_text'][1], theme_config['color_text'][2]}
-\\pagecolor{themePrimary}
-\\color{themeText}
-\\titleformat{\\section}{\\normalfont\\Large\\bfseries\\color{themeHeading}}{\\thesection}{1em}{}[\\color{themeAccent}\\titlerule]
+    # Allow users to pass HTML directly, but fallback to rendering Markdown to HTML
+    if '<html' in content.lower() or '<body' in content.lower():
+        html_body = content
+    else:
+        # Convert Markdown to HTML (supporting tables and fenced code)
+        html_body = markdown.markdown(content, extensions=['tables', 'fenced_code', 'sane_lists'])
+
+    # CSS for the PDF (implementing the Playwright Print CSS Architecture)
+    rgb_primary = f"{theme_config['color_primary'][0]}, {theme_config['color_primary'][1]}, {theme_config['color_primary'][2]}"
+    rgb_accent = f"{theme_config['color_accent'][0]}, {theme_config['color_accent'][1]}, {theme_config['color_accent'][2]}"
+    rgb_text = f"{theme_config['color_text'][0]}, {theme_config['color_text'][1]}, {theme_config['color_text'][2]}"
+    rgb_heading = f"{theme_config['color_heading'][0]}, {theme_config['color_heading'][1]}, {theme_config['color_heading'][2]}"
+    
+    bg_color = f"rgb({rgb_primary})" if theme == 'modern_dark' else "#ffffff"
+    text_color = f"rgb({rgb_text})"
+    heading_color = f"rgb({rgb_heading})"
+    accent_color = f"rgb({rgb_accent})"
+    
+    css = f"""
+    @page {{
+        size: A4;
+        margin: 20mm;
+    }}
+    body {{
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        color: {text_color};
+        background-color: {bg_color};
+        line-height: 1.6;
+        font-size: 11pt;
+    }}
+    h1, h2, h3, h4, h5, h6 {{
+        color: {heading_color};
+        font-family: 'Georgia', serif;
+        page-break-after: avoid;
+    }}
+    h1 {{
+        font-size: 24pt;
+        border-bottom: 2px solid {accent_color};
+        padding-bottom: 8px;
+    }}
+    h2 {{
+        font-size: 18pt;
+        color: {accent_color};
+        margin-top: 1.5em;
+    }}
+    p {{
+        margin-bottom: 1em;
+    }}
+    pre, code {{
+        font-family: Consolas, Monaco, 'Andale Mono', 'Ubuntu Mono', monospace;
+        background-color: rgba({rgb_text}, 0.05);
+        border-radius: 4px;
+    }}
+    pre {{
+        padding: 12px;
+        page-break-inside: avoid;
+        overflow-x: auto;
+    }}
+    table {{
+        width: 100%;
+        border-collapse: collapse;
+        margin: 20px 0;
+        page-break-inside: avoid;
+    }}
+    th, td {{
+        padding: 10px;
+        border: 1px solid rgba({rgb_text}, 0.2);
+        text-align: left;
+    }}
+    th {{
+        background-color: {accent_color};
+        color: #ffffff;
+    }}
+    tr:nth-child(even) {{
+        background-color: rgba({rgb_text}, 0.02);
+    }}
+    img {{
+        max-width: 100%;
+        height: auto;
+        border-radius: 6px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        page-break-inside: avoid;
+    }}
+    blockquote {{
+        border-left: 4px solid {accent_color};
+        margin: 0;
+        padding-left: 16px;
+        font-style: italic;
+        color: rgba({rgb_text}, 0.8);
+    }}
+    .watermark {{
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%) rotate(-45deg);
+        font-size: 80pt;
+        color: rgba({rgb_text}, 0.05);
+        z-index: -1000;
+        pointer-events: none;
+        white-space: nowrap;
+    }}
+    """
+
+    watermark_html = f'<div class="watermark">{watermark}</div>' if watermark else ''
+
+    full_html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>{css}</style>
+</head>
+<body>
+    {watermark_html}
+    {html_body}
+</body>
+</html>
 """
-        # Fix f-string brackets safely
-        color_defs = color_defs.replace("theme_config['color_primary'][0]", str(theme_config['color_primary'][0]))
-        color_defs = color_defs.replace("theme_config['color_primary'][1]", str(theme_config['color_primary'][1]))
-        color_defs = color_defs.replace("theme_config['color_primary'][2]", str(theme_config['color_primary'][2]))
-        color_defs = color_defs.replace("theme_config['color_accent'][0]", str(theme_config['color_accent'][0]))
-        color_defs = color_defs.replace("theme_config['color_accent'][1]", str(theme_config['color_accent'][1]))
-        color_defs = color_defs.replace("theme_config['color_accent'][2]", str(theme_config['color_accent'][2]))
-        color_defs = color_defs.replace("theme_config['color_heading'][0]", str(theme_config['color_heading'][0]))
-        color_defs = color_defs.replace("theme_config['color_heading'][1]", str(theme_config['color_heading'][1]))
-        color_defs = color_defs.replace("theme_config['color_heading'][2]", str(theme_config['color_heading'][2]))
-        color_defs = color_defs.replace("theme_config['color_text'][0]", str(theme_config['color_text'][0]))
-        color_defs = color_defs.replace("theme_config['color_text'][1]", str(theme_config['color_text'][1]))
-        color_defs = color_defs.replace("theme_config['color_text'][2]", str(theme_config['color_text'][2]))
 
-        if '\\begin{document}' in latex_content and '\\definecolor{themePrimary}' not in latex_content:
-            latex_content = latex_content.replace('\\begin{document}', color_defs + '\n\\begin{document}')
-        
-        import subprocess, tempfile, shutil, os
-        temp_dir = tempfile.mkdtemp()
-        tex_path = os.path.join(temp_dir, 'doc.tex')
-        with open(tex_path, 'w', encoding='utf-8') as f:
-            f.write(latex_content)
-        try:
-            result = subprocess.run(['pdflatex', '-interaction=nonstopmode', '-output-directory', temp_dir, tex_path], capture_output=True, text=True)
-            pdf_path = os.path.join(temp_dir, 'doc.pdf')
-            if os.path.exists(pdf_path):
-                shutil.copy(pdf_path, path)
-                shutil.rmtree(temp_dir, ignore_errors=True)
-                return f"Successfully created beautifully formatted PDF via LaTeX at {path}"
-            else:
-                shutil.rmtree(temp_dir, ignore_errors=True)
-                return f"LaTeX compilation failed (no PDF output). Output:\n{result.stdout[-1000:]}\n\nCRITICAL: Fix your LaTeX syntax and try again, or leave 'latex' blank and put the full document in Markdown format into the 'content' parameter to use the FPDF engine."
-        except Exception as e:
-            shutil.rmtree(temp_dir, ignore_errors=True)
-            return f"Failed to run pdflatex (is MiKTeX/TeXLive installed?). Error: {str(e)}\n\nCRITICAL: LaTeX is NOT installed on this system! You MUST retry using the 'create_pdf' tool, but LEAVE 'latex' BLANK and put the ENTIRE exhaustive document (using Markdown) into the 'content' parameter so the FPDF fallback engine can render it!"
-
-    
-    class PDF(FPDF):
-        def __init__(self, theme_config, watermark_text):
-            super().__init__()
-            self.theme_config = theme_config
-            self.watermark_text = watermark_text
-        
-        def header(self):
-            self.set_fill_color(*self.theme_config['color_primary'])
-            self.rect(0, 0, 210, 297, 'F')
-            if self.watermark_text:
-                self.set_font(self.theme_config['pdf_font_body'], '', 50)
-                self.set_text_color(240, 240, 240)
-                self.text(30, 150, self.watermark_text.upper())
-        def footer(self):
-            self.set_y(-15)
-            self.set_font(self.theme_config['pdf_font_body'], '', 8)
-            self.set_text_color(149, 165, 166)
-            self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
-
-    pdf = PDF(theme_config, watermark)
-    
-    # FPDF limitation: Only core fonts (Arial, Times, Courier, Helvetica, Symbol, ZapfDingbats) work without embedding
-    # Theme fonts mapped to core fonts in design_tokens.py (pdf_font_heading, pdf_font_body)
-    pdf.set_font(theme_config['pdf_font_body'], '', 11)
-    
-    pdf.set_margins(left=15, top=30, right=15)
-    pdf.add_page()
-    pdf.set_auto_page_break(auto=True, margin=15)
-    
-    in_code_block = False
-    table_buffer = []
-
-    def flush_table():
-        if not table_buffer: return
-        valid_rows = [r for r in table_buffer if not re.match(r'^[\s\|\-]+$', r)]
-        if valid_rows:
-            pdf.ln(5)
-            cols = len([c for c in valid_rows[0].split('|') if c.strip()])
-            if cols > 0:
-                col_width = (200 - 20) / cols
-                for i, row in enumerate(valid_rows):
-                    cells = [c.strip() for c in row.split('|') if c.strip()]
-                    for j, c in enumerate(cells):
-                        if j >= cols: break
-                        pdf.set_font(theme_config['pdf_font_body'], '', 10)
-                        if i == 0:
-                            pdf.set_fill_color(*theme_config['color_accent'])
-                            pdf.set_text_color(255, 255, 255)
-                        else:
-                            if i % 2 == 0:
-                                pdf.set_fill_color(240, 240, 240)
-                            else:
-                                pdf.set_fill_color(255, 255, 255)
-                            pdf.set_text_color(*theme_config['color_text'])
-                        
-                        clean_c = _strip_markdown(c)
-                        # Transliterate Unicode characters to ASCII equivalents
-                        clean_c = _transliterate_unicode(clean_c)
-                        # FPDF limitation: encode latin-1 with replace converts remaining non-Latin-1 chars to ?
-                        clean_c = clean_c.encode('latin-1', 'replace').decode('latin-1')
-                        # Basic cell - FPDF limitation: text may not wrap perfectly in tables
-                        pdf.cell(col_width, 8, clean_c, 1, 0, 'C', fill=True)
-                    pdf.ln(8)
-            pdf.ln(5)
-        table_buffer.clear()
-
-    lines = content.split('\n')
-    for line in lines:
-        stripped = line.strip()
-        
-        # Table Detection
-        if stripped.startswith('|') and stripped.endswith('|'):
-            table_buffer.append(stripped)
-            continue
-        else:
-            flush_table()
-
-        if not stripped and not in_code_block:
-            pdf.ln(3); continue
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.html', mode='w', encoding='utf-8') as f:
+            f.write(full_html)
+            temp_html_path = f.name
             
-        if stripped.startswith('```'):
-            in_code_block = not in_code_block
-            if in_code_block: pdf.ln(2)
-            continue
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            page.goto(f"file://{temp_html_path}", wait_until="networkidle")
+            page.pdf(
+                path=path,
+                format="A4",
+                print_background=True,
+                margin={"top": "20mm", "bottom": "20mm", "left": "20mm", "right": "20mm"}
+            )
+            browser.close()
             
-        line_safe = _strip_markdown(line)
-        # Transliterate Unicode characters to ASCII equivalents before latin-1 encoding
-        line_safe = _transliterate_unicode(line_safe)
-        # FPDF limitation: encode latin-1 with replace converts remaining non-Latin-1 chars to ?
-        # This handles any characters not covered by transliteration
-        line_safe = line_safe.encode('latin-1', 'replace').decode('latin-1')
-            
-        if in_code_block:
-            pdf.set_font(theme_config['pdf_font_body'], '', 9)
-            pdf.set_text_color(*theme_config['color_primary'])
-            pdf.set_fill_color(245, 245, 245)
-            pdf.cell(0, 5, line_safe, 0, 1, 'L', fill=True)
-            continue
-
-        img_match = re.match(r'^!\[.*?\]\((.*?)\)$', stripped)
-        if img_match:
-            try: pdf.image(img_match.group(1), w=150); pdf.ln(5)
-            except: 
-                pdf.set_font(theme_config['pdf_font_body'], '', 10)
-                pdf.set_text_color(255, 0, 0)
-                pdf.cell(0, 5, f"[Image error: {img_match.group(1)}]", 0, 1, 'L')
-            continue
-        
-        if stripped.startswith('# '):
-            pdf.set_font(theme_config['pdf_font_heading'], '', 24)
-            pdf.set_text_color(*theme_config['color_heading'])
-            pdf.multi_cell(0, 12, line_safe[2:])
-            pdf.ln(3)
-        elif stripped.startswith('## '):
-            pdf.set_font(theme_config['pdf_font_heading'], '', 18)
-            pdf.set_text_color(*theme_config['color_accent'])
-            pdf.multi_cell(0, 10, line_safe[3:])
-            pdf.ln(2)
-        elif stripped.startswith('### '):
-            pdf.set_font(theme_config['pdf_font_heading'], '', 14)
-            pdf.set_text_color(*theme_config['color_text'])
-            pdf.multi_cell(0, 8, line_safe[4:])
-            pdf.ln(2)
-        elif stripped.startswith('- ') or stripped.startswith('* '):
-            pdf.set_font(theme_config['pdf_font_body'], '', 11)
-            pdf.set_text_color(*theme_config['color_text'])
-            pdf.cell(5, 6, chr(149), 0, 0)
-            pdf.multi_cell(0, 6, line_safe[2:])
-        elif stripped.startswith('> '):
-            pdf.set_font(theme_config['pdf_font_body'], '', 11)
-            pdf.set_text_color(100, 100, 100)
-            pdf.set_x(20)
-            pdf.multi_cell(0, 6, line_safe[2:])
-        else:
-            pdf.set_font(theme_config['pdf_font_body'], '', 11)
-            pdf.set_text_color(*theme_config['color_text'])
-            pdf.multi_cell(0, 6, line_safe)
-            
-    flush_table()
-    pdf.output(path)
-    return f"Successfully created PDF at {path}"
+        os.unlink(temp_html_path)
+        return f"Successfully created beautifully formatted PDF via Playwright HTML rendering at {path}"
+    except Exception as e:
+        return f"Failed to generate PDF via Playwright: {str(e)}"
 
 # --- PPT CREATION ---
 def create_ppt(kwargs):
