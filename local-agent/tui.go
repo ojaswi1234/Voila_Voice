@@ -85,6 +85,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.vp.Width = msg.Width
 			m.vp.Height = msg.Height
 		}
+		m.vp.SetContent(m.generateContent())
 		return m, nil
 	case tea.KeyMsg:
 		if msg.String() == "k" {
@@ -109,8 +110,12 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if err == nil {
 			var s LiveState
 			if err2 := json.Unmarshal(data, &s); err2 == nil {
+				wasAtBottom := m.vp.AtBottom() || m.vp.YOffset == 0
 				m.state = s
-				m.vp.GotoBottom()
+				m.vp.SetContent(m.generateContent())
+				if wasAtBottom {
+					m.vp.GotoBottom()
+				}
 			}
 		}
 		return m, tickCmd()
