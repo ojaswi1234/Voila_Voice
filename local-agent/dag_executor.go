@@ -1,5 +1,20 @@
 package main
 
+/*
+================================================================================
+Voila Voice CLI - DAG Executor (Graphify)
+================================================================================
+This file is the engine that drives the multi-agent swarm architecture.
+Responsibilities:
+1. Parsing `graphify_state.json` to load the node topology and dependencies.
+2. Managing concurrent execution (`executeGraphifyDAG`) using Go routines and WaitGroups.
+3. Live state broadcasting (updating the UI when a node starts, finishes, or errors).
+4. Assembling the system prompt for each node, enforcing strict output rules
+   (like the pointer-based memory architecture) before execution.
+================================================================================
+*/
+
+
 import (
 	"context"
 	"encoding/json"

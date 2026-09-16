@@ -1,5 +1,21 @@
 package main
 
+/*
+================================================================================
+Voila Voice CLI - Main Entry Point
+================================================================================
+This file acts as the core router and HTTP server for the Voila local agent.
+Responsibilities:
+1. HTTP Server Setup (/execute, /ping, /stop endpoints)
+2. Tool Registry (defines all tools the AI can use, e.g. run_terminal, create_pdf)
+3. Provider execution loops (executeGroqCommand, executeOllamaCommand) which 
+   handle the iterative process of calling an LLM, executing its tool requests,
+   and feeding the results back.
+4. Security Guardrails (blocking destructive terminal commands).
+================================================================================
+*/
+
+
 import (
 	"unsafe"
 	"golang.org/x/crypto/pbkdf2"

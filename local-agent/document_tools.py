@@ -1,3 +1,16 @@
+"""
+================================================================================
+Voila Voice CLI - Document Engineering Pipeline
+================================================================================
+This script handles the heavy lifting for generating beautiful PDFs, Word Docs,
+and parsing structured data (CSV/Excel).
+Responsibilities:
+1. PDF Rendering (`create_pdf`): Uses Headless Chromium (Playwright) to render 
+   Markdown + HTML + inline SVG into beautifully themed PDFs.
+2. DOCX Generation (`create_docx`): Uses python-docx to generate corporate documents.
+3. Data Handling: Reads and writes Excel/CSV files for data analysis tasks.
+================================================================================
+"""
 import sys
 import json
 import csv

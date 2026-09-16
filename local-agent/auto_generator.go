@@ -1,5 +1,19 @@
 package main
 
+/*
+================================================================================
+Voila Voice CLI - Auto Generator (Team Designer)
+================================================================================
+This file contains the logic for autonomously generating the multi-agent team.
+Responsibilities:
+1. Pre-flight Checks (`pingGroq`, `pingOllama`) to ensure API health and avoid rate limits.
+2. Team Generation (`autoGenerateGraphifyState`): Prompts a powerful LLM to design
+   a parallel mesh of sub-agents based on the user's task.
+3. Caching: Caches the list of available models to speed up generation.
+================================================================================
+*/
+
+
 import (
 	"bytes"
 	"context"
