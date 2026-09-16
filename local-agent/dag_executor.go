@@ -266,39 +266,48 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 				promptBuilder := strings.Builder{}
 				promptBuilder.WriteString(fmt.Sprintf("You are %s. %s\n\n", n.Role, n.Prompt))
 
-				if len(history) > 0 {
-					promptBuilder.WriteString("TEAM DISCUSSION SO FAR (Context from other team members):\n")
-					for _, msg := range history {
-						promptBuilder.WriteString(msg + "\n")
-					}
-					
-					promptBuilder.WriteString("CRITICAL DEBATE INSTRUCTIONS:\n")
-					promptBuilder.WriteString("You are part of an iterative team discussion. You can see everyone's work above.\n")
-					promptBuilder.WriteString("If the work from your team members is flawed, missing requirements, or incorrect, you MUST reject it.\n")
-					promptBuilder.WriteString("To reject and force a team member to revise their work, your response MUST start EXACTLY with this format:\n")
-					promptBuilder.WriteString("REJECT: [RoleName]: [Your detailed critique]\n")
-					promptBuilder.WriteString("For example: REJECT: Researcher: The data is outdated. Find 2024 statistics.\n")
-					promptBuilder.WriteString("If you reject, do NOT output anything else. If the work is acceptable, or if you are just adding your own contribution, do NOT use the REJECT prefix; simply perform your task and output your final result.\n\n")
-				}
+				// Always inject debate instructions so agents can collaborate and reject work!
+				promptBuilder.WriteString("CRITICAL DEBATE INSTRUCTIONS:\n")
+				promptBuilder.WriteString("You are part of an iterative team discussion. You can see everyone's work below.\n")
+				promptBuilder.WriteString("If the work from your team members is flawed, missing requirements, or incorrect, you MUST reject it.\n")
+				promptBuilder.WriteString("To reject and force a team member to revise their work, your response MUST start EXACTLY with this format:\n")
+				promptBuilder.WriteString("REJECT: [RoleName]: [Your detailed critique]\n")
+				promptBuilder.WriteString("For example: REJECT: Researcher: The data is outdated. Find 2024 statistics.\n")
+				promptBuilder.WriteString("If you reject, do NOT output anything else. If the work is acceptable, or if you are just adding your own contribution, do NOT use the REJECT prefix; simply perform your task and output your final result.\n\n")
 
 				if len(myRevs) > 0 {
 					promptBuilder.WriteString("FEEDBACK / REVISIONS REQUIRED:\n")
 					promptBuilder.WriteString("Your previous work was rejected by a downstream reviewer. You MUST fix the issues below:\n")
 					for _, rev := range myRevs {
+						// Truncate overly long individual revisions
+						if len(rev) > 800 { rev = rev[:800] + "...[truncated]" }
 						promptBuilder.WriteString(rev + "\n")
 					}
 					promptBuilder.WriteString("\n")
 				}
 
 				promptBuilder.WriteString("ORIGINAL USER TASK:\n")
-				promptBuilder.WriteString(command)
+				// Truncate overly long original commands
+				cmdStr := command
+				if len(cmdStr) > 1000 { cmdStr = cmdStr[:1000] + "...[truncated]" }
+				promptBuilder.WriteString(cmdStr + "\n\n")
+
+				if len(history) > 0 {
+					promptBuilder.WriteString("TEAM DISCUSSION SO FAR (Context from other team members):\n")
+					for _, msg := range history {
+						// Truncate overly long individual history messages so they don't blow up the Groq context limit
+						if len(msg) > 1200 { msg = msg[:600] + "\n...[middle truncated to save tokens]...\n" + msg[len(msg)-600:] }
+						promptBuilder.WriteString(msg + "\n")
+					}
+				}
 
 				finalCommand := promptBuilder.String()
 				
-				// Truncate to avoid 413 Payload Too Large (Groq 8000 TPM limit includes max_tokens and heavy tools schema)
-				if len(finalCommand) > 4000 {
-					half := 1800
-					finalCommand = finalCommand[:half] + "\n\n...[MIDDLE CONTEXT TRUNCATED TO PREVENT 413 ERROR]...\n\n" + finalCommand[len(finalCommand)-half:]
+				// Final safety net truncation (Groq 8000 TPM limit includes max_tokens and heavy tools schema)
+				// Bumping to 7000 because we individually truncated the heavy parts above.
+				if len(finalCommand) > 7000 {
+					half := 3400
+					finalCommand = finalCommand[:half] + "\n\n...[MIDDLE CONTEXT TRUNCATED]...\n\n" + finalCommand[len(finalCommand)-half:]
 				}
 				
 				var actualModel string
