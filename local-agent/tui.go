@@ -328,10 +328,10 @@ func renderMeshGraph(state LiveState, styles map[string]lipgloss.Style, termW in
 		}
 	}
 
-	// Measure box height
-	sample := styles["pending"].Render("A\nB\nC\nD")
-	boxH   := strings.Count(sample, "\n") + 1
-	midH   := boxH / 2
+	// Nodes are typically 3 lines of text + 2 borders = 5 lines tall.
+	// We want the horizontal arrows to shoot out perfectly aligned with the middle text (Model).
+	boxH := 5
+	midH := 2
 
 	// Blank placeholder matching box height
 	blank := func() string {
@@ -416,7 +416,11 @@ func renderMeshGraph(state LiveState, styles map[string]lipgloss.Style, termW in
 	buildVConn := func(rowAbove, rowBelow []string) string {
 		stripW := maxCols*nodeVisW + (maxCols-1)*hGap + 2
 		if stripW < 10 { stripW = 80 }
-		c := newCanvas(stripW, vConnH)
+		
+		vConnH_local := 5 // Force to 5 for Manhattan routing
+		c := newCanvas(stripW, vConnH_local)
+
+		busRow := 2
 
 		for ca := 0; ca < maxCols; ca++ {
 			fromID := rowAbove[ca]
@@ -432,47 +436,53 @@ func renderMeshGraph(state LiveState, styles map[string]lipgloss.Style, termW in
 				
 				tx := centerX(cb)
 
-				cls := edgeClass(fromID, toID)
-
-				// Draw path line from (fx,0) to (tx,vConnH-1)
-				for li := 0; li < vConnH; li++ {
-					t  := float64(li) / float64(vConnH-1)
-					px := fx + int(float64(tx-fx)*t+0.5)
-
-					var ch rune
-					switch {
-					case tx > fx:
-						ch = '╲'
-						if cls == "bidir" { ch = '⟍' }
-					case tx < fx:
-						ch = '╱'
-						if cls == "bidir" { ch = '⟋' }
-					default:
-						ch = '│'
-						if cls == "bidir" { ch = '║' }
-						if cls == "many"  { ch = '┃' }
+				if fx == tx {
+					for li := 0; li < vConnH_local-1; li++ { setR(c, fx, li, '│') }
+					if hasFwd { setR(c, fx, vConnH_local-1, '▼') }
+					if hasRev { setR(c, fx, 0, '▲') }
+				} else {
+					// Manhattan routing
+					// 1. Drop down to bus
+					for li := 0; li < busRow; li++ { setR(c, fx, li, '│') }
+					// 2. Horizontal bus
+					lx, rx := fx, tx
+					if lx > rx { lx, rx = rx, lx }
+					for x := lx + 1; x < rx; x++ { setR(c, x, busRow, '─') }
+					// 3. Drop from bus to target
+					for li := busRow + 1; li < vConnH_local-1; li++ { setR(c, tx, li, '│') }
+					
+					// Corners
+					if tx > fx {
+						setR(c, fx, busRow, '╰')
+						setR(c, tx, busRow, '╮')
+					} else {
+						setR(c, fx, busRow, '╯')
+						setR(c, tx, busRow, '╭')
 					}
-					setR(c, px, li, ch)
-				}
-
-				// Arrowhead at bottom pointing into target, or top pointing into source
-				if hasFwd { setR(c, tx, vConnH-1, '▼') }
-				if hasRev { setR(c, fx, 0, '▲') }
-				if cls == "bidir" {
-					setR(c, tx, vConnH-1, '▼')
-					setR(c, fx, 0, '▲')
-				}
-
-				// Rounded corner hints at top and bottom for diagonal lines
-				if tx > fx {
-					setR(c, fx, 0, '╮')
-					setR(c, tx, vConnH-1, '╰')
-				} else if tx < fx {
-					setR(c, fx, 0, '╭')
-					setR(c, tx, vConnH-1, '╯')
+					
+					if hasFwd { setR(c, tx, vConnH_local-1, '▼') }
+					if hasRev { setR(c, fx, 0, '▲') }
 				}
 			}
 		}
+		
+		// Clean up intersections to make it look like a connected bus
+		for y := 0; y < vConnH_local; y++ {
+			for x := 0; x < stripW; x++ {
+				if c.data[y][x] == '─' {
+					hasUp := y > 0 && (c.data[y-1][x] == '│' || c.data[y-1][x] == '╰' || c.data[y-1][x] == '╯')
+					hasDown := y < vConnH_local-1 && (c.data[y+1][x] == '│' || c.data[y+1][x] == '╭' || c.data[y+1][x] == '╮')
+					if hasUp && hasDown { 
+						setR(c, x, y, '┼')
+					} else if hasUp { 
+						setR(c, x, y, '┴')
+					} else if hasDown { 
+						setR(c, x, y, '┬')
+					}
+				}
+			}
+		}
+		
 		return lipgloss.NewStyle().Foreground(lipgloss.Color("#22C55E")).Render(getString(c))
 	}
 
