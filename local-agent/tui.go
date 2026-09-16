@@ -113,7 +113,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if err == nil {
 			var s LiveState
 			if err2 := json.Unmarshal(data, &s); err2 == nil {
-				wasAtBottom := m.vp.AtBottom() || m.vp.YOffset == 0
+				wasAtBottom := m.vp.AtBottom()
 				m.state = s
 				m.vp.SetContent(m.generateContent())
 				if wasAtBottom {
