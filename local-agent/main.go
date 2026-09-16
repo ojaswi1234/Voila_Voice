@@ -2264,6 +2264,31 @@ var availableTools = []toolDef{
 	{
 		Type: "function",
 		Function: toolFuncDef{
+			Name:        "edit_file",
+			Description: "Edit an existing file by finding a specific text block and replacing it. Use this instead of write_file for small changes to large files to save tokens.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"path": map[string]interface{}{
+						"type":        "string",
+						"description": "Absolute or relative path to the file",
+					},
+					"target_text": map[string]interface{}{
+						"type":        "string",
+						"description": "The exact block of text you want to replace. Must match the file exactly.",
+					},
+					"replacement_text": map[string]interface{}{
+						"type":        "string",
+						"description": "The new text to insert in place of the target_text.",
+					},
+				},
+				"required": []string{"path", "target_text", "replacement_text"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
 			Name:        "write_file",
 			Description: "Write content to a file on the local filesystem.",
 			Parameters: map[string]interface{}{
@@ -2628,6 +2653,8 @@ func executeTool(ctx context.Context, toolName string, argsJSON json.RawMessage,
 			pseudoCommand = "cat " + resolveAgentPath(getString("path"))
 		case "write_file":
 			pseudoCommand = "echo '...' > " + resolveAgentPath(getString("path"))
+		case "edit_file":
+			pseudoCommand = "sed '...' " + resolveAgentPath(getString("path"))
 		case "list_dir":
 			pseudoCommand = "ls " + resolveAgentPath(getString("path"))
 		case "web_research":
@@ -2968,6 +2995,31 @@ case "read_file":
 			content = content[:8000] + "\n... (truncated)"
 		}
 		return content
+
+	case "edit_file":
+		path := getString("path")
+		targetText := getString("target_text")
+		replacementText := getString("replacement_text")
+		
+		if path == "" || targetText == "" {
+			return "error: path and target_text are required"
+		}
+		
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return "error reading file for edit: " + err.Error()
+		}
+		
+		contentStr := string(data)
+		if !strings.Contains(contentStr, targetText) {
+			return "error: target_text not found in file. Ensure exact matching including whitespace/newlines."
+		}
+		
+		newContent := strings.Replace(contentStr, targetText, replacementText, 1)
+		if err := os.WriteFile(path, []byte(newContent), 0644); err != nil {
+			return "error writing file: " + err.Error()
+		}
+		return "ok: file edited successfully"
 
 	case "write_file":
 		path := getString("path")
