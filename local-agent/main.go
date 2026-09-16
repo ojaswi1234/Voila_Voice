@@ -3325,12 +3325,11 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 		req.Header.Set("Content-Type", "application/json")
 
 		var resp *http.Response
-		var err error
 		var respBody []byte
 		
 		maxRetries := 5
 		for r := 0; r < maxRetries; r++ {
-			req.Body = io.NopCloser(bytes.NewBuffer(payloadBytes))
+			req.Body = io.NopCloser(bytes.NewBuffer(body))
 			resp, err = client.Do(req)
 			
 			if err != nil {
@@ -3637,12 +3636,11 @@ When generating PDFs (via LaTeX) or PPTs (via Python python-pptx):
 		}
 
 		var resp *http.Response
-		var err error
 		var respBody []byte
 		
 		maxRetries := 5
 		for r := 0; r < maxRetries; r++ {
-			req.Body = io.NopCloser(bytes.NewBuffer(payloadBytes))
+			req.Body = io.NopCloser(bytes.NewBuffer(body))
 			resp, err = client.Do(req)
 			
 			if err != nil {
