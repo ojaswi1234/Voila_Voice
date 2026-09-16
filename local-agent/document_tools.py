@@ -348,15 +348,98 @@ def create_pdf(kwargs):
     rgb_heading = f"{theme_config['color_heading'][0]}, {theme_config['color_heading'][1]}, {theme_config['color_heading'][2]}"
     
     bg_color = f"rgb({rgb_primary})" if theme == 'modern_dark' else "#ffffff"
+    # Provide accurate background colors for light themes too
+    if theme in ['notebooklm', 'handwritten', 'sketching', 'origami', 'warm_sunset', 'illustrated_light']:
+        bg_color = f"rgb({rgb_primary})"
+    if theme in ['pixelated', 'asciiart']:
+        bg_color = f"rgb({rgb_primary})"
+        
     text_color = f"rgb({rgb_text})"
     heading_color = f"rgb({rgb_heading})"
     accent_color = f"rgb({rgb_accent})"
     
+    # Base CSS
     css = f"""
     @page {{
         size: A4;
         margin: 20mm;
     }}
+    """
+
+    # Apply special Google Fonts and Layout styles for creative themes
+    if theme == 'notebooklm':
+        css += f"""
+        @import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,700;1,400&family=Open+Sans:wght@400;600&display=swap');
+        body {{ font-family: 'Lora', serif; color: {text_color}; background: {bg_color}; line-height: 1.7; font-size: 11pt; }}
+        h1, h2, h3, h4 {{ font-family: 'Open Sans', sans-serif; color: {heading_color}; font-weight: 600; page-break-after: avoid; }}
+        h1 {{ font-size: 26pt; padding-bottom: 12px; border-bottom: 1px solid #dadce0; margin-bottom: 24px; }}
+        h2 {{ font-size: 18pt; margin-top: 1.5em; }}
+        blockquote {{ border-left: 4px solid {accent_color}; margin: 0; padding-left: 16px; font-style: italic; color: #5f6368; background: #f1f3f4; padding: 12px; border-radius: 4px; }}
+        pre {{ background: #f8f9fa; border: 1px solid #dadce0; padding: 12px; border-radius: 8px; font-family: 'Courier New', Courier, monospace; overflow-x: auto; }}
+        table {{ width: 100%; border-collapse: collapse; margin: 20px 0; }}
+        th, td {{ padding: 12px; border: 1px solid #dadce0; text-align: left; }}
+        th {{ background: #f1f3f4; font-family: 'Open Sans', sans-serif; color: #202124; }}
+        """
+    elif theme == 'handwritten':
+        css += f"""
+        @import url('https://fonts.googleapis.com/css2?family=Patrick+Hand&display=swap');
+        body {{ font-family: 'Patrick Hand', cursive; color: {text_color}; background: {bg_color}; line-height: 1.5; font-size: 16pt; }}
+        h1, h2, h3 {{ color: {heading_color}; page-break-after: avoid; }}
+        h1 {{ font-size: 32pt; border-bottom: 2px dashed rgba(44, 62, 80, 0.2); transform: rotate(-1deg); }}
+        h2 {{ font-size: 24pt; transform: rotate(0.5deg); }}
+        blockquote {{ border-left: 3px solid rgba(44, 62, 80, 0.3); padding-left: 15px; font-size: 18pt; color: rgba(44, 62, 80, 0.8); }}
+        table {{ width: 100%; border-collapse: collapse; margin: 20px 0; }}
+        th, td {{ padding: 10px; border: 1px dashed rgba(44, 62, 80, 0.3); text-align: left; }}
+        """
+    elif theme == 'sketching':
+        css += f"""
+        @import url('https://fonts.googleapis.com/css2?family=Neucha&display=swap');
+        body {{ font-family: 'Neucha', cursive; color: {text_color}; background: {bg_color}; line-height: 1.6; font-size: 14pt; }}
+        h1, h2, h3 {{ color: {heading_color}; page-break-after: avoid; }}
+        h1 {{ font-size: 28pt; border: 2px solid {accent_color}; padding: 10px; text-align: center; border-radius: 255px 15px 225px 15px/15px 225px 15px 255px; }}
+        h2 {{ font-size: 22pt; border-bottom: 2px dashed {accent_color}; }}
+        table {{ width: 100%; border-collapse: collapse; margin: 20px 0; }}
+        th, td {{ padding: 10px; border: 2px solid {accent_color}; border-radius: 255px 15px 225px 15px/15px 225px 15px 255px; }}
+        """
+    elif theme == 'origami':
+        css += f"""
+        @import url('https://fonts.googleapis.com/css2?family=Jura:wght@400;700&display=swap');
+        body {{ font-family: 'Jura', sans-serif; color: {text_color}; background: {bg_color}; line-height: 1.6; font-size: 11pt; }}
+        h1, h2, h3 {{ color: {heading_color}; font-weight: 700; page-break-after: avoid; text-transform: uppercase; letter-spacing: 2px; }}
+        h1 {{ font-size: 26pt; border-left: 12px solid {accent_color}; padding-left: 15px; box-shadow: 4px 4px 0px rgba(0,0,0,0.05); }}
+        h2 {{ font-size: 18pt; border-bottom: 1px solid {accent_color}; padding-bottom: 5px; }}
+        table {{ width: 100%; border-collapse: collapse; margin: 20px 0; box-shadow: 4px 4px 0px rgba(0,0,0,0.05); }}
+        th, td {{ padding: 12px; border: 1px solid #dee2e6; }}
+        th {{ background: {accent_color}; color: #fff; text-transform: uppercase; }}
+        """
+    elif theme == 'pixelated':
+        css += f"""
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+        body {{ font-family: 'Press Start 2P', cursive; color: {text_color}; background: {bg_color}; line-height: 2.0; font-size: 8pt; }}
+        h1, h2, h3 {{ color: {heading_color}; page-break-after: avoid; text-transform: uppercase; }}
+        h1 {{ font-size: 16pt; border-bottom: 4px solid {accent_color}; padding-bottom: 10px; margin-bottom: 20px; }}
+        h2 {{ font-size: 12pt; margin-top: 2em; }}
+        table {{ width: 100%; border-collapse: collapse; margin: 20px 0; border: 4px solid {accent_color}; }}
+        th, td {{ padding: 10px; border: 2px solid {accent_color}; }}
+        th {{ background: {accent_color}; color: {bg_color}; }}
+        """
+    elif theme == 'asciiart':
+        css += f"""
+        @import url('https://fonts.googleapis.com/css2?family=Fira+Code&display=swap');
+        body {{ font-family: 'Fira Code', monospace; color: {text_color}; background: {bg_color}; line-height: 1.5; font-size: 10pt; }}
+        h1, h2, h3 {{ color: {heading_color}; page-break-after: avoid; }}
+        h1 {{ font-size: 20pt; border-bottom: 1px dashed {accent_color}; padding-bottom: 10px; margin-bottom: 20px; }}
+        h2 {{ font-size: 16pt; }}
+        table {{ width: 100%; border-collapse: collapse; margin: 20px 0; border: 1px solid {text_color}; }}
+        th, td {{ padding: 10px; border: 1px dashed {text_color}; }}
+        th {{ background: rgba(88, 166, 255, 0.1); color: {accent_color}; }}
+        """
+    else:
+        # Default modern fallback styling
+        css += f"""
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+
     body {{
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
         color: {text_color};
