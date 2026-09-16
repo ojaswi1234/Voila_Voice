@@ -1436,114 +1436,6 @@ func startHTTPServer() {
 			http.Error(w, "Invalid state", http.StatusBadRequest)
 		}
 	})
-	mux.HandleFunc("/mesh", func(w http.ResponseWriter, r *http.Request) {
-		html := `<!DOCTYPE html>
-<html>
-<head>
-  <title>VOILA Mesh Topology</title>
-  <style>
-    body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #0b0f19; font-family: 'Segoe UI', sans-serif; color: white; }
-    #mynetwork { width: 100%; height: 100%; }
-    .header { position: absolute; top: 10px; left: 20px; z-index: 100; pointer-events: none; }
-    h1 { color: #10B981; font-size: 24px; margin: 0; text-shadow: 0 2px 4px rgba(0,0,0,0.5); }
-    #status { color: #D1D5DB; font-size: 14px; margin-top: 4px; }
-  </style>
-  <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
-</head>
-<body>
-  <div class="header"><h1>🤖 VOILA Live Mesh Network</h1><div id="status">Loading...</div></div>
-  <div id="mynetwork"></div>
-  <script>
-    var nodes = new vis.DataSet();
-    var edges = new vis.DataSet();
-    var container = document.getElementById('mynetwork');
-    var data = { nodes: nodes, edges: edges };
-    var options = {
-      nodes: {
-        shape: 'box',
-        margin: 12,
-        font: { color: '#ffffff', face: 'Segoe UI', size: 16, multi: true },
-        borderWidth: 2,
-        shadow: true,
-        widthConstraint: { maximum: 250 }
-      },
-      edges: {
-        arrows: 'to',
-        color: { color: '#10B981', highlight: '#34D399' },
-        smooth: { type: 'cubicBezier', forceDirection: 'vertical', roundness: 0.4 },
-        width: 2
-      },
-      layout: {
-        hierarchical: {
-          direction: 'UD',
-          sortMethod: 'directed',
-          nodeSpacing: 300,
-          levelSeparation: 150
-        }
-      },
-      physics: {
-        hierarchicalRepulsion: { nodeDistance: 300, springConstant: 0.05, damping: 0.09 }
-      }
-    };
-    var network = new vis.Network(container, data, options);
-
-    async function updateGraph() {
-      try {
-        let res = await fetch('/mesh-data');
-        let state = await res.json();
-        document.getElementById('status').innerText = 'Status: ' + (state.status || 'running').toUpperCase();
-        
-        if (!state.nodes) return;
-        
-        state.nodes.forEach(n => {
-          let color = '#4B5563';
-          if (n.status === 'running') color = '#F59E0B';
-          else if (n.status === 'completed') color = '#10B981';
-          else if (n.status === 'error' || n.status === 'rejected') color = '#EF4444';
-          
-          let label = '<b>' + n.role + '</b>\n<i>' + n.model.split('\n')[0] + '</i>\n[' + n.status.toUpperCase() + ']';
-          if (nodes.get(n.id)) {
-            nodes.update({id: n.id, label: label, color: {background: '#1F2937', border: color}});
-          } else {
-            nodes.add({id: n.id, label: label, color: {background: '#1F2937', border: color}});
-          }
-        });
-        
-        if (state.edges) {
-          state.edges.forEach(e => {
-            if (e.length >= 2) {
-              let id = e[0] + '->' + e[1];
-              if (!edges.get(id)) {
-                edges.add({id: id, from: e[0], to: e[1]});
-              }
-            }
-          });
-        }
-      } catch (e) {
-        console.error(e);
-      }
-    }
-    
-    setInterval(updateGraph, 500);
-    updateGraph();
-  </script>
-</body>
-</html>`
-		w.Header().Set("Content-Type", "text/html")
-		w.Write([]byte(html))
-	})
-
-	mux.HandleFunc("/mesh-data", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Content-Type", "application/json")
-		data, err := os.ReadFile("graphify_live.json")
-		if err != nil {
-			w.Write([]byte(`{}`))
-			return
-		}
-		w.Write(data)
-	})
-
 	mux.HandleFunc("/execute", func(w http.ResponseWriter, r *http.Request) {
 
 		if r.Method != http.MethodPost {
@@ -1669,8 +1561,31 @@ Write-Output $base64
 				isGraphifyRunning = true
 				cmdMu.Unlock()
 				
-				// Launch the beautiful HTML mesh renderer!
-				exec.Command("cmd", "/c", "start", "http://127.0.0.1:8088/mesh").Start()
+				// Force spawn a completely independent Windows Terminal or PowerShell window
+				exe, _ := os.Executable()
+				exeDir := filepath.Dir(exe)
+				psScript := `
+$ErrorActionPreference = 'Continue'
+Set-Location -Path '` + exeDir + `'
+$host.UI.RawUI.WindowTitle = 'Voila AI - Graphify Tracker'
+Clear-Host
+& '` + exe + `' --tui
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "TUI crashed with code $LASTEXITCODE. Press Enter to exit."
+    Read-Host
+}
+`
+				psScriptPath := filepath.Join(os.TempDir(), "voila_tui_launcher.ps1")
+				os.WriteFile(psScriptPath, []byte(psScript), 0644)
+				
+				// Use cmd /c start to completely detach the process from the parent's stdout pipe!
+				tuiCmd := exec.Command("wt.exe", "-w", "new-window", "--title", "Voila TUI", "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", psScriptPath)
+				errWt := tuiCmd.Start()
+				if errWt != nil {
+					// Fallback to legacy console if Windows Terminal is not installed
+					tuiCmd = exec.Command("cmd.exe", "/c", "start", "Voila TUI", "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", psScriptPath)
+					tuiCmd.Start()
+				}
 				
 				fmt.Println("STATUS: GRAPHIFY")
 				os.Stdout.Sync()
