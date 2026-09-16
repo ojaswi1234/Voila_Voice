@@ -121,6 +121,8 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 		} else {
 			fmt.Printf("STATUS: SYSTEM_MSG:Auto-generation failed: %v\n", err)
 			os.Stdout.Sync()
+			// ABORT instead of falling back to the dummy UI template!
+			return "", fmt.Errorf("Graphify AI generation failed: %v", err)
 		}
 	}
 
