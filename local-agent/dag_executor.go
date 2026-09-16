@@ -287,6 +287,10 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 					promptBuilder.WriteString("\n")
 				}
 
+				promptBuilder.WriteString("CRITICAL EFFICIENCY INSTRUCTION:\n")
+				promptBuilder.WriteString("DO NOT output massive documents, large blocks of code, or raw data directly in your conversational response!\n")
+				promptBuilder.WriteString("Instead, use the `write_file` tool to save your work to the local disk. In your response, only output a brief summary and the file paths (pointers). Your team members will use the `read_file` tool to review your work.\n\n")
+
 				promptBuilder.WriteString("ORIGINAL USER TASK:\n")
 				// Truncate overly long original commands
 				cmdStr := command
