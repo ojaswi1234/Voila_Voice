@@ -3507,10 +3507,11 @@ When asked to find, scan, or search for a specific file, folder, or project by n
 CRITICAL - DEPENDENCY OVERHEAD AVOIDANCE:
 NEVER read or explore inside node_modules, .venv, vendor, .m2, .gradle, target, packages, or .cargo. To understand what packages/dependencies are installed, ONLY read the blueprint files (package.json, pyproject.toml, requirements.txt, go.mod, pom.xml, build.gradle, composer.json, Gemfile, Cargo.toml, *.csproj). Also NEVER read standard '.env' files; if you need environment context, ONLY look at '.env.example' or '.env.local'.
 
-CRITICAL - TOOL EFFICIENCY & LOOP AVOIDANCE (0 BUGS POLICY):
+CRITICAL - TOOL EFFICIENCY & PROBLEM SOLVING:
 1. HISTORY REUSE: ALWAYS check message history. If a previously successful command satisfies the purpose, REUSE IT EXACTLY to save tokens.
 2. DO NOT FORMAT TERMINAL OUTPUT: Do NOT write complex scripts to make the terminal output look pretty or formatted for the user. Just dump the raw data (e.g. 'Get-WmiObject Win32_Processor | Select LoadPercentage'). You will format the final answer in your spoken voice response.
-3. IMMEDIATE TERMINATION (NO LOOPING): The absolute split-second a command returns the raw data you need, YOUR GOAL IS ACHIEVED. You MUST STOP calling tools. Do NOT re-verify. Do NOT try to clean up the output with another command.
+3. PERSISTENCE IS MANDATORY: If a tool call fails or returns an error (e.g. file not found, syntax error), you MUST NOT give up! You must reason about the error, adjust your arguments, and call the tool again. Keep trying alternative approaches until you succeed.
+4. HOW TO STOP: Once (AND ONLY ONCE) the task is fully and perfectly achieved, you MUST return a normal text message and completely OMIT the tool calls to exit the loop and speak to the user.
 
 CRITICAL - DOCUMENT GENERATION & LAYOUT (ZERO OVERLAP POLICY):
 When generating PDFs (via LaTeX) or PPTs (via Python python-pptx):
