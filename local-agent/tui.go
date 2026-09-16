@@ -285,8 +285,16 @@ func renderMeshGraph(state LiveState, styles map[string]lipgloss.Style, termW in
 	for _, n := range state.Nodes {
 		pos     := gridPos[n.ID]
 		gc, gr  := pos[0], pos[1]
-		for attempts := 0; grid[gr][gc] != "" && attempts < maxCols; attempts++ {
-			gc = (gc + 1) % maxCols
+		for grid[gr][gc] != "" {
+			gc++
+			if gc >= maxCols {
+				gc = 0
+				gr++
+				if gr >= len(grid) {
+					grid = append(grid, make([]string, maxCols))
+					maxGridRows = len(grid)
+				}
+			}
 		}
 		grid[gr][gc] = n.ID
 		gridPos[n.ID] = [2]int{gc, gr}
@@ -332,21 +340,32 @@ func renderMeshGraph(state LiveState, styles map[string]lipgloss.Style, termW in
 		rows := make([]string, boxH)
 		for i := range rows { rows[i] = strings.Repeat(" ", hGap) }
 
-		if fromID == "" || toID == "" || !edgeSet[fromID+"->"+toID] {
+		if fromID == "" || toID == "" {
+			return strings.Join(rows, "\n")
+		}
+
+		hasFwd := edgeSet[fromID+"->"+toID]
+		hasRev := edgeSet[toID+"->"+fromID]
+		if !hasFwd && !hasRev {
 			return strings.Join(rows, "\n")
 		}
 
 		var arrow string
-		switch edgeClass(fromID, toID) {
-		case "bidir":
-			// Bidirectional: double-line with arrowheads both ways  ◀══▶
+		cls := edgeClass(fromID, toID)
+		if cls == "bidir" {
 			arrow = "◀══▶════"
-		case "many":
-			// Fan-out/fan-in: open arrowhead  ──▷──
-			arrow = "───▷────"
-		default:
-			// Standard 1:1:  ──▶──
-			arrow = "───▶────"
+		} else if cls == "many" {
+			if hasFwd {
+				arrow = "───▷────"
+			} else {
+				arrow = "◁───────"
+			}
+		} else {
+			if hasFwd {
+				arrow = "───▶────"
+			} else {
+				arrow = "◀───────"
+			}
 		}
 		if len([]rune(arrow)) > hGap { arrow = string([]rune(arrow)[:hGap]) }
 		for len([]rune(arrow)) < hGap { arrow += "─" }
@@ -397,7 +416,11 @@ func renderMeshGraph(state LiveState, styles map[string]lipgloss.Style, termW in
 
 			for cb := 0; cb < maxCols; cb++ {
 				toID := rowBelow[cb]
-				if toID == "" || !edgeSet[fromID+"->"+toID] { continue }
+				if toID == "" { continue }
+				hasFwd := edgeSet[fromID+"->"+toID]
+				hasRev := edgeSet[toID+"->"+fromID]
+				if !hasFwd && !hasRev { continue }
+				
 				tx := centerX(cb)
 
 				cls := edgeClass(fromID, toID)
@@ -423,28 +446,35 @@ func renderMeshGraph(state LiveState, styles map[string]lipgloss.Style, termW in
 					setR(c, px, li, ch)
 				}
 
-				// Arrowhead at bottom pointing into target
-				arrow := '▼'
-				if cls == "bidir" { setR(c, fx, 0, '▲') } // upward arrowhead at source too
-				setR(c, tx, vConnH-1, arrow)
+				// Arrowhead at bottom pointing into target, or top pointing into source
+				if hasFwd { setR(c, tx, vConnH-1, '▼') }
+				if hasRev { setR(c, fx, 0, '▲') }
+				if cls == "bidir" {
+					setR(c, tx, vConnH-1, '▼')
+					setR(c, fx, 0, '▲')
+				}
 
 				// Rounded corner hints at top and bottom for diagonal lines
-				if tx != fx {
-					if tx > fx { setR(c, fx, 0, '╮'); setR(c, tx, vConnH-1, '╰') } else
-					{ setR(c, fx, 0, '╭'); setR(c, tx, vConnH-1, '╯') }
+				if tx > fx {
+					setR(c, fx, 0, '╮')
+					setR(c, tx, vConnH-1, '╰')
+				} else if tx < fx {
+					setR(c, fx, 0, '╭')
+					setR(c, tx, vConnH-1, '╯')
 				}
 			}
 		}
 		return getString(c)
 	}
 
-	// ── Bypass zone (below a node row, for same-row non-adjacent edges) ────
-	// Draws U-arc curves like:  ╰─────────────────────▶
-	// for edges A→C that skip over B in the same row.
+	// ── Bypass zone (below a row, for non-adjacent nodes in same row) ──────
 	buildBypass := func(row []string) string {
 		stripW := maxCols*nodeVisW + (maxCols-1)*hGap + 2
 		if stripW < 10 { stripW = 80 }
 		c := newCanvas(stripW, bypassH)
+
+		// track already drawn pairs to avoid drawing a<->b twice
+		drawn := make(map[string]bool)
 
 		for ca := 0; ca < maxCols; ca++ {
 			fromID := row[ca]
@@ -452,16 +482,22 @@ func renderMeshGraph(state LiveState, styles map[string]lipgloss.Style, termW in
 			fx := centerX(ca)
 
 			for cb := 0; cb < maxCols; cb++ {
-				if cb == ca || cb == ca+1 { continue } // skip adjacent (handled in gap)
+				if cb == ca || cb == ca+1 || cb == ca-1 { continue } // skip self and adjacent
 				toID := row[cb]
-				if toID == "" || !edgeSet[fromID+"->"+toID] { continue }
+				if toID == "" { continue }
+				
+				hasFwd := edgeSet[fromID+"->"+toID]
+				hasRev := edgeSet[toID+"->"+fromID]
+				if !hasFwd && !hasRev { continue }
+				
+				pairKey := fromID + "|" + toID
+				if fromID > toID { pairKey = toID + "|" + fromID }
+				if drawn[pairKey] { continue }
+				drawn[pairKey] = true
+				
 				tx := centerX(cb)
 
 				cls := edgeClass(fromID, toID)
-
-				// Draw a U-arc:
-				//   Line 0:  ╰────────────────────╮   (bottom of node row)
-				//   Line 1:  (below the row)
 
 				// Corner at source side
 				if tx > fx {
@@ -480,8 +516,13 @@ func renderMeshGraph(state LiveState, styles map[string]lipgloss.Style, termW in
 				if cls == "many"  { lineChar = '━' }
 				for x := lx + 1; x < rx; x++ { setR(c, x, 0, lineChar) }
 
-				// Arrowhead pointing at target
-				if tx > fx { setR(c, tx-1, 0, '▶') } else { setR(c, tx+1, 0, '◀') }
+				// Arrowheads
+				if hasFwd {
+					if tx > fx { setR(c, tx-1, 0, '▶') } else { setR(c, tx+1, 0, '◀') }
+				}
+				if hasRev {
+					if tx > fx { setR(c, fx+1, 0, '◀') } else { setR(c, fx-1, 0, '▶') }
+				}
 			}
 		}
 		return getString(c)
