@@ -287,6 +287,8 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 					promptBuilder.WriteString("\n")
 				}
 
+				promptBuilder.WriteString("CRITICAL CHAT VISIBILITY INSTRUCTION:\n")
+				promptBuilder.WriteString("Before calling ANY tool, you MUST output a brief text explanation of your reasoning (e.g., 'I will now search the web for X...'). NEVER output a tool call without first writing your thoughts in the main response text. Your teammates need to read your thought process in the chat UI!\n\n")
 				promptBuilder.WriteString("CRITICAL EFFICIENCY INSTRUCTION:\n")
 				promptBuilder.WriteString("DO NOT output massive documents, large blocks of code, or raw data directly in your conversational response!\n")
 				promptBuilder.WriteString("Instead, use the `write_file` tool to save your work to the local disk. In your response, only output a brief summary and the file paths (pointers). Your team members will use the `read_file` tool to review your work.\n\n")

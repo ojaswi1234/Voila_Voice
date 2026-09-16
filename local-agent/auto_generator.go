@@ -14,18 +14,76 @@ import (
 	"time"
 )
 
+
+func pingGroq(ctx context.Context, apiKey string) bool {
+	if apiKey == "" { return false }
+	payload := map[string]interface{}{
+		"model": "llama3-8b-8192", // Use cheapest model for ping
+		"messages": []map[string]string{{"role": "user", "content": "ping"}},
+		"max_tokens": 1,
+	}
+	body, _ := json.Marshal(payload)
+	req, _ := http.NewRequestWithContext(ctx, "POST", "https://api.groq.com/openai/v1/chat/completions", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil { return false }
+	defer resp.Body.Close()
+	return resp.StatusCode == 200
+}
+
+func pingOllama(ctx context.Context, baseURL string, apiKey string) bool {
+	if baseURL == "" { baseURL = "http://localhost:11434" }
+	payload := map[string]interface{}{
+		"model": "llama3.1:latest",
+		"messages": []map[string]string{{"role": "user", "content": "ping"}},
+		"max_tokens": 1,
+	}
+	body, _ := json.Marshal(payload)
+	req, _ := http.NewRequestWithContext(ctx, "POST", strings.TrimRight(baseURL, "/")+"/api/chat", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	if apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil { return false }
+	defer resp.Body.Close()
+	return resp.StatusCode == 200
+}
+
 func autoGenerateGraphifyState(ctx context.Context, command string, connData ConnectionData) error {
 	fmt.Printf("STATUS: SYSTEM_MSG:Auto-generating team topology using gemma4:31b...\n")
 	os.Stdout.Sync()
 
-		groqModels := fetchGroqModels(connData.GroqAPIKey)
-	if len(groqModels) == 0 {
-		groqModels = []string{"\"llama-3.1-70b-versatile\"", "\"mixtral-8x7b-32768\"", "\"gemma2-9b-it\"", "\"llama3-8b-8192\""}
+		fmt.Printf("STATUS: SYSTEM_MSG:Pre-flight check: Verifying API providers...\n")
+	os.Stdout.Sync()
+	
+	var groqModels []string
+	if pingGroq(ctx, connData.GroqAPIKey) {
+		groqModels = fetchGroqModels(connData.GroqAPIKey)
+		if len(groqModels) == 0 {
+			groqModels = []string{"\"llama-3.1-70b-versatile\"", "\"mixtral-8x7b-32768\"", "\"gemma2-9b-it\"", "\"llama3-8b-8192\""}
+		}
+	} else {
+		fmt.Printf("STATUS: SYSTEM_MSG:Groq API failed pre-flight check (Rate Limit/Invalid Key). Excluding Groq models from DAG.\n")
+		os.Stdout.Sync()
 	}
 	
-	ollamaModels := fetchOllamaModels(connData.OllamaBaseURL, connData.OllamaAPIKey)
-	if len(ollamaModels) == 0 {
-		ollamaModels = []string{"\"llama3.1:latest\"", "\"gemma:7b\"", "\"mistral:latest\""}
+	var ollamaModels []string
+	if pingOllama(ctx, connData.OllamaBaseURL, connData.OllamaAPIKey) {
+		ollamaModels = fetchOllamaModels(connData.OllamaBaseURL, connData.OllamaAPIKey)
+		if len(ollamaModels) == 0 {
+			ollamaModels = []string{"\"llama3.1:latest\"", "\"gemma:7b\"", "\"mistral:latest\""}
+		}
+	} else {
+		fmt.Printf("STATUS: SYSTEM_MSG:Ollama API failed pre-flight check. Excluding Ollama models from DAG.\n")
+		os.Stdout.Sync()
+	}
+	
+	if len(groqModels) == 0 && len(ollamaModels) == 0 {
+		return fmt.Errorf("pre-flight check failed: Both Groq and Ollama APIs are exhausted or unreachable. Please wait for rate limits to reset.")
 	}
 
 	groqModelStr := strings.Join(groqModels, ", ")
@@ -61,8 +119,8 @@ Rules:
 3. Distribute (x,y) coordinates logically (e.g. left to right, 100 to 700 for X, 100 to 400 for Y).
 4. Assign nice distinct hex colors.
 5. ARCHITECTURE & RELATIONSHIPS: Create a highly collaborative, bidirectional MESH topology reflecting a professional cross-functional team (e.g., Product, Frontend, Backend, Database, Security, Testing, DevOps). 
-   - Agents MUST verify each other's work (e.g., Testing verifies Frontend/Backend; Security verifies Database/Backend). 
-   - Connections SHOULD include feedback loops (e.g., if you have ["frontend", "testing"], you MUST also have ["testing", "frontend"] for the feedback loop). 
+   - PARALLELISM IS MANDATORY: Do NOT create a slow, linear sequential chain (e.g., A -> B -> C). You MUST create parallel branches so multiple nodes execute concurrently! For example, a single "Generator" node should branch out to 3 parallel "Critic" nodes simultaneously (e.g. [["coder", "security"], ["coder", "tester"], ["coder", "architect"]]).
+   - Agents MUST verify each other's work with feedback loops (e.g., if you have ["coder", "tester"], you MUST also have ["tester", "coder"] to force revisions). 
    - Map this out as a 2D spatial diagram where nodes are placed in a circular or star layout, NOT just top-down. 
    - Use (X,Y) coordinates between X:0-800 and Y:0-500 to arrange them spatially (e.g. Product at top Y:50, Database at bottom right X:700, Y:400).
 6. INSTRUCT THE NODES TO USE TOOLS: The nodes have access to powerful tools including: browser_automation (scrape/interact with websites), run_terminal (powershell), web_research (duckduckgo), read/write files, and create/modify documents (PDF, PPTX, Excel, CSV). Explicitly command the nodes in their 'prompt' to use these tools if the task requires it.
