@@ -9,13 +9,27 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 )
 
 func autoGenerateGraphifyState(ctx context.Context, command string, connData ConnectionData) error {
 	fmt.Printf("STATUS: SYSTEM_MSG:Auto-generating team topology using gemma4:31b...\n")
 	os.Stdout.Sync()
 
-	systemPrompt := `You are an elite multi-agent system architect. The user has given a task. 
+		groqModels := fetchGroqModels(connData.GroqAPIKey)
+	if len(groqModels) == 0 {
+		groqModels = []string{"\"llama-3.1-70b-versatile\"", "\"mixtral-8x7b-32768\"", "\"gemma2-9b-it\"", "\"llama3-8b-8192\""}
+	}
+	
+	ollamaModels := fetchOllamaModels(connData.OllamaBaseURL)
+	if len(ollamaModels) == 0 {
+		ollamaModels = []string{"\"llama3.1:latest\"", "\"gemma:7b\"", "\"mistral:latest\""}
+	}
+
+	groqModelStr := strings.Join(groqModels, ", ")
+	ollamaModelStr := strings.Join(ollamaModels, ", ")
+
+	systemPrompt := fmt.Sprintf(`You are an elite multi-agent system architect. The user has given a task. 
 You must break this task down into a directed acyclic graph (DAG) of specialized AI agent nodes.
 Return EXACTLY AND ONLY a valid JSON object matching this schema:
 {
@@ -23,7 +37,8 @@ Return EXACTLY AND ONLY a valid JSON object matching this schema:
     {
       "id": "node1", 
       "role": "Researcher", 
-      "model": "openai/gpt-oss-120b\n(Groq)", 
+      "model": "llama-3.1-70b-versatile
+(Groq)", 
       "prompt": "Specific instructions for this node.",
       "x": 150, "y": 150, "r": 20,
       "color": "#2563EB", "outline": "#60A5FA"
@@ -35,9 +50,12 @@ Return EXACTLY AND ONLY a valid JSON object matching this schema:
 }
 Rules:
 1. "id" must be unique (e.g. node1, node2).
-2. "model" MUST be exactly one of these options based on the provider (Groq or Ollama). You MUST use a DIVERSE MIX — spread workloads across both providers (minimum 2 Ollama nodes per team of 4+):
-   Groq models (append "\n(Groq)"): "qwen/qwen3.8-27b", "qwen/qwen3.6-27b", "openai/gpt-oss-120b", "openai/gpt-oss-20b", "openai/gpt-oss-safeguard-20b", "groq/compound", "groq/compound-mini", "allam-2-7b", "meta-llama/llama-prompt-guard-2-86m", "meta-llama/llama-prompt-guard-2-22m", "llama3-70b-8192", "llama-3.1-70b-versatile", "mixtral-8x7b-32768"
-   Ollama models (append "\n(Ollama)"): "gemma4:31b", "gpt-oss:120b", "gpt-oss:20b", "nemotron-3-nano:30b", "nemotron-3-super", "nemotron-3-ultra"
+2. "model" MUST be exactly one of these options based on the provider (Groq or Ollama). You MUST use a DIVERSE MIX to avoid API limits (e.g., minimum 2 Ollama nodes per team of 4+):
+   Available Groq models (append "
+(Groq)"): %s
+   Available Ollama models (append "
+(Ollama)"): %s
+   DO NOT hallucinate models! Only use the models explicitly listed above.
 3. Distribute (x,y) coordinates logically (e.g. left to right, 100 to 700 for X, 100 to 400 for Y).
 4. Assign nice distinct hex colors.
 5. ARCHITECTURE & RELATIONSHIPS: Create a highly collaborative, bidirectional MESH topology reflecting a professional cross-functional team (e.g., Product, Frontend, Backend, Database, Security, Testing, DevOps). 
@@ -46,13 +64,18 @@ Rules:
    - Map this out as a 2D spatial diagram where nodes are placed in a circular or star layout, NOT just top-down. 
    - Use (X,Y) coordinates between X:0-800 and Y:0-500 to arrange them spatially (e.g. Product at top Y:50, Database at bottom right X:700, Y:400).
 6. INSTRUCT THE NODES TO USE TOOLS: The nodes have access to powerful tools including: browser_automation (scrape/interact with websites), run_terminal (powershell), web_research (duckduckgo), read/write files, and create/modify documents (PDF, PPTX, Excel, CSV). Explicitly command the nodes in their 'prompt' to use these tools if the task requires it.
-7. Provide NO markdown wrappers, ONLY raw JSON.`
+7. Provide NO markdown wrappers, ONLY raw JSON.`, groqModelStr, ollamaModelStr)
+
+	taskCmd := command
+	if len(taskCmd) > 4000 {
+		taskCmd = taskCmd[:4000] + "...[TRUNCATED]"
+	}
 
 	payload := map[string]interface{}{
 		"model": "gemma4:31b",
 		"messages": []map[string]string{
 			{"role": "system", "content": systemPrompt},
-			{"role": "user", "content": "Task: " + command},
+			{"role": "user", "content": "Task: " + taskCmd},
 		},
 		"stream": false,
 		"format": "json",
@@ -198,4 +221,45 @@ func tryGroqConfig(ctx context.Context, apiKey string, body []byte) (string, err
 		return res.Choices[0].Message.Content, nil
 	}
 	return "", fmt.Errorf("no choices returned")
+}
+
+func fetchGroqModels(apiKey string) []string {
+	if apiKey == "" { return nil }
+	req, _ := http.NewRequest("GET", "https://api.groq.com/openai/v1/models", nil)
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil || resp.StatusCode != 200 { return nil }
+	defer resp.Body.Close()
+	var res struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	json.NewDecoder(resp.Body).Decode(&res)
+	var models []string
+	for _, m := range res.Data {
+		models = append(models, fmt.Sprintf("%q", m.ID))
+	}
+	return models
+}
+
+func fetchOllamaModels(baseURL string) []string {
+	if baseURL == "" { baseURL = "http://localhost:11434" }
+	req, _ := http.NewRequest("GET", strings.TrimRight(baseURL, "/")+"/api/tags", nil)
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil || resp.StatusCode != 200 { return nil }
+	defer resp.Body.Close()
+	var res struct {
+		Models []struct {
+			Name string `json:"name"`
+		} `json:"models"`
+	}
+	json.NewDecoder(resp.Body).Decode(&res)
+	var models []string
+	for _, m := range res.Models {
+		models = append(models, fmt.Sprintf("%q", m.Name))
+	}
+	return models
 }

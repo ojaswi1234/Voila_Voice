@@ -38,6 +38,7 @@ func initLiveState(nodes []GraphNode, edges [][]string) {
 	for i, n := range nodes {
 		currentLiveState.Nodes[i] = NodeLiveState{
 			ID: n.ID, Role: n.Role, Status: "pending", Model: n.Model,
+			X: n.X, Y: n.Y,
 		}
 	}
 	writeLiveState()
@@ -224,13 +225,25 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 				}
 			}
 			if !anyRunning {
+				var forcedNode string
+				for _, n := range state.Nodes {
+					if !completed[n.ID] {
+						forcedNode = n.ID
+						break
+					}
+				}
+				if forcedNode != "" {
+					ready = append(ready, forcedNode)
+				} else {
+					mu.Unlock()
+					finishLiveState("error", "deadlock detected: no nodes are ready or running")
+					return "", fmt.Errorf("deadlock detected: no nodes are ready or running")
+				}
+			} else {
+				cond.Wait()
 				mu.Unlock()
-				finishLiveState("error", "deadlock detected: no nodes are ready or running")
-				return "", fmt.Errorf("deadlock detected: no nodes are ready or running")
+				continue
 			}
-			cond.Wait()
-			mu.Unlock()
-			continue
 		}
 
 		for _, nid := range ready {
@@ -282,6 +295,12 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 
 				finalCommand := promptBuilder.String()
 				
+				// Truncate to avoid 413 Payload Too Large (Groq 8000 TPM limit)
+				if len(finalCommand) > 15000 {
+					half := 7000
+					finalCommand = finalCommand[:half] + "\n\n...[MIDDLE CONTEXT TRUNCATED TO PREVENT 413 ERROR]...\n\n" + finalCommand[len(finalCommand)-half:]
+				}
+				
 				var actualModel string
 				parts := strings.Split(n.Model, "\n")
 				if len(parts) > 0 {
@@ -306,12 +325,15 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 					}
 					// If Groq completely fails, fallback to Ollama
 					if nodeErr != nil {
-						fmt.Printf("STATUS: SYSTEM_MSG:Node %s Groq exhausted, falling back to Ollama gemma4:31b...\n", nodeID)
+						fallbackOllama := "llama3.1:latest"
+						om := fetchOllamaModels(connData.OllamaBaseURL)
+						if len(om) > 0 { fallbackOllama = strings.Trim(om[0], "\"") }
+						fmt.Printf("STATUS: SYSTEM_MSG:Node %s Groq exhausted, falling back to Ollama %s...\n", nodeID, fallbackOllama)
 						os.Stdout.Sync()
 						ollamaSemaphore <- struct{}{}
-						nodeOut, nodeErr = executeOllamaCommand(ctx, finalCommand, connData.OllamaBaseURL, "gemma4:31b", connData.OllamaAPIKey, nil, taskID, "")
+						nodeOut, nodeErr = executeOllamaCommand(ctx, finalCommand, connData.OllamaBaseURL, fallbackOllama, connData.OllamaAPIKey, nil, taskID, "")
 						if nodeErr != nil && connData.OllamaSecondaryAPIKey != "" {
-							nodeOut, nodeErr = executeOllamaCommand(ctx, finalCommand, connData.OllamaBaseURL, "gemma4:31b", connData.OllamaSecondaryAPIKey, nil, taskID, "")
+							nodeOut, nodeErr = executeOllamaCommand(ctx, finalCommand, connData.OllamaBaseURL, fallbackOllama, connData.OllamaSecondaryAPIKey, nil, taskID, "")
 						}
 						<-ollamaSemaphore
 					}
@@ -327,11 +349,14 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 					
 					// If Ollama completely fails, fallback to Groq
 					if nodeErr != nil {
-						fmt.Printf("STATUS: SYSTEM_MSG:Node %s Ollama exhausted, falling back to Groq llama-3.1-70b-versatile...\n", nodeID)
+						fallbackGroq := "llama3-8b-8192"
+						gm := fetchGroqModels(connData.GroqAPIKey)
+						if len(gm) > 0 { fallbackGroq = strings.Trim(gm[0], "\"") }
+						fmt.Printf("STATUS: SYSTEM_MSG:Node %s Ollama exhausted, falling back to Groq %s...\n", nodeID, fallbackGroq)
 						os.Stdout.Sync()
-						nodeOut, nodeErr = executeGroqCommand(ctx, finalCommand, connData.GroqAPIKey, "llama-3.1-70b-versatile", "dag-internal", nil, taskID, "")
+						nodeOut, nodeErr = executeGroqCommand(ctx, finalCommand, connData.GroqAPIKey, fallbackGroq, "dag-internal", nil, taskID, "")
 						if nodeErr != nil && connData.GroqSecondaryAPIKey != "" {
-							nodeOut, nodeErr = executeGroqCommand(ctx, finalCommand, connData.GroqSecondaryAPIKey, "llama-3.1-70b-versatile", "dag-internal", nil, taskID, "")
+							nodeOut, nodeErr = executeGroqCommand(ctx, finalCommand, connData.GroqSecondaryAPIKey, fallbackGroq, "dag-internal", nil, taskID, "")
 						}
 					}
 				}

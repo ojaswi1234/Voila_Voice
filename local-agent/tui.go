@@ -229,26 +229,36 @@ func renderMeshGraph(state LiveState, styles map[string]lipgloss.Style, termW in
 		return "  Waiting for graph data..."
 	}
 
+	maxStrLen := 16
+	for _, n := range state.Nodes {
+		if len(n.Role) > maxStrLen { maxStrLen = len(n.Role) }
+		parts := strings.SplitN(n.Model, "\n", 2)
+		m1 := strings.TrimSpace(parts[0])
+		if len(m1) > maxStrLen { maxStrLen = len(m1) }
+	}
+	
+	nodeVisW := maxStrLen + 4 // padding + borders
+	if nodeVisW > 46 { nodeVisW = 46 } // hard cap
+	
 	mode := "FULL"
 	if len(state.Nodes) > 12 || termW < 90 {
 		mode = "NANO"
+		nodeVisW = 16
+		if maxStrLen+2 > 16 && maxStrLen+2 < 30 { nodeVisW = maxStrLen+2 }
 	} else if len(state.Nodes) > 6 || termW < 130 {
 		mode = "COMPACT"
+		if nodeVisW > 32 { nodeVisW = 32 }
 	}
 
-	nodeVisW := 32
-	if mode == "COMPACT" { nodeVisW = 24 }
-	if mode == "NANO" { nodeVisW = 16 }
-	
 	hGap := 6
 	colW := nodeVisW + hGap
 	boxH := 5
 	if mode == "NANO" { boxH = 3 }
-	if mode == "COMPACT" { boxH = 4 }
+	if mode == "COMPACT" { boxH = 5 }
 
 	vGap := 6 
 	topMargin := 2
-
+	
 	type NodeRect struct {
 		X, Y, W, H int
 		ID string
@@ -283,11 +293,8 @@ func renderMeshGraph(state LiveState, styles map[string]lipgloss.Style, termW in
 	for srcToDst := range edgeMap {
 		parts := strings.Split(srcToDst, "->")
 		src, dst := parts[0], parts[1]
-		// For topological sort, ignore back-edges if we detect a cycle
-		// But simple approach: just use it and if cycle, it breaks
-		// Since we have bidirectional, explicitly ignore one direction for layout!
 		if bidirMap[srcToDst] && src > dst { 
-			continue // Arbitrarily break cycle for layout by string comparison
+			continue 
 		}
 		adj[src] = append(adj[src], dst)
 		inDegree[dst]++
@@ -302,7 +309,6 @@ func renderMeshGraph(state LiveState, styles map[string]lipgloss.Style, termW in
 		}
 	}
 	
-	// If cycle exists, force start
 	if len(queue) == 0 && len(state.Nodes) > 0 {
 		queue = append(queue, state.Nodes[0].ID)
 		levelMap[state.Nodes[0].ID] = 0
@@ -326,7 +332,6 @@ func renderMeshGraph(state LiveState, styles map[string]lipgloss.Style, termW in
 		}
 	}
 
-	// 2. Group by Level and calculate max width
 	levelNodes := make([][]string, maxLevel+1)
 	for _, n := range state.Nodes {
 		lvl, ok := levelMap[n.ID]
@@ -371,19 +376,20 @@ func renderMeshGraph(state LiveState, styles map[string]lipgloss.Style, termW in
 			if title == "" { title = "Unknown" }
 			
 			var content string
-			if mode == "FULL" {
-				if len(title) > 28 { title = title[:25] + "..." }
+			if mode == "FULL" || mode == "COMPACT" {
+				maxT := nodeVisW - 4
+				if len(title) > maxT { title = title[:maxT-3] + "..." }
 				tStr := lipgloss.NewStyle().Bold(true).Render(title)
-				parts  := strings.SplitN(n.Model, "\n", 2)
+				parts  := strings.Split(n.Model, "\n")
 				m1 := strings.TrimSpace(parts[0])
-				if len(m1) > 28 { m1 = m1[:25] + "..." }
+				if len(parts) > 1 {
+				    m1 += " " + strings.TrimSpace(parts[1])
+				}
+				if len(m1) > maxT { m1 = m1[:maxT-3] + "..." }
 				content = fmt.Sprintf("%s\n%s\n[%s]", tStr, lipgloss.NewStyle().Faint(true).Render(m1), strings.ToUpper(n.Status))
-			} else if mode == "COMPACT" {
-				if len(title) > 20 { title = title[:17] + "..." }
-				tStr := lipgloss.NewStyle().Bold(true).Render(title)
-				content = fmt.Sprintf("%s\n[%s]", tStr, strings.ToUpper(n.Status))
 			} else {
-				if len(title) > 14 { title = title[:11] + "..." }
+				maxT := nodeVisW - 2
+				if len(title) > maxT { title = title[:maxT-3] + "..." }
 				content = lipgloss.NewStyle().Bold(true).Render(title)
 			}
 			
