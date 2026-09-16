@@ -124,11 +124,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-func (m tuiModel) View() string {
-	if m.err != nil {
-		return fmt.Sprintf("Error: %v\nPress q to quit.", m.err)
-	}
-
+func (m tuiModel) generateContent() string {
 	titleStyle    := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#10B981")).MarginBottom(1)
 	pendingStyle  := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#4B5563")).Padding(0, 1).Foreground(lipgloss.Color("#9CA3AF")).Width(30)
 	runningStyle  := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#F59E0B")).Padding(0, 1).Foreground(lipgloss.Color("#FCD34D")).Width(30)
@@ -183,12 +179,16 @@ func (m tuiModel) View() string {
 	}
 	logsView := lipgloss.NewStyle().Foreground(lipgloss.Color("#D1D5DB")).MarginTop(1).Render(logs)
 
-	content := lipgloss.JoinVertical(lipgloss.Left, header, graphView, logsView)
-	
-	if !m.ready {
-		return content
+	return lipgloss.JoinVertical(lipgloss.Left, header, graphView, logsView)
+}
+
+func (m tuiModel) View() string {
+	if m.err != nil {
+		return fmt.Sprintf("Error: %v\nPress q to quit.", m.err)
 	}
-	m.vp.SetContent(content)
+	if !m.ready {
+		return "Initializing..."
+	}
 	return m.vp.View()
 }
 
