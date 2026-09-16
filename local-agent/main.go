@@ -2852,6 +2852,15 @@ func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMes
 		return "error: failed to parse tool arguments: " + err.Error()
 	}
 
+	// Globally resolve all 'path' parameters so files save to Desktop instead of the hidden local-agent folder
+	if pathVal, exists := args["path"]; exists {
+		if pathStr, ok := pathVal.(string); ok {
+			args["path"] = resolveAgentPath(pathStr)
+			// Re-serialize args JSON so downstream Python tools get the resolved path
+			argsJSON, _ = json.Marshal(args)
+		}
+	}
+
 	getString := func(key string) string {
 		if val, exists := args[key]; exists {
 			if strVal, ok := val.(string); ok {
@@ -3034,6 +3043,11 @@ case "read_file":
 
 	case "run_terminal":
 		actualCommand := getString("command")
+		// Force the terminal to execute in Desktop by default
+		homeDir, _ := os.UserHomeDir()
+		desktopPath := filepath.Join(homeDir, "Desktop")
+		actualCommand = "Set-Location -Path '" + desktopPath + "';\n" + actualCommand
+		
 		// Fix LLM JSON escaping hallucinations where it outputs \" instead of "
 		actualCommand = strings.ReplaceAll(actualCommand, "\\\"", "\"")
 
