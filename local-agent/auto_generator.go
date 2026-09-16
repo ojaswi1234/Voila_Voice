@@ -40,8 +40,11 @@ Rules:
    Ollama models (append "\n(Ollama)"): "gemma4:31b", "gpt-oss:120b", "gpt-oss:20b", "nemotron-3-nano:30b", "nemotron-3-super", "nemotron-3-ultra"
 3. Distribute (x,y) coordinates logically (e.g. left to right, 100 to 700 for X, 100 to 400 for Y).
 4. Assign nice distinct hex colors.
-5. ARCHITECTURE & RELATIONSHIPS: Create highly parallel, collaborative MESH/Graph topologies where multiple agents (e.g. 2-3 researchers or specialists) work concurrently on different parts of the problem before converging. DO NOT make a simple sequential chain if the task can be parallelized! Maximize parallel execution.
-   The connections & relationship mapping MUST ONLY be: 1:Many, Many:1, Many:Many, or 1:1.
+5. ARCHITECTURE & RELATIONSHIPS: Create a highly collaborative, bidirectional MESH topology reflecting a professional cross-functional team (e.g., Product, Frontend, Backend, Database, Security, Testing, DevOps). 
+   - Agents MUST verify each other's work (e.g., Testing verifies Frontend/Backend; Security verifies Database/Backend). 
+   - Connections SHOULD include feedback loops (e.g., if you have ["frontend", "testing"], you MUST also have ["testing", "frontend"] for the feedback loop). 
+   - Map this out as a 2D spatial diagram where nodes are placed in a circular or star layout, NOT just top-down. 
+   - Use (X,Y) coordinates between X:0-800 and Y:0-500 to arrange them spatially (e.g. Product at top Y:50, Database at bottom right X:700, Y:400).
 6. INSTRUCT THE NODES TO USE TOOLS: The nodes have access to powerful tools including: browser_automation (scrape/interact with websites), run_terminal (powershell), web_research (duckduckgo), read/write files, and create/modify documents (PDF, PPTX, Excel, CSV). Explicitly command the nodes in their 'prompt' to use these tools if the task requires it.
 7. Provide NO markdown wrappers, ONLY raw JSON.`
 

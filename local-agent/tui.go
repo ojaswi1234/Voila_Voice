@@ -156,7 +156,7 @@ func (m tuiModel) generateContent() string {
 	termW := m.termWidth
 	if termW < 80 { termW = 120 }
 
-	graphView := renderMeshGraph(m.state, nodeStyles, termW)
+	graphView := renderMeshGraph(m.state, nodeStyles, termW, m.termHeight)
 
 	nameStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#8B5CF6")).MarginTop(1)
 	msgStyle  := lipgloss.NewStyle().Foreground(lipgloss.Color("#D1D5DB")).PaddingLeft(2)
@@ -224,7 +224,7 @@ const (
 	bypassH  = 2  // bypass arc height (for same-row non-adjacent connections)
 )
 
-func renderMeshGraph(state LiveState, styles map[string]lipgloss.Style, termW int) string {
+func renderMeshGraph(state LiveState, styles map[string]lipgloss.Style, termW int, termH int) string {
 	if len(state.Nodes) == 0 {
 		return "  Waiting for graph data..."
 	}
@@ -240,14 +240,9 @@ func renderMeshGraph(state LiveState, styles map[string]lipgloss.Style, termW in
 	if mode == "COMPACT" { nodeVisW = 24 }
 	if mode == "NANO" { nodeVisW = 16 }
 	
-	hGap := 4
-	colW := nodeVisW + hGap
 	boxH := 5
 	if mode == "NANO" { boxH = 3 }
 	if mode == "COMPACT" { boxH = 4 }
-
-	vGap := 6 
-	topMargin := 2
 
 	type NodeRect struct {
 		X, Y, W, H int
@@ -258,127 +253,77 @@ func renderMeshGraph(state LiveState, styles map[string]lipgloss.Style, termW in
 	nodeMap := make(map[string]NodeLiveState)
 	for _, n := range state.Nodes { nodeMap[n.ID] = n }
 
-	// 1. Calculate Ranks (Levels)
-	inDegree := make(map[string]int)
-	adj := make(map[string][]string)
-	
+	// Spatial Layout scaling
+	maxX, maxY := 1, 1
 	for _, n := range state.Nodes {
-		inDegree[n.ID] = 0
+		if n.X > maxX { maxX = n.X }
+		if n.Y > maxY { maxY = n.Y }
 	}
-	for _, e := range state.Edges {
-		if len(e) >= 2 {
-			adj[e[0]] = append(adj[e[0]], e[1])
-			inDegree[e[1]]++
-		}
-	}
+	if maxX < 100 { maxX = 800 }
+	if maxY < 100 { maxY = 500 }
 	
-	levelMap := make(map[string]int)
-	var queue []string
-	for id, deg := range inDegree {
-		if deg == 0 {
-			queue = append(queue, id)
-			levelMap[id] = 0
-		}
-	}
+	canvasW := termW - 4
+	if canvasW < 40 { canvasW = 80 }
 	
-	maxLevel := 0
-	for len(queue) > 0 {
-		curr := queue[0]
-		queue = queue[1:]
-		currLevel := levelMap[curr]
-		if currLevel > maxLevel { maxLevel = currLevel }
-		
-		for _, neighbor := range adj[curr] {
-			if currLevel+1 > levelMap[neighbor] {
-				levelMap[neighbor] = currLevel + 1
-			}
-			inDegree[neighbor]--
-			if inDegree[neighbor] == 0 {
-				queue = append(queue, neighbor)
-			}
-		}
-	}
+	// Default target height for graph portion is termH - 12 (to leave space for logs)
+	canvasH := termH - 12
+	if canvasH < 20 { canvasH = 20 }
+	
+	// Add some margins so boxes don't get clipped
+	usableW := canvasW - nodeVisW - 2
+	usableH := canvasH - boxH - 2
+	if usableW < 10 { usableW = 10 }
+	if usableH < 10 { usableH = 10 }
 
-	// 2. Group by Level and calculate max width
-	levelNodes := make([][]string, maxLevel+1)
-	// fallback for cycles or disconnected nodes
-	for _, n := range state.Nodes {
-		lvl, ok := levelMap[n.ID]
-		if !ok { lvl = 0 } // default
-		levelNodes[lvl] = append(levelNodes[lvl], n.ID)
-	}
-
-	maxNodesInLevel := 0
-	for _, nodes := range levelNodes {
-		if len(nodes) > maxNodesInLevel { maxNodesInLevel = len(nodes) }
-	}
-	
-	// If the widest level exceeds terminal width, force NANO mode and recalculate
-	if maxNodesInLevel * colW > termW {
-		mode = "NANO"
-		nodeVisW = 16
-		boxH = 3
-		colW = nodeVisW + hGap
-	}
-	
-	canvasW := maxNodesInLevel * colW
-	if canvasW < termW-4 { canvasW = termW-4 } // use available space for centering
-	canvasH := topMargin + len(levelNodes) * (boxH + vGap)
-	
 	rects := make(map[string]*NodeRect)
-	
-	// 3. Place nodes centered in their levels
-	for lvl, nodes := range levelNodes {
-		levelW := len(nodes) * colW
-		startX := (canvasW - levelW) / 2
-		if startX < 0 { startX = 0 }
+	for _, n := range state.Nodes {
+		// Map from LLM coordinates to canvas coordinates
+		cx := int((float64(n.X) / float64(maxX)) * float64(usableW))
+		cy := int((float64(n.Y) / float64(maxY)) * float64(usableH)) + 1
 		
-		for i, id := range nodes {
-			n := nodeMap[id]
-			rect := &NodeRect{
-				ID: n.ID,
-				W: nodeVisW,
-				H: boxH,
-				X: startX + i*colW,
-				Y: topMargin + lvl*(boxH + vGap),
-			}
-			
-			title := n.Role
-			if title == "" { title = "Unknown" }
-			
-			var content string
-			if mode == "FULL" {
-				if len(title) > 28 { title = title[:25] + "..." }
-				tStr := lipgloss.NewStyle().Bold(true).Render(title)
-				parts  := strings.SplitN(n.Model, "\n", 2)
-				m1 := strings.TrimSpace(parts[0])
-				if len(m1) > 28 { m1 = m1[:25] + "..." }
-				content = fmt.Sprintf("%s\n%s\n[%s]", tStr, lipgloss.NewStyle().Faint(true).Render(m1), strings.ToUpper(n.Status))
-			} else if mode == "COMPACT" {
-				if len(title) > 20 { title = title[:17] + "..." }
-				tStr := lipgloss.NewStyle().Bold(true).Render(title)
-				content = fmt.Sprintf("%s\n[%s]", tStr, strings.ToUpper(n.Status))
-			} else {
-				if len(title) > 14 { title = title[:11] + "..." }
-				content = lipgloss.NewStyle().Bold(true).Render(title)
-			}
-			
-			st, ok := styles[n.Status]
-			if !ok { st = styles["pending"] }
-			
-			var renderedBox string
-			if mode == "NANO" {
-				c := ""
-				if n.Status == "completed" { c = "#10B981" } else if n.Status == "running" { c = "#F59E0B" } else if n.Status == "error" { c = "#EF4444" } else { c = "#9CA3AF" }
-				renderedBox = lipgloss.NewStyle().Background(lipgloss.Color(c)).Foreground(lipgloss.Color("#000000")).Padding(0, 1).Width(nodeVisW).Render(content)
-			} else {
-				renderedBox = st.Copy().Width(nodeVisW-2).Render(content)
-			}
-			
-			rect.Rendered = strings.Split(renderedBox, "\n")
-			rect.H = len(rect.Rendered) 
-			rects[n.ID] = rect
+		rect := &NodeRect{
+			ID: n.ID,
+			W: nodeVisW,
+			H: boxH,
+			X: cx,
+			Y: cy,
 		}
+		
+		title := n.Role
+		if title == "" { title = "Unknown" }
+		
+		var content string
+		if mode == "FULL" {
+			if len(title) > 28 { title = title[:25] + "..." }
+			tStr := lipgloss.NewStyle().Bold(true).Render(title)
+			parts  := strings.SplitN(n.Model, "\n", 2)
+			m1 := strings.TrimSpace(parts[0])
+			if len(m1) > 28 { m1 = m1[:25] + "..." }
+			content = fmt.Sprintf("%s\n%s\n[%s]", tStr, lipgloss.NewStyle().Faint(true).Render(m1), strings.ToUpper(n.Status))
+		} else if mode == "COMPACT" {
+			if len(title) > 20 { title = title[:17] + "..." }
+			tStr := lipgloss.NewStyle().Bold(true).Render(title)
+			content = fmt.Sprintf("%s\n[%s]", tStr, strings.ToUpper(n.Status))
+		} else {
+			if len(title) > 14 { title = title[:11] + "..." }
+			content = lipgloss.NewStyle().Bold(true).Render(title)
+		}
+		
+		st, ok := styles[n.Status]
+		if !ok { st = styles["pending"] }
+		
+		var renderedBox string
+		if mode == "NANO" {
+			c := ""
+			if n.Status == "completed" { c = "#10B981" } else if n.Status == "running" { c = "#F59E0B" } else if n.Status == "error" { c = "#EF4444" } else { c = "#9CA3AF" }
+			renderedBox = lipgloss.NewStyle().Background(lipgloss.Color(c)).Foreground(lipgloss.Color("#000000")).Padding(0, 1).Width(nodeVisW).Render(content)
+		} else {
+			renderedBox = st.Copy().Width(nodeVisW-2).Render(content)
+		}
+		
+		rect.Rendered = strings.Split(renderedBox, "\n")
+		rect.H = len(rect.Rendered) 
+		rects[n.ID] = rect
 	}
 	
 	canvas := make([][]rune, canvasH)
@@ -393,66 +338,104 @@ func renderMeshGraph(state LiveState, styles map[string]lipgloss.Style, termW in
 		}
 	}
 	
-	edgeSet := make(map[string]bool)
+	// Detect bidirectional edges
+	edgeMap := make(map[string]bool)
+	bidirMap := make(map[string]bool)
 	for _, e := range state.Edges {
-		if len(e) >= 2 { edgeSet[e[0]+"->"+e[1]] = true }
+		if len(e) >= 2 { 
+			forward := e[0]+"->"+e[1]
+			backward := e[1]+"->"+e[0]
+			if edgeMap[backward] {
+				bidirMap[forward] = true
+				bidirMap[backward] = true
+			} else {
+				edgeMap[forward] = true 
+			}
+		}
 	}
 
-	// Calculate stagger offsets
 	nodeIndex := make(map[string]int)
 	for i, n := range state.Nodes { nodeIndex[n.ID] = i }
 
-	for srcToDst := range edgeSet {
+	processedEdges := make(map[string]bool)
+
+	for srcToDst := range edgeMap {
 		parts := strings.Split(srcToDst, "->")
 		src, dst := parts[0], parts[1]
+		
+		// If bidirectional, only draw once
+		if bidirMap[srcToDst] {
+			if processedEdges[dst+"->"+src] { continue }
+			processedEdges[srcToDst] = true
+		}
 		
 		rSrc, ok1 := rects[src]
 		rDst, ok2 := rects[dst]
 		if !ok1 || !ok2 { continue }
 		
-		// Entry point is middle bottom of source
+		// Determine best exit/entry points based on relative position
 		fx := rSrc.X + rSrc.W/2
-		fy := rSrc.Y + rSrc.H
-		
-		// Target point is middle top of destination
+		fy := rSrc.Y + rSrc.H // exit bottom
 		tx := rDst.X + rDst.W/2
-		ty := rDst.Y - 1 
+		ty := rDst.Y - 1 // enter top
 		
-		// Stagger the horizontal bus to prevent merging
-		busOffset := (nodeIndex[dst] % (vGap - 2)) + 1
-		busY := rSrc.Y + rSrc.H + busOffset
-		if busY >= rDst.Y {
-			busY = rDst.Y - 1
+		if rDst.Y < rSrc.Y {
+			// Destination is above Source
+			fy = rSrc.Y - 1 // exit top
+			ty = rDst.Y + rDst.H // enter bottom
 		}
 		
-		// Route downwards (Hierarchical DAG guarantees rDst.Y > rSrc.Y in most cases)
-		if rDst.Y > rSrc.Y {
-			// Vertical down to bus
-			for y := fy; y < busY; y++ { 
-				if canvas[y][fx] == ' ' || canvas[y][fx] == '─' { setR(fx, y, '│') }
-			}
-			setR(fx, busY, '│') // Corner joint
+		// Spatial Bus Offset to prevent overlaps
+		busOffset := (nodeIndex[src] % 3) + 1
+		busY := fy + busOffset
+		if rDst.Y < rSrc.Y {
+			busY = fy - busOffset
+		}
+		
+		// Draw vertical from source to bus
+		dir := 1
+		if fy > busY { dir = -1 }
+		for y := fy; y != busY; y += dir { 
+			if y >= 0 && y < canvasH && (canvas[y][fx] == ' ' || canvas[y][fx] == '─') { setR(fx, y, '│') }
+		}
+		setR(fx, busY, '│')
+		
+		// Draw horizontal bus
+		lx, rx := fx, tx
+		if lx > rx { lx, rx = rx, lx }
+		for x := lx + 1; x < rx; x++ { 
+			if busY >= 0 && busY < canvasH && (canvas[busY][x] == ' ' || canvas[busY][x] == '│') { setR(x, busY, '─') }
+		}
+		
+		// Draw vertical from bus to target
+		dir = 1
+		if busY > ty { dir = -1 }
+		for y := busY; y != ty; y += dir {
+			if y >= 0 && y < canvasH && (canvas[y][tx] == ' ' || canvas[y][tx] == '─') { setR(tx, y, '│') }
+		}
+		setR(tx, ty, '│')
+		
+		// Clean corners
+		if fx != tx {
+			if fy < busY && tx > fx { setR(fx, busY, '╰'); setR(tx, busY, '╮') } 
+			if fy < busY && tx < fx { setR(fx, busY, '╯'); setR(tx, busY, '╭') } 
+			if fy > busY && tx > fx { setR(fx, busY, '╭'); setR(tx, busY, '╯') } 
+			if fy > busY && tx < fx { setR(fx, busY, '╮'); setR(tx, busY, '╰') } 
+		}
+		
+		// Draw Arrowheads
+		if ty >= busY { setR(tx, ty, '▼') } else { setR(tx, ty, '▲') }
+		
+		if bidirMap[srcToDst] {
+			// Draw reverse arrowhead at source
+			if fy < busY { setR(fx, fy, '▲') } else { setR(fx, fy, '▼') }
 			
-			// Horizontal bus
-			lx, rx := fx, tx
-			if lx > rx { lx, rx = rx, lx }
-			for x := lx + 1; x < rx; x++ { 
-				if canvas[busY][x] == ' ' || canvas[busY][x] == '│' { setR(x, busY, '─') }
+			// Optional: Draw text label on the bus line
+			label := []rune(" <==> ")
+			midX := lx + (rx - lx)/2 - len(label)/2
+			if midX > lx && midX+len(label) < rx {
+				for i, r := range label { setR(midX+i, busY, r) }
 			}
-			
-			// Vertical down to target
-			for y := busY; y < ty; y++ {
-				if canvas[y][tx] == ' ' || canvas[y][tx] == '─' { setR(tx, y, '│') }
-			}
-			setR(tx, ty, '│')
-			
-			// Insert clean corners
-			if fx != tx {
-				if tx > fx { setR(fx, busY, '╰'); setR(tx, busY, '╮') } 
-				if tx < fx { setR(fx, busY, '╯'); setR(tx, busY, '╭') } 
-			}
-			// Arrowhead
-			setR(tx, ty, '▼')
 		}
 	}
 
@@ -460,10 +443,10 @@ func renderMeshGraph(state LiveState, styles map[string]lipgloss.Style, termW in
 		for x := 0; x < canvasW; x++ {
 			curr := canvas[y][x]
 			if curr == '─' || curr == '│' || curr == '╮' || curr == '╭' || curr == '╰' || curr == '╯' {
-				hasUp := y > 0 && (canvas[y-1][x] == '│' || canvas[y-1][x] == '┼' || canvas[y-1][x] == '┴' || canvas[y-1][x] == '┬' || canvas[y-1][x] == '╰' || canvas[y-1][x] == '╯')
-				hasDown := y < canvasH-1 && (canvas[y+1][x] == '│' || canvas[y+1][x] == '┼' || canvas[y+1][x] == '┴' || canvas[y+1][x] == '┬' || canvas[y+1][x] == '╭' || canvas[y+1][x] == '╮')
-				hasLeft := x > 0 && (canvas[y][x-1] == '─' || canvas[y][x-1] == '┼' || canvas[y][x-1] == '┴' || canvas[y][x-1] == '┬' || canvas[y][x-1] == '╭' || canvas[y][x-1] == '╰')
-				hasRight := x < canvasW-1 && (canvas[y][x+1] == '─' || canvas[y][x+1] == '┼' || canvas[y][x+1] == '┴' || canvas[y][x+1] == '┬' || canvas[y][x+1] == '╮' || canvas[y][x+1] == '╯')
+				hasUp := y > 0 && (canvas[y-1][x] == '│' || canvas[y-1][x] == '┼' || canvas[y-1][x] == '┴' || canvas[y-1][x] == '┬' || canvas[y-1][x] == '╰' || canvas[y-1][x] == '╯' || canvas[y-1][x] == '▲' || canvas[y-1][x] == '▼')
+				hasDown := y < canvasH-1 && (canvas[y+1][x] == '│' || canvas[y+1][x] == '┼' || canvas[y+1][x] == '┴' || canvas[y+1][x] == '┬' || canvas[y+1][x] == '╭' || canvas[y+1][x] == '╮' || canvas[y+1][x] == '▲' || canvas[y+1][x] == '▼')
+				hasLeft := x > 0 && (canvas[y][x-1] == '─' || canvas[y][x-1] == '┼' || canvas[y][x-1] == '┴' || canvas[y][x-1] == '┬' || canvas[y][x-1] == '╭' || canvas[y][x-1] == '╰' || canvas[y][x-1] == '=' || canvas[y][x-1] == '<')
+				hasRight := x < canvasW-1 && (canvas[y][x+1] == '─' || canvas[y][x+1] == '┼' || canvas[y][x+1] == '┴' || canvas[y][x+1] == '┬' || canvas[y][x+1] == '╮' || canvas[y][x+1] == '╯' || canvas[y][x+1] == '=' || canvas[y][x+1] == '>')
 				
 				if hasUp && hasDown && hasLeft && hasRight { setR(x, y, '┼')
 				} else if hasUp && hasDown && hasLeft { setR(x, y, '┤')
