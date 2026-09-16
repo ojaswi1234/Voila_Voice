@@ -17,16 +17,9 @@ import (
 
 func pingGroq(ctx context.Context, apiKey string) bool {
 	if apiKey == "" { return false }
-	payload := map[string]interface{}{
-		"model": "llama3-8b-8192", // Use cheapest model for ping
-		"messages": []map[string]string{{"role": "user", "content": "ping"}},
-		"max_tokens": 1,
-	}
-	body, _ := json.Marshal(payload)
-	req, _ := http.NewRequestWithContext(ctx, "POST", "https://api.groq.com/openai/v1/chat/completions", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
+	req, _ := http.NewRequestWithContext(ctx, "GET", "https://api.groq.com/openai/v1/models", nil)
 	req.Header.Set("Authorization", "Bearer "+apiKey)
-	client := &http.Client{Timeout: 5 * time.Second}
+	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil { return false }
 	defer resp.Body.Close()
@@ -35,22 +28,21 @@ func pingGroq(ctx context.Context, apiKey string) bool {
 
 func pingOllama(ctx context.Context, baseURL string, apiKey string) bool {
 	if baseURL == "" { baseURL = "http://localhost:11434" }
-	payload := map[string]interface{}{
-		"model": "llama3.1:latest",
-		"messages": []map[string]string{{"role": "user", "content": "ping"}},
-		"max_tokens": 1,
-	}
-	body, _ := json.Marshal(payload)
-	req, _ := http.NewRequestWithContext(ctx, "POST", strings.TrimRight(baseURL, "/")+"/api/chat", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	if apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+apiKey)
-	}
-	client := &http.Client{Timeout: 5 * time.Second}
+	client := &http.Client{Timeout: 10 * time.Second}
+	
+	// Test if it's an OpenAI proxy hidden in the Ollama config
+	req, _ := http.NewRequestWithContext(ctx, "GET", strings.TrimRight(baseURL, "/")+"/models", nil)
+	if apiKey != "" { req.Header.Set("Authorization", "Bearer "+apiKey) }
 	resp, err := client.Do(req)
-	if err != nil { return false }
-	defer resp.Body.Close()
-	return resp.StatusCode == 200
+	if err == nil && resp.StatusCode == 200 { return true }
+	
+	// Otherwise test standard Ollama endpoint
+	req2, _ := http.NewRequestWithContext(ctx, "GET", strings.TrimRight(baseURL, "/")+"/api/tags", nil)
+	if apiKey != "" { req2.Header.Set("Authorization", "Bearer "+apiKey) }
+	resp2, err2 := client.Do(req2)
+	if err2 == nil && resp2.StatusCode == 200 { return true }
+	
+	return false
 }
 
 func autoGenerateGraphifyState(ctx context.Context, command string, connData ConnectionData) error {
@@ -119,7 +111,8 @@ Rules:
 3. Distribute (x,y) coordinates logically (e.g. left to right, 100 to 700 for X, 100 to 400 for Y).
 4. Assign nice distinct hex colors.
 5. ARCHITECTURE & RELATIONSHIPS: Create a highly collaborative, bidirectional MESH topology reflecting a professional cross-functional team (e.g., Product, Frontend, Backend, Database, Security, Testing, DevOps). 
-   - PARALLELISM IS MANDATORY: Do NOT create a slow, linear sequential chain (e.g., A -> B -> C). You MUST create parallel branches so multiple nodes execute concurrently! For example, a single "Generator" node should branch out to 3 parallel "Critic" nodes simultaneously (e.g. [["coder", "security"], ["coder", "tester"], ["coder", "architect"]]).
+   - PARALLELISM IS MANDATORY: Do NOT create a slow, linear sequential chain (e.g., A -> B -> C). EVEN IF the user's task seems sequential, you MUST invent parallel review roles (like a 'Fact Checker', 'Security Reviewer', 'Formatting Auditor') that all depend on the first node concurrently!
+   - For example, Node A branches to B, C, and D simultaneously! (Edges: [["A", "B"], ["A", "C"], ["A", "D"]]).
    - Agents MUST verify each other's work with feedback loops (e.g., if you have ["coder", "tester"], you MUST also have ["tester", "coder"] to force revisions). 
    - Map this out as a 2D spatial diagram where nodes are placed in a circular or star layout, NOT just top-down. 
    - Use (X,Y) coordinates between X:0-800 and Y:0-500 to arrange them spatially (e.g. Product at top Y:50, Database at bottom right X:700, Y:400).
