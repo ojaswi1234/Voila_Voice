@@ -343,7 +343,24 @@ def create_pdf(kwargs):
     
     path = kwargs.get('path')
     content = kwargs.get('content', '')
+    source_files = kwargs.get('source_files', [])
     watermark = kwargs.get('watermark', '')
+
+    # If source_files are provided, read and concatenate them (for massive 40-page PDFs)
+    if source_files:
+        combined_content = []
+        for file_path in source_files:
+            try:
+                with open(file_path, 'r', encoding='utf-8') as sf:
+                    combined_content.append(sf.read())
+                # Clean up the temp file after reading
+                os.remove(file_path)
+            except Exception as e:
+                combined_content.append(f"<!-- Error reading {file_path}: {e} -->")
+        
+        # Join with page breaks between files
+        content = "\n\n<div class='page-break'></div>\n\n".join(combined_content) + "\n\n" + content
+
     theme = kwargs.get('theme', 'modern_dark')
     theme_config = get_theme(theme)
 
@@ -371,12 +388,28 @@ def create_pdf(kwargs):
     heading_color = f"rgb({rgb_heading})"
     accent_color = f"rgb({rgb_accent})"
     
-    # Base CSS
+    # Base CSS with advanced print layout capabilities
     css = f"""
     @page {{
         size: A4;
         margin: 20mm;
+        @bottom-right {{
+            content: "Page " counter(page);
+            font-size: 10pt;
+            color: #888;
+        }}
     }}
+    
+    /* Layout Primitives for the AI to use */
+    .page-break {{ page-break-before: always; }}
+    .cover-page {{ height: 100vh; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; page-break-after: always; }}
+    .grid-2 {{ display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }}
+    .grid-3 {{ display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; }}
+    .card {{ background: rgba(0,0,0,0.03); border: 1px solid rgba(0,0,0,0.1); padding: 15px; border-radius: 8px; break-inside: avoid; margin-bottom: 20px; }}
+    .callout {{ border-left: 4px solid #58a6ff; padding: 10px 15px; background: rgba(88, 166, 255, 0.1); margin: 20px 0; }}
+    
+    img {{ max-width: 100%; height: auto; border-radius: 8px; }}
+    svg {{ max-width: 100%; height: auto; }}
     """
 
     # Apply special Google Fonts and Layout styles for creative themes

@@ -2349,7 +2349,14 @@ var availableTools = []toolDef{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"path":      map[string]interface{}{"type": "string", "description": "Absolute path to save the PDF"},
-					"content":   map[string]interface{}{"type": "string", "description": "The rich HTML or Markdown content of the PDF. Use HTML with inline SVGs for advanced layouts."},
+					"content":   map[string]interface{}{"type": "string", "description": "The rich HTML or Markdown content of the PDF. Leave empty if using source_files."},
+					"source_files": map[string]interface{}{
+						"type": "array",
+						"items": map[string]interface{}{
+							"type": "string",
+						},
+						"description": "Array of absolute file paths to HTML/Markdown files. Use this to compile massive 40-page PDFs that exceed single-call token limits.",
+					},
 					"latex":     map[string]interface{}{"type": "string", "description": "Raw LaTeX code to compile into a PDF. If you are generating a professional or multi-page PDF, YOU MUST PROVIDE THIS. Autonomously write full, exhaustive LaTeX code using \\chapter, \\section, \\newpage, and tabularx to design the document perfectly based on the topic, acting as an expert typesetter."},
 					"watermark": map[string]interface{}{"type": "string", "description": "Optional watermark text to display diagonally on pages"},
 					"design_strategy": map[string]interface{}{"type": "string", "description": `Select a Global Marketplace Skill Prompt to guide your LaTeX generation:
@@ -3325,11 +3332,13 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 
 2. PDF TYPESETTING & THEMES (CHROMIUM ENGINE):
    - NEVER use LaTeX! The PDF engine is a Headless Chromium HTML/CSS Architecture.
-   - For simple text, you may use Markdown. However, for maximum elegance, you MUST output pure HTML (divs, spans, tables, CSS flexbox/grid) into the 'content' parameter.
-   - DO NOT wrap your HTML in '<html>' or '<body>' tags. The backend automatically wraps your HTML in a master themed body.
+   - For maximum elegance, output pure HTML. You have access to these CSS layout classes: '.page-break', '.cover-page', '.grid-2', '.grid-3', '.card', and '.callout'. 
+   - DO NOT wrap your HTML in '<html>' or '<body>' tags. The backend injects it into a master themed body with auto page-numbering.
    - You MUST generate SVG charts and diagrams inline inside your HTML for data visualizations!
-   - You MUST select one of our visual CSS themes in the 'theme' parameter: 'origami', 'handwritten', 'sketching', 'pixelated', 'asciiart', or 'notebooklm'.
-   - The Chromium engine will automatically inject Google Fonts, rich backgrounds, and typography CSS based on your theme choice.
+   - Select a visual CSS theme in the 'theme' parameter: 'origami', 'handwritten', 'sketching', 'pixelated', 'asciiart', or 'notebooklm'.
+   - **MASSIVE DOCUMENT STRATEGY (30-40 PAGES)**: If the user asks for a detailed, large, or comprehensive PDF, you will hit token output limits if you try to write it all into the 'content' parameter at once. Instead, you MUST chunk your work:
+     1. Research and write individual chapters to temporary text files using the 'write_file' tool (e.g., write 'chapter1.html', 'chapter2.html', etc.). Generate as much detailed data, tables, and SVG charts as possible.
+     2. Finally, call the 'create_pdf' tool, leaving 'content' empty, and instead pass the list of your written files into the 'source_files' array parameter. The engine will seamlessly merge them into a massive 40-page PDF and delete the temp files.
 
 3. McKINSEY-STYLE DESIGN PRINCIPLES:
    - BLUF (Bottom Line Up Front): Slide titles MUST be actionable takeaways (e.g., "Revenue grew 14% due to Q3 marketing," NOT "Q3 Revenue").
