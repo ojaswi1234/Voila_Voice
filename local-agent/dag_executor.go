@@ -318,6 +318,15 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 
 				if strings.Contains(modelStr, "groq") {
 					nodeOut, nodeErr = executeGroqCommand(ctx, finalCommand, connData.GroqAPIKey, actualModel, "dag-internal", nil, taskID, "")
+					
+					// Edge Case: Model doesn't support tools
+					if nodeErr != nil && (strings.Contains(strings.ToLower(nodeErr.Error()), "tool") || strings.Contains(strings.ToLower(nodeErr.Error()), "support")) {
+						fmt.Printf("STATUS: SYSTEM_MSG:Node %s model %s lacks tool support, switching to llama-3.1-70b-versatile...\n", nodeID, actualModel)
+						os.Stdout.Sync()
+						actualModel = "llama-3.1-70b-versatile"
+						nodeOut, nodeErr = executeGroqCommand(ctx, finalCommand, connData.GroqAPIKey, actualModel, "dag-internal", nil, taskID, "")
+					}
+					
 					if nodeErr != nil && connData.GroqSecondaryAPIKey != "" {
 						fmt.Printf("STATUS: SYSTEM_MSG:Node %s primary Groq failed, trying secondary key...\n", nodeID)
 						os.Stdout.Sync()
@@ -340,6 +349,15 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 				} else {
 					ollamaSemaphore <- struct{}{}
 					nodeOut, nodeErr = executeOllamaCommand(ctx, finalCommand, connData.OllamaBaseURL, actualModel, connData.OllamaAPIKey, nil, taskID, "")
+					
+					// Edge Case: Model doesn't support tools
+					if nodeErr != nil && (strings.Contains(strings.ToLower(nodeErr.Error()), "tool") || strings.Contains(strings.ToLower(nodeErr.Error()), "support")) {
+						fmt.Printf("STATUS: SYSTEM_MSG:Node %s model %s lacks tool support, switching to llama3.1:latest...\n", nodeID, actualModel)
+						os.Stdout.Sync()
+						actualModel = "llama3.1:latest"
+						nodeOut, nodeErr = executeOllamaCommand(ctx, finalCommand, connData.OllamaBaseURL, actualModel, connData.OllamaAPIKey, nil, taskID, "")
+					}
+					
 					if nodeErr != nil && connData.OllamaSecondaryAPIKey != "" {
 						fmt.Printf("STATUS: SYSTEM_MSG:Node %s primary Ollama failed, trying secondary key...\n", nodeID)
 						os.Stdout.Sync()
