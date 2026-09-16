@@ -3066,10 +3066,7 @@ case "read_file":
 
 	case "run_terminal":
 		actualCommand := getString("command")
-		// Force the terminal to execute in Desktop by default
-		homeDir, _ := os.UserHomeDir()
-		desktopPath := filepath.Join(homeDir, "Desktop")
-		actualCommand = "Set-Location -Path '" + desktopPath + "';\n" + actualCommand
+		// Terminal already starts in Desktop natively via startTerminalSession()
 		
 		// Fix LLM JSON escaping hallucinations where it outputs \" instead of "
 		actualCommand = strings.ReplaceAll(actualCommand, "\\\"", "\"")
@@ -3334,7 +3331,8 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
    - NEVER use LaTeX! The PDF engine is a Headless Chromium HTML/CSS Architecture.
    - For maximum elegance, output pure HTML. You have access to these CSS layout classes: '.page-break', '.cover-page', '.grid-2', '.grid-3', '.card', and '.callout'. 
    - DO NOT wrap your HTML in '<html>' or '<body>' tags. The backend injects it into a master themed body with auto page-numbering.
-   - You MUST generate SVG charts and diagrams inline inside your HTML for data visualizations!
+   - **DIAGRAMS & WORKFLOWS**: You MUST use Mermaid.js for system designs, flowcharts, and architecture maps! The PDF engine will automatically render it into gorgeous SVG. Just use standard Markdown code blocks: '''mermaid <code here> '''.
+   - **HANDWRITTEN NOTES**: If you select the 'handwritten' or 'sketching' theme, format your text in a deeply conversational, personal "notebook" tone with lots of blockquotes ('>':) to simulate handwritten margin notes.
    - Select a visual CSS theme in the 'theme' parameter: 'origami', 'handwritten', 'sketching', 'pixelated', 'asciiart', or 'notebooklm'.
    - **MASSIVE DOCUMENT STRATEGY (30-40 PAGES)**: If the user asks for a detailed, large, or comprehensive PDF, you will hit token output limits if you try to write it all into the 'content' parameter at once. Instead, you MUST chunk your work:
      1. Research and write individual chapters to temporary text files using the 'write_file' tool (e.g., write 'chapter1.html', 'chapter2.html', etc.). Generate as much detailed data, tables, and SVG charts as possible.

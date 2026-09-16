@@ -577,6 +577,17 @@ def create_pdf(kwargs):
 <body>
     {watermark_html}
     {html_body}
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+    <script>
+        document.querySelectorAll("pre code.language-mermaid").forEach(function(el) {{
+            var div = document.createElement("div");
+            div.className = "mermaid";
+            // Unescape HTML entities that python-markdown might have escaped inside the code block
+            div.innerHTML = el.innerHTML.replace(/&gt;/g, '>').replace(/&lt;/g, '<').replace(/&amp;/g, '&');
+            el.parentNode.replaceWith(div);
+        }});
+        mermaid.initialize({{ startOnLoad: true, theme: '{'dark' if theme == 'modern_dark' else 'default'}', themeVariables: {{ fontFamily: 'inherit' }} }});
+    </script>
 </body>
 </html>
 """
@@ -590,6 +601,7 @@ def create_pdf(kwargs):
             browser = p.chromium.launch(headless=True)
             page = browser.new_page()
             page.goto(f"file://{temp_html_path}", wait_until="networkidle")
+            page.wait_for_timeout(2500) # Give Mermaid time to render SVG
             page.pdf(
                 path=path,
                 format="A4",
