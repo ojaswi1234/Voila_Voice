@@ -3446,31 +3446,49 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 		}
 
 		// Execute each tool and collect results
-		for _, tc := range choice.Message.ToolCalls {
-			toolUsageSummary.WriteString(fmt.Sprintf("> Executed tool: %s (args: %s)\n", tc.Function.Name, string(tc.Function.Arguments)))
-			debugLog.Printf("================================================================")
-			debugLog.Printf("[DEBUG_LIFECYCLE: GROQ] 2. TOOL EXECUTION PHASE")
-			debugLog.Printf("[DEBUG_LIFECYCLE: GROQ] AI requested tool: %q with args: %s", tc.Function.Name, tc.Function.Arguments)
-			debugLog.Printf("[executeGroqCommand] iter=%d executing tool=%q", iter, tc.Function.Name)
-			var argsBytes []byte
-			if len(tc.Function.Arguments) > 0 && tc.Function.Arguments[0] == '"' {
-				var strArgs string
-				json.Unmarshal(tc.Function.Arguments, &strArgs)
-				argsBytes = []byte(strArgs)
-			} else {
-				argsBytes = []byte(tc.Function.Arguments)
-			}
-			toolResult := executeTool(ctx, tc.Function.Name, json.RawMessage(argsBytes), streamFileObj)
-			debugLog.Printf("[DEBUG_LIFECYCLE: GROQ] 3. TOOL EXECUTION FINISHED")
-			debugLog.Printf("[DEBUG_LIFECYCLE: GROQ] Result Length: %d", len(toolResult))
-			debugLog.Printf("[DEBUG_LIFECYCLE: GROQ] Result Content Preview (max 200 chars):\n%.200s", toolResult)
-			debugLog.Printf("================================================================")
-			debugLog.Printf("[executeGroqCommand] iter=%d tool=%q resultLen=%d", iter, tc.Function.Name, len(toolResult))
-			messages = append(messages, map[string]interface{}{
-				"role":         "tool",
-				"tool_call_id": tc.ID,
-				"content":      toolResult,
-			})
+		var wg sync.WaitGroup
+		toolResults := make([]map[string]interface{}, len(choice.Message.ToolCalls))
+		var toolSummaryMu sync.Mutex
+
+		for i, tc := range choice.Message.ToolCalls {
+			wg.Add(1)
+			go func(index int, toolCall struct {
+				ID       string `json:"id"`
+				Type     string `json:"type"`
+				Function struct {
+					Name      string          `json:"name"`
+					Arguments json.RawMessage `json:"arguments"`
+				} `json:"function"`
+			}) {
+				defer wg.Done()
+				
+				toolSummaryMu.Lock()
+				toolUsageSummary.WriteString(fmt.Sprintf("> Executed tool: %s (args: %s)\n", toolCall.Function.Name, string(toolCall.Function.Arguments)))
+				toolSummaryMu.Unlock()
+				
+				var argsBytes []byte
+				if len(toolCall.Function.Arguments) > 0 && toolCall.Function.Arguments[0] == '"' {
+					var strArgs string
+					json.Unmarshal(toolCall.Function.Arguments, &strArgs)
+					argsBytes = []byte(strArgs)
+				} else {
+					argsBytes = []byte(toolCall.Function.Arguments)
+				}
+				
+				res := executeTool(ctx, toolCall.Function.Name, json.RawMessage(argsBytes), streamFileObj)
+				
+				toolResults[index] = map[string]interface{}{
+					"role":         "tool",
+					"tool_call_id": toolCall.ID,
+					"name":         toolCall.Function.Name,
+					"content":      res,
+				}
+			}(i, tc)
+		}
+		wg.Wait()
+
+		for _, tr := range toolResults {
+			messages = append(messages, tr)
 		}
 	}
 
@@ -3731,31 +3749,46 @@ When generating PDFs (via LaTeX) or PPTs (via Python python-pptx):
 		}
 
 		// Execute each tool and collect results
-		for _, tc := range result.Message.ToolCalls {
-			toolUsageSummary.WriteString(fmt.Sprintf("> Executed tool: %s (args: %s)\n", tc.Function.Name, string(tc.Function.Arguments)))
-			debugLog.Printf("================================================================")
-			debugLog.Printf("[DEBUG_LIFECYCLE: OLLAMA] 2. TOOL EXECUTION PHASE")
-			debugLog.Printf("[DEBUG_LIFECYCLE: OLLAMA] AI requested tool: %q with args: %s", tc.Function.Name, tc.Function.Arguments)
-			debugLog.Printf("[executeOllamaCommand] iter=%d executing tool=%q", iter, tc.Function.Name)
-			var argsBytes []byte
-			if len(tc.Function.Arguments) > 0 && tc.Function.Arguments[0] == '"' {
-				var strArgs string
-				json.Unmarshal(tc.Function.Arguments, &strArgs)
-				argsBytes = []byte(strArgs)
-			} else {
-				argsBytes = []byte(tc.Function.Arguments)
-			}
-			toolResult := executeTool(ctx, tc.Function.Name, json.RawMessage(argsBytes), streamFileObj)
-			debugLog.Printf("[DEBUG_LIFECYCLE: OLLAMA] 3. TOOL EXECUTION FINISHED")
-			debugLog.Printf("[DEBUG_LIFECYCLE: OLLAMA] Result Length: %d", len(toolResult))
-			debugLog.Printf("[DEBUG_LIFECYCLE: OLLAMA] Result Content Preview (max 200 chars):\n%.200s", toolResult)
-			debugLog.Printf("================================================================")
-			debugLog.Printf("[executeOllamaCommand] iter=%d tool=%q resultLen=%d", iter, tc.Function.Name, len(toolResult))
-			// Ollama tool result uses role "tool" same as OpenAI
-			messages = append(messages, map[string]interface{}{
-				"role":    "tool",
-				"content": toolResult,
-			})
+		var wg sync.WaitGroup
+		toolResults := make([]map[string]interface{}, len(result.Message.ToolCalls))
+		var toolSummaryMu sync.Mutex
+
+		for i, tc := range result.Message.ToolCalls {
+			wg.Add(1)
+			go func(index int, toolCall struct {
+				Function struct {
+					Name      string          `json:"name"`
+					Arguments json.RawMessage `json:"arguments"`
+				} `json:"function"`
+			}) {
+				defer wg.Done()
+				
+				toolSummaryMu.Lock()
+				toolUsageSummary.WriteString(fmt.Sprintf("> Executed tool: %s (args: %s)\n", toolCall.Function.Name, string(toolCall.Function.Arguments)))
+				toolSummaryMu.Unlock()
+				
+				var argsBytes []byte
+				if len(toolCall.Function.Arguments) > 0 && toolCall.Function.Arguments[0] == '"' {
+					var strArgs string
+					json.Unmarshal(toolCall.Function.Arguments, &strArgs)
+					argsBytes = []byte(strArgs)
+				} else {
+					argsBytes = []byte(toolCall.Function.Arguments)
+				}
+				
+				res := executeTool(ctx, toolCall.Function.Name, json.RawMessage(argsBytes), streamFileObj)
+				
+				toolResults[index] = map[string]interface{}{
+					"role":    "tool",
+					"name":    toolCall.Function.Name,
+					"content": res,
+				}
+			}(i, tc)
+		}
+		wg.Wait()
+
+		for _, tr := range toolResults {
+			messages = append(messages, tr)
 		}
 	}
 

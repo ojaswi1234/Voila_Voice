@@ -273,7 +273,8 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 				promptBuilder.WriteString("To reject and force a team member to revise their work, your response MUST start EXACTLY with this format:\n")
 				promptBuilder.WriteString("REJECT: [RoleName]: [Your detailed critique]\n")
 				promptBuilder.WriteString("For example: REJECT: Researcher: The data is outdated. Find 2024 statistics.\n")
-				promptBuilder.WriteString("If you reject, do NOT output anything else. If the work is acceptable, or if you are just adding your own contribution, do NOT use the REJECT prefix; simply perform your task and output your final result.\n\n")
+				promptBuilder.WriteString("If the work from all team members is absolutely perfect and no further steps are needed from ANY member, you can terminate the entire project early by outputting EXACTLY:\nAPPROVE: ALL\n")
+				promptBuilder.WriteString("If you reject or approve, do NOT output anything else. If the work is just acceptable and you are simply adding your own contribution, do NOT use the REJECT/APPROVE prefix; simply perform your task and output your final result.\n\n")
 
 				if len(myRevs) > 0 {
 					promptBuilder.WriteString("FEEDBACK / REVISIONS REQUIRED:\n")
@@ -430,6 +431,27 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 				updateLiveNode(nodeID, "completed")
 				
 				isReject := false
+				// 🚀 SPEEDUP: Early-Exit Consensus
+				if strings.Contains(nodeOut, "APPROVE: ALL") {
+					mu.Lock()
+					for _, n := range state.Nodes {
+						if !completed[n.ID] {
+							completed[n.ID] = true
+							outputs[n.ID] = "Skipped due to Early-Exit Consensus"
+							updateLiveNode(n.ID, "skipped")
+						}
+					}
+					mu.Unlock()
+					
+					appendLiveLog(fmt.Sprintf("[SYSTEM]: %s approved the entire project! Short-circuiting remaining tasks.", n.Role))
+					fmt.Printf("STATUS: SYSTEM_MSG:[%s] declared consensus. Terminating early.\n", n.Role)
+					os.Stdout.Sync()
+					
+					running[nodeID] = false
+					cond.Broadcast()
+					return
+				}
+
 				if strings.Contains(nodeOut, "REJECT:") {
 					idx := strings.Index(nodeOut, "REJECT:")
 					parts := strings.SplitN(nodeOut[idx:], ":", 3)
