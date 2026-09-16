@@ -3324,18 +3324,59 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 		req.Header.Set("Content-Type", "application/json")
 
-		resp, err := client.Do(req)
-		if err != nil {
-			debugLog.Printf("[executeGroqCommand] iter=%d API request failed: %v", iter, err)
-			return "", fmt.Errorf("Groq API request failed: %w", err)
-		}
-		respBody, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-
-		debugLog.Printf("[executeGroqCommand] iter=%d response status=%d responseLen=%d", iter, resp.StatusCode, len(respBody))
-
-		if resp.StatusCode != http.StatusOK {
-			return "", fmt.Errorf("Groq API error %d: %s", resp.StatusCode, string(respBody))
+		var resp *http.Response
+		var err error
+		var respBody []byte
+		
+		maxRetries := 5
+		for r := 0; r < maxRetries; r++ {
+			req.Body = io.NopCloser(bytes.NewBuffer(payloadBytes))
+			resp, err = client.Do(req)
+			
+			if err != nil {
+				if r == maxRetries-1 {
+					debugLog.Printf("[executeGroqCommand] iter=%d API request failed: %v", iter, err)
+					return "", fmt.Errorf("Groq API request failed: %w", err)
+				}
+				time.Sleep(3 * time.Second)
+				continue
+			}
+			
+			respBody, _ = io.ReadAll(resp.Body)
+			resp.Body.Close()
+			
+			debugLog.Printf("[executeGroqCommand] iter=%d response status=%d responseLen=%d", iter, resp.StatusCode, len(respBody))
+			
+			if resp.StatusCode == 429 || resp.StatusCode >= 500 {
+				waitTime := 10.0
+				errStr := string(respBody)
+				if strings.Contains(errStr, "try again in") {
+					idx := strings.Index(errStr, "try again in")
+					sub := errStr[idx+13:]
+					endIdx := strings.Index(sub, "s.")
+					if endIdx != -1 {
+						if parsed, parseErr := strconv.ParseFloat(strings.TrimSpace(sub[:endIdx]), 64); parseErr == nil {
+							waitTime = parsed + 1.0 // add 1s buffer
+						}
+					}
+				}
+				
+				if r == maxRetries-1 {
+					return "", fmt.Errorf("Groq API error %d: %s", resp.StatusCode, errStr)
+				}
+				
+				if clientID == "dag-internal" {
+					appendLiveLog(fmt.Sprintf("[%s]: API Rate Limit (429) - Pausing execution for %.1fs...", strings.TrimPrefix(taskID, "node-"), waitTime))
+				}
+				
+				time.Sleep(time.Duration(waitTime * float64(time.Second)))
+				continue
+			}
+			
+			if resp.StatusCode != http.StatusOK {
+				return "", fmt.Errorf("Groq API error %d: %s", resp.StatusCode, string(respBody))
+			}
+			break
 		}
 
 		var result struct {
@@ -3595,18 +3636,45 @@ When generating PDFs (via LaTeX) or PPTs (via Python python-pptx):
 			req.Header.Set("Authorization", "Bearer "+apiKey)
 		}
 
-		resp, err := client.Do(req)
-		if err != nil {
-			debugLog.Printf("[executeOllamaCommand] iter=%d request failed: %v", iter, err)
-			return "", fmt.Errorf("Ollama request failed: %w", err)
-		}
-		respBody, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-
-		debugLog.Printf("[executeOllamaCommand] iter=%d response status=%d responseLen=%d", iter, resp.StatusCode, len(respBody))
-
-		if resp.StatusCode != http.StatusOK {
-			return "", fmt.Errorf("Ollama error %d: %s", resp.StatusCode, string(respBody))
+		var resp *http.Response
+		var err error
+		var respBody []byte
+		
+		maxRetries := 5
+		for r := 0; r < maxRetries; r++ {
+			req.Body = io.NopCloser(bytes.NewBuffer(payloadBytes))
+			resp, err = client.Do(req)
+			
+			if err != nil {
+				if r == maxRetries-1 {
+					debugLog.Printf("[executeOllamaCommand] iter=%d request failed: %v", iter, err)
+					return "", fmt.Errorf("Ollama request failed: %w", err)
+				}
+				time.Sleep(3 * time.Second)
+				continue
+			}
+			
+			respBody, _ = io.ReadAll(resp.Body)
+			resp.Body.Close()
+			
+			debugLog.Printf("[executeOllamaCommand] iter=%d response status=%d responseLen=%d", iter, resp.StatusCode, len(respBody))
+			
+			if resp.StatusCode == 429 || resp.StatusCode >= 500 {
+				if r == maxRetries-1 {
+					return "", fmt.Errorf("Ollama API error %d: %s", resp.StatusCode, string(respBody))
+				}
+				
+				if strings.HasPrefix(taskID, "node-") {
+					appendLiveLog(fmt.Sprintf("[%s]: API Rate Limit (429) - Pausing execution for 10s...", strings.TrimPrefix(taskID, "node-")))
+				}
+				time.Sleep(10 * time.Second)
+				continue
+			}
+			
+			if resp.StatusCode != http.StatusOK {
+				return "", fmt.Errorf("Ollama error %d: %s", resp.StatusCode, string(respBody))
+			}
+			break
 		}
 
 		var result struct {
