@@ -272,6 +272,12 @@ func fetchGroqModels(apiKey string) []string {
 	payloadBytes := []byte(`{"model":"", "messages":[{"role":"user", "content":"Hi"}], "tools":[{"type":"function","function":{"name":"test","description":"test","parameters":{"type":"object","properties":{}}}}], "max_tokens":10}`)
 	
 	for _, modelID := range allModels {
+		// Hardcoded explicit blacklist
+		mLower := strings.ToLower(modelID)
+		if strings.Contains(mLower, "safeguard") || strings.Contains(mLower, "safegaurd") {
+			continue
+		}
+
 		wg.Add(1)
 		go func(mID string) {
 			defer wg.Done()
@@ -354,6 +360,12 @@ func fetchOllamaModels(baseURL string, apiKey string) []string {
 	payloadBytes := []byte(`{"model":"", "messages":[{"role":"user", "content":"Hi"}], "tools":[{"type":"function","function":{"name":"test","description":"test","parameters":{"type":"object","properties":{}}}}], "stream":false}`)
 	
 	for _, modelID := range allModels {
+		// Hardcoded explicit blacklist
+		mLower := strings.ToLower(modelID)
+		if strings.Contains(mLower, "safeguard") || strings.Contains(mLower, "safegaurd") {
+			continue
+		}
+
 		wg.Add(1)
 		go func(mID string) {
 			defer wg.Done()
