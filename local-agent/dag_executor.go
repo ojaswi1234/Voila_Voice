@@ -308,10 +308,10 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 
 				finalCommand := promptBuilder.String()
 				
-				// Final safety net truncation (Groq 8000 TPM limit includes max_tokens and heavy tools schema)
-				// Bumping to 7000 because we individually truncated the heavy parts above.
-				if len(finalCommand) > 7000 {
-					half := 3400
+				// Final safety net truncation
+				// Lowered to 4000 characters because some free-tier API proxies have strict 1024 token context limits (Error 413)
+				if len(finalCommand) > 4000 {
+					half := 1900
 					finalCommand = finalCommand[:half] + "\n\n...[MIDDLE CONTEXT TRUNCATED]...\n\n" + finalCommand[len(finalCommand)-half:]
 				}
 				
@@ -416,8 +416,12 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 				
 				if nodeErr != nil {
 					updateLiveNode(nodeID, "error")
-					appendLiveLog(fmt.Sprintf("[%s] ERROR: %v", n.Role, nodeErr))
-					fatalErr = fmt.Errorf("node %s failed: %v", n.Role, nodeErr)
+					appendLiveLog(fmt.Sprintf("[%s] ERROR: All API providers failed. Node crashed: %v", n.Role, nodeErr))
+					
+					// 🚀 SPEEDUP/ROBUSTNESS: Do not crash the entire DAG. 
+					// Mark as completed with an error string so downstream nodes can adapt or bypass it.
+					outputs[nodeID] = fmt.Sprintf("[CRITICAL ERROR: The AI provider crashed while generating this node's output. Error: %v]", nodeErr)
+					completed[nodeID] = true
 					running[nodeID] = false
 					cond.Broadcast()
 					return
