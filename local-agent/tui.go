@@ -75,6 +75,9 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
+		if msg.Width == 0 || msg.Height == 0 {
+			return m, nil
+		}
 		m.termWidth = msg.Width
 		m.termHeight = msg.Height
 		
