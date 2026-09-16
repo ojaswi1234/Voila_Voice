@@ -3460,6 +3460,8 @@ func executeOllamaCommand(ctx context.Context, command, baseURL, modelName, apiK
 	debugLog.Printf("[DEBUG_LIFECYCLE: OLLAMA] 1. THINKING PHASE STARTED")
 	debugLog.Printf("[DEBUG_LIFECYCLE: OLLAMA] Prompt: %q", command)
 	debugLog.Printf("[DEBUG_LIFECYCLE: OLLAMA] Model: %s", modelName)
+	
+	var toolUsageSummary strings.Builder
 
 	var systemPrompt string
 	if strings.HasPrefix(taskID, "node-") {
@@ -3631,6 +3633,9 @@ When generating PDFs (via LaTeX) or PPTs (via Python python-pptx):
 			debugLog.Printf("================================================================")
 			debugLog.Printf("[executeOllamaCommand] iter=%d final answer len=%d", iter, len(result.Message.Content))
 			finalAnswer := strings.TrimSpace(result.Message.Content)
+			if toolUsageSummary.Len() > 0 {
+				finalAnswer = "Actions taken during execution:\n" + toolUsageSummary.String() + "\nFinal Output:\n" + finalAnswer
+			}
 			saveCloudHistory(convID, command, finalAnswer)
 			return finalAnswer, nil
 		}
@@ -3652,6 +3657,7 @@ When generating PDFs (via LaTeX) or PPTs (via Python python-pptx):
 
 		// Execute each tool and collect results
 		for _, tc := range result.Message.ToolCalls {
+			toolUsageSummary.WriteString(fmt.Sprintf("> Executed tool: %s (args: %s)\n", tc.Function.Name, string(tc.Function.Arguments)))
 			debugLog.Printf("================================================================")
 			debugLog.Printf("[DEBUG_LIFECYCLE: OLLAMA] 2. TOOL EXECUTION PHASE")
 			debugLog.Printf("[DEBUG_LIFECYCLE: OLLAMA] AI requested tool: %q with args: %s", tc.Function.Name, tc.Function.Arguments)
