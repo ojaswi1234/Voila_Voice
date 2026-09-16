@@ -67,8 +67,8 @@ Rules:
 7. Provide NO markdown wrappers, ONLY raw JSON.`, groqModelStr, ollamaModelStr)
 
 	taskCmd := command
-	if len(taskCmd) > 4000 {
-		taskCmd = taskCmd[:4000] + "...[TRUNCATED]"
+	if len(taskCmd) > 2000 {
+		taskCmd = taskCmd[:2000] + "...[TRUNCATED]"
 	}
 
 	payload := map[string]interface{}{

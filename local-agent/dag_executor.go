@@ -295,9 +295,9 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 
 				finalCommand := promptBuilder.String()
 				
-				// Truncate to avoid 413 Payload Too Large (Groq 8000 TPM limit)
-				if len(finalCommand) > 15000 {
-					half := 7000
+				// Truncate to avoid 413 Payload Too Large (Groq 8000 TPM limit includes max_tokens and heavy tools schema)
+				if len(finalCommand) > 4000 {
+					half := 1800
 					finalCommand = finalCommand[:half] + "\n\n...[MIDDLE CONTEXT TRUNCATED TO PREVENT 413 ERROR]...\n\n" + finalCommand[len(finalCommand)-half:]
 				}
 				
