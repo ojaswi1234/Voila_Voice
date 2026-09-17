@@ -429,13 +429,40 @@ def create_pdf(kwargs):
     elif theme == 'handwritten':
         css += f"""
         @import url('https://fonts.googleapis.com/css2?family=Patrick+Hand&display=swap');
-        body {{ font-family: 'Patrick Hand', cursive; color: {text_color}; background: {bg_color}; line-height: 1.5; font-size: 16pt; }}
-        h1, h2, h3 {{ color: {heading_color}; page-break-after: avoid; }}
-        h1 {{ font-size: 32pt; border-bottom: 2px dashed rgba(44, 62, 80, 0.2); transform: rotate(-1deg); }}
-        h2 {{ font-size: 24pt; transform: rotate(0.5deg); }}
-        blockquote {{ border-left: 3px solid rgba(44, 62, 80, 0.3); padding-left: 15px; font-size: 18pt; color: rgba(44, 62, 80, 0.8); }}
-        table {{ width: 100%; border-collapse: collapse; margin: 20px 0; }}
-        th, td {{ padding: 10px; border: 1px dashed rgba(44, 62, 80, 0.3); text-align: left; }}
+        body {{ 
+            font-family: 'Patrick Hand', cursive; 
+            color: #2c3e50; 
+            background-color: #fdfaf6;
+            background-image: linear-gradient(#e4e4e4 1px, transparent 1px);
+            background-size: 100% 32px;
+            line-height: 32px; 
+            font-size: 16pt; 
+            padding-top: 8px;
+        }}
+        /* Add a vertical red margin line to look like notebook paper */
+        body::before {{
+            content: '';
+            position: fixed;
+            top: 0; left: 60px; bottom: 0;
+            width: 2px;
+            background: rgba(255, 99, 71, 0.4);
+            z-index: -1;
+        }}
+        h1, h2, h3 {{ color: #1a252f; page-break-after: avoid; font-weight: bold; margin-bottom: 0px; }}
+        h1 {{ font-size: 34pt; border-bottom: 3px solid rgba(0,0,0,0.1); transform: rotate(-1deg); margin-left: 50px; margin-top: 20px; }}
+        h2 {{ font-size: 26pt; transform: rotate(0.5deg); margin-left: 50px; }}
+        p, ul, ol, table, .mermaid {{ margin-left: 50px; margin-top: 10px; }}
+        blockquote {{ border-left: 3px solid rgba(44, 62, 80, 0.3); padding-left: 15px; font-size: 18pt; color: rgba(44, 62, 80, 0.8); margin-left: 50px; }}
+        .mermaid {{
+            background: rgba(255,255,255,0.9);
+            padding: 20px;
+            border-radius: 12px;
+            border: 2px solid rgba(0,0,0,0.1);
+            box-shadow: 4px 8px 20px rgba(0,0,0,0.05);
+            margin-bottom: 20px;
+        }}
+        table {{ width: calc(100% - 50px); border-collapse: collapse; margin: 20px 0 20px 50px; }}
+        th, td {{ padding: 10px; border: 2px solid rgba(44, 62, 80, 0.4); text-align: left; background: rgba(255,255,255,0.5); }}
         """
     elif theme == 'sketching':
         css += f"""
@@ -577,7 +604,18 @@ def create_pdf(kwargs):
 <body>
     {watermark_html}
     {html_body}
-    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+    <script>
+        document.querySelectorAll("pre code.language-mermaid").forEach(function(el) {{
+            var div = document.createElement("div");
+            div.className = "mermaid";
+            var code = el.innerHTML.replace(/&gt;/g, '>').replace(/&lt;/g, '<').replace(/&amp;/g, '&');
+            div.innerHTML = "%%{init: {'look': 'handDrawn', 'theme': 'base', 'themeVariables': {'fontFamily': 'Patrick Hand', 'primaryColor': '#ffffff', 'primaryBorderColor': '#333333'}}}%%
+" + code;
+            el.parentNode.replaceWith(div);
+        }});
+        mermaid.initialize({{ startOnLoad: true }});
+    </script>
     <script>
         document.querySelectorAll("pre code.language-mermaid").forEach(function(el) {{
             var div = document.createElement("div");
