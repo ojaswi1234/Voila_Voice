@@ -2325,8 +2325,7 @@ var availableTools = []toolDef{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"path":      map[string]interface{}{"type": "string", "description": "Absolute path to save the PDF"},
-					"content":   map[string]interface{}{"type": "string", "description": "The rich HTML or Markdown content of the PDF. Leave empty if using json IR."},
-					"json":      map[string]interface{}{"type": "string", "description": "Raw Design IR JSON string. Use for architecture/workflow/security docs. Example: {\"format\": \"pdf\", \"document\": {\"sections\": [{\"type\": \"diagram\", \"engine\": \"mermaid\", \"source\": \"graph TD\\nA-->B\"}]}}"},
+					"content":   map[string]interface{}{"type": "string", "description": "The rich HTML or Markdown content of the PDF. The content MUST be exhaustive, massive, and highly detailed. DO NOT write short summaries. Leave empty if using source_files."},
 					"source_files": map[string]interface{}{
 						"type": "array",
 						"items": map[string]interface{}{
