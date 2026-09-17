@@ -655,7 +655,81 @@ def create_pdf(kwargs):
             div.innerHTML = "%%{{init: {{'look': 'handDrawn', 'theme': 'base', 'themeVariables': {{'background': 'transparent', 'fontFamily': 'Patrick Hand', 'primaryColor': 'transparent', 'primaryBorderColor': '#2c3e50', 'lineColor': '#2c3e50', 'textColor': '#2c3e50'}}}}}}%%\\n" + code;
             el.parentNode.replaceWith(div);
         }});
+        
+        // ---------------------------------------------------------
+        // AUTO-FLOWCHART INTERCEPTOR (ASCII to Mermaid DOM Compiler)
+        // ---------------------------------------------------------
+        document.querySelectorAll("p, li").forEach(function(el) {
+            let text = el.innerText || el.textContent;
+            if (!text) return;
+            
+            if (text.includes("->") || text.includes("<-") || text.includes("--") || text.match(/\[.*\]/)) {
+                if (!text.includes(">") && !text.includes("<") && !text.includes("|") && !text.includes("+--")) return;
+                
+                let lines = text.split('\n');
+                let mermaidCode = "graph TD\n";
+                let hasGraph = false;
+                let nodeCounter = 1;
+
+                lines.forEach(line => {
+                    let cleaned = line.trim();
+                    if (!cleaned) return;
+                    
+                    let parts = cleaned.split(/(<--->|<-->|<---|--->|<->|-->|<--|->|<-)/);
+                    if (parts.length > 1) {
+                        hasGraph = true;
+                        let currentPrev = "";
+                        let currentEdge = "-->";
+                        
+                        parts.forEach(p => {
+                            p = p.trim();
+                            if (!p) return;
+                            
+                            if (["<--->", "<-->", "<->"].includes(p)) {
+                                currentEdge = "---";
+                            } else if (["--->", "-->", "->"].includes(p)) {
+                                currentEdge = "-->";
+                            } else if (["<---", "<--", "<-"].includes(p)) {
+                                currentEdge = "---";
+                            } else {
+                                let label = p.replace(/\[/g, '').replace(/\]/g, '').replace(/\*/g, '').replace(/\+/g, '').replace(/\|/g, '').replace(/\(/g, '').replace(/\)/g, '').trim();
+                                if (!label) return;
+                                
+                                let nodeId = "node" + nodeCounter;
+                                mermaidCode += `${nodeId}["${label}"]\n`;
+                                
+                                if (currentPrev) {
+                                    mermaidCode += `${currentPrev} ${currentEdge} ${nodeId}\n`;
+                                }
+                                currentPrev = nodeId;
+                                nodeCounter++;
+                            }
+                        });
+                    }
+                });
+
+                if (hasGraph) {
+                    let wrapper = document.createElement("div");
+                    wrapper.className = "mermaid-auto-wrapper my-8 p-6 bg-gray-50 border border-gray-200 rounded-xl shadow-sm";
+                    
+                    let title = document.createElement("div");
+                    title.className = "text-sm font-bold text-gray-500 mb-4 uppercase tracking-wider";
+                    title.innerText = "Auto-Generated Diagram";
+                    
+                    let div = document.createElement("div");
+                    div.className = "mermaid flex justify-center";
+                    // Using double braces because this is inside python f-string
+                    div.innerHTML = "%%{{init: {{'look': 'handDrawn', 'theme': 'base', 'themeVariables': {{'background': 'transparent', 'fontFamily': 'Patrick Hand', 'primaryColor': 'transparent', 'primaryBorderColor': '#2c3e50', 'lineColor': '#2c3e50', 'textColor': '#2c3e50'}}}}}}%%\\n" + mermaidCode;
+                    
+                    wrapper.appendChild(title);
+                    wrapper.appendChild(div);
+                    el.parentNode.replaceChild(wrapper, el);
+                }
+            }
+        });
+        
         mermaid.initialize({{ startOnLoad: true }});
+
     </script>
 </body>
 </html>
