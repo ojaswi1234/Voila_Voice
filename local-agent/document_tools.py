@@ -622,6 +622,9 @@ def create_pdf(kwargs):
     <style>{css}</style>
     <script>
         tailwind.config = {{
+            corePlugins: {{
+                preflight: false // CRITICAL: Prevent Tailwind from resetting our custom theme fonts and borders!
+            }},
             theme: {{
                 extend: {{
                     colors: {{
@@ -629,6 +632,11 @@ def create_pdf(kwargs):
                         accent: 'rgb({rgb_accent})',
                         heading: 'rgb({rgb_heading})',
                         text: 'rgb({rgb_text})'
+                    }},
+                    fontFamily: {{
+                        sans: ['inherit'],
+                        serif: ['inherit'],
+                        mono: ['inherit']
                     }}
                 }}
             }}
