@@ -472,13 +472,13 @@ def create_pdf(kwargs):
         p, ul, ol, table, .mermaid {{ margin-left: 50px; margin-top: 10px; }}
         blockquote {{ border-left: 3px solid rgba(44, 62, 80, 0.3); padding-left: 15px; font-size: 18pt; color: rgba(44, 62, 80, 0.8); margin-left: 50px; }}
         .mermaid {{
-            background: rgba(255,255,255,0.9);
-            padding: 20px;
-            border-radius: 12px;
-            border: 2px solid rgba(0,0,0,0.1);
-            box-shadow: 4px 8px 20px rgba(0,0,0,0.05);
+            background: transparent;
+            padding: 20px 0;
+            border: none;
+            box-shadow: none;
             margin-bottom: 20px;
         }}
+        svg {{ max-width: 100%; height: auto; }}
         table {{ width: calc(100% - 50px); border-collapse: collapse; margin: 20px 0 20px 50px; }}
         th, td {{ padding: 10px; border: 2px solid rgba(44, 62, 80, 0.4); text-align: left; background: rgba(255,255,255,0.5); }}
         """
@@ -628,7 +628,7 @@ def create_pdf(kwargs):
             var div = document.createElement("div");
             div.className = "mermaid";
             var code = el.innerHTML.replace(/&gt;/g, '>').replace(/&lt;/g, '<').replace(/&amp;/g, '&');
-            div.innerHTML = "%%{{init: {{'look': 'handDrawn', 'theme': 'base', 'themeVariables': {{'fontFamily': 'Patrick Hand', 'primaryColor': '#ffffff', 'primaryBorderColor': '#333333'}}}}}}%%\n" + code;
+            div.innerHTML = "%%{{init: {{'look': 'handDrawn', 'theme': 'base', 'themeVariables': {{'background': 'transparent', 'fontFamily': 'Patrick Hand', 'primaryColor': 'transparent', 'primaryBorderColor': '#2c3e50', 'lineColor': '#2c3e50', 'textColor': '#2c3e50'}}}}}}%%\n" + code;
             el.parentNode.replaceWith(div);
         }});
         mermaid.initialize({{ startOnLoad: true }});
