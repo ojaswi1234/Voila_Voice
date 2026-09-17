@@ -2885,6 +2885,14 @@ func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMes
 				}
 			}
 			args["source_files"] = sfList
+		} else if sfStr, ok := sfVal.(string); ok {
+			// AI hallucinated a string instead of an array
+			parts := strings.Split(sfStr, ",")
+			var resolvedList []string
+			for _, p := range parts {
+				resolvedList = append(resolvedList, resolveAgentPath(strings.TrimSpace(p)))
+			}
+			args["source_files"] = resolvedList
 		}
 	}
 	
