@@ -2873,11 +2873,23 @@ func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMes
 			} else {
 				args["path"] = resolveAgentPath(pathStr)
 			}
-			
-			// Re-serialize args JSON so downstream Python tools get the resolved path
-			argsJSON, _ = json.Marshal(args)
 		}
 	}
+
+	// CRITICAL FIX: Intercept source_files array so massive 40-page PDFs can locate their chapters
+	if sfVal, exists := args["source_files"]; exists {
+		if sfList, ok := sfVal.([]interface{}); ok {
+			for i, sf := range sfList {
+				if sfStr, ok := sf.(string); ok {
+					sfList[i] = resolveAgentPath(sfStr)
+				}
+			}
+			args["source_files"] = sfList
+		}
+	}
+	
+	// Re-serialize args JSON so downstream Python tools get the resolved paths
+	argsJSON, _ = json.Marshal(args)
 
 	getString := func(key string) string {
 		if val, exists := args[key]; exists {
