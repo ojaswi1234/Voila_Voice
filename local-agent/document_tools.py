@@ -617,7 +617,23 @@ def create_pdf(kwargs):
 <html>
 <head>
     <meta charset="utf-8">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>{css}</style>
+    <script>
+        tailwind.config = {{
+            theme: {{
+                extend: {{
+                    colors: {{
+                        primary: 'rgb({rgb_primary})',
+                        accent: 'rgb({rgb_accent})',
+                        heading: 'rgb({rgb_heading})',
+                        text: 'rgb({rgb_text})'
+                    }}
+                }}
+            }}
+        }}
+    </script>
 </head>
 <body>
     {watermark_html}
@@ -646,7 +662,8 @@ def create_pdf(kwargs):
             browser = p.chromium.launch(headless=True)
             page = browser.new_page()
             page.goto(f"file://{temp_html_path}", wait_until="networkidle")
-            page.wait_for_timeout(2500) # Give Mermaid time to render SVG
+            page.evaluate("document.fonts.ready") # CRITICAL: Wait for Google Fonts to finish rendering
+            page.wait_for_timeout(4000) # Give Mermaid, Tailwind, and ChartJS time to render
             page.pdf(
                 path=path,
                 format="A4",
