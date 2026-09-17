@@ -656,14 +656,15 @@ def create_pdf(kwargs):
             el.parentNode.replaceWith(div);
         }});
         
+        
         // ---------------------------------------------------------
         // AUTO-FLOWCHART INTERCEPTOR (ASCII to Mermaid DOM Compiler)
         // ---------------------------------------------------------
-        document.querySelectorAll("p, li").forEach(function(el) {
+        document.querySelectorAll("p, li").forEach(function(el) {{
             let text = el.innerText || el.textContent;
             if (!text) return;
             
-            if (text.includes("->") || text.includes("<-") || text.includes("--") || text.match(/\[.*\]/)) {
+            if (text.includes("->") || text.includes("<-") || text.includes("--") || text.match(/\[.*\]/)) {{
                 if (!text.includes(">") && !text.includes("<") && !text.includes("|") && !text.includes("+--")) return;
                 
                 let lines = text.split('\n');
@@ -671,44 +672,44 @@ def create_pdf(kwargs):
                 let hasGraph = false;
                 let nodeCounter = 1;
 
-                lines.forEach(line => {
+                lines.forEach(line => {{
                     let cleaned = line.trim();
                     if (!cleaned) return;
                     
                     let parts = cleaned.split(/(<--->|<-->|<---|--->|<->|-->|<--|->|<-)/);
-                    if (parts.length > 1) {
+                    if (parts.length > 1) {{
                         hasGraph = true;
                         let currentPrev = "";
                         let currentEdge = "-->";
                         
-                        parts.forEach(p => {
+                        parts.forEach(p => {{
                             p = p.trim();
                             if (!p) return;
                             
-                            if (["<--->", "<-->", "<->"].includes(p)) {
+                            if (["<--->", "<-->", "<->"].includes(p)) {{
                                 currentEdge = "---";
-                            } else if (["--->", "-->", "->"].includes(p)) {
+                            }} else if (["--->", "-->", "->"].includes(p)) {{
                                 currentEdge = "-->";
-                            } else if (["<---", "<--", "<-"].includes(p)) {
+                            }} else if (["<---", "<--", "<-"].includes(p)) {{
                                 currentEdge = "---";
-                            } else {
+                            }} else {{
                                 let label = p.replace(/\[/g, '').replace(/\]/g, '').replace(/\*/g, '').replace(/\+/g, '').replace(/\|/g, '').replace(/\(/g, '').replace(/\)/g, '').trim();
                                 if (!label) return;
                                 
                                 let nodeId = "node" + nodeCounter;
-                                mermaidCode += `${nodeId}["${label}"]\n`;
+                                mermaidCode += `${{nodeId}}["${{label}}"]\n`;
                                 
-                                if (currentPrev) {
-                                    mermaidCode += `${currentPrev} ${currentEdge} ${nodeId}\n`;
-                                }
+                                if (currentPrev) {{
+                                    mermaidCode += `${{currentPrev}} ${{currentEdge}} ${{nodeId}}\n`;
+                                }}
                                 currentPrev = nodeId;
                                 nodeCounter++;
-                            }
-                        });
-                    }
-                });
+                            }}
+                        }});
+                    }}
+                }});
 
-                if (hasGraph) {
+                if (hasGraph) {{
                     let wrapper = document.createElement("div");
                     wrapper.className = "mermaid-auto-wrapper my-8 p-6 bg-gray-50 border border-gray-200 rounded-xl shadow-sm";
                     
@@ -724,11 +725,12 @@ def create_pdf(kwargs):
                     wrapper.appendChild(title);
                     wrapper.appendChild(div);
                     el.parentNode.replaceChild(wrapper, el);
-                }
-            }
-        });
+                }}
+            }}
+        }});
         
         mermaid.initialize({{ startOnLoad: true }});
+
 
     </script>
 </body>
