@@ -386,7 +386,7 @@ def create_pdf(kwargs):
                 with sync_playwright() as p:
                     browser = p.chromium.launch(headless=True)
                     page = browser.new_page()
-                    page.goto(f"file://{temp_html}", wait_until="networkidle")
+                    page.goto(f"file:///{temp_html}", wait_until="load")
                     page.pdf(path=path, format="A4", print_background=True)
                     browser.close()
             else:
@@ -400,7 +400,7 @@ def create_pdf(kwargs):
                     with sync_playwright() as p:
                         browser = p.chromium.launch(headless=True)
                         page = browser.new_page()
-                        page.goto(f"file://{temp_html}", wait_until="networkidle")
+                        page.goto(f"file:///{temp_html}", wait_until="load")
                         page.pdf(path=path, format="A4", print_background=True)
                         browser.close()
                         
@@ -754,7 +754,7 @@ def create_pdf(kwargs):
             if (el.closest('.mermaid') || el.closest('.mermaid-auto-wrapper')) return;
             
             // Check for ASCII or Unicode arrows
-            if (text.includes("->") || text.includes("<-") || text.includes("--") || text.match(/\[.*\]/) ||
+            if (text.includes("->") || text.includes("<-") || text.includes("--") || text.match(/\\\\[.*\\\\]/) ||
                 text.includes("↓") || text.includes("→") || text.includes("←") || text.includes("↑") ||
                 text.includes("↔") || text.includes("↕") || text.includes("â†")) {{
                 
@@ -815,7 +815,7 @@ def create_pdf(kwargs):
                         wrapper.appendChild(title);
                         let div = document.createElement("div");
                         div.className = "mermaid w-full flex justify-center";
-                        div.innerHTML = "%%{{init: {{'look': 'handDrawn', 'theme': 'base', 'themeVariables': {{'background': 'transparent', 'fontFamily': 'Patrick Hand', 'primaryColor': 'transparent', 'primaryBorderColor': '#2c3e50', 'lineColor': '#2c3e50', 'textColor': '#2c3e50'}}}}}}%%\n" + mermaidCode;
+                        div.innerHTML = `%%{{init: {{'look': 'handDrawn', 'theme': 'base', 'themeVariables': {{'background': 'transparent', 'fontFamily': 'Patrick Hand', 'primaryColor': 'transparent', 'primaryBorderColor': '#2c3e50', 'lineColor': '#2c3e50', 'textColor': '#2c3e50'}}}}}}%%\n` + mermaidCode;
                         
                         
                         wrapper.appendChild(title);
@@ -845,13 +845,12 @@ def create_pdf(kwargs):
             browser = p.chromium.launch(headless=True)
 
             page = browser.new_page()
-            page.goto(f"file://{temp_html_path}", wait_until="networkidle")
+            page.goto(f"file:///{temp_html_path}", wait_until="load")
             # CRITICAL: Force the browser to aggressively fetch and wait for all fonts defined in the document
-            page.evaluate("""async () => {
-                const fonts = Array.from(document.fonts.values());
-                await Promise.all(fonts.map(f => f.load()));
-                await document.fonts.ready;
-            }""")
+            try:
+                page.evaluate("async () => { await document.fonts.ready; }")
+            except Exception:
+                pass
             page.wait_for_timeout(4000) # Give Mermaid, Tailwind, and ChartJS time to render
             page.pdf(
                 path=path,
