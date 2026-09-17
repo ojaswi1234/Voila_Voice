@@ -732,13 +732,14 @@ def create_pdf(kwargs):
 <body>
     {watermark_html}
     {html_body}
-    <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
     <script>
         document.querySelectorAll("pre code.language-mermaid").forEach(function(el) {{
             var div = document.createElement("div");
             div.className = "mermaid";
-            var code = el.innerHTML.replace(/&gt;/g, '>').replace(/&lt;/g, '<').replace(/&amp;/g, '&');
-            div.innerHTML = "%%{{init: {{'look': 'handDrawn', 'theme': 'base', 'themeVariables': {{'background': 'transparent', 'fontFamily': 'Patrick Hand', 'primaryColor': 'transparent', 'primaryBorderColor': '#2c3e50', 'lineColor': '#2c3e50', 'textColor': '#2c3e50'}}}}}}%%\\n" + code;
+            var rawCode = el.textContent.trim();
+            var initDirective = '%%{{init: {{"look": "handDrawn", "theme": "base", "themeVariables": {{"background": "transparent", "fontFamily": "Patrick Hand", "primaryColor": "transparent", "primaryBorderColor": "#2c3e50", "lineColor": "#2c3e50", "textColor": "#2c3e50"}}}}}}%%';
+            div.textContent = initDirective + String.fromCharCode(10) + rawCode;
             el.parentNode.replaceWith(div);
         }});
         
@@ -750,8 +751,10 @@ def create_pdf(kwargs):
             let text = el.innerText || el.textContent;
             if (!text) return;
             
-            // Prevent recursive interception
+            // Prevent recursive interception - skip if inside mermaid OR if it contains a mermaid diagram
             if (el.closest('.mermaid') || el.closest('.mermaid-auto-wrapper')) return;
+            if (el.querySelector && el.querySelector('.mermaid, .mermaid-auto-wrapper, pre')) return;
+            if (el.tagName === 'PRE' || el.tagName === 'CODE') return;
             
             // Check for ASCII or Unicode arrows
             if (text.includes("->") || text.includes("<-") || text.includes("--") || text.match(/\\\\[.*\\\\]/) ||
@@ -763,13 +766,11 @@ def create_pdf(kwargs):
                     !text.includes("↔") && !text.includes("↕") && !text.includes("â†")) return;
                 
                 // Collapse all newlines so multiline flowcharts are treated as a single chain
-                let collapsedText = text.replace(/
-/g, ' ');
+                let collapsedText = text.replace(/\\n/g, ' ');
                 let parts = collapsedText.split(/(<--->|<-->|<---|--->|<->|-->|<--|->|<-|↓|→|←|↑|↔|↕|â†“|â†•|â†’)/);
                 
                 if (parts.length > 1 && parts.length < 50) {{
-                    let mermaidCode = "graph TD
-";
+                    let mermaidCode = `graph TD\n`;
                     let currentPrev = "";
                     let currentEdge = "-->";
                     let nodeCounter = 1;
@@ -815,7 +816,8 @@ def create_pdf(kwargs):
                         wrapper.appendChild(title);
                         let div = document.createElement("div");
                         div.className = "mermaid w-full flex justify-center";
-                        div.innerHTML = `%%{{init: {{'look': 'handDrawn', 'theme': 'base', 'themeVariables': {{'background': 'transparent', 'fontFamily': 'Patrick Hand', 'primaryColor': 'transparent', 'primaryBorderColor': '#2c3e50', 'lineColor': '#2c3e50', 'textColor': '#2c3e50'}}}}}}%%\n` + mermaidCode;
+                        var initDir = '%%{{init: {{\"look\": \"handDrawn\", \"theme\": \"base\", \"themeVariables\": {{\"background\": \"transparent\", \"fontFamily\": \"Patrick Hand\", \"primaryColor\": \"transparent\", \"primaryBorderColor\": \"#2c3e50\", \"lineColor\": \"#2c3e50\", \"textColor\": \"#2c3e50\"}}}}}}%%';
+                        div.textContent = initDir + '\\n' + mermaidCode.trim();
                         
                         
                         wrapper.appendChild(title);
@@ -828,7 +830,8 @@ def create_pdf(kwargs):
             }}
         }});
         
-        mermaid.initialize({{ startOnLoad: true }});
+        mermaid.initialize({{ startOnLoad: false }});
+        mermaid.run({{ querySelector: '.mermaid' }}).catch(function(err) {{ console.error('Mermaid error:', err); }});
 
 
     </script>
@@ -848,7 +851,7 @@ def create_pdf(kwargs):
             page.goto(f"file:///{temp_html_path}", wait_until="load")
             # CRITICAL: Force the browser to aggressively fetch and wait for all fonts defined in the document
             try:
-                page.evaluate("async () => { await document.fonts.ready; }")
+                page.evaluate("async () => { await document.fonts.ready; if (window.mermaidPromise) { await window.mermaidPromise; } }")
             except Exception:
                 pass
             page.wait_for_timeout(4000) # Give Mermaid, Tailwind, and ChartJS time to render
