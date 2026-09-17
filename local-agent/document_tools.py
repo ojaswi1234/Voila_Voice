@@ -716,73 +716,86 @@ def create_pdf(kwargs):
         
         
         // ---------------------------------------------------------
-        // AUTO-FLOWCHART INTERCEPTOR (ASCII to Mermaid DOM Compiler)
+        // AUTO-FLOWCHART INTERCEPTOR (ASCII & Unicode to Mermaid DOM Compiler)
         // ---------------------------------------------------------
-        document.querySelectorAll("p, li").forEach(function(el) {{
+        document.querySelectorAll("p, li, div").forEach(function(el) {{
             let text = el.innerText || el.textContent;
             if (!text) return;
             
-            if (text.includes("->") || text.includes("<-") || text.includes("--") || text.match(/\[.*\]/)) {{
-                if (!text.includes(">") && !text.includes("<") && !text.includes("|") && !text.includes("+--")) return;
+            // Prevent recursive interception
+            if (el.closest('.mermaid') || el.closest('.mermaid-auto-wrapper')) return;
+            
+            // Check for ASCII or Unicode arrows
+            if (text.includes("->") || text.includes("<-") || text.includes("--") || text.match(/\[.*\]/) ||
+                text.includes("↓") || text.includes("→") || text.includes("←") || text.includes("↑") ||
+                text.includes("↔") || text.includes("↕") || text.includes("â†")) {{
                 
-                let lines = text.split('\n');
-                let mermaidCode = "graph TD\n";
-                let hasGraph = false;
-                let nodeCounter = 1;
-
-                lines.forEach(line => {{
-                    let cleaned = line.trim();
-                    if (!cleaned) return;
+                if (!text.includes(">") && !text.includes("<") && !text.includes("|") && !text.includes("+--") &&
+                    !text.includes("↓") && !text.includes("→") && !text.includes("←") && !text.includes("↑") &&
+                    !text.includes("↔") && !text.includes("↕") && !text.includes("â†")) return;
+                
+                // Collapse all newlines so multiline flowcharts are treated as a single chain
+                let collapsedText = text.replace(/
+/g, ' ');
+                let parts = collapsedText.split(/(<--->|<-->|<---|--->|<->|-->|<--|->|<-|↓|→|←|↑|↔|↕|â†“|â†•|â†’)/);
+                
+                if (parts.length > 1 && parts.length < 50) {{
+                    let mermaidCode = "graph TD
+";
+                    let currentPrev = "";
+                    let currentEdge = "-->";
+                    let nodeCounter = 1;
+                    let validNodes = 0;
                     
-                    let parts = cleaned.split(/(<--->|<-->|<---|--->|<->|-->|<--|->|<-)/);
-                    if (parts.length > 1) {{
-                        hasGraph = true;
-                        let currentPrev = "";
-                        let currentEdge = "-->";
+                    parts.forEach(p => {{
+                        p = p.trim();
+                        if (!p) return;
                         
-                        parts.forEach(p => {{
-                            p = p.trim();
-                            if (!p) return;
+                        if (["<--->", "<-->", "<->", "↔", "↕", "â†•"].includes(p)) {{
+                            currentEdge = "---";
+                        }} else if (["--->", "-->", "->", "→", "↓", "â†“", "â†’"].includes(p)) {{
+                            currentEdge = "-->";
+                        }} else if (["<---", "<--", "<-", "←", "↑"].includes(p)) {{
+                            currentEdge = "---";
+                        }} else {{
+                            let label = p.replace(/\[/g, '').replace(/\]/g, '').replace(/\*/g, '').replace(/\+/g, '').replace(/\|/g, '').replace(/\(/g, '').replace(/\)/g, '').trim();
+                            if (!label) return;
                             
-                            if (["<--->", "<-->", "<->"].includes(p)) {{
-                                currentEdge = "---";
-                            }} else if (["--->", "-->", "->"].includes(p)) {{
-                                currentEdge = "-->";
-                            }} else if (["<---", "<--", "<-"].includes(p)) {{
-                                currentEdge = "---";
-                            }} else {{
-                                let label = p.replace(/\[/g, '').replace(/\]/g, '').replace(/\*/g, '').replace(/\+/g, '').replace(/\|/g, '').replace(/\(/g, '').replace(/\)/g, '').trim();
-                                if (!label) return;
-                                
-                                let nodeId = "node" + nodeCounter;
-                                mermaidCode += `${{nodeId}}["${{label}}"]\n`;
-                                
-                                if (currentPrev) {{
-                                    mermaidCode += `${{currentPrev}} ${{currentEdge}} ${{nodeId}}\n`;
-                                }}
-                                currentPrev = nodeId;
-                                nodeCounter++;
+                            // Truncate overly long text blocks that aren't real nodes
+                            if (label.length > 60) label = label.substring(0, 60) + "...";
+                            
+                            let nodeId = "node" + nodeCounter;
+                            mermaidCode += `${{nodeId}}["${{label}}"]
+`;
+                            
+                            if (currentPrev) {{
+                                mermaidCode += `${{currentPrev}} ${{currentEdge}} ${{nodeId}}
+`;
                             }}
-                        }});
-                    }}
-                }});
+                            currentPrev = nodeId;
+                            nodeCounter++;
+                            validNodes++;
+                        }}
+                    }});
 
-                if (hasGraph) {{
-                    let wrapper = document.createElement("div");
-                    wrapper.className = "mermaid-auto-wrapper my-8 p-6 bg-gray-50 border border-gray-200 rounded-xl shadow-sm";
-                    
-                    let title = document.createElement("div");
-                    title.className = "text-sm font-bold text-gray-500 mb-4 uppercase tracking-wider";
-                    title.innerText = "Auto-Generated Diagram";
-                    
-                    let div = document.createElement("div");
-                    div.className = "mermaid flex justify-center";
-                    // Using double braces because this is inside python f-string
-                    div.innerHTML = "%%{{init: {{'look': 'handDrawn', 'theme': 'base', 'themeVariables': {{'background': 'transparent', 'fontFamily': 'Patrick Hand', 'primaryColor': 'transparent', 'primaryBorderColor': '#2c3e50', 'lineColor': '#2c3e50', 'textColor': '#2c3e50'}}}}}}%%\\n" + mermaidCode;
-                    
-                    wrapper.appendChild(title);
-                    wrapper.appendChild(div);
-                    el.parentNode.replaceChild(wrapper, el);
+                    if (validNodes > 1) {{
+                        let wrapper = document.createElement("div");
+                        wrapper.className = "mermaid-auto-wrapper my-8 p-6 bg-gray-50 border border-gray-200 rounded-xl shadow-sm";
+                        
+                        let title = document.createElement("div");
+                        title.className = "text-sm font-bold text-gray-500 mb-4 uppercase tracking-wider";
+                        title.innerText = "Auto-Generated Sketched Diagram";
+                        
+                        let div = document.createElement("div");
+                        div.className = "mermaid flex justify-center";
+                        div.innerHTML = "%%{{init: {{'look': 'handDrawn', 'theme': 'base', 'themeVariables': {{'background': 'transparent', 'fontFamily': 'Patrick Hand', 'primaryColor': 'transparent', 'primaryBorderColor': '#2c3e50', 'lineColor': '#2c3e50', 'textColor': '#2c3e50'}}}}}}%%\n" + mermaidCode;
+                        
+                        wrapper.appendChild(title);
+                        wrapper.appendChild(div);
+                        
+                        // Replace the entire container block with the mermaid chart
+                        el.parentNode.replaceChild(wrapper, el);
+                    }}
                 }}
             }}
         }});
