@@ -3333,7 +3333,7 @@ If the user asks you to read, analyze, or process a PDF file, you MUST use the '
 
 CRITICAL - FAST FILE SEARCHING & .AIIGNORE (0 BUGS POLICY):
 When asked to find, scan, or search for a specific file, folder, or project by name, NEVER use slow Get-ChildItem. You MUST use the highly optimized native CMD search wrapper inside your terminal tool, and explicitly pipe out heavy dependency folders (.aiignore):
-'cmd.exe /c "dir /s /b /a:-d C:\Users\ojasw\Desktop\*mandate* | findstr /V /I "\node_modules\ \.venv\ \venv\ \vendor\ \.git\ \target\ \.gradle\ \.m2\ \packages\ \__pycache__\ \dist\ \build\ \out\ \bin\ \obj\ \.idea\ \.vscode\ \.env\""'
+'Get-ChildItem -Path C:\Users\ojasw\Desktop\ -Recurse -Filter \"*name*\" -File -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch \'\\(node_modules|\.venv|venv|vendor|\.git|target|\.gradle|\.m2|packages|__pycache__|dist|build|out|bin|obj|\.idea|\.vscode)\\\' } | Select-Object -ExpandProperty FullName'
 (Use /a:d for directories, /a:-d for files). Always wrap the search term in asterisks like '*name*' to handle fuzzy matching.
 
 CRITICAL - DEPENDENCY OVERHEAD AVOIDANCE:
@@ -3694,7 +3694,7 @@ If the user asks you to read, analyze, or process a PDF file, you MUST use the '
 
 CRITICAL - FAST FILE SEARCHING & .AIIGNORE (0 BUGS POLICY):
 When asked to find, scan, or search for a specific file, folder, or project by name, NEVER use slow Get-ChildItem. You MUST use the highly optimized native CMD search wrapper inside your terminal tool, and explicitly pipe out heavy dependency folders (.aiignore):
-'cmd.exe /c "dir /s /b /a:-d C:\Users\ojasw\Desktop\*mandate* | findstr /V /I "\node_modules\ \.venv\ \venv\ \vendor\ \.git\ \target\ \.gradle\ \.m2\ \packages\ \__pycache__\ \dist\ \build\ \out\ \bin\ \obj\ \.idea\ \.vscode\ \.env\""'
+'Get-ChildItem -Path C:\Users\ojasw\Desktop\ -Recurse -Filter \"*name*\" -File -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch \'\\(node_modules|\.venv|venv|vendor|\.git|target|\.gradle|\.m2|packages|__pycache__|dist|build|out|bin|obj|\.idea|\.vscode)\\\' } | Select-Object -ExpandProperty FullName'
 (Use /a:d for directories, /a:-d for files). Always wrap the search term in asterisks like '*name*' to handle fuzzy matching.
 
 CRITICAL - DEPENDENCY OVERHEAD AVOIDANCE:
