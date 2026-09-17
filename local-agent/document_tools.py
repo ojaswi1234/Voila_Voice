@@ -496,14 +496,14 @@ def create_pdf(kwargs):
           page-break-after: avoid !important;
           break-after: avoid !important;
           color: {heading_color} !important; /* Fix white text on white bg issue */
-      }      
+      }}
+
       /* Fix Tailwind color collision */
-      .text-primary { color: {heading_color} !important; }
-      .bg-primary { background-color: {bg_color} !important; }
+      .text-primary {{ color: {heading_color} !important; }}
+      .bg-primary {{ background-color: {bg_color} !important; }}
       
       /* Refined link handling: stop random underlining on headings/cards if AI wrapped them in links */
-      h1 a, h2 a, h3 a, .card a { text-decoration: none !important; color: inherit; }
-}
+      h1 a, h2 a, h3 a, .card a {{ text-decoration: none !important; color: inherit; }}
       
       /* Override AI Tailwind hallucinations that cause invisible text */
       .text-white {{ color: {heading_color} !important; }}
