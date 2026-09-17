@@ -481,14 +481,14 @@ def create_pdf(kwargs):
     .cover-page {{ height: 100vh; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; page-break-after: always; }}
     .grid-2 {{ display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }}
     .grid-3 {{ display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; }}
-    .card {{ background: rgba(0,0,0,0.03); border: 1px solid rgba(0,0,0,0.1); padding: 15px; border-radius: 8px; break-inside: avoid; margin-bottom: 20px; }}
+    .card {{ background: rgba(0,0,0,0.03); border: 1px solid rgba(0,0,0,0.1); padding: 15px; border-radius: 8px; margin-bottom: 20px; -webkit-box-decoration-break: clone; box-decoration-break: clone; }}
     .callout {{ border-left: 4px solid #58a6ff; padding: 10px 15px; background: rgba(88, 166, 255, 0.1); margin: 20px 0; }}
     
     img {{ max-width: 100%; height: auto; border-radius: 8px; }}
     svg {{ max-width: 100%; height: auto; }}
 
       /* Enforce strict page-break avoidance to prevent cards/flowcharts from being chopped in half */
-      .card, .mermaid-auto-wrapper, .mermaid, img, svg, table, pre, blockquote, .grid-2 > div, .grid-3 > div, li {{ 
+      .mermaid-auto-wrapper, .mermaid, img, svg, table, pre, blockquote, .grid-2 > div, .grid-3 > div, li {{ 
           page-break-inside: avoid !important; 
           break-inside: avoid !important; 
       }}
