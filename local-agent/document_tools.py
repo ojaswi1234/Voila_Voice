@@ -167,6 +167,15 @@ def create_doc(kwargs):
     
     path = kwargs.get('path')
     content = kwargs.get('content', '')
+    
+    # Clean up AI LaTeX math hallucinations
+    if content:
+        content = content.replace('$\\rightarrow$', '→')
+        content = content.replace('$\\Rightarrow$', '⇒')
+        content = content.replace('$\\leftarrow$', '←')
+        content = content.replace('$\\Leftarrow$', '⇐')
+        content = content.replace('\\rightarrow', '→')
+        content = content.replace('\\Rightarrow', '⇒')
     theme = kwargs.get('theme', 'modern_dark')
     theme_config = get_theme(theme)
 
@@ -343,6 +352,15 @@ def create_pdf(kwargs):
     
     path = kwargs.get('path')
     content = kwargs.get('content', '')
+    
+    # Clean up AI LaTeX math hallucinations
+    if content:
+        content = content.replace('$\\rightarrow$', '→')
+        content = content.replace('$\\Rightarrow$', '⇒')
+        content = content.replace('$\\leftarrow$', '←')
+        content = content.replace('$\\Leftarrow$', '⇐')
+        content = content.replace('\\rightarrow', '→')
+        content = content.replace('\\Rightarrow', '⇒')
     source_files = kwargs.get('source_files', [])
     watermark = kwargs.get('watermark', '')
 
