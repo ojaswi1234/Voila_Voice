@@ -496,7 +496,14 @@ def create_pdf(kwargs):
           page-break-after: avoid !important;
           break-after: avoid !important;
           color: {heading_color} !important; /* Fix white text on white bg issue */
-      }}
+      }      
+      /* Fix Tailwind color collision */
+      .text-primary { color: {heading_color} !important; }
+      .bg-primary { background-color: {bg_color} !important; }
+      
+      /* Refined link handling: stop random underlining on headings/cards if AI wrapped them in links */
+      h1 a, h2 a, h3 a, .card a { text-decoration: none !important; color: inherit; }
+}
       
       /* Override AI Tailwind hallucinations that cause invisible text */
       .text-white {{ color: {heading_color} !important; }}
@@ -801,15 +808,17 @@ def create_pdf(kwargs):
 
                     if (validNodes > 1) {{
                         let wrapper = document.createElement("div");
-                        wrapper.className = "mermaid-auto-wrapper my-8 flex justify-center";
-                        
-                        
-                        
+                        wrapper.className = "mermaid-auto-wrapper my-8 p-6 flex flex-col items-center border-2 border-dashed border-[var(--color-accent)] rounded-xl bg-transparent";
+                        let title = document.createElement("div");
+                        title.className = "text-sm font-bold opacity-60 mb-4 uppercase tracking-wider";
+                        title.innerText = "System Map";
+                        wrapper.appendChild(title);
                         let div = document.createElement("div");
-                        div.className = "mermaid";
+                        div.className = "mermaid w-full flex justify-center";
                         div.innerHTML = "%%{{init: {{'look': 'handDrawn', 'theme': 'base', 'themeVariables': {{'background': 'transparent', 'fontFamily': 'Patrick Hand', 'primaryColor': 'transparent', 'primaryBorderColor': '#2c3e50', 'lineColor': '#2c3e50', 'textColor': '#2c3e50'}}}}}}%%\n" + mermaidCode;
                         
                         
+                        wrapper.appendChild(title);
                         wrapper.appendChild(div);
                         
                         // Replace the entire container block with the mermaid chart
