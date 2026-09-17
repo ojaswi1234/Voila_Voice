@@ -34,6 +34,12 @@ class DocumentSection(BaseModel):
     columns: Optional[List[str]] = []
     rows: Optional[List[List[str]]] = []
     items: Optional[Union[List[str], List[Dict[str, str]]]] = []
+    engine: Optional[str] = ""
+    source: Optional[str] = ""
+    theme: Optional[str] = ""
+    background: Optional[str] = ""
+    image_path: Optional[str] = ""
+
 
     @validator("*", pre=True)
     def sanitize(cls, v):

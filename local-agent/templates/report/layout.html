@@ -35,6 +35,26 @@
     
     .page-break { page-break-before: always; }
     .footer { margin-top: 5rem; text-align: center; font-size: 0.8rem; color: var(--color-accent); }
+    .diagram-card {
+      background: rgba(255, 255, 255, 0.8);
+      border-radius: 8px;
+      padding: 2rem;
+      border: 1px solid var(--color-card-border);
+      margin: 2rem 0;
+      text-align: center;
+    }
+    .diagram-card img {
+      max-width: 100%;
+      height: auto;
+      display: block;
+      margin: 0 auto;
+    }
+    .diagram-caption {
+      margin-top: 1rem;
+      font-size: 0.9rem;
+      color: var(--color-accent);
+      font-style: italic;
+    }
   </style>
 </head>
 <body class="theme-{{ ir.theme }}">
@@ -75,6 +95,15 @@
         <li>{{ item }}</li>
         {% endfor %}
       </ul>
+    {% elif section.type == 'diagram' %}
+      <figure class="diagram-card">
+        {% if section.title %}<h3>{{ section.title }}</h3>{% endif %}
+        {% if section.image_path %}
+          <img src="file:///{{ section.image_path.replace('\\', '/') }}" alt="{{ section.title|default('Diagram') }}">
+        {% else %}
+          <div style="color: red;">[Diagram image not generated]</div>
+        {% endif %}
+      </figure>
     {% elif section.type == 'page_break' %}
       <div class="page-break"></div>
     {% endif %}

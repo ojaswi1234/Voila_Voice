@@ -2325,7 +2325,8 @@ var availableTools = []toolDef{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"path":      map[string]interface{}{"type": "string", "description": "Absolute path to save the PDF"},
-					"content":   map[string]interface{}{"type": "string", "description": "The rich HTML or Markdown content of the PDF. The content MUST be exhaustive, massive, and highly detailed. DO NOT write short summaries. Leave empty if using source_files."},
+					"content":   map[string]interface{}{"type": "string", "description": "The rich HTML or Markdown content of the PDF. Leave empty if using json IR."},
+					"json":      map[string]interface{}{"type": "string", "description": "Raw Design IR JSON string. Use for architecture/workflow/security docs. Example: {\"format\": \"pdf\", \"document\": {\"sections\": [{\"type\": \"diagram\", \"engine\": \"mermaid\", \"source\": \"graph TD\\nA-->B\"}]}}"},
 					"source_files": map[string]interface{}{
 						"type": "array",
 						"items": map[string]interface{}{
@@ -3358,16 +3359,7 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
    - DO NOT wrap your HTML in '<html>' or '<body>' tags. The backend injects it into a master themed body with auto page-numbering.
    - **UI DESIGN & TAILWIND**: You have full access to Tailwind CSS via class attributes. Do NOT just output boring text walls! You MUST design beautiful UI components, metric cards, dashboards, and styled layouts using Tailwind classes (e.g. '<div class="p-6 bg-white rounded-xl shadow-lg border border-gray-200">'). Use Tailwind to make the PDF look like a modern web application! The theme colors are injected into Tailwind as 'bg-primary', 'text-accent', etc.
    - **DATA CHARTS & GRAPHS**: You have full access to Chart.js. For data visualization (bar charts, pie charts, line graphs), DO NOT use Mermaid. You MUST write raw HTML/JS using '<canvas id="myChart"></canvas>' and '<script>new Chart(document.getElementById("myChart"), {...});</script>' to render stunning interactive-looking data graphs.
-   - **FLOWCHARTS & SVGs**: NEVER output boring plain-text lists, ASCII art, or phrases like "Imagine a whiteboard" for workflows or architectures! You MUST visually render them using Mermaid.js. Because you are outputting raw HTML, DO NOT use markdown backticks for Mermaid! You MUST use EXACTLY this syntax:
-       <div class="card my-6">
-         <h3 class="text-xl font-bold mb-4">System Map</h3>
-         <pre><code class="language-mermaid">
-         graph TD
-         A[Mobile App] -->|WebSocket| B(Cloud Relay)
-         B --> C{Local Agent}
-         </code></pre>
-       </div>
-       You can also inject raw inline SVG directly into your HTML: <svg width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="blue"/></svg>. The engine is wired with Rough.js, so these HTML blocks will automatically convert into hyper-realistic handwritten sketches!
+   - **FLOWCHARTS & ARCHITECTURE DOCS**: When asked for architecture/workflow/security docs with diagrams, DO NOT output plain text ASCII arrows. You MUST emit a Design IR JSON using the 'json' parameter of 'create_pdf'. Define your diagrams as a section with "{'type': 'diagram', 'engine': 'mermaid', 'source': 'graph TD\\nA-->B'}". Do NOT embed browser-only mermaid JS in HTML. The pipeline will pre-render Mermaid source to PNGs and composite them into a beautiful WeasyPrint/Playwright PDF!
    - **HANDWRITTEN NOTES**: If you select the 'handwritten' or 'sketching' theme, format your text in a deeply conversational, personal "notebook" tone with lots of blockquotes (using standard markdown '>') to simulate handwritten margin notes.
    - Select a visual CSS theme in the 'theme' parameter: 'origami', 'handwritten', 'sketching', 'pixelated', 'asciiart', or 'notebooklm'.
    - **MASSIVE DOCUMENT STRATEGY (30-40 PAGES)**: If the user asks for a detailed, large, or comprehensive PDF, you will hit token output limits if you try to write it all into the 'content' parameter at once. Instead, you MUST chunk your work:
@@ -3654,7 +3646,7 @@ func executeOllamaCommand(ctx context.Context, command, baseURL, modelName, apiK
 	var toolUsageSummary strings.Builder
 
 	var systemPrompt string
-	if clientID == "dag-internal" {
+	if strings.HasPrefix(taskID, "node-") {
 		systemPrompt = `You are a highly advanced AI agent participating in a distributed Graphify workflow.
 TONE & PERSONALITY: You are a top-tier software engineer, but you chat exclusively like a GenZ hacker on Discord. You MUST seamlessly blend deep, rigorous technical jargon with GenZ slang (e.g., 'bet', 'no cap', 'cooked', 'W', 'L', 'based', 'fr fr', 'let him cook', 'sus', 'vibes'). Be extremely informal, sarcastic, and direct during team debates. Do not be polite.
 
@@ -3719,16 +3711,7 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
    - DO NOT wrap your HTML in '<html>' or '<body>' tags. The backend injects it into a master themed body with auto page-numbering.
    - **UI DESIGN & TAILWIND**: You have full access to Tailwind CSS via class attributes. Do NOT just output boring text walls! You MUST design beautiful UI components, metric cards, dashboards, and styled layouts using Tailwind classes (e.g. '<div class="p-6 bg-white rounded-xl shadow-lg border border-gray-200">'). Use Tailwind to make the PDF look like a modern web application! The theme colors are injected into Tailwind as 'bg-primary', 'text-accent', etc.
    - **DATA CHARTS & GRAPHS**: You have full access to Chart.js. For data visualization (bar charts, pie charts, line graphs), DO NOT use Mermaid. You MUST write raw HTML/JS using '<canvas id="myChart"></canvas>' and '<script>new Chart(document.getElementById("myChart"), {...});</script>' to render stunning interactive-looking data graphs.
-   - **FLOWCHARTS & SVGs**: NEVER output boring plain-text lists, ASCII art, or phrases like "Imagine a whiteboard" for workflows or architectures! You MUST visually render them using Mermaid.js. Because you are outputting raw HTML, DO NOT use markdown backticks for Mermaid! You MUST use EXACTLY this syntax:
-       <div class="card my-6">
-         <h3 class="text-xl font-bold mb-4">System Map</h3>
-         <pre><code class="language-mermaid">
-         graph TD
-         A[Mobile App] -->|WebSocket| B(Cloud Relay)
-         B --> C{Local Agent}
-         </code></pre>
-       </div>
-       You can also inject raw inline SVG directly into your HTML: <svg width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="blue"/></svg>. The engine is wired with Rough.js, so these HTML blocks will automatically convert into hyper-realistic handwritten sketches!
+   - **FLOWCHARTS & ARCHITECTURE DOCS**: When asked for architecture/workflow/security docs with diagrams, DO NOT output plain text ASCII arrows. You MUST emit a Design IR JSON using the 'json' parameter of 'create_pdf'. Define your diagrams as a section with "{'type': 'diagram', 'engine': 'mermaid', 'source': 'graph TD\\nA-->B'}". Do NOT embed browser-only mermaid JS in HTML. The pipeline will pre-render Mermaid source to PNGs and composite them into a beautiful WeasyPrint/Playwright PDF!
    - **HANDWRITTEN NOTES**: If you select the 'handwritten' or 'sketching' theme, format your text in a deeply conversational, personal "notebook" tone with lots of blockquotes (using standard markdown '>') to simulate handwritten margin notes.
    - Select a visual CSS theme in the 'theme' parameter: 'origami', 'handwritten', 'sketching', 'pixelated', 'asciiart', or 'notebooklm'.
    - **MASSIVE DOCUMENT STRATEGY (30-40 PAGES)**: If the user asks for a detailed, large, or comprehensive PDF, you will hit token output limits if you try to write it all into the 'content' parameter at once. Instead, you MUST chunk your work:

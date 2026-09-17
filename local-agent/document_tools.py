@@ -351,6 +351,64 @@ def create_pdf(kwargs):
     import tempfile
     
     path = kwargs.get('path')
+    json_ir = kwargs.get('json', None)
+    
+    if json_ir:
+        try:
+            import json
+            from jinja2 import Environment, FileSystemLoader
+            from document_ir import normalize_ir
+            from diagram_render import render_mermaid_to_png, svg_file_to_png
+            
+            ir = normalize_ir(json_ir)
+            
+            # Normalize diagrams
+            has_diagrams = False
+            for sec in ir.document.sections:
+                if sec.type == 'diagram':
+                    has_diagrams = True
+                    if sec.engine == 'mermaid':
+                        sec.image_path = render_mermaid_to_png(sec.source, theme=sec.theme or 'default', background=sec.background or 'transparent')
+                    elif sec.engine == 'svg' and sec.source.endswith('.svg'):
+                        sec.image_path = svg_file_to_png(sec.source)
+            
+            # Render Jinja
+            env = Environment(loader=FileSystemLoader(os.path.join(os.path.dirname(__file__), 'templates', 'report')))
+            template = env.get_template('layout.html')
+            html_out = template.render(ir=ir)
+            
+            fd, temp_html = tempfile.mkstemp(suffix=".html")
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                f.write(html_out)
+                
+            if has_diagrams:
+                # Use Playwright for blended backgrounds
+                with sync_playwright() as p:
+                    browser = p.chromium.launch(headless=True)
+                    page = browser.new_page()
+                    page.goto(f"file://{temp_html}", wait_until="networkidle")
+                    page.pdf(path=path, format="A4", print_background=True)
+                    browser.close()
+            else:
+                # Use WeasyPrint for static themed docs
+                try:
+                    from weasyprint import HTML
+                    base_url = os.path.dirname(os.path.abspath(__file__))
+                    HTML(filename=temp_html, base_url=base_url).write_pdf(path)
+                except ImportError:
+                    # Fallback if weasyprint not installed
+                    with sync_playwright() as p:
+                        browser = p.chromium.launch(headless=True)
+                        page = browser.new_page()
+                        page.goto(f"file://{temp_html}", wait_until="networkidle")
+                        page.pdf(path=path, format="A4", print_background=True)
+                        browser.close()
+                        
+            os.remove(temp_html)
+            return f"Successfully created PDF using Design IR at {path}"
+        except Exception as e:
+            return f"Error using Design IR: {e}"
+            
     content = kwargs.get('content', '')
     
     # Clean up AI LaTeX math hallucinations
