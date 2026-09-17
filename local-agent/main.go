@@ -690,33 +690,9 @@ func (m model) testConnection() tea.Cmd {
 func (m model) startServer() tea.Cmd {
 	return func() tea.Msg {
 		go startHTTPServer()
-
-		go func(data ConnectionData) {
-			for {
-				addr := getNgrokPublicURL()
-				if addr == "" {
-					if !isNgrokRunning() {
-						log.Println("Ngrok not running, attempting to start...")
-						if err := startNgrok(); err != nil {
-							log.Printf("Failed to start ngrok: %v (skipping registration)", err)
-							time.Sleep(5 * time.Second)
-							continue
-						}
-						time.Sleep(3 * time.Second)
-						addr = getNgrokPublicURL()
-					}
-					if addr == "" {
-						log.Println("ngrok URL not available yet (is ngrok running?)")
-					}
-				}
-				if addr != "" {
-					if err := registerWithBackend(data, addr); err != nil {
-						log.Printf("register error: %v", err)
-					}
-				}
-				time.Sleep(5 * time.Second)
-			}
-		}(m.connectionData)
+		
+		// Start unified robust connection manager
+		startConnectionManager(m.connectionData)
 
 		return serverStatusMsg{running: true}
 	}
@@ -4153,25 +4129,21 @@ func generateDeviceFingerprint() string {
 	return hex.EncodeToString(hash[:])[:16]
 }
 
-func runBackgroundMode() {
-	data, err := loadConnectionData()
-	if err != nil {
-		log.Fatalf("Background mode requires connection data: %v", err)
+
+var connectionManagerRunning bool
+var connectionManagerMu sync.Mutex
+
+func startConnectionManager(data ConnectionData) {
+	connectionManagerMu.Lock()
+	if connectionManagerRunning {
+		connectionManagerMu.Unlock()
+		return
 	}
+	connectionManagerRunning = true
+	connectionManagerMu.Unlock()
 
-	if !data.Connected || data.SecurityPhrase == "" {
-		log.Fatalf("Background mode requires completed setup")
-	}
-
-	log.Printf("Starting Voila in background mode...")
-	log.Printf("Backend: %s", data.BackendURL)
-	log.Printf("Device: %s (%s)", data.DeviceName, data.DeviceID)
-
-	// Start HTTP server
-	go startHTTPServer()
-
-	// Start ngrok registration loop (only register when address changes)
-	go func(data ConnectionData) {
+	// 1. Unified Registration and Heartbeat Loop
+	go func() {
 		var lastRegisteredAddr string
 		var ngrokRetryCount int
 		var ngrokRetryDelay = 5 * time.Second
@@ -4211,29 +4183,30 @@ func runBackgroundMode() {
 					log.Println("ngrok URL not available yet (is ngrok running?)")
 				}
 			}
-			if addr != "" && addr != lastRegisteredAddr {
-				if err := registerWithBackend(data, addr); err != nil {
-					log.Printf("register error: %v", err)
+
+			if addr != "" {
+				// If address changed or we haven't registered yet, register!
+				if addr != lastRegisteredAddr {
+					if err := registerWithBackend(data, addr); err != nil {
+						log.Printf("register error: %v", err)
+					} else {
+						lastRegisteredAddr = addr
+					}
 				} else {
-					lastRegisteredAddr = addr
+					// We are registered, so send a heartbeat to keep the session alive
+					if err := sendHeartbeat(data, addr); err != nil {
+						log.Printf("heartbeat error: %v", err)
+						// CRITICAL FIX: If heartbeat fails (e.g., backend restarted and wiped memory),
+						// we MUST clear lastRegisteredAddr to force a full re-registration on the next loop!
+						lastRegisteredAddr = ""
+					}
 				}
 			}
 			time.Sleep(5 * time.Second)
 		}
-	}(data)
-
-	// Start presence polling
-	go func() {
-		for {
-			time.Sleep(10 * time.Second) // Heartbeat every 10 seconds
-			addr := getNgrokPublicURL()
-			if err := sendHeartbeat(data, addr); err != nil {
-				log.Printf("heartbeat error: %v", err)
-			}
-		}
 	}()
 
-	// Start mobile client presence polling for AI face
+	// 2. Start mobile client presence polling for AI face updates
 	go func() {
 		client := &http.Client{
 			Timeout: 5 * time.Second, // Fast timeout for health checks
@@ -4259,27 +4232,46 @@ func runBackgroundMode() {
 					}
 					json.NewDecoder(resp.Body).Decode(&healthData)
 					resp.Body.Close()
-
 					log.Printf("Presence: Backend OK, Mobile clients: %d", healthData.MobileClients)
 					fmt.Printf("STATUS: BACKEND:ONLINE\n")
 					fmt.Printf("STATUS: MOBILE_CLIENTS:%d\n", healthData.MobileClients)
-					os.Stdout.Sync() // Force flush for real-time delivery
-				} else {
-					log.Printf("Presence: Backend unreachable")
-					fmt.Printf("STATUS: BACKEND:OFFLINE\n")
-					fmt.Printf("STATUS: MOBILE_CLIENTS:0\n")
-					os.Stdout.Sync() // Force flush for real-time delivery
+					os.Stdout.Sync()
+					continue
 				}
-			} else {
-				log.Printf("Presence: Backend unreachable")
-				fmt.Printf("STATUS: BACKEND:OFFLINE\n")
-				fmt.Printf("STATUS: MOBILE_CLIENTS:0\n")
-				os.Stdout.Sync()
+				if err == nil {
+					resp.Body.Close()
+				}
 			}
+			
+			log.Printf("Presence: Backend unreachable")
+			fmt.Printf("STATUS: BACKEND:OFFLINE\n")
+			fmt.Printf("STATUS: MOBILE_CLIENTS:0\n")
+			os.Stdout.Sync()
 		}
 	}()
+}
 
-	// Keep running indefinitely
+func runBackgroundMode() {
+	data, err := loadConnectionData()
+	if err != nil {
+		log.Fatalf("Background mode requires connection data: %v", err)
+	}
+
+	if !data.Connected || data.SecurityPhrase == "" {
+		log.Fatalf("Background mode requires completed setup")
+	}
+
+	log.Printf("Starting Voila in background mode...")
+	log.Printf("Backend: %s", data.BackendURL)
+	log.Printf("Device: %s (%s)", data.DeviceName, data.DeviceID)
+
+	// Start HTTP server
+	go startHTTPServer()
+
+	// Start unified robust connection manager
+	startConnectionManager(data)
+
+	// Block forever
 	select {}
 }
 
@@ -4514,90 +4506,7 @@ func main() {
 			isLoading:      false,
 		}
 		go startHTTPServer()
-		go func(data ConnectionData) {
-			var ngrokRetryCount int
-			var ngrokRetryDelay = 5 * time.Second
-			const maxNgrokRetries = 10
-			const maxNgrokRetryDelay = 60 * time.Second
-
-			for {
-				addr := getNgrokPublicURL()
-				if addr == "" {
-					if !isNgrokRunning() {
-						log.Println("Ngrok not running, attempting to start...")
-						if err := startNgrok(); err != nil {
-							ngrokRetryCount++
-							log.Printf("Failed to start ngrok (attempt %d/%d): %v", ngrokRetryCount, maxNgrokRetries, err)
-
-							if ngrokRetryCount >= maxNgrokRetries {
-								log.Printf("Max ngrok retry attempts reached, giving up for now")
-								ngrokRetryCount = 0
-								ngrokRetryDelay = 5 * time.Second
-								time.Sleep(30 * time.Second)
-								continue
-							}
-
-							time.Sleep(ngrokRetryDelay)
-							ngrokRetryDelay = time.Duration(float64(ngrokRetryDelay) * 1.5)
-							if ngrokRetryDelay > maxNgrokRetryDelay {
-								ngrokRetryDelay = maxNgrokRetryDelay
-							}
-							continue
-						}
-						ngrokRetryCount = 0
-						ngrokRetryDelay = 5 * time.Second
-						time.Sleep(3 * time.Second)
-						addr = getNgrokPublicURL()
-					}
-					if addr == "" {
-						log.Println("ngrok URL not available yet (is ngrok running?) - skipping registration")
-					}
-				}
-				if addr != "" {
-					if err := registerWithBackend(data, addr); err != nil {
-						log.Printf("register error: %v", err)
-					}
-				}
-				time.Sleep(5 * time.Second)
-			}
-		}(data)
-		go func() {
-			for {
-				time.Sleep(2 * time.Second)
-				healthURL := data.BackendURL + "/health"
-				req, err := http.NewRequest("GET", healthURL, nil)
-				if err == nil {
-					// Add ngrok skip browser warning header if calling through ngrok
-					if strings.Contains(data.BackendURL, "ngrok") || strings.Contains(data.BackendURL, "ngrok-free") {
-						req.Header.Set("ngrok-skip-browser-warning", "true")
-					}
-					resp, err := http.DefaultClient.Do(req)
-					if err == nil && resp.StatusCode == 200 {
-						var healthData struct {
-							Status        string `json:"status"`
-							MobileClients int    `json:"mobile_clients"`
-						}
-						json.NewDecoder(resp.Body).Decode(&healthData)
-						resp.Body.Close()
-
-						log.Printf("Presence: Backend OK, Mobile clients: %d", healthData.MobileClients)
-						fmt.Printf("STATUS: BACKEND:ONLINE\n")
-						fmt.Printf("STATUS: MOBILE_CLIENTS:%d\n", healthData.MobileClients)
-						os.Stdout.Sync() // Force flush for real-time delivery
-					} else {
-						log.Printf("Presence: Backend unreachable or error: %v", err)
-						fmt.Printf("STATUS: BACKEND:OFFLINE\n")
-						fmt.Printf("STATUS: MOBILE_CLIENTS:0\n")
-						os.Stdout.Sync()
-					}
-				} else {
-					log.Printf("Presence: Request creation failed: %v", err)
-					fmt.Printf("STATUS: BACKEND:OFFLINE\n")
-					fmt.Printf("STATUS: MOBILE_CLIENTS:0\n")
-					os.Stdout.Sync()
-				}
-			}
-		}()
+		startConnectionManager(data)
 		p := tea.NewProgram(initialModel)
 		if _, err := p.Run(); err != nil {
 			log.Fatalf("Error running program: %v", err)
