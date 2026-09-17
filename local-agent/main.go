@@ -3327,11 +3327,11 @@ If the user asks you to read, analyze, or process a PDF file, you MUST use the '
 
 CRITICAL - FAST FILE SEARCHING & .AIIGNORE (0 BUGS POLICY):
 When asked to find, scan, or search for a specific file, folder, or project by name, NEVER use slow Get-ChildItem. You MUST use the highly optimized native CMD search wrapper inside your terminal tool, and explicitly pipe out heavy dependency folders (.aiignore):
-'cmd.exe /c "dir /s /b /a:-d C:\Users\ojasw\Desktop\*mandate* | findstr /V /I "\node_modules\ \.venv\ \venv\ \vendor\ \.git\ \target\ \.gradle\ \.m2\ \packages\""'
+'cmd.exe /c "dir /s /b /a:-d C:\Users\ojasw\Desktop\*mandate* | findstr /V /I "\node_modules\ \.venv\ \venv\ \vendor\ \.git\ \target\ \.gradle\ \.m2\ \packages\ \dist\ \build\ \out\ \bin\ \obj\ \.idea\ \.vscode\ \.env""'
 (Use /a:d for directories, /a:-d for files). Always wrap the search term in asterisks like '*name*' to handle fuzzy matching.
 
 CRITICAL - DEPENDENCY OVERHEAD AVOIDANCE:
-NEVER read or explore inside node_modules, .venv, vendor, .m2, .gradle, target, packages, or .cargo. To understand what packages/dependencies are installed, ONLY read the blueprint files (package.json, pyproject.toml, requirements.txt, go.mod, pom.xml, build.gradle, composer.json, Gemfile, Cargo.toml, *.csproj). Also NEVER read standard '.env' files; if you need environment context, ONLY look at '.env.example' or '.env.local'.
+NEVER read or explore inside node_modules, .venv, vendor (Go/PHP), .m2, .gradle, target, packages, .cargo, dist, build, out, bin, or obj. To understand what packages/dependencies are installed, ONLY read the blueprint files (package.json, pyproject.toml, requirements.txt, go.mod, pom.xml, build.gradle, composer.json, Gemfile, Cargo.toml, *.csproj). Also NEVER read standard '.env' files; if you need environment context, ONLY look at '.env.example' or '.env.local'.
 
 CRITICAL - TOOL EFFICIENCY & PROBLEM SOLVING:
 1. HISTORY REUSE: ALWAYS check message history. If a previously successful command satisfies the purpose, REUSE IT EXACTLY to save tokens.
@@ -3676,11 +3676,11 @@ If the user asks you to read, analyze, or process a PDF file, you MUST use the '
 
 CRITICAL - FAST FILE SEARCHING & .AIIGNORE (0 BUGS POLICY):
 When asked to find, scan, or search for a specific file, folder, or project by name, NEVER use slow Get-ChildItem. You MUST use the highly optimized native CMD search wrapper inside your terminal tool, and explicitly pipe out heavy dependency folders (.aiignore):
-'cmd.exe /c "dir /s /b /a:-d C:\Users\ojasw\Desktop\*mandate* | findstr /V /I "\node_modules\ \.venv\ \venv\ \vendor\ \.git\ \target\ \.gradle\ \.m2\ \packages\""'
+'cmd.exe /c "dir /s /b /a:-d C:\Users\ojasw\Desktop\*mandate* | findstr /V /I "\node_modules\ \.venv\ \venv\ \vendor\ \.git\ \target\ \.gradle\ \.m2\ \packages\ \dist\ \build\ \out\ \bin\ \obj\ \.idea\ \.vscode\ \.env""'
 (Use /a:d for directories, /a:-d for files). Always wrap the search term in asterisks like '*name*' to handle fuzzy matching.
 
 CRITICAL - DEPENDENCY OVERHEAD AVOIDANCE:
-NEVER read or explore inside node_modules, .venv, vendor, .m2, .gradle, target, packages, or .cargo. To understand what packages/dependencies are installed, ONLY read the blueprint files (package.json, pyproject.toml, requirements.txt, go.mod, pom.xml, build.gradle, composer.json, Gemfile, Cargo.toml, *.csproj). Also NEVER read standard '.env' files; if you need environment context, ONLY look at '.env.example' or '.env.local'.
+NEVER read or explore inside node_modules, .venv, vendor (Go/PHP), .m2, .gradle, target, packages, .cargo, dist, build, out, bin, or obj. To understand what packages/dependencies are installed, ONLY read the blueprint files (package.json, pyproject.toml, requirements.txt, go.mod, pom.xml, build.gradle, composer.json, Gemfile, Cargo.toml, *.csproj). Also NEVER read standard '.env' files; if you need environment context, ONLY look at '.env.example' or '.env.local'.
 
 CRITICAL - TOOL EFFICIENCY & PROBLEM SOLVING:
 1. HISTORY REUSE: ALWAYS check message history. If a previously successful command satisfies the purpose, REUSE IT EXACTLY to save tokens.
