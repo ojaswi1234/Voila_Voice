@@ -652,7 +652,7 @@ def create_pdf(kwargs):
             var div = document.createElement("div");
             div.className = "mermaid";
             var code = el.innerHTML.replace(/&gt;/g, '>').replace(/&lt;/g, '<').replace(/&amp;/g, '&');
-            div.innerHTML = "%%{{init: {{'look': 'handDrawn', 'theme': 'base', 'themeVariables': {{'background': 'transparent', 'fontFamily': 'Patrick Hand', 'primaryColor': 'transparent', 'primaryBorderColor': '#2c3e50', 'lineColor': '#2c3e50', 'textColor': '#2c3e50'}}}}}}%%\n" + code;
+            div.innerHTML = "%%{{init: {{'look': 'handDrawn', 'theme': 'base', 'themeVariables': {{'background': 'transparent', 'fontFamily': 'Patrick Hand', 'primaryColor': 'transparent', 'primaryBorderColor': '#2c3e50', 'lineColor': '#2c3e50', 'textColor': '#2c3e50'}}}}}}%%\\n" + code;
             el.parentNode.replaceWith(div);
         }});
         mermaid.initialize({{ startOnLoad: true }});
@@ -668,9 +668,15 @@ def create_pdf(kwargs):
             
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
+
             page = browser.new_page()
             page.goto(f"file://{temp_html_path}", wait_until="networkidle")
-            page.evaluate("document.fonts.ready") # CRITICAL: Wait for Google Fonts to finish rendering
+            # CRITICAL: Force the browser to aggressively fetch and wait for all fonts defined in the document
+            page.evaluate("""async () => {
+                const fonts = Array.from(document.fonts.values());
+                await Promise.all(fonts.map(f => f.load()));
+                await document.fonts.ready;
+            }""")
             page.wait_for_timeout(4000) # Give Mermaid, Tailwind, and ChartJS time to render
             page.pdf(
                 path=path,
