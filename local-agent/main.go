@@ -2340,7 +2340,7 @@ var availableTools = []toolDef{
 - "Academic Whitepaper (IEEE/Nature)": Enforces standard LaTeX academic margins, complex tabularx datasets, and highly rigorous technical prose.
 - "Creative Apple-Style Pitch": Enforces massive text sizes, extreme minimalism, huge margins, and striking use of negative space.
 - "FlowGPT Visual Infographic": Uses dense, highly visual layouts, bullet point grids, and colorful accent blocks.`},
-					"theme":     map[string]interface{}{"type": "string", "description": "Theme name: corporate_blue, cyberpunk, minimalist, modern_dark"},
+					"theme":     map[string]interface{}{"type": "string", "description": "Theme name MUST BE one of: origami, handwritten, sketching, pixelated, asciiart, or notebooklm"},
 				},
 				"required": []string{"path", "content", "theme", "design_strategy"},
 			},
