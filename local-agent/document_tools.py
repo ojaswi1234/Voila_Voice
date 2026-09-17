@@ -610,21 +610,10 @@ def create_pdf(kwargs):
             var div = document.createElement("div");
             div.className = "mermaid";
             var code = el.innerHTML.replace(/&gt;/g, '>').replace(/&lt;/g, '<').replace(/&amp;/g, '&');
-            div.innerHTML = "%%{init: {'look': 'handDrawn', 'theme': 'base', 'themeVariables': {'fontFamily': 'Patrick Hand', 'primaryColor': '#ffffff', 'primaryBorderColor': '#333333'}}}%%
-" + code;
+            div.innerHTML = "%%{{init: {{'look': 'handDrawn', 'theme': 'base', 'themeVariables': {{'fontFamily': 'Patrick Hand', 'primaryColor': '#ffffff', 'primaryBorderColor': '#333333'}}}}}}%%\n" + code;
             el.parentNode.replaceWith(div);
         }});
         mermaid.initialize({{ startOnLoad: true }});
-    </script>
-    <script>
-        document.querySelectorAll("pre code.language-mermaid").forEach(function(el) {{
-            var div = document.createElement("div");
-            div.className = "mermaid";
-            // Unescape HTML entities that python-markdown might have escaped inside the code block
-            div.innerHTML = el.innerHTML.replace(/&gt;/g, '>').replace(/&lt;/g, '<').replace(/&amp;/g, '&');
-            el.parentNode.replaceWith(div);
-        }});
-        mermaid.initialize({{ startOnLoad: true, theme: '{'dark' if theme == 'modern_dark' else 'default'}', themeVariables: {{ fontFamily: 'inherit' }} }});
     </script>
 </body>
 </html>
