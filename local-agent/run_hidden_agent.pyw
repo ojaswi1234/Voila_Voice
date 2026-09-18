@@ -1018,6 +1018,180 @@ def _show_settings_widgets():
              bg='#1A1D23', fg='#4B5563', font=('Segoe UI', 8, 'italic')).grid(
         row=6, column=0, columnspan=4, padx=12, pady=(15, 15), sticky='w')
 
+    # ─── Token Usage Section ──────────────────────────────────────────────────
+    token_frame = tk.LabelFrame(inner, text=' 📊  Live Token Usage & Rate Limits ',
+                                bg='#1A1D23', fg='#6366F1', font=('Segoe UI', 10, 'bold'),
+                                bd=1, relief='solid', labelanchor='nw')
+    token_frame.grid(row=4, column=0, columnspan=4, padx=16, pady=(12, 6), sticky='ew')
+
+    # Status bar at top of section
+    token_status_var = tk.StringVar(value='Click ↻ Refresh to fetch live data')
+    tk.Label(token_frame, textvariable=token_status_var, bg='#1A1D23', fg='#6B7280',
+             font=('Segoe UI', 8, 'italic')).grid(row=0, column=0, columnspan=5,
+             padx=12, pady=(8, 2), sticky='w')
+
+    # ── Groq column ────────────────────────────────────────────────────────────
+    groq_col = tk.Frame(token_frame, bg='#1A1D23')
+    groq_col.grid(row=1, column=0, columnspan=2, padx=12, pady=6, sticky='nsew')
+    token_frame.columnconfigure(0, weight=1)
+    token_frame.columnconfigure(2, weight=1)
+
+    tk.Label(groq_col, text='⚡ Groq Cloud', bg='#1A1D23', fg='#6366F1',
+             font=('Segoe UI', 10, 'bold')).pack(anchor='w')
+
+    # Groq session stat
+    groq_sess_var = tk.StringVar(value='Session: — / —')
+    tk.Label(groq_col, textvariable=groq_sess_var, bg='#1A1D23', fg='#E5E7EB',
+             font=('Segoe UI', 9)).pack(anchor='w', pady=(4, 0))
+
+    # Groq daily stat
+    groq_day_var = tk.StringVar(value='Today:   — / —')
+    tk.Label(groq_col, textvariable=groq_day_var, bg='#1A1D23', fg='#9CA3AF',
+             font=('Segoe UI', 9)).pack(anchor='w')
+
+    # Groq rate limit stat
+    groq_rl_var = tk.StringVar(value='RPM Limit: —  |  Token Limit: —')
+    tk.Label(groq_col, textvariable=groq_rl_var, bg='#1A1D23', fg='#9CA3AF',
+             font=('Segoe UI', 8)).pack(anchor='w', pady=(2, 4))
+
+    # Groq progress bar (canvas)
+    groq_bar_canvas = tk.Canvas(groq_col, bg='#0F1115', height=8, bd=0,
+                                highlightthickness=0, relief='flat')
+    groq_bar_canvas.pack(fill='x', pady=(0, 6))
+
+    # ── Separator ─────────────────────────────────────────────────────────────
+    tk.Frame(token_frame, bg='#2A2D35', width=1).grid(row=1, column=2, sticky='ns', padx=8)
+
+    # ── Ollama column ──────────────────────────────────────────────────────────
+    ollama_col = tk.Frame(token_frame, bg='#1A1D23')
+    ollama_col.grid(row=1, column=3, columnspan=2, padx=12, pady=6, sticky='nsew')
+
+    tk.Label(ollama_col, text='🦙 Ollama Cloud', bg='#1A1D23', fg='#F59E0B',
+             font=('Segoe UI', 10, 'bold')).pack(anchor='w')
+
+    ollama_sess_var = tk.StringVar(value='Session: — / —')
+    tk.Label(ollama_col, textvariable=ollama_sess_var, bg='#1A1D23', fg='#E5E7EB',
+             font=('Segoe UI', 9)).pack(anchor='w', pady=(4, 0))
+
+    ollama_day_var = tk.StringVar(value='Today:   — / —')
+    tk.Label(ollama_col, textvariable=ollama_day_var, bg='#1A1D23', fg='#9CA3AF',
+             font=('Segoe UI', 9)).pack(anchor='w')
+
+    tk.Label(ollama_col, text='Per-request tracking (no public billing API)',
+             bg='#1A1D23', fg='#4B5563', font=('Segoe UI', 8, 'italic')).pack(anchor='w', pady=(2, 4))
+
+    ollama_bar_canvas = tk.Canvas(ollama_col, bg='#0F1115', height=8, bd=0,
+                                  highlightthickness=0, relief='flat')
+    ollama_bar_canvas.pack(fill='x', pady=(0, 6))
+
+    def _draw_progress_bar(canvas_widget, used, total, color='#6366F1'):
+        """Draw a sleek progress bar on a tk.Canvas."""
+        canvas_widget.update_idletasks()
+        w = max(canvas_widget.winfo_width(), 200)
+        canvas_widget.delete('all')
+        # Background track
+        canvas_widget.create_rectangle(0, 2, w, 6, fill='#2A2D35', outline='')
+        # Fill
+        if total > 0:
+            fill_w = max(4, int((used / total) * w))
+            fill_w = min(fill_w, w)
+            pct = used / total
+            # Color gradient: green → yellow → red
+            if pct < 0.5:
+                c = color
+            elif pct < 0.8:
+                c = '#F59E0B'
+            else:
+                c = '#EF4444'
+            canvas_widget.create_rectangle(0, 2, fill_w, 6, fill=c, outline='')
+        else:
+            # Unknown total — show pulsing unknown bar
+            canvas_widget.create_rectangle(0, 2, w // 3, 6, fill='#374151', outline='')
+
+    def _fmt_tokens(n):
+        if n >= 1_000_000:
+            return f'{n/1_000_000:.1f}M'
+        elif n >= 1_000:
+            return f'{n/1_000:.1f}k'
+        return str(n)
+
+    def _load_token_data(fetch_limits=False):
+        """Fetch token usage from the agent endpoint (runs in background thread)."""
+        try:
+            path = '/token-usage?fetch_limits=1' if fetch_limits else '/token-usage'
+            data = _api_call('GET', path)
+            if 'error' in data:
+                token_status_var.set(f'⚠ {data["error"][:60]}')
+                return
+
+            # ── Groq ────────────────────────────────────────────────────────
+            g_s_in  = data.get('groq_session_in', 0)
+            g_s_out = data.get('groq_session_out', 0)
+            g_d_in  = data.get('groq_day_in', 0)
+            g_d_out = data.get('groq_day_out', 0)
+            g_sess = g_s_in + g_s_out
+            g_day  = g_d_in + g_d_out
+
+            g_tpd_limit = data.get('groq_tpd_limit', 0)
+            g_tpd_rem   = data.get('groq_tpd_remaining', 0)
+            g_rpm_limit = data.get('groq_rpm_limit', 0)
+            g_rpm_rem   = data.get('groq_rpm_remaining', 0)
+
+            sess_txt = f'Session:  {_fmt_tokens(g_sess)} ({_fmt_tokens(g_s_in)} in / {_fmt_tokens(g_s_out)} out)'
+            day_txt  = f'Today:    {_fmt_tokens(g_day)}  ({_fmt_tokens(g_d_in)} in / {_fmt_tokens(g_d_out)} out)'
+            groq_sess_var.set(sess_txt)
+            groq_day_var.set(day_txt)
+
+            if g_tpd_limit > 0:
+                g_used = g_tpd_limit - g_tpd_rem
+                rl_txt = f'RPM: {g_rpm_rem}/{g_rpm_limit}  |  TPM limit: {_fmt_tokens(g_tpd_limit)}  remaining: {_fmt_tokens(g_tpd_rem)}'
+                groq_rl_var.set(rl_txt)
+                _draw_progress_bar(groq_bar_canvas, g_used, g_tpd_limit, '#6366F1')
+            else:
+                groq_rl_var.set('Rate limits: click ↻ Refresh (fetches live headers from Groq)')
+                _draw_progress_bar(groq_bar_canvas, g_day, 0, '#6366F1')
+
+            # ── Ollama ──────────────────────────────────────────────────────
+            o_s_in  = data.get('ollama_session_in', 0)
+            o_s_out = data.get('ollama_session_out', 0)
+            o_d_in  = data.get('ollama_day_in', 0)
+            o_d_out = data.get('ollama_day_out', 0)
+            o_sess = o_s_in + o_s_out
+            o_day  = o_d_in + o_d_out
+
+            o_sess_txt = f'Session:  {_fmt_tokens(o_sess)} ({_fmt_tokens(o_s_in)} in / {_fmt_tokens(o_s_out)} out)'
+            o_day_txt  = f'Today:    {_fmt_tokens(o_day)}  ({_fmt_tokens(o_d_in)} in / {_fmt_tokens(o_d_out)} out)'
+            ollama_sess_var.set(o_sess_txt)
+            ollama_day_var.set(o_day_txt)
+            _draw_progress_bar(ollama_bar_canvas, o_day, 0, '#F59E0B')
+
+            reset = data.get('reset_date', '')
+            token_status_var.set(f'✓ Updated  |  Daily counters reset: {reset}  |  Last refresh: {time.strftime("%H:%M:%S")}')
+
+        except Exception as e:
+            token_status_var.set(f'⚠ Error: {str(e)[:60]}')
+
+    def _on_refresh(fetch_limits=False):
+        token_status_var.set('⏳ Fetching...')
+        token_frame.update_idletasks()
+        threading.Thread(target=_load_token_data, args=(fetch_limits,), daemon=True).start()
+
+    # Buttons row
+    btn_token_row = tk.Frame(token_frame, bg='#1A1D23')
+    btn_token_row.grid(row=2, column=0, columnspan=5, padx=12, pady=(4, 12), sticky='w')
+    tk.Button(btn_token_row, text='↻ Refresh', command=lambda: _on_refresh(False),
+              bg='#374151', fg='#E5E7EB', font=('Segoe UI', 9), relief='flat',
+              padx=10, pady=5, cursor='hand2').pack(side='left', padx=(0, 6))
+    tk.Button(btn_token_row, text='⚡ Fetch Rate Limits (Groq)',
+              command=lambda: _on_refresh(True),
+              bg='#4338CA', fg='#E5E7EB', font=('Segoe UI', 9), relief='flat',
+              padx=10, pady=5, cursor='hand2').pack(side='left', padx=(0, 6))
+    tk.Label(btn_token_row, text='Rate limits call Groq API — avoid hammering',
+             bg='#1A1D23', fg='#4B5563', font=('Segoe UI', 8, 'italic')).pack(side='left', padx=8)
+
+    # Auto-load on settings page open (no rate limit fetch, just local data)
+    threading.Thread(target=_load_token_data, args=(False,), daemon=True).start()
+
     # ─── Info footer ─────────────────────────────────────────────────────────
 
     # --- FLUSH MEMORY ---

@@ -397,7 +397,88 @@ type ConnectionData struct {
 	ActiveMode    string `json:"active_mode,omitempty"`
 }
 
-// Model
+// ── Token Usage Tracking ──────────────────────────────────────────────────────
+var (
+	groqSessionTokensMu   sync.Mutex
+	groqSessionTokensIn   int64
+	groqSessionTokensOut  int64
+	ollamaSessionTokensMu sync.Mutex
+	ollamaSessionTokensIn  int64
+	ollamaSessionTokensOut int64
+)
+
+type TokenUsageFile struct {
+	GroqDayTokensIn    int64  `json:"groq_day_tokens_in"`
+	GroqDayTokensOut   int64  `json:"groq_day_tokens_out"`
+	GroqSessionIn      int64  `json:"groq_session_in"`
+	GroqSessionOut     int64  `json:"groq_session_out"`
+	OllamaDayTokensIn  int64  `json:"ollama_day_tokens_in"`
+	OllamaDayTokensOut int64  `json:"ollama_day_tokens_out"`
+	OllamaSessionIn    int64  `json:"ollama_session_in"`
+	OllamaSessionOut   int64  `json:"ollama_session_out"`
+	LastResetDate      string `json:"last_reset_date"`
+}
+
+func tokenUsagePath() string {
+	return filepath.Join(getConfigDir(), "token_usage.json")
+}
+
+func loadTokenUsage() TokenUsageFile {
+	var tu TokenUsageFile
+	data, err := os.ReadFile(tokenUsagePath())
+	if err != nil {
+		return tu
+	}
+	_ = json.Unmarshal(data, &tu)
+	// Reset daily counters at midnight
+	today := time.Now().Format("2006-01-02")
+	if tu.LastResetDate != today {
+		tu.GroqDayTokensIn = 0
+		tu.GroqDayTokensOut = 0
+		tu.OllamaDayTokensIn = 0
+		tu.OllamaDayTokensOut = 0
+		tu.LastResetDate = today
+	}
+	return tu
+}
+
+func saveTokenUsage(tu TokenUsageFile) {
+	data, _ := json.MarshalIndent(tu, "", "  ")
+	_ = os.WriteFile(tokenUsagePath(), data, 0644)
+}
+
+func addGroqTokens(in, out int64) {
+	groqSessionTokensMu.Lock()
+	groqSessionTokensIn += in
+	groqSessionTokensOut += out
+	groqSessionTokensMu.Unlock()
+
+	tu := loadTokenUsage()
+	tu.GroqDayTokensIn += in
+	tu.GroqDayTokensOut += out
+	groqSessionTokensMu.Lock()
+	tu.GroqSessionIn = groqSessionTokensIn
+	tu.GroqSessionOut = groqSessionTokensOut
+	groqSessionTokensMu.Unlock()
+	saveTokenUsage(tu)
+}
+
+func addOllamaTokens(in, out int64) {
+	ollamaSessionTokensMu.Lock()
+	ollamaSessionTokensIn += in
+	ollamaSessionTokensOut += out
+	ollamaSessionTokensMu.Unlock()
+
+	tu := loadTokenUsage()
+	tu.OllamaDayTokensIn += in
+	tu.OllamaDayTokensOut += out
+	ollamaSessionTokensMu.Lock()
+	tu.OllamaSessionIn = ollamaSessionTokensIn
+	tu.OllamaSessionOut = ollamaSessionTokensOut
+	ollamaSessionTokensMu.Unlock()
+	saveTokenUsage(tu)
+}
+
 type model struct {
 	state          string // "setup", "connected", "menu", "loading", "security_phrase_input"
 	connectionData ConnectionData
@@ -1385,6 +1466,73 @@ func startHTTPServer() {
 		}
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "response": out})
 	})
+
+	// /token-usage — returns local session + daily token counts, plus Groq rate limit headers
+	mux.HandleFunc("/token-usage", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Content-Type", "application/json")
+
+		tu := loadTokenUsage()
+		connData, _ := loadConnectionData()
+
+		resp := map[string]interface{}{
+			"groq_session_in":    tu.GroqSessionIn,
+			"groq_session_out":   tu.GroqSessionOut,
+			"groq_day_in":        tu.GroqDayTokensIn,
+			"groq_day_out":       tu.GroqDayTokensOut,
+			"ollama_session_in":  tu.OllamaSessionIn,
+			"ollama_session_out": tu.OllamaSessionOut,
+			"ollama_day_in":      tu.OllamaDayTokensIn,
+			"ollama_day_out":     tu.OllamaDayTokensOut,
+			"reset_date":         tu.LastResetDate,
+			// Rate limit data from Groq (fetched from headers via lightweight models call)
+			"groq_rpm_limit":       0,
+			"groq_rpm_remaining":   0,
+			"groq_tpd_limit":       0,
+			"groq_tpd_remaining":   0,
+			"groq_rate_info_error": "",
+		}
+
+		// Fetch Groq rate limit headers (only if key is set and caller requests it)
+		if r.URL.Query().Get("fetch_limits") == "1" && connData.GroqAPIKey != "" {
+			limReq, err := http.NewRequest("GET", "https://api.groq.com/openai/v1/models", nil)
+			if err == nil {
+				limReq.Header.Set("Authorization", "Bearer "+connData.GroqAPIKey)
+				limClient := &http.Client{Timeout: 8 * time.Second}
+				limResp, err := limClient.Do(limReq)
+				if err == nil {
+					limResp.Body.Close()
+					// Groq returns these on every authenticated response
+					if v := limResp.Header.Get("x-ratelimit-limit-requests"); v != "" {
+						if n, err2 := strconv.ParseInt(v, 10, 64); err2 == nil {
+							resp["groq_rpm_limit"] = n
+						}
+					}
+					if v := limResp.Header.Get("x-ratelimit-remaining-requests"); v != "" {
+						if n, err2 := strconv.ParseInt(v, 10, 64); err2 == nil {
+							resp["groq_rpm_remaining"] = n
+						}
+					}
+					if v := limResp.Header.Get("x-ratelimit-limit-tokens"); v != "" {
+						if n, err2 := strconv.ParseInt(v, 10, 64); err2 == nil {
+							resp["groq_tpd_limit"] = n
+						}
+					}
+					if v := limResp.Header.Get("x-ratelimit-remaining-tokens"); v != "" {
+						if n, err2 := strconv.ParseInt(v, 10, 64); err2 == nil {
+							resp["groq_tpd_remaining"] = n
+						}
+					}
+				} else {
+					resp["groq_rate_info_error"] = err.Error()
+				}
+			}
+		}
+
+		json.NewEncoder(w).Encode(resp)
+	})
+
+
 	mux.HandleFunc("/circuit", func(w http.ResponseWriter, r *http.Request) {
 		// Authenticate using SecurityPhraseHash
 		connData, err := loadConnectionData()
@@ -3521,12 +3669,21 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 				} `json:"message"`
 				FinishReason string `json:"finish_reason"`
 			} `json:"choices"`
+			Usage struct {
+				PromptTokens     int64 `json:"prompt_tokens"`
+				CompletionTokens int64 `json:"completion_tokens"`
+				TotalTokens      int64 `json:"total_tokens"`
+			} `json:"usage"`
 			Error struct {
 				Message string `json:"message"`
 			} `json:"error"`
 		}
 		if err := json.Unmarshal(respBody, &result); err != nil {
 			return "", fmt.Errorf("failed to parse Groq response: %w", err)
+		}
+		// Track token usage
+		if result.Usage.TotalTokens > 0 {
+			addGroqTokens(result.Usage.PromptTokens, result.Usage.CompletionTokens)
 		}
 		if len(result.Choices) == 0 {
 			if result.Error.Message != "" {
@@ -3863,10 +4020,16 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 					} `json:"function"`
 				} `json:"tool_calls"`
 			} `json:"message"`
-			Error string `json:"error"`
+			PromptEvalCount int64  `json:"prompt_eval_count"`
+			EvalCount       int64  `json:"eval_count"`
+			Error           string `json:"error"`
 		}
 		if err := json.Unmarshal(respBody, &result); err != nil {
 			return "", fmt.Errorf("failed to parse Ollama response: %w", err)
+		}
+		// Track Ollama Cloud token usage
+		if result.PromptEvalCount > 0 || result.EvalCount > 0 {
+			addOllamaTokens(result.PromptEvalCount, result.EvalCount)
 		}
 		if result.Error != "" {
 			return "", fmt.Errorf("Ollama error: %s", result.Error)
