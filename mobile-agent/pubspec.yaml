@@ -7,6 +7,8 @@ environment:
   sdk: '>=3.0.0 <4.0.0'
 
 dependencies:
+  audioplayers: ^6.0.0
+  path_provider: ^2.1.0
   flutter_local_notifications: ^17.1.2
   firebase_core: ^3.1.1
   firebase_messaging: ^15.0.3
@@ -38,5 +40,3 @@ flutter_launcher_icons:
 
 flutter:
   uses-material-design: true
-  audioplayers: ^6.0.0
-  path_provider: ^2.1.0
