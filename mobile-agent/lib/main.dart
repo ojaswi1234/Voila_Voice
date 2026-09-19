@@ -1,4 +1,4 @@
-import 'dart:async';  // unawaited(), StreamSubscription, Timer
+﻿import 'dart:async';  // unawaited(), StreamSubscription, Timer
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -24,6 +24,8 @@ import 'package:uuid/uuid.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_background/flutter_background.dart';
 import 'connection_flowchart.dart';
+import 'package:audioplayers/audioplayers.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -120,7 +122,7 @@ class VoiceHomePage extends StatefulWidget {
 }
 
 class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserver {
-  WebSocketChannel? _channel;  // nullable — prevents LateInitializationError before first connect
+  WebSocketChannel? _channel;  // nullable â€” prevents LateInitializationError before first connect
   StreamSubscription? _wsSubscription;  // stored so we can cancel on dispose/reconnect
   StreamSubscription? _fcmRefreshSubscription;  // BUG-15 fix: FCM refresh listener cancellation
   StreamSubscription? _fcmOpenedAppSubscription;  // FCM-02 fix
@@ -147,6 +149,23 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   bool _isDataArriving = false;
   bool _willTalk = true;
   bool _graphifyEnabled = false;
+  bool _quietHoursEnabled = false;
+  int _quietHoursStartHour = 22; // 10 PM
+  int _quietHoursEndHour = 7;    // 7 AM
+
+  bool _isQuietHoursActive() {
+    if (!_quietHoursEnabled) return false;
+    final now = DateTime.now();
+    final hour = now.hour;
+    if (_quietHoursStartHour > _quietHoursEndHour) {
+      return hour >= _quietHoursStartHour || hour < _quietHoursEndHour;
+    } else {
+      return hour >= _quietHoursStartHour && hour < _quietHoursEndHour;
+    }
+  }
+  String? _activeJobId;
+  String _activeJobStatus = '';
+  String _activeJobSummary = '';
   FlutterTts flutterTts = FlutterTts();
   
   String _activeDevice = '';
@@ -283,7 +302,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       }
 
       if (message.data['type'] == 'approval_required' && message.data['job_id'] != null) {
-        _speakSummary("Approval required for dangerous action: " + (message.data['summary'] ?? "Unknown"));
+        _speakSummary("Approval required for dangerous action: " + (message.data['summary'] ?? "Unknown"), isCritical: true);
         if (mounted) {
           _showApprovalDialog(message.data['job_id']!, message.data['summary'] ?? "Unknown");
         }
@@ -410,7 +429,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     _initializeDeviceIdentity();
     _connectToBackend();
     _startHealthChecks();
-    // BUG-18 fix: _initializeSpeech() removed — called once from initState()
+    // BUG-18 fix: _initializeSpeech() removed â€” called once from initState()
 
     Future.delayed(const Duration(seconds: 1), _getDevices);
   }
@@ -898,6 +917,14 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
             } else if (jsonResponse is Map && jsonResponse['type'] == 'status_update') {
               // Silently ignore ping/status_update from backend
               return;
+            } else if (jsonResponse is Map && jsonResponse['type'] == 'job_status') {
+              if (!mounted) return;
+              setState(() {
+                _activeJobId = jsonResponse['job_id'];
+                _activeJobStatus = jsonResponse['job_status'];
+                _activeJobSummary = jsonResponse['summary'] ?? '';
+              });
+              return;
             } else if (jsonResponse is Map && jsonResponse['type'] == 'queued') {
               // Task queued! Keep loader spinning.
               return;
@@ -1230,7 +1257,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                   if (_modelsList.isEmpty) 
                     const Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator())
                   else
-                    SizedBox(  // BUG-23 fix: Expanded inside mainAxisSize.min crashes — use SizedBox
+                    SizedBox(  // BUG-23 fix: Expanded inside mainAxisSize.min crashes â€” use SizedBox
                       height: 300,
                       child: ListView.builder(
                         itemCount: _modelsList.length,
@@ -1279,7 +1306,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
         });
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('⚠️ Please connect your Desktop to use Voila AI.')),
+            const SnackBar(content: Text('âš ï¸ Please connect your Desktop to use Voila AI.')),
           );
         }
         _controller.clear();
@@ -1309,7 +1336,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
         setState(() {
           _addMessage({
             'type': 'error',
-            'content': 'Session expired — unlock to continue',
+            'content': 'Session expired â€” unlock to continue',
             'timestamp': DateTime.now().toString(),
           });
         });
@@ -1370,7 +1397,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
         }
         _addMessage({
           'type': 'user',
-          'content': _controller.text == '__SCREENSHOT__' ? '📸 Taking screenshot...' : _controller.text,
+          'content': _controller.text == '__SCREENSHOT__' ? 'ðŸ“¸ Taking screenshot...' : _controller.text,
           'timestamp': DateTime.now().toString(),
         });
       });
@@ -1463,18 +1490,18 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       return 'Session expired';
     }
     if (remaining < 60) {
-      return 'Unlocked • ${remaining}s left';
+      return 'Unlocked â€¢ ${remaining}s left';
     }
     final minutes = remaining ~/ 60;
     if (minutes < 60) {
-      return 'Unlocked • ${minutes}m left';
+      return 'Unlocked â€¢ ${minutes}m left';
     }
     final hours = minutes ~/ 60;
     if (hours < 24) {
-      return 'Unlocked • ${hours}h left';
+      return 'Unlocked â€¢ ${hours}h left';
     }
     final days = hours ~/ 24;
-    return 'Unlocked • ${days}d left';
+    return 'Unlocked â€¢ ${days}d left';
   }
 
   bool _isSessionExpiringSoon() {
@@ -1489,7 +1516,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       // Check if expiring soon and show warning
       if (_isSessionExpiringSoon() && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Session expiring soon – consider unlocking again')),
+          const SnackBar(content: Text('Session expiring soon â€“ consider unlocking again')),
         );
       }
       return true;
@@ -2295,8 +2322,8 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
               else
                 const Spacer(),
               
-              _buildSubtitleOverlay(colorScheme, true), // FIXED: Uses overlay style everywhere
-              
+              _buildSubtitleOverlay(colorScheme, true),
+              _buildJobStrip(colorScheme),
               _buildInputArea(colorScheme),
             ],
           ),
@@ -2484,7 +2511,8 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   }
 
   // T1.3 Natural summary TTS using lightweight high-quality fallback
-  Future<void> _speakSummary(String text) async {
+  Future<void> _speakSummary(String text, {bool isCritical = false}) async {
+    if (!isCritical && _isQuietHoursActive()) { debugPrint('Quiet hours active, suppressing summary.'); return; }
     if (!_willTalk || text.isEmpty) return;
     
     String cleanText = _normalizeForSpeech(text);
@@ -2573,6 +2601,17 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                 contentPadding: EdgeInsets.zero,
                 onChanged: (bool value) {
                   setState(() => _graphifyEnabled = value);
+                  Navigator.pop(context);
+                },
+              ),
+              SwitchListTile(
+                title: const Text('Quiet Hours', style: TextStyle(fontSize: 14)),
+                subtitle: const Text('Suppress non-critical voice summaries (10 PM - 7 AM)', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                value: _quietHoursEnabled,
+                activeColor: const Color(0xFF7C6CFF),
+                contentPadding: EdgeInsets.zero,
+                onChanged: (bool value) {
+                  setState(() => _quietHoursEnabled = value);
                   Navigator.pop(context);
                 },
               ),
@@ -2767,6 +2806,35 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     );
   }
 
+  void _retryLastCommand() {
+    String? lastUserCommand;
+    for (var i = _messages.length - 1; i >= 0; i--) {
+      if (_messages[i]['type'] == 'user') {
+        lastUserCommand = _messages[i]['content'];
+        break;
+      }
+    }
+    if (lastUserCommand != null) {
+      _controller.text = lastUserCommand;
+      _sendMessage();
+    }
+  }
+
+  void _showErrorLog(String content) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A1F),
+        title: const Text('Error Log', style: TextStyle(color: Colors.white, fontSize: 16)),
+        content: SingleChildScrollView(
+          child: Text(content, style: const TextStyle(color: Colors.redAccent, fontSize: 13, fontFamily: 'monospace')),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
+        ],
+      ),
+    );
+  }
   Widget _buildSkeletonLoader() {
     return Container(
       margin: const EdgeInsets.only(bottom: 16, right: 40),
@@ -3264,6 +3332,85 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   }
 }
 
+  void _cancelJob() {
+    if (_activeJobId == null) return;
+    _channel?.sink.add(jsonEncode({
+      'type': 'cancel_job',
+      'job_id': _activeJobId,
+      'session_token': _sessionToken,
+    }));
+    setState(() {
+      _activeJobStatus = 'cancelling';
+    });
+  }
+
+  Widget _buildJobStrip(ColorScheme colorScheme) {
+    if (_activeJobId == null || _activeJobStatus == '') return const SizedBox.shrink();
+    
+    Color statusColor = colorScheme.primary;
+    IconData icon = Icons.sync;
+    bool spinner = false;
+    
+    switch (_activeJobStatus) {
+      case 'running':
+        statusColor = colorScheme.primary;
+        spinner = true;
+        break;
+      case 'waiting_approval':
+        statusColor = Colors.orange;
+        icon = Icons.warning_amber_rounded;
+        break;
+      case 'done':
+        statusColor = Colors.green;
+        icon = Icons.check_circle;
+        break;
+      case 'failed':
+      case 'cancelled':
+        statusColor = Colors.red;
+        icon = Icons.error_outline;
+        break;
+      case 'cancelling':
+        statusColor = Colors.grey;
+        spinner = true;
+        break;
+    }
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: statusColor.withOpacity(0.15),
+        border: Border.all(color: statusColor.withOpacity(0.3)),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          spinner 
+            ? SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: statusColor))
+            : Icon(icon, color: statusColor, size: 18),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Job: \', style: TextStyle(color: statusColor, fontSize: 10, fontWeight: FontWeight.bold)),
+                Text(_activeJobSummary, style: const TextStyle(color: Colors.white, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis),
+              ],
+            ),
+          ),
+          if (_activeJobStatus == 'running' || _activeJobStatus == 'waiting_approval')
+            IconButton(
+              icon: const Icon(Icons.cancel, color: Colors.white54, size: 20),
+              onPressed: _cancelJob,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+            ),
+        ],
+      ),
+    );
+  }
+
 class CollapsibleOutput extends StatefulWidget {
   final String text;
   final TextStyle style;
@@ -3368,3 +3515,10 @@ class _CollapsibleOutputState extends State<CollapsibleOutput> {
     }
   }
 }
+
+
+
+
+
+
+

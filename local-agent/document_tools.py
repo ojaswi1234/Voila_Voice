@@ -893,10 +893,15 @@ def create_ppt(kwargs):
     from pptx.util import Inches, Pt
     from pptx.enum.text import PP_ALIGN
     from pptx.dml.color import RGBColor
+    from pptx.chart.data import CategoryChartData
+    from pptx.enum.chart import XL_CHART_TYPE
+    from pptx.enum.shapes import MSO_SHAPE
     import os
     import json
     from design_tokens import get_theme
     from document_ir import normalize_ir, Slide
+    import ppt_style
+    import diagram_render
     
     path = kwargs.get('path', 'presentation.pptx')
     ir_data = kwargs.get('ir') or kwargs
@@ -904,14 +909,10 @@ def create_ppt(kwargs):
     theme_config = get_theme(ir.theme)
     
     prs = Presentation()
-    # Simple blank slide layout
+    prs.slide_width = Inches(10)
+    prs.slide_height = Inches(7.5)
     blank_slide_layout = prs.slide_layouts[6]
     
-    color_primary = RGBColor(*theme_config['color_primary'])
-    color_accent = RGBColor(*theme_config['color_accent'])
-    color_text = RGBColor(*theme_config['color_text'])
-    color_heading = RGBColor(*theme_config['color_heading'])
-
     if not ir.slides and ir.document and ir.document.sections:
         for sec in ir.document.sections:
             if sec.type == 'heading':
@@ -923,81 +924,192 @@ def create_ppt(kwargs):
                 ir.slides.append(Slide(master='stats', title=sec.title or 'Stats', stats=stats))
             elif sec.type == 'prose' or sec.type == 'bullets':
                 ir.slides.append(Slide(master='content', title=sec.title or 'Content', content=sec.body, items=sec.items))
+            elif sec.type == 'diagram':
+                ir.slides.append(Slide(master='diagram', title=sec.title or 'Diagram', source=sec.source, engine=sec.engine))
 
-    
-    for slide_data in ir.slides:
-        slide = prs.slides.add_slide(blank_slide_layout)
+    if not ir.slides:
+        return "ERROR: Empty deck. Generate real content slides."
         
-        # Background
-        bg = slide.shapes.add_shape(1, 0, 0, prs.slide_width, prs.slide_height)
-        bg.fill.solid()
-        bg.fill.fore_color.rgb = color_primary
-        bg.line.fill.background()
+    has_content = any(s.master in ['content', 'stats', 'stat_grid', 'chart', 'diagram', 'two_column', 'comparison', 'image_focus', 'metrics', 'timeline', 'agenda'] for s in ir.slides)
+    if not has_content:
+        return "ERROR: Empty deck. Generate real content slides."
+
+    for idx, slide_data in enumerate(ir.slides):
+        slide = prs.slides.add_slide(blank_slide_layout)
+        ppt_style.apply_background(slide, theme_config, prs)
         
         master = slide_data.master
         
+        # Helper to add standard title
+        def add_title(text):
+            tb = slide.shapes.add_textbox(Inches(0.5), Inches(0.5), Inches(9), Inches(1))
+            tf = tb.text_frame
+            p = tf.paragraphs[0]
+            p.text = text
+            ppt_style.set_run_font(p.runs[0], theme_config, "Title")
+            p.font.size = Pt(36)
+            return tb
+            
         if master == 'title_slide':
-            title_box = slide.shapes.add_textbox(Inches(1), Inches(2), Inches(8), Inches(1))
+            title_box = slide.shapes.add_textbox(Inches(1), Inches(2.5), Inches(8), Inches(1.5))
             tf = title_box.text_frame
-            tf.text = slide_data.title
-            tf.paragraphs[0].font.size = Pt(44)
-            tf.paragraphs[0].font.color.rgb = color_heading
+            p = tf.paragraphs[0]
+            p.text = slide_data.title or "Title"
+            ppt_style.set_run_font(p.runs[0], theme_config, "Title")
+            p.font.size = Pt(48)
+            p.alignment = PP_ALIGN.CENTER
             
-            sub_box = slide.shapes.add_textbox(Inches(1), Inches(3), Inches(8), Inches(1))
+            sub_box = slide.shapes.add_textbox(Inches(1), Inches(4), Inches(8), Inches(1))
             stf = sub_box.text_frame
-            stf.text = slide_data.subtitle
-            stf.paragraphs[0].font.size = Pt(24)
-            stf.paragraphs[0].font.color.rgb = color_accent
+            sp = stf.paragraphs[0]
+            sp.text = slide_data.subtitle or ""
+            ppt_style.set_run_font(sp.runs[0], theme_config, "Subtitle")
+            sp.font.size = Pt(24)
+            sp.alignment = PP_ALIGN.CENTER
             
-        elif master == 'stat_grid' or master == 'stats':
-            title_box = slide.shapes.add_textbox(Inches(0.5), Inches(0.5), Inches(9), Inches(1))
-            tf = title_box.text_frame
-            tf.text = slide_data.title
-            tf.paragraphs[0].font.size = Pt(32)
-            tf.paragraphs[0].font.color.rgb = color_heading
+        elif master == 'section_divider':
+            tb = slide.shapes.add_textbox(Inches(1), Inches(3), Inches(8), Inches(1.5))
+            tf = tb.text_frame
+            p = tf.paragraphs[0]
+            p.text = slide_data.title or "Section"
+            ppt_style.set_run_font(p.runs[0], theme_config, "Title")
+            p.font.size = Pt(40)
+            p.alignment = PP_ALIGN.CENTER
             
-            stats = slide_data.stats
+        elif master in ['stats', 'stat_grid', 'metrics']:
+            add_title(slide_data.title or "Metrics")
+            stats = slide_data.stats or []
+            if not stats:
+                continue
+            cols = min(len(stats), 4)
+            if cols == 0:
+                cols = 1
+            width = 8.0 / cols
             for i, stat in enumerate(stats):
-                x = Inches(0.5 + (i * 3))
-                y = Inches(2)
-                card = slide.shapes.add_shape(1, x, y, Inches(2.5), Inches(1.5))
-                card.fill.solid()
-                card.fill.fore_color.rgb = RGBColor(*theme_config['color_card'])
+                x = Inches(1 + i * width)
+                y = Inches(2.5)
+                ppt_style.add_card(slide, x, y, Inches(width - 0.2), Inches(2), theme_config['color_card'], theme_config['color_card_border'])
                 
-                label_box = slide.shapes.add_textbox(x, y, Inches(2.5), Inches(0.5))
-                label_box.text_frame.text = stat.get('label', '')
-                label_box.text_frame.paragraphs[0].font.color.rgb = color_accent
+                lb = slide.shapes.add_textbox(x, y + Inches(0.2), Inches(width - 0.2), Inches(0.5))
+                lp = lb.text_frame.paragraphs[0]
+                lp.text = stat.get('label', '')
+                ppt_style.set_run_font(lp.runs[0], theme_config, "Subtitle")
+                lp.font.size = Pt(16)
+                lp.alignment = PP_ALIGN.CENTER
                 
-                val_box = slide.shapes.add_textbox(x, y + Inches(0.5), Inches(2.5), Inches(1))
-                val_box.text_frame.text = str(stat.get('value', ''))
-                val_box.text_frame.paragraphs[0].font.size = Pt(32)
-                val_box.text_frame.paragraphs[0].font.color.rgb = color_heading
+                vb = slide.shapes.add_textbox(x, y + Inches(0.8), Inches(width - 0.2), Inches(1))
+                vp = vb.text_frame.paragraphs[0]
+                vp.text = str(stat.get('value', ''))
+                ppt_style.set_run_font(vp.runs[0], theme_config, "Title")
+                vp.font.size = Pt(32)
+                vp.alignment = PP_ALIGN.CENTER
                 
         elif master == 'chart':
-            title_box = slide.shapes.add_textbox(Inches(0.5), Inches(0.5), Inches(9), Inches(1))
-            tf = title_box.text_frame
-            tf.text = slide_data.title
-            tf.paragraphs[0].font.size = Pt(32)
-            tf.paragraphs[0].font.color.rgb = color_heading
+            add_title(slide_data.title or "Chart")
+            cdata = slide_data.chart_data
+            if not cdata:
+                continue
             
-            # Use a table as a mock chart since pptx charts require extra imports and data shaping
-            # but for PPTX text extraction, standard shapes work
-            body = slide.shapes.add_textbox(Inches(0.5), Inches(2), Inches(9), Inches(3))
-            body.text_frame.text = json.dumps(slide_data.chart_data)
+            chart_data = CategoryChartData()
+            # Expecting cdata to be dict with 'categories' and 'series': [{'name': '..', 'values': []}]
+            if isinstance(cdata, dict) and 'categories' in cdata and 'series' in cdata:
+                chart_data.categories = cdata['categories']
+                for s in cdata['series']:
+                    chart_data.add_series(s['name'], s['values'])
+            else:
+                # Mock if invalid format
+                chart_data.categories = ['A', 'B', 'C']
+                chart_data.add_series('Series 1', (1, 2, 3))
+            
+            ctype = slide_data.chart_type or 'bar'
+            x, y, cx, cy = Inches(1), Inches(2), Inches(8), Inches(4.5)
+            if ctype == 'line':
+                slide.shapes.add_chart(XL_CHART_TYPE.LINE, x, y, cx, cy, chart_data)
+            elif ctype == 'pie':
+                slide.shapes.add_chart(XL_CHART_TYPE.PIE, x, y, cx, cy, chart_data)
+            else:
+                slide.shapes.add_chart(XL_CHART_TYPE.COLUMN_CLUSTERED, x, y, cx, cy, chart_data)
+                
+        elif master == 'diagram':
+            add_title(slide_data.title or "Diagram")
+            source = slide_data.source or ""
+            engine = slide_data.engine or "mermaid"
+            if source and engine == 'mermaid':
+                png_path = diagram_render.render_mermaid_to_png(source, background='transparent', scale=3.0)
+                try:
+                    slide.shapes.add_picture(png_path, Inches(1), Inches(2), width=Inches(8))
+                except:
+                    pass
+                    
+        elif master in ['two_column', 'comparison']:
+            add_title(slide_data.title or "Comparison")
+            ppt_style.add_card(slide, Inches(0.5), Inches(2), Inches(4.25), Inches(4.5), theme_config['color_card'], theme_config['color_card_border'])
+            ppt_style.add_card(slide, Inches(5.25), Inches(2), Inches(4.25), Inches(4.5), theme_config['color_card'], theme_config['color_card_border'])
+            
+            tb1 = slide.shapes.add_textbox(Inches(0.7), Inches(2.2), Inches(3.8), Inches(4.1))
+            if slide_data.items and len(slide_data.items) > 0:
+                p = tb1.text_frame.paragraphs[0]
+                p.text = str(slide_data.items[0])
+                ppt_style.set_run_font(p.runs[0], theme_config, "Body")
+                
+            tb2 = slide.shapes.add_textbox(Inches(5.45), Inches(2.2), Inches(3.8), Inches(4.1))
+            if slide_data.items and len(slide_data.items) > 1:
+                p = tb2.text_frame.paragraphs[0]
+                p.text = str(slide_data.items[1])
+                ppt_style.set_run_font(p.runs[0], theme_config, "Body")
+                
+        elif master == 'image_focus':
+            add_title(slide_data.title or "Focus")
+            ppt_style.add_card(slide, Inches(2), Inches(2), Inches(6), Inches(4), theme_config['color_card'], theme_config['color_card_border'])
+            tb = slide.shapes.add_textbox(Inches(2.5), Inches(3.5), Inches(5), Inches(1))
+            p = tb.text_frame.paragraphs[0]
+            p.text = slide_data.content or "Image Placeholder"
+            ppt_style.set_run_font(p.runs[0], theme_config, "Body")
+            p.alignment = PP_ALIGN.CENTER
+            
+        elif master == 'timeline':
+            add_title(slide_data.title or "Timeline")
+            items = slide_data.items or []
+            if items:
+                step = 8.0 / len(items)
+                for i, item in enumerate(items):
+                    x = Inches(1 + i * step)
+                    y = Inches(3.5)
+                    slide.shapes.add_shape(MSO_SHAPE.OVAL, x, y, Inches(0.3), Inches(0.3))
+                    tb = slide.shapes.add_textbox(x - Inches(0.5), y + Inches(0.5), Inches(1.5), Inches(1))
+                    p = tb.text_frame.paragraphs[0]
+                    p.text = str(item)
+                    ppt_style.set_run_font(p.runs[0], theme_config, "Body")
+                    p.font.size = Pt(12)
+        
+        elif master == 'closing':
+            tb = slide.shapes.add_textbox(Inches(1), Inches(3), Inches(8), Inches(1.5))
+            tf = tb.text_frame
+            p = tf.paragraphs[0]
+            p.text = slide_data.title or "Thank You"
+            ppt_style.set_run_font(p.runs[0], theme_config, "Title")
+            p.font.size = Pt(48)
+            p.alignment = PP_ALIGN.CENTER
             
         else: # content / agenda
-            title_box = slide.shapes.add_textbox(Inches(0.5), Inches(0.5), Inches(9), Inches(1))
-            tf = title_box.text_frame
-            tf.text = slide_data.title
-            tf.paragraphs[0].font.size = Pt(32)
-            tf.paragraphs[0].font.color.rgb = color_heading
+            add_title(slide_data.title or "Overview")
             
-            body = slide.shapes.add_textbox(Inches(0.5), Inches(1.5), Inches(9), Inches(5))
+            body = slide.shapes.add_textbox(Inches(1), Inches(2), Inches(8), Inches(4.5))
+            tf = body.text_frame
+            tf.word_wrap = True
             if slide_data.items:
-                body.text_frame.text = "\n".join(slide_data.items)
+                for item in slide_data.items:
+                    p = tf.add_paragraph()
+                    p.text = f"• {item}"
+                    ppt_style.set_run_font(p.runs[0], theme_config, "Body")
+                    p.font.size = Pt(20)
             elif slide_data.content:
-                body.text_frame.text = slide_data.content
-            body.text_frame.paragraphs[0].font.color.rgb = color_text
+                p = tf.paragraphs[0]
+                p.text = slide_data.content
+                ppt_style.set_run_font(p.runs[0], theme_config, "Body")
+                p.font.size = Pt(20)
+                
+        ppt_style.add_footer(slide, ir.meta.title or "Presentation", idx + 1, len(ir.slides), theme_config)
 
     prs.save(path)
     return f"Successfully created PowerPoint (PPTX) at {path}"

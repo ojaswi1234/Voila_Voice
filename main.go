@@ -1,4 +1,4 @@
-package main
+﻿package main
 
 import (
 	"voice-cli-system/shared/decoy"
@@ -47,7 +47,7 @@ const (
 	// Send pings to peer with this period. Must be less than pongWait.
 	pingPeriod = (pongWait * 9) / 10
 
-	// Maximum message size allowed from peer (512KB — AI responses can be large).
+	// Maximum message size allowed from peer (512KB â€” AI responses can be large).
 	maxMessageSize = 512 * 1024
 )
 
@@ -249,13 +249,13 @@ func (b *Backend) addSecurityAlert(alertType, ip, deviceID, clientID, detail, se
 		Severity:  severity,
 	}
 	
-	// Bug #17 Fix: True O(1) circular ring buffer write — no slice reallocation
+	// Bug #17 Fix: True O(1) circular ring buffer write â€” no slice reallocation
 	writeIdx := (b.alertHead + b.alertCount) % maxAlerts
 	b.securityAlerts[writeIdx] = alert
 	if b.alertCount < maxAlerts {
 		b.alertCount++
 	} else {
-		// Buffer full — advance head to overwrite oldest
+		// Buffer full â€” advance head to overwrite oldest
 		b.alertHead = (b.alertHead + 1) % maxAlerts
 	}
 	
@@ -974,7 +974,7 @@ func (b *Backend) forwardCommand(deviceID, command, mode, clientID, conversation
 	}
 
 	// Only apply command optimization for plain SHELL mode.
-	// AGENT/GROQ/OLLAMA modes send natural language — we must NOT rewrite them.
+	// AGENT/GROQ/OLLAMA modes send natural language â€” we must NOT rewrite them.
 	optimizedCommand := command
 	if strings.ToUpper(mode) == "SHELL" || mode == "" {
 		optimizedCommand = b.optimizeCommand(command)
@@ -982,9 +982,9 @@ func (b *Backend) forwardCommand(deviceID, command, mode, clientID, conversation
 
 	urlStr := address + "/execute"
 	// Mode forwarding rules (preserve original design intent):
-	//   "agent" from mobile → "" (desktop badge decides the AI engine)
-	//   "shell" from mobile → "SHELL" (direct raw PowerShell, no AI, no visible terminal)
-	//   "groq" / "ollama"  → forwarded as explicit cloud AI override
+	//   "agent" from mobile â†’ "" (desktop badge decides the AI engine)
+	//   "shell" from mobile â†’ "SHELL" (direct raw PowerShell, no AI, no visible terminal)
+	//   "groq" / "ollama"  â†’ forwarded as explicit cloud AI override
 	modeUp := strings.ToUpper(mode)
 	forwardMode := ""
 	switch modeUp {
@@ -992,7 +992,7 @@ func (b *Backend) forwardCommand(deviceID, command, mode, clientID, conversation
 		forwardMode = "SHELL"
 	case "GROQ", "OLLAMA":
 		forwardMode = modeUp
-	// "AGENT" and anything else → "" → local agent uses desktop badge
+	// "AGENT" and anything else â†’ "" â†’ local agent uses desktop badge
 	}
 	payload := map[string]interface{}{"command": optimizedCommand, "mode": forwardMode, "client_id": clientID, "conversation_id": conversationID, "graphify_enabled": graphifyEnabled}
 	jsonPayload, _ := json.Marshal(payload)
@@ -1055,19 +1055,19 @@ func (b *Backend) generateTaskSummary(command, output string) string {
 	
 	// Analyze output for success/failure patterns
 	if strings.Contains(output, "ERROR") {
-		summary = "❌ Command failed. Check error details above."
+		summary = "âŒ Command failed. Check error details above."
 	} else if strings.Contains(output, "done") || strings.Contains(output, "completed") || strings.Contains(output, "success") {
-		summary = "✅ Command completed successfully."
+		summary = "âœ… Command completed successfully."
 	} else if strings.Contains(command, "npm") && strings.Contains(command, "dev") {
-		summary = "🚀 Development server started successfully."
+		summary = "ðŸš€ Development server started successfully."
 	} else if strings.Contains(command, "test") {
-		summary = "🧪 Tests executed. Check output for results."
+		summary = "ðŸ§ª Tests executed. Check output for results."
 	} else if strings.Contains(command, "build") {
-		summary = "🔨 Build process completed."
+		summary = "ðŸ”¨ Build process completed."
 	} else if strings.Contains(command, "git") {
-		summary = "📝 Git operation completed."
+		summary = "ðŸ“ Git operation completed."
 	} else {
-		summary = "✓ Command executed. Review output for details."
+		summary = "âœ“ Command executed. Review output for details."
 	}
 	
 	// Add execution context
@@ -1232,6 +1232,29 @@ func handleWebhookResult(b *Backend) http.HandlerFunc {
 
 		if !exists || subtle.ConstantTimeCompare([]byte(device.SecurityPhraseHash), []byte(secretHash)) != 1 {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		if mode == "job_status" {
+			jobID, _ := req["job_id"].(string)
+			jobStatus, _ := req["job_status"].(string)
+			summary, _ := req["summary"].(string)
+
+			if b.fcmClient != nil {
+				go b.sendFCMTaskCompletion(deviceID, "job_status", "Job Status", jobStatus, jobID, summary, "")
+			}
+			
+			// Broadcast via websocket to the specific client
+			if clientID != "" {
+				wsPayload, _ := json.Marshal(map[string]interface{}{
+					"type": "job_status",
+					"job_id": jobID,
+					"job_status": jobStatus,
+					"summary": summary,
+				})
+				b.dispatcher.Dispatch(clientID, 1, wsPayload)
+			}
+			w.WriteHeader(http.StatusOK)
 			return
 		}
 
@@ -1734,6 +1757,20 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 							"approved": approved,
 						})
 						http.Post(approveUrl, "application/json", bytes.NewBuffer(payload))
+					}()
+				}
+				
+			case "cancel_job":
+				b.mu.RLock()
+				device, exists := b.devices[deviceID]
+				b.mu.RUnlock()
+				if exists && device.Active {
+					go func() {
+						cancelUrl := strings.TrimRight(device.Address, "/") + "/stop"
+						payload, _ := json.Marshal(map[string]interface{}{
+							"client_id": clientID,
+						})
+						http.Post(cancelUrl, "application/json", bytes.NewBuffer(payload))
 					}()
 				}
 				
@@ -2307,6 +2344,7 @@ func getNgrokURL() (string, error) {
 	
 	return "", fmt.Errorf("no ngrok tunnels found")
 }
+
 
 
 
