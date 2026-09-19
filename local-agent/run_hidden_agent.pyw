@@ -583,7 +583,7 @@ def build_dashboard_ui():
     dash_sidebar.pack(side='left', fill='y')
     dash_content.pack(side='left', fill='both', expand=True, padx=(12, 16), pady=(0, 12))
 
-    tk.Label(dash_sidebar, text='⚡', bg='#16171C', fg='#FFFFFF', font=('Segoe UI', 18)).pack(pady=(16, 0))
+    init_dash_sphere()
     tk.Label(dash_sidebar, text='Voila', bg='#16171C', fg='#FFFFFF', font=('Segoe UI', 12, 'bold')).pack(pady=(0, 16))
 
     nav_wrap = tk.Frame(dash_sidebar, bg='#16171C')
