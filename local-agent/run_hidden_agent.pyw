@@ -519,6 +519,12 @@ def update_dash_sphere(pulse, r1_x, r1_y, r1_z, r2_x, r2_y, r2_z, r3_x, r3_y, r3
     p = dash_sphere_parts
     cx, cy = 60, 60
     scale = 2.0
+    
+    # Ensure they are visible (handles the bug where hidden state gets applied to the wrong canvas)
+    for key in p:
+        try: c.itemconfig(p[key], state='normal')
+        except: pass
+
     c.coords(p['sun_aura'], cx-(26+pulse*1.2)*scale, cy-(26+pulse*1.2)*scale, cx+(26+pulse*1.2)*scale, cy+(26+pulse*1.2)*scale)
     c.coords(p['sun_glow4'], cx-(22+pulse*1.0)*scale, cy-(22+pulse*1.0)*scale, cx+(22+pulse*1.0)*scale, cy+(22+pulse*1.0)*scale)
     c.coords(p['sun_glow3'], cx-(18+pulse*0.8)*scale, cy-(18+pulse*0.8)*scale, cx+(18+pulse*0.8)*scale, cy+(18+pulse*0.8)*scale)
@@ -528,6 +534,13 @@ def update_dash_sphere(pulse, r1_x, r1_y, r1_z, r2_x, r2_y, r2_z, r3_x, r3_y, r3
     update_3d_ring(c, p['core_arc1'], cx, cy, 14, r1_x, r1_y, r1_z, scale, p['shadow1'], 2*scale)
     update_3d_ring(c, p['core_arc2'], cx, cy, 17, r2_x, r2_y, r2_z, scale, p['shadow2'], 2*scale)
     update_3d_ring(c, p['core_arc3'], cx, cy, 20, r3_x, r3_y, r3_z, scale, p['shadow3'], 2*scale)
+    
+    # Force redraw
+    c.update_idletasks()
+    
+    # Force redraw
+    c.update_idletasks()
+
 
 def build_dashboard_ui():
     global _dashboard_ui_built, dash_canvas
@@ -1615,6 +1628,26 @@ def animation_loop():
     anim_frame += 1
     dots = "." * ((anim_frame // 10) % 4)
 
+    # --- COMPUTE ANIMATION MATH UNCONDITIONALLY (OUTSIDE OF DASHBOARD CHECKS) ---
+    pulse = math.sin(anim_frame * 0.03) * 1.0
+    t = anim_frame * 0.01
+    
+    r1_x = t * 1.5 + math.sin(t * 0.8) * 1.2
+    r1_y = t * 0.9 + math.cos(t * 1.1) * 1.5
+    r1_z = t * 2.1 + math.sin(t * 0.5) * 0.8
+
+    r2_x = -t * 0.8 + math.cos(t * 0.6) * 2.0
+    r2_y = t * 1.2 + math.sin(t * 0.4) * 1.8
+    r2_z = -t * 1.5 + math.cos(t * 0.7) * 1.2
+
+    r3_x = t * 0.5 + math.sin(t * 0.3) * 2.5
+    r3_y = -t * 0.7 + math.cos(t * 0.25) * 3.0
+    r3_z = t * 0.4 + math.sin(t * 0.2) * 2.0
+    
+    # ALWAYS UPDATE DASHBOARD SPHERE (it's independent of dashboard_active flag)
+    # The user explicitly wants it to ALWAYS spin now to avoid any freeze bugs
+    update_dash_sphere(pulse, r1_x, r1_y, r1_z, r2_x, r2_y, r2_z, r3_x, r3_y, r3_z)
+
     if not dashboard_active and not dashboard_transition_in_progress:
         if alert_state.get("state_changed"):
             update_expression()
@@ -1635,28 +1668,6 @@ def animation_loop():
                 transition_scale += 0.15
                 if transition_scale > 1.0:
                     transition_scale = 1.0
-
-        # --- COMPUTE ANIMATION MATH UNCONDITIONALLY ---
-        pulse = math.sin(anim_frame * 0.03) * 1.0
-        t = anim_frame * 0.01
-        
-        # Inner ring: Fast and erratic tumbling
-        r1_x = t * 1.5 + math.sin(t * 0.8) * 1.2
-        r1_y = t * 0.9 + math.cos(t * 1.1) * 1.5
-        r1_z = t * 2.1 + math.sin(t * 0.5) * 0.8
-
-        # Middle ring: Smooth, sweeping gyroscopic motion
-        r2_x = -t * 0.8 + math.cos(t * 0.6) * 2.0
-        r2_y = t * 1.2 + math.sin(t * 0.4) * 1.8
-        r2_z = -t * 1.5 + math.cos(t * 0.7) * 1.2
-
-        # Outer ring: Majestic, slow, wide-arching orbital shifts
-        r3_x = t * 0.5 + math.sin(t * 0.3) * 2.5
-        r3_y = -t * 0.7 + math.cos(t * 0.25) * 3.0
-        r3_z = t * 0.4 + math.sin(t * 0.2) * 2.0
-        
-        # ALWAYS UPDATE DASHBOARD SPHERE (it's independent of mobile clients)
-        update_dash_sphere(pulse, r1_x, r1_y, r1_z, r2_x, r2_y, r2_z, r3_x, r3_y, r3_z)
 
         if mobile_clients == 0:
             if not alert_state["active"]:
@@ -1729,8 +1740,6 @@ def animation_loop():
             canvas.itemconfig(browser_box, state="hidden")
             canvas.itemconfig(browser_line, state="hidden")
 
-
-
             target_text = "Standing by"
             target_color = '#9ca3af'
             target_outline = '#27272a'
@@ -1750,26 +1759,10 @@ def animation_loop():
                 canvas.itemconfig(core_arc1, fill='#fcd34d')
                 canvas.itemconfig(core_arc2, fill='#fbbf24')
                 canvas.itemconfig(core_arc3, fill='#f59e0b')
-                
-            elif visual_state == "GRAPHIFY":
-                target_text = "Team Sync"
-                target_color = '#e879f9'
-                target_outline = '#86198f'
-                show_dots = True
-                canvas.itemconfig(sun_aura, fill='#2e1065')
-                canvas.itemconfig(sun_glow4, fill='#4a044e')
-                canvas.itemconfig(sun_glow3, fill='#86198f')
-                canvas.itemconfig(sun_glow2, fill='#c026d3')
-                canvas.itemconfig(sun_glow1, fill='#e879f9')
-                canvas.itemconfig(core_bg, fill='#fae8ff')
-                canvas.itemconfig(core_arc1, fill='#f472b6')
-                canvas.itemconfig(core_arc2, fill='#e879f9')
-                canvas.itemconfig(core_arc3, fill='#c026d3')
-                
-            elif visual_state == "SEARCH" or visual_state == "RESEARCH":
-                target_text = "Researching"
-                target_color = '#60a5fa'
-                target_outline = '#1e3a8a'
+            elif visual_state == "SEARCH":
+                target_text = "Searching"
+                target_color = '#38bdf8'
+                target_outline = '#0284c7'
                 show_dots = True
                 canvas.itemconfig(sun_glow3, state="hidden")
                 canvas.itemconfig(sun_glow2, state="hidden")
@@ -1778,11 +1771,13 @@ def animation_loop():
                 canvas.itemconfig(core_arc1, state="hidden")
                 canvas.itemconfig(core_arc2, state="hidden")
                 canvas.itemconfig(core_arc3, state="hidden")
-                canvas.itemconfig(radar_arc, state="normal", start=(-anim_frame * 8) % 360)
-                
-            elif visual_state == "BROWSER":
+                if scale > 0.5:
+                    canvas.itemconfig(radar_arc, state="normal")
+                # Spin radar
+                canvas.itemconfig(radar_arc, start=(anim_frame * -8) % 360)
+            elif visual_state == "BROWSE":
                 target_text = "Browsing"
-                target_color = '#fdba74'
+                target_color = '#f97316'
                 target_outline = '#c2410c'
                 show_dots = True
                 canvas.itemconfig(sun_glow3, state="hidden")
@@ -1795,8 +1790,8 @@ def animation_loop():
                 if scale > 0.5:
                     canvas.itemconfig(browser_box, state="normal")
                     canvas.itemconfig(browser_line, state="normal")
-                bounce = math.cos(anim_frame * 0.1) * 2
-                bw, bh = 10 * scale, 8 * scale
+                bounce = math.sin(anim_frame * 0.15) * 3
+                bw, bh = 12 * scale, 10 * scale
                 canvas.coords(browser_box, cx-bw, cy-bh+bounce, cx+bw, cy+bh+bounce)
                 canvas.coords(browser_line, cx-bw, cy-bh*0.4+bounce, cx+bw, cy-bh*0.4+bounce)
                 
@@ -1893,7 +1888,6 @@ def animation_loop():
             refresh_dashboard_content()
 
     root.after(20, animation_loop)
-
 def reset_to_idle():
     global ai_state
     if ai_state != "IDLE":
