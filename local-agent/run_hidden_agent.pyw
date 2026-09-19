@@ -117,6 +117,74 @@ cx, cy = 35, 30 # Core center
 
 import math
 
+
+def update_3d_ring_occluded(canvas, front_id, back_id, cx, cy, radius, rot_x, rot_y, rot_z, scale, shadow_id=None, shadow_offset=0):
+    front_pts = []
+    back_pts = []
+    
+    steps = 100
+    prev_px = None
+    prev_py = None
+    prev_z2 = None
+    
+    import math
+    for i in range(steps + 1):
+        angle = 2 * math.pi * i / steps
+        x = radius * math.cos(angle)
+        y = radius * math.sin(angle)
+        z = 0
+        y1 = y * math.cos(rot_x) - z * math.sin(rot_x)
+        z1 = y * math.sin(rot_x) + z * math.cos(rot_x)
+        x2 = x * math.cos(rot_y) + z1 * math.sin(rot_y)
+        z2 = -x * math.sin(rot_y) + z1 * math.cos(rot_y)
+        x3 = x2 * math.cos(rot_z) - y1 * math.sin(rot_z)
+        y3 = x2 * math.sin(rot_z) + y1 * math.cos(rot_z)
+        
+        px = cx + x3 * scale
+        py = cy + y3 * scale
+        
+        if prev_z2 is not None:
+            # If we crossed the z-axis, add the current point to the OTHER array too, to bridge the gap
+            if (z2 >= 0 and prev_z2 < 0) or (z2 < 0 and prev_z2 >= 0):
+                if z2 >= 0:
+                    front_pts.extend((prev_px, prev_py))
+                else:
+                    back_pts.extend((prev_px, prev_py))
+                    
+        if z2 >= 0:
+            front_pts.extend((px, py))
+        else:
+            back_pts.extend((px, py))
+            
+        prev_px = px
+        prev_py = py
+        prev_z2 = z2
+
+    if front_pts and len(front_pts) >= 4:
+        canvas.coords(front_id, *front_pts)
+        canvas.itemconfig(front_id, state='normal')
+    else:
+        canvas.itemconfig(front_id, state='hidden')
+        
+    if back_pts and len(back_pts) >= 4:
+        canvas.coords(back_id, *back_pts)
+        canvas.itemconfig(back_id, state='normal')
+    else:
+        canvas.itemconfig(back_id, state='hidden')
+        
+    if shadow_id:
+        # We can just draw the shadow for the back parts or all parts. Let's just do all parts for the shadow.
+        all_sh = []
+        for i in range(0, len(back_pts), 2):
+            all_sh.extend((back_pts[i], back_pts[i+1] + shadow_offset))
+        for i in range(0, len(front_pts), 2):
+            all_sh.extend((front_pts[i], front_pts[i+1] + shadow_offset))
+        if all_sh and len(all_sh) >= 4:
+            canvas.coords(shadow_id, *all_sh)
+            canvas.itemconfig(shadow_id, state='normal')
+        else:
+            canvas.itemconfig(shadow_id, state='hidden')
+
 def update_3d_ring(canvas, ring_id, cx, cy, radius, rot_x, rot_y, rot_z, scale, shadow_id=None, shadow_offset=0):
     points = []
     steps = 100
@@ -503,6 +571,10 @@ def init_dash_sphere():
     dash_sphere_parts['shadow1'] = c.create_line(0,0, 0,0, fill='#000000', width=1.0, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
     dash_sphere_parts['shadow2'] = c.create_line(0,0, 0,0, fill='#000000', width=1.5, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
     dash_sphere_parts['shadow3'] = c.create_line(0,0, 0,0, fill='#000000', width=2.0, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
+
+    dash_sphere_parts['back_arc1'] = c.create_line(0,0, 0,0, fill='#06b6d4', width=1.0, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
+    dash_sphere_parts['back_arc2'] = c.create_line(0,0, 0,0, fill='#3b82f6', width=1.5, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
+    dash_sphere_parts['back_arc3'] = c.create_line(0,0, 0,0, fill='#0ea5e9', width=2.0, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
     dash_sphere_parts['sun_aura'] = c.create_oval(0,0,0,0, fill='#1e1e24', outline='')
     dash_sphere_parts['sun_glow4'] = c.create_oval(0,0,0,0, fill='#27272a', outline='')
     dash_sphere_parts['sun_glow3'] = c.create_oval(0,0,0,0, fill='#3f3f46', outline='')
@@ -531,9 +603,10 @@ def update_dash_sphere(pulse, r1_x, r1_y, r1_z, r2_x, r2_y, r2_z, r3_x, r3_y, r3
     c.coords(p['sun_glow2'], cx-(14+pulse*0.6)*scale, cy-(14+pulse*0.6)*scale, cx+(14+pulse*0.6)*scale, cy+(14+pulse*0.6)*scale)
     c.coords(p['sun_glow1'], cx-(10+pulse*0.3)*scale, cy-(10+pulse*0.3)*scale, cx+(10+pulse*0.3)*scale, cy+(10+pulse*0.3)*scale)
     c.coords(p['core_bg'], cx-(6)*scale, cy-(6)*scale, cx+(6)*scale, cy+(6)*scale)
-    update_3d_ring(c, p['core_arc1'], cx, cy, 14, r1_x, r1_y, r1_z, scale, p['shadow1'], 2*scale)
-    update_3d_ring(c, p['core_arc2'], cx, cy, 17, r2_x, r2_y, r2_z, scale, p['shadow2'], 2*scale)
-    update_3d_ring(c, p['core_arc3'], cx, cy, 20, r3_x, r3_y, r3_z, scale, p['shadow3'], 2*scale)
+
+    update_3d_ring_occluded(c, p['core_arc1'], p['back_arc1'], cx, cy, 14, r1_x, r1_y, r1_z, scale, p['shadow1'], 2*scale)
+    update_3d_ring_occluded(c, p['core_arc2'], p['back_arc2'], cx, cy, 17, r2_x, r2_y, r2_z, scale, p['shadow2'], 2*scale)
+    update_3d_ring_occluded(c, p['core_arc3'], p['back_arc3'], cx, cy, 20, r3_x, r3_y, r3_z, scale, p['shadow3'], 2*scale)
     
     # Force redraw
     c.update_idletasks()
