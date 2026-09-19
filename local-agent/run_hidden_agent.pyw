@@ -119,7 +119,7 @@ import math
 
 def update_3d_ring(canvas, ring_id, cx, cy, radius, rot_x, rot_y, rot_z, scale, shadow_id=None, shadow_offset=0):
     points = []
-    steps = 40
+    steps = 100
     for i in range(steps):
         angle = 2 * math.pi * i / steps
         x = radius * math.cos(angle)
@@ -145,9 +145,9 @@ def update_3d_ring(canvas, ring_id, cx, cy, radius, rot_x, rot_y, rot_z, scale, 
         canvas.coords(shadow_id, *sh_pts)
 
 # Shadows (drawn first so they are at the bottom)
-shadow1 = canvas.create_line(0,0, 0,0, fill='#000000', width=1.0)
-shadow2 = canvas.create_line(0,0, 0,0, fill='#000000', width=1.5)
-shadow3 = canvas.create_line(0,0, 0,0, fill='#000000', width=2.0)
+shadow1 = canvas.create_line(0,0, 0,0, fill='#000000', width=1.0, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
+shadow2 = canvas.create_line(0,0, 0,0, fill='#000000', width=1.5, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
+shadow3 = canvas.create_line(0,0, 0,0, fill='#000000', width=2.0, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
 
 # Hyperrealistic Dyson Sphere Sun Glow layers
 sun_aura = canvas.create_oval(cx-26, cy-26, cx+26, cy+26, fill='#1e1e24', outline='')
@@ -158,9 +158,9 @@ sun_glow1 = canvas.create_oval(cx-10, cy-10, cx+10, cy+10, fill='#a1a1aa', outli
 core_bg = canvas.create_oval(cx-6, cy-6, cx+6, cy+6, fill='#ffffff', outline='')
 
 # Front Rings (drawn over the sun)
-core_arc1 = canvas.create_line(0,0, 0,0, fill='#06b6d4', width=1.0)
-core_arc2 = canvas.create_line(0,0, 0,0, fill='#3b82f6', width=1.5)
-core_arc3 = canvas.create_line(0,0, 0,0, fill='#0ea5e9', width=2.0)
+core_arc1 = canvas.create_line(0,0, 0,0, fill='#06b6d4', width=1.0, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
+core_arc2 = canvas.create_line(0,0, 0,0, fill='#3b82f6', width=1.5, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
+core_arc3 = canvas.create_line(0,0, 0,0, fill='#0ea5e9', width=2.0, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
 
 # Special State Icons (hidden by default)
 term_prompt = canvas.create_text(cx, cy, text=">_", fill="#10b981", font=("Consolas", 11, "bold"), state="hidden")
