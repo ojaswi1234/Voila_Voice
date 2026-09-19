@@ -115,35 +115,13 @@ pill = create_round_rect(canvas, 5, 5, 235, 60, r=27, fill=bg_idle, outline=bord
 
 cx, cy = 35, 32 # Core center
 
-import math
+# Obsidian Core Background
+core_bg = canvas.create_oval(cx-20, cy-20, cx+20, cy+20, fill='#27272a', outline='')
 
-def generate_3d_ring(cx, cy, radius, rot_x, rot_y, rot_z, scale=1.0):
-    points = []
-    steps = 30
-    for i in range(steps):
-        angle = 2 * math.pi * i / steps
-        x = radius * math.cos(angle)
-        y = radius * math.sin(angle)
-        z = 0
-        y1 = y * math.cos(rot_x) - z * math.sin(rot_x)
-        z1 = y * math.sin(rot_x) + z * math.cos(rot_x)
-        x2 = x * math.cos(rot_y) + z1 * math.sin(rot_y)
-        z2 = -x * math.sin(rot_y) + z1 * math.cos(rot_y)
-        x3 = x2 * math.cos(rot_z) - y1 * math.sin(rot_z)
-        y3 = x2 * math.sin(rot_z) + y1 * math.cos(rot_z)
-        points.extend([cx + x3 * scale, cy + y3 * scale])
-    return points
-
-# Dyson Sphere Sun Glow layers
-sun_glow3 = canvas.create_oval(cx-20, cy-20, cx+20, cy+20, fill='#1e1e24', outline='')
-sun_glow2 = canvas.create_oval(cx-16, cy-16, cx+16, cy+16, fill='#27272a', outline='')
-sun_glow1 = canvas.create_oval(cx-12, cy-12, cx+12, cy+12, fill='#3f3f46', outline='')
-core_bg = canvas.create_oval(cx-8, cy-8, cx+8, cy+8, fill='#d4d4d8', outline='')
-
-# Dyson Rings
-core_arc1 = canvas.create_polygon(0,0, 0,0, 0,0, 0,0, fill='', outline='#06b6d4', width=2, smooth=True)
-core_arc2 = canvas.create_polygon(0,0, 0,0, 0,0, 0,0, fill='', outline='#3b82f6', width=1, smooth=True)
-core_arc3 = canvas.create_polygon(0,0, 0,0, 0,0, 0,0, fill='', outline='#0ea5e9', width=2, smooth=True)
+# Obsidian Core Arcs (used for spinning animation)
+core_arc1 = canvas.create_arc(cx-20, cy-20, cx+20, cy+20, start=0, extent=100, outline='#06b6d4', width=3, style=tk.ARC)
+core_arc2 = canvas.create_arc(cx-15, cy-15, cx+15, cy+15, start=120, extent=140, outline='#3b82f6', width=2, style=tk.ARC)
+core_arc3 = canvas.create_arc(cx-25, cy-25, cx+25, cy+25, start=240, extent=80, outline='#0ea5e9', width=4, style=tk.ARC)
 
 # Special State Icons (hidden by default)
 term_prompt = canvas.create_text(cx, cy, text=">_", fill="#10b981", font=("Consolas", 11, "bold"), state="hidden")
@@ -153,7 +131,7 @@ browser_box = canvas.create_rectangle(cx-12, cy-10, cx+12, cy+10, fill="", outli
 browser_line = canvas.create_line(cx-12, cy-4, cx+12, cy-4, fill="#f97316", width=2, state="hidden")
 
 # Keep variables compatible with animation loop
-face_parts = (sun_glow3, sun_glow2, sun_glow1, core_bg, core_arc1, core_arc2, core_arc3, term_prompt, file_icon, radar_arc, browser_box, browser_line)
+face_parts = (core_bg, core_arc1, core_arc2, core_arc3, term_prompt, file_icon, radar_arc, browser_box, browser_line)
 cloud_parts = () # Empty, we don't use a thought cloud anymore
 
 # Typography Layout
@@ -1587,9 +1565,6 @@ def animation_loop():
             canvas.itemconfig(core_bg, fill='#18181b')
             target_outline = '#6666ff' if is_hovering_pill else '#27272a'
             canvas.itemconfig(pill, outline=target_outline, fill='#09090b')
-            canvas.itemconfig(sun_glow1, state="hidden")
-            canvas.itemconfig(sun_glow2, state="hidden")
-            canvas.itemconfig(sun_glow3, state="hidden")
             canvas.itemconfig(core_arc1, state="hidden")
             canvas.itemconfig(core_arc2, state="hidden")
             canvas.itemconfig(core_arc3, state="hidden")
@@ -1615,23 +1590,13 @@ def animation_loop():
             r3 = 20 * scale
             rr = 18 * scale
             
-            # 3D Dyson rings and sun pulse
-            time_val = anim_frame * 0.05
-            pulse = math.sin(time_val * 2) * 1.5
-            canvas.coords(sun_glow3, cx-(18+pulse)*scale, cy-(18+pulse)*scale, cx+(18+pulse)*scale, cy+(18+pulse)*scale)
-            canvas.coords(sun_glow2, cx-(13+pulse*0.8)*scale, cy-(13+pulse*0.8)*scale, cx+(13+pulse*0.8)*scale, cy+(13+pulse*0.8)*scale)
-            canvas.coords(sun_glow1, cx-(9+pulse*0.5)*scale, cy-(9+pulse*0.5)*scale, cx+(9+pulse*0.5)*scale, cy+(9+pulse*0.5)*scale)
-            canvas.coords(core_bg, cx-(5+pulse*0.2)*scale, cy-(5+pulse*0.2)*scale, cx+(5+pulse*0.2)*scale, cy+(5+pulse*0.2)*scale)
-
-            canvas.coords(core_arc1, *generate_3d_ring(cx, cy, 22, time_val, time_val*1.3, time_val*0.5, scale))
-            canvas.coords(core_arc2, *generate_3d_ring(cx, cy, 18, -time_val*1.2, time_val*0.8, time_val, scale))
-            canvas.coords(core_arc3, *generate_3d_ring(cx, cy, 26, time_val*0.7, -time_val*1.5, -time_val*0.3, scale))
+            canvas.coords(core_bg, cx-16*scale, cy-16*scale, cx+16*scale, cy+16*scale)
+            canvas.coords(core_arc1, cx-r1, cy-r1, cx+r1, cy+r1)
+            canvas.coords(core_arc2, cx-r2, cy-r2, cx+r2, cy+r2)
+            canvas.coords(core_arc3, cx-r3, cy-r3, cx+r3, cy+r3)
             canvas.coords(radar_arc, cx-rr, cy-rr, cx+rr, cy+rr)
             
-            canvas.itemconfig(core_bg, state="normal")
-            canvas.itemconfig(sun_glow1, state="normal")
-            canvas.itemconfig(sun_glow2, state="normal")
-            canvas.itemconfig(sun_glow3, state="normal")
+            canvas.itemconfig(core_bg, fill='#27272a')
             canvas.itemconfig(core_arc1, state="normal")
             canvas.itemconfig(core_arc2, state="normal")
             canvas.itemconfig(core_arc3, state="normal")
@@ -1641,7 +1606,10 @@ def animation_loop():
             canvas.itemconfig(browser_box, state="hidden")
             canvas.itemconfig(browser_line, state="hidden")
 
-
+            # Arc animations (adjusted for 50fps)
+            canvas.itemconfig(core_arc1, start=(anim_frame * 3) % 360)
+            canvas.itemconfig(core_arc2, start=(-anim_frame * 5) % 360)
+            canvas.itemconfig(core_arc3, start=(anim_frame * 2) % 360)
 
             target_text = "Standing by"
             target_color = '#9ca3af'
@@ -1653,25 +1621,17 @@ def animation_loop():
                 target_color = '#fbbf24'
                 target_outline = '#b45309'
                 show_dots = True
-                canvas.itemconfig(sun_glow3, fill='#78350f')
-                canvas.itemconfig(sun_glow2, fill='#b45309')
-                canvas.itemconfig(sun_glow1, fill='#d97706')
-                canvas.itemconfig(core_bg, fill='#fde68a')
-                canvas.itemconfig(core_arc1, outline='#fcd34d')
-                canvas.itemconfig(core_arc2, outline='#fbbf24')
-                canvas.itemconfig(core_arc3, outline='#f59e0b')
+                canvas.itemconfig(core_arc1, outline='#fcd34d', start=(anim_frame * 12) % 360)
+                canvas.itemconfig(core_arc2, outline='#fbbf24', start=(-anim_frame * 18) % 360)
+                canvas.itemconfig(core_arc3, outline='#f59e0b', start=(anim_frame * 8) % 360)
                 
             elif visual_state == "GRAPHIFY":
                 target_text = "Team Sync"
                 target_color = '#e879f9'
                 target_outline = '#86198f'
                 show_dots = True
-                canvas.itemconfig(sun_glow3, fill='#4a044e')
-                canvas.itemconfig(sun_glow2, fill='#86198f')
-                canvas.itemconfig(sun_glow1, fill='#c026d3')
-                canvas.itemconfig(core_bg, fill='#f9a8d4')
-                canvas.itemconfig(core_arc1, outline='#f472b6')
-                canvas.itemconfig(core_arc2, outline='#e879f9')
+                canvas.itemconfig(core_arc1, outline='#f472b6', start=(anim_frame * 12 + math.sin(anim_frame*0.2)*20) % 360)
+                canvas.itemconfig(core_arc2, outline='#e879f9', start=(-anim_frame * 15 + math.cos(anim_frame*0.2)*20) % 360)
                 canvas.itemconfig(core_arc3, outline='#c026d3')
                 
             elif visual_state == "SEARCH" or visual_state == "RESEARCH":
@@ -1679,10 +1639,6 @@ def animation_loop():
                 target_color = '#60a5fa'
                 target_outline = '#1e3a8a'
                 show_dots = True
-                canvas.itemconfig(sun_glow3, state="hidden")
-                canvas.itemconfig(sun_glow2, state="hidden")
-                canvas.itemconfig(sun_glow1, state="hidden")
-                canvas.itemconfig(core_bg, state="hidden")
                 canvas.itemconfig(core_arc1, state="hidden")
                 canvas.itemconfig(core_arc2, state="hidden")
                 canvas.itemconfig(core_arc3, state="hidden")
@@ -1693,10 +1649,6 @@ def animation_loop():
                 target_color = '#fdba74'
                 target_outline = '#c2410c'
                 show_dots = True
-                canvas.itemconfig(sun_glow3, state="hidden")
-                canvas.itemconfig(sun_glow2, state="hidden")
-                canvas.itemconfig(sun_glow1, state="hidden")
-                canvas.itemconfig(core_bg, state="hidden")
                 canvas.itemconfig(core_arc1, state="hidden")
                 canvas.itemconfig(core_arc2, state="hidden")
                 canvas.itemconfig(core_arc3, state="hidden")
@@ -1713,10 +1665,6 @@ def animation_loop():
                 target_color = '#34d399'
                 target_outline = '#065f46'
                 show_dots = True
-                canvas.itemconfig(sun_glow3, state="hidden")
-                canvas.itemconfig(sun_glow2, state="hidden")
-                canvas.itemconfig(sun_glow1, state="hidden")
-                canvas.itemconfig(core_bg, state="hidden")
                 canvas.itemconfig(core_arc1, state="hidden")
                 canvas.itemconfig(core_arc2, state="hidden")
                 canvas.itemconfig(core_arc3, state="hidden")
@@ -1728,10 +1676,6 @@ def animation_loop():
                 target_color = '#818cf8'
                 target_outline = '#3730a3'
                 show_dots = True
-                canvas.itemconfig(sun_glow3, state="hidden")
-                canvas.itemconfig(sun_glow2, state="hidden")
-                canvas.itemconfig(sun_glow1, state="hidden")
-                canvas.itemconfig(core_bg, state="hidden")
                 canvas.itemconfig(core_arc1, state="hidden")
                 canvas.itemconfig(core_arc2, state="hidden")
                 canvas.itemconfig(core_arc3, state="hidden")
@@ -1746,10 +1690,6 @@ def animation_loop():
                 target_color = '#e5e7eb'
                 target_outline = '#374151'
                 show_dots = True
-                canvas.itemconfig(sun_glow3, fill='#374151')
-                canvas.itemconfig(sun_glow2, fill='#4b5563')
-                canvas.itemconfig(sun_glow1, fill='#9ca3af')
-                canvas.itemconfig(core_bg, fill='#f3f4f6')
                 canvas.itemconfig(core_arc1, outline='#e5e7eb')
                 canvas.itemconfig(core_arc2, outline='#9ca3af')
                 canvas.itemconfig(core_arc3, outline='#d1d5db')
@@ -1757,10 +1697,6 @@ def animation_loop():
             else: # IDLE
                 target_text = "Standing by..."
                 target_outline = '#27272a'
-                canvas.itemconfig(sun_glow3, fill='#1e1e24')
-                canvas.itemconfig(sun_glow2, fill='#27272a')
-                canvas.itemconfig(sun_glow1, fill='#3f3f46')
-                canvas.itemconfig(core_bg, fill='#d4d4d8')
                 canvas.itemconfig(core_arc1, outline='#06b6d4')
                 canvas.itemconfig(core_arc2, outline='#3b82f6')
                 canvas.itemconfig(core_arc3, outline='#0ea5e9')
