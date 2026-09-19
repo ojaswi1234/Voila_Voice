@@ -1639,9 +1639,6 @@ def animation_loop():
             rr = 18 * scale
             
             # Hyperrealistic 3D Dyson rings with precise occlusion and shadows
-            time_1 = anim_frame * 0.008
-            time_2 = anim_frame * 0.010
-            time_3 = anim_frame * 0.012
             pulse = math.sin(anim_frame * 0.03) * 1.0
             
             # Massive sun aura (increased star size)
@@ -1652,10 +1649,27 @@ def animation_loop():
             canvas.coords(sun_glow1, cx-(10+pulse*0.3)*scale, cy-(10+pulse*0.3)*scale, cx+(10+pulse*0.3)*scale, cy+(10+pulse*0.3)*scale)
             canvas.coords(core_bg, cx-(6)*scale, cy-(6)*scale, cx+(6)*scale, cy+(6)*scale)
 
-            # Draw rings OVER the star, with reduced radii and descending thickness
-            update_3d_ring(canvas, core_arc1, cx, cy, 14, time_1, time_1*1.3, time_1*0.5, scale, shadow1, 2*scale)
-            update_3d_ring(canvas, core_arc2, cx, cy, 17, -time_2*1.2, time_2*0.8, time_2, scale, shadow2, 2*scale)
-            update_3d_ring(canvas, core_arc3, cx, cy, 20, time_3*0.7, -time_3*1.5, -time_3*0.3, scale, shadow3, 2*scale)
+            # Draw rings OVER the star, with advanced non-linear gyroscopic mathematics
+            t = anim_frame * 0.01
+            
+            # Inner ring: Fast and erratic tumbling
+            r1_x = t * 1.5 + math.sin(t * 0.8) * 1.2
+            r1_y = t * 0.9 + math.cos(t * 1.1) * 1.5
+            r1_z = t * 2.1 + math.sin(t * 0.5) * 0.8
+
+            # Middle ring: Smooth, sweeping gyroscopic motion
+            r2_x = -t * 0.8 + math.cos(t * 0.6) * 2.0
+            r2_y = t * 1.2 + math.sin(t * 0.4) * 1.8
+            r2_z = -t * 1.5 + math.cos(t * 0.7) * 1.2
+
+            # Outer ring: Majestic, slow, wide-arching orbital shifts
+            r3_x = t * 0.5 + math.sin(t * 0.3) * 2.5
+            r3_y = -t * 0.7 + math.cos(t * 0.25) * 3.0
+            r3_z = t * 0.4 + math.sin(t * 0.2) * 2.0
+
+            update_3d_ring(canvas, core_arc1, cx, cy, 14, r1_x, r1_y, r1_z, scale, shadow1, 2*scale)
+            update_3d_ring(canvas, core_arc2, cx, cy, 17, r2_x, r2_y, r2_z, scale, shadow2, 2*scale)
+            update_3d_ring(canvas, core_arc3, cx, cy, 20, r3_x, r3_y, r3_z, scale, shadow3, 2*scale)
             canvas.coords(radar_arc, cx-rr, cy-rr, cx+rr, cy+rr)
             
             canvas.itemconfig(sun_aura, state="normal")
