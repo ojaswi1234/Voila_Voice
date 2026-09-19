@@ -39,3 +39,4 @@ flutter_launcher_icons:
 flutter:
   uses-material-design: true
   audioplayers: ^6.0.0
+  path_provider: ^2.1.0

@@ -24,6 +24,8 @@ import 'package:uuid/uuid.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_background/flutter_background.dart';
 import 'connection_flowchart.dart';
+import 'package:audioplayers/audioplayers.dart';
+import 'package:path_provider/path_provider.dart';
 
 // Top-level function for background JSON parsing via compute()
 // Bug #13 Fix: Must take `dynamic` to satisfy compute() type constraints
@@ -2420,6 +2422,67 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     }
   }
 
+  Future<bool> _playEdgeTts(String text) async {
+    try {
+      final String endpoint = "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=6A5AA1D4EAFF4E9FB37E23D68491D6F4";
+      final channel = WebSocketChannel.connect(Uri.parse(endpoint));
+      
+      final String uuid = const Uuid().v4().replaceAll('-', '');
+      final String dt = DateTime.now().toUtc().toIso8601String();
+      
+      final String configMsg = "X-Timestamp:$dt\r\n"
+          "Content-Type:application/json; charset=utf-8\r\n"
+          "Path:speech.config\r\n\r\n"
+          '{"context":{"synthesis":{"audio":{"metadataoptions":{"sentenceBoundaryEnabled":"false","wordBoundaryEnabled":"false"},"outputFormat":"audio-24khz-48kbitrate-mono-mp3"}}}}';
+      
+      channel.sink.add(configMsg);
+
+      final String ssml = "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'><voice name='en-US-AriaNeural'><prosody pitch='+0Hz' rate='-10%'>$text</prosody></voice></speak>";
+
+      final String reqMsg = "X-RequestId:$uuid\r\n"
+          "Content-Type:application/ssml+xml\r\n"
+          "X-Timestamp:$dt\r\n"
+          "Path:ssml\r\n\r\n"
+          "$ssml";
+          
+      channel.sink.add(reqMsg);
+
+      List<int> audioData = [];
+      bool success = false;
+      
+      await for (var message in channel.stream) {
+        if (message is String) {
+          if (message.contains("Path:turn.end")) {
+            success = true;
+            channel.sink.close();
+            break;
+          }
+        } else if (message is Uint8List) {
+          String headerStr = String.fromCharCodes(message.take(256));
+          int headerEnd = headerStr.indexOf("\r\n\r\n");
+          if (headerEnd != -1) {
+            audioData.addAll(message.skip(headerEnd + 4));
+          }
+        }
+      }
+
+      if (success && audioData.isNotEmpty) {
+        final dir = await getTemporaryDirectory();
+        final file = File('${dir.path}/summary.mp3');
+        await file.writeAsBytes(audioData);
+        
+        final player = AudioPlayer();
+        await player.play(DeviceFileSource(file.path));
+        await player.onPlayerComplete.first;
+        return true;
+      }
+      return false;
+    } catch (e) {
+      debugPrint("Edge TTS error: $e");
+      return false;
+    }
+  }
+
   // T1.3 Natural summary TTS using lightweight high-quality fallback
   Future<void> _speakSummary(String text) async {
     if (!_willTalk || text.isEmpty) return;
@@ -2436,22 +2499,26 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       });
     }
 
-    try {
-      // Try to use a high-quality "network" voice natively
-      List<dynamic> voices = await flutterTts.getVoices;
-      for (var voice in voices) {
-        if (voice["name"] != null && voice["name"].toString().toLowerCase().contains("network")) {
-          await flutterTts.setVoice({"name": voice["name"], "locale": voice["locale"]});
-          break;
+    bool edgeSuccess = await _playEdgeTts(cleanText);
+
+    if (!edgeSuccess) {
+      try {
+        // Try to use a high-quality "network" voice natively
+        List<dynamic> voices = await flutterTts.getVoices;
+        for (var voice in voices) {
+          if (voice["name"] != null && voice["name"].toString().toLowerCase().contains("network")) {
+            await flutterTts.setVoice({"name": voice["name"], "locale": voice["locale"]});
+            break;
+          }
         }
+        
+        await flutterTts.setPitch(1.0);
+        await flutterTts.setSpeechRate(0.5);
+        await flutterTts.speak(cleanText);
+      } catch (e) {
+        debugPrint("HQ TTS failed: $e");
+        await flutterTts.speak(cleanText);
       }
-      
-      await flutterTts.setPitch(1.0);
-      await flutterTts.setSpeechRate(0.5);
-      await flutterTts.speak(cleanText);
-    } catch (e) {
-      debugPrint("HQ TTS failed: $e");
-      await flutterTts.speak(cleanText);
     }
     
     if (mounted) {

@@ -38,6 +38,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"regexp"
 	"strings"
 	"strconv"
 	"sync"
@@ -1827,6 +1828,11 @@ if ($LASTEXITCODE -ne 0) {
 					resultPayload["error"] = "DAG Execution Failed:\n" + err.Error()
 				} else {
 					resultPayload["output"] = stripMarkdownForTTS(output)
+					
+					artifactRe := regexp.MustCompile(`(?i)([A-Z]:\\[^\s*|<>"]+\.(?:pdf|png|docx|pptx|html))`)
+					if match := artifactRe.FindStringSubmatch(output); len(match) > 1 {
+						resultPayload["artifact_path"] = match[1]
+					}
 				}
 
 				webhookPayload, _ := json.Marshal(resultPayload)
@@ -1990,6 +1996,12 @@ if ($LASTEXITCODE -ne 0) {
 				resultPayload["error"] = "Command failed:\n" + err.Error()
 			} else {
 				resultPayload["output"] = stripMarkdownForTTS(output)
+				
+				// T1.3 / Gap 3: Extract artifact_path if a document was created
+				artifactRe := regexp.MustCompile(`(?i)([A-Z]:\\[^\s*|<>"]+\.(?:pdf|png|docx|pptx|html))`)
+				if match := artifactRe.FindStringSubmatch(output); len(match) > 1 {
+					resultPayload["artifact_path"] = match[1]
+				}
 			}
 
 			payloadBytes, _ := json.Marshal(resultPayload)
@@ -3157,7 +3169,10 @@ func requireMobileApproval(command, summary string) bool {
 		"summary": summary,
 	})
 	
-	http.Post(backendURL, "application/json", bytes.NewBuffer(payload))
+	go func() {
+		client := &http.Client{Timeout: 10 * time.Second}
+		client.Post(backendURL, "application/json", bytes.NewBuffer(payload))
+	}()
 	
 	select {
 	case approved := <-ch:
@@ -3445,6 +3460,15 @@ case "read_file":
 		data, err := os.ReadFile(pbPath)
 		if err != nil {
 			return "error reading playbook: " + err.Error()
+		}
+		
+		// Strip UTF-8 BOM if present
+		if len(data) >= 3 && data[0] == 0xef && data[1] == 0xbb && data[2] == 0xbf {
+			data = data[3:]
+		}
+		// Strip UTF-16 LE BOM if present (and gracefully fail if it's actually UTF-16, but we'll try)
+		if len(data) >= 2 && data[0] == 0xff && data[1] == 0xfe {
+			return "error: Playbook is UTF-16 encoded. Please save it as UTF-8."
 		}
 		
 		var playbook struct {

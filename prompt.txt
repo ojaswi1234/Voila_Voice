@@ -1,0 +1,204 @@
+<USER_REQUEST>
+follow this prompt & make changes in "feature/tui-dashboard" branch don't touch main branch -> # Voila Voice — Combined Pass: Diagnose & Improve Existing + Add Tier-1 Features
+
+## Role
+You are working on the Voila Voice repo end-to-end. In **one coherent pass**:
+
+1. **Diagnose and improve** what already exists (do not remove it).
+2. **Add Tier-1 features** that unlock real productivity.
+3. Keep the project **weight-bounded**: reuse Playwright, FCM, Flutter, Go agent; no new mandatory servers (no Redis/Docker platform), no heavy on-device ML in the APK, no paid PDF APIs.
+
+**Additive only:** never delete tools, UI modes, or fallbacks (FPDF path, LaTeX option, WeasyPrint/Playwright paths, browser CDP, Graphify, artifacts, security phrase, circuit/decoy hooks, Agent/Shell modes). Prefer extend + fallback over rewrite.
+
+---
+
+## Part 0 — Branch truth & unify (mandatory first)
+
+1. Inspect `main`, `feature/tui-dashboard`, and any other remotes.
+2. **Unify into one working tree:**
+   - From **main:** solid CDP `browser_tools.py` (no about:blank, no placeholder), browser prompt patches.
+   - From **feature/tui-dashboard:** PDF/Mermaid/`diagram_render.py`, improved `document_tools`, desktop dashboard, token/rate UI, expanded agent tools/prompts where real.
+3. Conflict rule = **union**: keep real implementations; never keep “Initial plan” stubs over working code.
+4. All later work lands on this unified tree (ready to merge to `main`).
+
+---
+
+## Part 1 — Diagnose & improve EXISTING systems
+
+### 1.1 Browser automation
+- Keep CDP-only Edge path; refuse `about:blank`; structured JSON results.
+- Ensure `executeTool` resolves `browser_tools.py` reliably (binary dir + sensible fallbacks).
+- No regression on goto/click/type/tabs after merge.
+
+### 1.2 PDF / document pipeline (known failures)
+Observed:
+- Blueprint PDFs can show flowcharts (good) but: mojibake (`â€"`), raw `**markdown**`, heading without figure, weak theme blend.
+- Resource-style audits can be **title-only / blank pages** while still “succeeding.”
+
+Improve **in place**:
+1. **Document quality gate (Tier-1, also fixes existing)**  
+   Before success on `create_pdf`: if negligible body text and no tables/images when content was expected → return **explicit error** to the agent with retry instructions (add summary, tables, diagrams). Never celebrate empty PDFs.
+2. **UTF-8 end-to-end** on the HTML/PDF path actually used (charset, normalize in `normalize_ir` / sanitize).
+3. **Minimal Markdown → HTML** for prose (`**bold**`, lists) before paint.
+4. **Diagram path** (keep pre-render; do not rely on WeasyPrint running Mermaid JS):
+   - Reuse/enhance `diagram_render.py` + Playwright → PNG (`htmlLabels: false`).
+   - IR `type: "diagram"` + `layout.html` diagram card + `max-width: 100%`.
+   - Keep heading + figure together when CSS allows.
+5. **Engine policy (additive):**  
+   - Themed + diagram docs → existing HTML → Playwright and/or WeasyPrint with correct `base_url`.  
+   - Simple text → existing FPDF (or current plain path) remains available.  
+   - Do **not** delete FPDF or LaTeX option.
+6. Update `DOCUMENT_PIPELINE.md` to match **code reality** only (short).
+
+### 1.3 Agent prompts & tool schemas (`main.go`)
+- Align schemas with real tool parameters (no deprecated fields that cause silent loops).
+- Blueprints → emit mermaid **diagram** sections, not ASCII-only.
+- Audits → gather data then fill tables; never title-only PDFs.
+- Preserve `.aiignore`/context filtering so scans don’t blow context.
+- Keep all existing tool names working.
+
+### 1.4 Desktop UI
+- Keep floating widget + dashboard toggle + token/rate tracker if present; fix only breakages from merge.
+- Do not rip out TUI/Graphify coordinates or dirty-state tracking.
+
+### 1.5 Mobile existing surfaces
+- Do not break Agent/Shell modes, session token flow, artifacts page, STT, connection flow.
+- Improve only by **wiring new Tier-1 hooks** into these surfaces (below).
+
+---
+
+## Part 2 — ADD Tier-1 features (all of them, still lean)
+
+### T1.1 Background jobs + completion push
+**Problem:** Long browser/doc/terminal work forces the user to watch chat.
+
+**Add (lightweight):**
+- Local agent: simple **in-process job registry** (map/id + status + result path + summary). No Redis.
+- Long-running tool sequences can be marked as a job; status: `queued | running | done | failed | cancelled`.
+- On **done/failed**: push via **existing FCM/local notification path** already used for security alerts:
+  - payload: `type: task_complete | task_failed`, title, short summary, artifact path if any, job id.
+- Mobile: handle notification open → jump to chat/artifacts for that result if already supported; else show notification + message in chat stream.
+- Optional: one agent/chat message “Job N finished” so history stays coherent.
+
+**Weight bound:** memory/disk JSON only; jobs don’t survive complex distributed locking in v1.
+
+### T1.2 Playbooks
+**Problem:** Repeat workflows require re-prompting every time.
+
+**Add (minimal):**
+- On-disk playbooks: e.g. `local-agent/playbooks/*.json`  
+  `{ "id", "name", "steps": [ { "type": "agent_prompt" | "tool", ... } ] }`
+- Tool or command: `list_playbooks`, `run_playbook` (add tools; don’t remove others).
+- Mobile: simple entry to run by name/id (button or command like `/play morning` / picker if low-cost in existing UI).
+- Steps run sequentially through **existing** agent/tool loop; on failure, stop and report (no heavy workflow engine).
+- Seed 1–2 example playbooks (e.g. “status report”, “quick system summary”) that use existing tools only.
+
+### T1.3 Natural summary TTS (mobile only, summaries only)
+**Problem:** Current `flutter_tts` sounds robotic for long reads.
+
+**Add (weight-bounded):**
+- Prefer **edge_tts** (or equivalent light package) for **task summaries / completion summaries only**.
+- Fallback: existing `flutter_tts` if offline or edge fails.
+- Do **not** speak every log line or full tool dump.
+- Do **not** bundle large offline models (no Piper/Kokoro requirement in this pass).
+- Reuse existing `_speak` call sites: route **summary** text through new helper; leave alerts on system TTS if simpler.
+
+### T1.4 Document quality gates
+(Covered in 1.2 — must be implemented as a hard gate, not a suggestion.)
+
+- Min substance checks: body length and/or presence of table/image when IR/prompt implies report/audit/blueprint.
+- Clear error string for the LLM to retry with structure.
+- Optional: score hook already in `doc_quality.py` — call or mirror lightly; don’t build a new QA product.
+
+### T1.5 Mobile approve for dangerous actions
+**Problem:** Full autonomy is scary without a confirm step.
+
+**Add:**
+- Local agent maintains a small set of **dangerous patterns** (configurable list): e.g. recursive delete, `git push`, format, mass uninstall, send-mail, force push — match on tool name + command string heuristics.
+- When matched: **do not execute yet**; emit event to mobile: `type: approval_required`, action summary, job/command id, timeout (e.g. 45–60s).
+- Mobile: modal/dialog **Allow / Deny** (reuse notification + in-app banner if modal is heavy).
+- On Allow → agent executes; on Deny/timeout → abort and report.
+- Safe default: if mobile unreachable, **deny** (fail closed) or policy flag — document choice; prefer fail closed for v1.
+- Do not block harmless `run_terminal` (dir listing, echo, git status).
+
+---
+
+## Part 3 — Explicitly out of scope (this pass)
+
+Do **not** implement now (defer):
+- Full multi-device hourglass product
+- OS UI automation skill packs beyond current browser tools
+- Honeypot/mock-terminal product UI
+- Scheduled cron product (“9am jobs”) as a full system
+- Memory search UI over all history
+- Full MCP Office template gallery productization
+- Live job % strip polish beyond basic status if time-boxed (basic job status message is enough)
+- Quiet hours, artifacts home redesign, token budget full mobile mirror (optional tiny read-only later)
+
+If time remains after Tier-1, prefer polishing PDF encoding/diagrams over starting Tier-2/3.
+
+---
+
+## Part 4 — Implementation order
+
+1. Unify branches (browser + PDF/dashboard).
+2. PDF quality gate + UTF-8 + markdown + diagram layout harden.
+3. Prompt/schema alignment.
+4. Background jobs + FCM completion.
+5. Approval gate for dangerous commands.
+6. Playbooks (disk + tools + minimal mobile trigger).
+7. Summary TTS (edge_tts + flutter_tts fallback).
+8. Minimal tests + doc truth update.
+9. Stop; list deferred items.
+
+---
+
+## Part 5 — Tests & verification
+
+**Existing / regression**
+- Browser: goto real URL returns ok JSON (not about:blank).
+- Text PDF still works via existing plain path.
+- Diagram: mermaid sample → PNG and/or PDF embeds image.
+- Empty IR/title-only → **error**, not success blank PDF.
+
+**New**
+- Job completes → notification/event payload shaped as designed (unit or integration).
+- Dangerous command → pending approval, no side effect until allow.
+- Playbook list/run executes at least one step via existing tools.
+- TTS helper: summary path callable; fallback doesn’t crash UI.
+
+Manual samples:
+- Blueprint with mermaid architecture diagram.
+- Resource audit with real tables (or explicit error if data missing).
+- Long task → completion notification.
+- `rm -rf` style command → phone approve/deny.
+
+---
+
+## Part 6 — Acceptance checklist
+
+- [ ] No existing tools/modes removed
+- [ ] main browser CDP + feature PDF/diagram capabilities both present
+- [ ] Empty/blank audit PDFs fail the tool clearly
+- [ ] Mojibake and raw `**` reduced on themed HTML/PDF path
+- [ ] Jobs + FCM/local completion signal works for at least one long path
+- [ ] Playbooks: list + run at least one example
+- [ ] Summary TTS uses natural path when online; falls back safely
+- [ ] Dangerous actions require mobile approval (fail closed if no response)
+- [ ] DOCUMENT_PIPELINE.md matches code
+- [ ] Short final summary: files changed, how to try each Tier-1 feature, deferred list
+
+---
+
+## Part 7 — Coding style for this pass
+
+- Small modules; feature flags or config toggles where behavior changes (e.g. `REQUIRE_MOBILE_APPROVAL=true`).
+- Fail soft on optional enhancements (TTS/edge down → system TTS; playbook missing → clear error).
+- Fail hard on security/empty-doc gates where specified.
+- No “Initial plan” empty commits; ship working code.
+
+Implement Parts 0–2 fully within these bounds. Diagnose and harden what exists; add all Tier-1 features without stripping current capability or exploding project weight.
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-09-19T10:55:35+05:30.
+</ADDITIONAL_METADATA>
