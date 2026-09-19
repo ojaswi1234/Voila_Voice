@@ -88,11 +88,11 @@ root.attributes('-topmost', True)
 root.attributes('-transparentcolor', 'magenta')
 root.config(bg='magenta')
 
-x = root.winfo_screenwidth() - 320
-y = root.winfo_screenheight() - 120
+x = (root.winfo_screenwidth() - 240) // 2
+y = 20
 root.geometry(f"+{x}+{y}")
 
-canvas = tk.Canvas(root, width=300, height=90, bg='magenta', highlightthickness=0)
+canvas = tk.Canvas(root, width=240, height=65, bg='magenta', highlightthickness=0)
 canvas.pack()
 
 def create_round_rect(canvas, x1, y1, x2, y2, r, **kwargs):
@@ -109,67 +109,44 @@ def round_rect_points(x1, y1, x2, y2, r):
 def set_round_rect(item_id, x1, y1, x2, y2, r=20):
     canvas.coords(item_id, *round_rect_points(x1, y1, x2, y2, r))
 
-bg_idle = '#1e1e24'
-border_idle = '#3a3a40'
-pill = create_round_rect(canvas, 10, 10, 290, 80, r=20, fill=bg_idle, outline=border_idle, width=2)
+bg_idle = '#18181b' # Obsidian background
+border_idle = '#27272a'
+pill = create_round_rect(canvas, 5, 5, 235, 60, r=27, fill=bg_idle, outline=border_idle, width=2)
 
-brown = '#b87353'
-brown_dark = '#8b5a2b'
-black = '#000000'
-sx, sy = 15, 10
+cx, cy = 35, 32 # Core center
 
-# Thought Cloud Base (Perfected layout: cx=150)
-cloud_color = '#2a2a32'
-c_dot1 = canvas.create_oval(90, 40, 95, 45, fill=cloud_color, outline='')
-c_dot2 = canvas.create_oval(110, 30, 120, 40, fill=cloud_color, outline='')
-c_dot3 = canvas.create_oval(130, 20, 145, 35, fill=cloud_color, outline='')
+# Obsidian Core Background
+core_bg = canvas.create_oval(cx-20, cy-20, cx+20, cy+20, fill='#27272a', outline='')
 
-cx, cy = 150, 15
-c_oval1 = canvas.create_oval(cx, cy+10, cx+40, cy+50, fill=cloud_color, outline='')
-c_oval2 = canvas.create_oval(cx+20, cy, cx+80, cy+60, fill=cloud_color, outline='')
-c_oval3 = canvas.create_oval(cx+60, cy+10, cx+110, cy+50, fill=cloud_color, outline='')
-c_oval4 = canvas.create_oval(cx+40, cy-5, cx+100, cy+45, fill=cloud_color, outline='')
-cloud_parts = (c_dot1, c_dot2, c_dot3, c_oval1, c_oval2, c_oval3, c_oval4)
+# Obsidian Core Arcs (used for spinning animation)
+core_arc1 = canvas.create_arc(cx-20, cy-20, cx+20, cy+20, start=0, extent=100, outline='#06b6d4', width=3, style=tk.ARC)
+core_arc2 = canvas.create_arc(cx-15, cy-15, cx+15, cy+15, start=120, extent=140, outline='#3b82f6', width=2, style=tk.ARC)
+core_arc3 = canvas.create_arc(cx-25, cy-25, cx+25, cy+25, start=240, extent=80, outline='#0ea5e9', width=4, style=tk.ARC)
 
-# Face Base (x ends around 87)
-body = canvas.create_rectangle(sx+15, sy+15, sx+65, sy+55, fill=brown, outline='')
-arm_l = canvas.create_rectangle(sx+8, sy+30, sx+15, sy+45, fill=brown, outline='')
-arm_r = canvas.create_rectangle(sx+65, sy+30, sx+72, sy+45, fill=brown, outline='')
-leg1 = canvas.create_rectangle(sx+15, sy+55, sx+23, sy+70, fill=brown, outline='')
-leg2 = canvas.create_rectangle(sx+28, sy+55, sx+36, sy+70, fill=brown, outline='')
-leg3 = canvas.create_rectangle(sx+44, sy+55, sx+52, sy+70, fill=brown, outline='')
-leg4 = canvas.create_rectangle(sx+57, sy+55, sx+65, sy+70, fill=brown, outline='')
+# Special State Icons (hidden by default)
+term_prompt = canvas.create_text(cx, cy, text=">_", fill="#10b981", font=("Consolas", 11, "bold"), state="hidden")
+file_icon = canvas.create_polygon(cx-8, cy-10, cx+4, cy-10, cx+10, cy-4, cx+10, cy+12, cx-8, cy+12, fill="", outline="#6366f1", width=2, state="hidden")
+radar_arc = canvas.create_arc(cx-22, cy-22, cx+22, cy+22, start=0, extent=60, outline="#3b82f6", fill="", width=3, style=tk.ARC, state="hidden")
+browser_box = canvas.create_rectangle(cx-12, cy-10, cx+12, cy+10, fill="", outline="#f97316", width=2, state="hidden")
+browser_line = canvas.create_line(cx-12, cy-4, cx+12, cy-4, fill="#f97316", width=2, state="hidden")
 
-# Base eyes now ovals instead of lines
-eye_l = canvas.create_oval(sx+22, sy+28, sx+32, sy+38, fill=black, outline='')
-eye_r = canvas.create_oval(sx+48, sy+28, sx+58, sy+38, fill=black, outline='')
+# Keep variables compatible with animation loop
+face_parts = (core_bg, core_arc1, core_arc2, core_arc3, term_prompt, file_icon, radar_arc, browser_box, browser_line)
+cloud_parts = () # Empty, we don't use a thought cloud anymore
 
-# Shiny contrast reflections
-eye_l_shine = canvas.create_oval(sx+27, sy+30, sx+30, sy+33, fill='white', outline='')
-eye_r_shine = canvas.create_oval(sx+53, sy+30, sx+56, sy+33, fill='white', outline='')
+# Typography Layout
+title_text = canvas.create_text(70, 24, text="Voila AI", fill="#f3f4f6", font=("Segoe UI", 12, "bold"), anchor="w")
 
-# Eyebrows - curved lines above eyes
-eyebrow_l = canvas.create_line(sx+16, sy+20, sx+36, sy+26, width=8, fill=brown_dark, capstyle=tk.PROJECTING)
-eyebrow_r = canvas.create_line(sx+64, sy+20, sx+44, sy+26, width=8, fill=brown_dark, capstyle=tk.PROJECTING)
+# Mode Badge
+mode_badge_bg = create_round_rect(canvas, 145, 16, 195, 32, r=6, fill='#27272a', outline='', width=0)
+mode_badge_text = canvas.create_text(170, 24, text="LOCAL", fill="#9ca3af", font=("Segoe UI", 8, "bold"), anchor="center")
 
-# Snoring / Sleep visual elements
-snot_bubble = canvas.create_oval(0, 0, 0, 0, fill='', outline='#aaddff', width=1.5, state='hidden')
-snot_shine = canvas.create_oval(0, 0, 0, 0, fill='#ffffff', outline='', state='hidden')
-zzz1 = canvas.create_text(0, 0, text="Z", fill='#aaddff', font=("Segoe UI", 12, "bold"), state='hidden')
-zzz2 = canvas.create_text(0, 0, text="z", fill='#aaddff', font=("Segoe UI", 10, "bold"), state='hidden')
-zzz3 = canvas.create_text(0, 0, text="z", fill='#aaddff', font=("Segoe UI", 8, "bold"), state='hidden')
+# Status Text (Sleek text below title)
+status_text = canvas.create_text(70, 44, text="Standing by...", fill="#9ca3af", font=("Segoe UI", 9), anchor="w", width=130)
 
-face_parts = (body, arm_l, arm_r, leg1, leg2, leg3, leg4, eye_l, eye_r, eye_l_shine, eye_r_shine, eyebrow_l, eyebrow_r, snot_bubble, snot_shine, zzz1, zzz2, zzz3)
-
-# Perfectly positioned Title (x=90)
-title_text = canvas.create_text(90, 45, text="Voila", fill="#ffffff", font=("Segoe UI", 12, "bold"), anchor="w")
-
-# Perfectly centered status in the cloud (x=150+55=205)
-status_text = canvas.create_text(cx+55, cy+25, text="Standing by...", fill="#888888", font=("Segoe UI", 8, "italic"), anchor="center", width=150)
-
-# Close Button - smaller perfect circle
-close_btn_bg = canvas.create_oval(260, 35, 280, 55, fill="#EF4444", outline="#DC2626", width=2, state='normal')
-close_btn = canvas.create_text(270, 45, text="✖", fill="#FFFFFF", font=("Segoe UI", 12, "bold"), anchor="center")
+# Minimalist Close Button
+close_btn_bg = canvas.create_oval(205, 22, 225, 42, fill="", outline="", width=0, state='normal')
+close_btn = canvas.create_text(215, 32, text="✖", fill="#6b7280", font=("Segoe UI", 10, "bold"), anchor="center")
 
 # ─── LOCAL/CLOUD mode toggle  ────────────────────────────────────────────
 MODES = ["LOCAL", "GROQ", "OLLAMA"]
@@ -248,13 +225,14 @@ def on_close(e=None):
         root.destroy()
         sys.exit(0)
 
-# Add hover effect for dashboard toggle
+is_hovering_pill = False
 def on_enter_pill(e): 
-    if not dashboard_active and not dashboard_transition_in_progress:
-        canvas.itemconfig(pill, outline='#6666ff')
+    global is_hovering_pill
+    is_hovering_pill = True
+    
 def on_leave_pill(e): 
-    if not dashboard_active and not dashboard_transition_in_progress:
-        canvas.itemconfig(pill, outline='#3a3a40')
+    global is_hovering_pill
+    is_hovering_pill = False
 
 def on_enter_close(e):
     if dashboard_active:
@@ -323,6 +301,12 @@ ai_state = "IDLE"
 mobile_clients = 0
 backend_status = 'Active'
 anim_frame = 0
+current_rendered_state = "IDLE"
+transition_scale = 1.0
+transitioning = False
+typewriter_idx = 0
+typewriter_base = ""
+typewriter_target = ""
 glow_timer = None
 
 # Resource alert state
@@ -338,10 +322,10 @@ alert_state = {
 }
 
 # Dynamic sizing
-current_width = 300
-current_height = 90
-target_width = 300
-target_height = 90
+current_width = 240
+current_height = 65
+target_width = 240
+target_height = 65
 transition_progress = 0.0
 transition_in_progress = False
 
@@ -351,98 +335,27 @@ def update_expression():
     global ai_state, alert_state
     if dashboard_active or dashboard_transition_in_progress:
         return
-    if mobile_clients == 0:
-        # ASLEEP / OFFLINE (but wake up for resource alerts)
-        canvas.itemconfig(pill, outline='#3a3a40', fill='#1e1e24')
         
-        # Show cloud if resource alert is active
-        if alert_state["active"]:
-            for cp in cloud_parts: canvas.itemconfig(cp, state='normal', fill='#ffaa00')  # Orange for alert
-            alert_msg = alert_state["message"]
-            apps = alert_state["apps"]
-            if apps:
-                alert_msg += "\n• " + "\n• ".join(apps)
-            canvas.itemconfig(status_text, state='normal', text=alert_msg, fill='#ff5555', font=("Segoe UI", 9, "bold"))
-            canvas.itemconfig(pill, outline='#ff5555', fill='#2a1a1a')
-            
-            # Update text width for alert
-            if current_width != target_width:
-                canvas.itemconfig(status_text, width=max(150, target_width - 120))
-            
-            # Eyes alert (red, wide open)
-            canvas.coords(eye_l, sx+22, sy+28, sx+32, sy+38)
-            canvas.coords(eye_r, sx+48, sy+28, sx+58, sy+38)
-            canvas.itemconfig(eye_l, fill='#ff5555')
-            canvas.itemconfig(eye_r, fill='#ff5555')
-            canvas.itemconfig(eye_l_shine, state='normal')
-            canvas.itemconfig(eye_r_shine, state='normal')
-        else:
-            for cp in cloud_parts: canvas.itemconfig(cp, state='hidden')
-            canvas.itemconfig(status_text, state='hidden')
-            
-            # Eyes closed (flatten the ovals into lines)
-            canvas.coords(eye_l, sx+22, sy+34, sx+32, sy+36)
-            canvas.coords(eye_r, sx+48, sy+34, sx+58, sy+36)
-            canvas.itemconfig(eye_l, fill=black)
-            canvas.itemconfig(eye_r, fill=black)
-            
-            # hide shine
-            canvas.itemconfig(eye_l_shine, state='hidden')
-            canvas.itemconfig(eye_r_shine, state='hidden')
-            
-            # Hide alert elements
-            canvas.itemconfig(snot_bubble, state='hidden')
-            canvas.itemconfig(snot_shine, state='hidden')
-            canvas.itemconfig(zzz1, state='hidden')
-            canvas.itemconfig(zzz2, state='hidden')
-            canvas.itemconfig(zzz3, state='hidden')
-
+    if alert_state["active"]:
+        alert_msg = alert_state["message"]
+        apps = alert_state["apps"]
+        if apps:
+            alert_msg += "\n• " + "\n• ".join(apps)
+        canvas.itemconfig(status_text, state='normal', text=alert_msg, fill='#ef4444', font=("Segoe UI", 9, "bold"))
+        canvas.itemconfig(pill, outline='#ef4444', fill='#450a0a')
+        
+        if current_width != target_width:
+            canvas.itemconfig(status_text, width=max(150, target_width - 120))
     else:
-        # NORMAL / IDLE / WORKING
-        canvas.itemconfig(pill, outline='#3a3a40', fill='#1e1e24')
-        for cp in cloud_parts: canvas.itemconfig(cp, state='normal', fill='#2a2a32')
-        
-        # Show alert in cloud if active
-        if alert_state["active"]:
-            alert_msg = alert_state["message"]
-            apps = alert_state["apps"]
-            if apps:
-                alert_msg += "\n• " + "\n• ".join(apps)
-            canvas.itemconfig(status_text, state='normal', text=alert_msg, fill='#ff5555', font=("Segoe UI", 9, "bold"))
-            canvas.itemconfig(pill, outline='#ff5555', fill='#2a1a1a')
-            
-            # Update text width for alert
-            if current_width != target_width:
-                canvas.itemconfig(status_text, width=max(150, target_width - 120))
-        else:
-            canvas.itemconfig(status_text, state='normal', text="Standing by...", fill='#888888', font=("Segoe UI", 8, "italic"))
-            canvas.itemconfig(pill, outline='#3a3a40', fill='#1e1e24')
-        
-        # Eyes normal
-        canvas.coords(eye_l, sx+22, sy+28, sx+32, sy+38)
-        canvas.coords(eye_r, sx+48, sy+28, sx+58, sy+38)
-        canvas.itemconfig(eye_l, fill=black)
-        canvas.itemconfig(eye_r, fill=black)
-        
-        # show shine
-        canvas.itemconfig(eye_l_shine, state='normal')
-        canvas.itemconfig(eye_r_shine, state='normal')
-        canvas.coords(eye_l_shine, sx+27, sy+30, sx+30, sy+33)
-        canvas.coords(eye_r_shine, sx+53, sy+30, sx+56, sy+33)
-        
-        # Hide sleep elements
-        canvas.itemconfig(snot_bubble, state='hidden')
-        canvas.itemconfig(snot_shine, state='hidden')
-        canvas.itemconfig(zzz1, state='hidden')
-        canvas.itemconfig(zzz2, state='hidden')
-        canvas.itemconfig(zzz3, state='hidden')
+        # Reset is handled by animation_loop automatically
+        pass
 
 # Dashboard state (separate from alert resizing to avoid conflicts)
 dashboard_active = False
 dashboard_transition_in_progress = False
 dashboard_transition_progress = 0.0
-original_pos = (root.winfo_screenwidth() - 320, root.winfo_screenheight() - 120)  # Store original position
-original_size = (300, 90)  # Store original size
+original_pos = ((root.winfo_screenwidth() - 240) // 2, 20)  # Store original position
+original_size = (240, 65)  # Store original size
 usage_stats = {
     "commands_executed": 0,
     "commands_successful": 0,
@@ -463,12 +376,11 @@ def hide_mini_popup_elements():
     """Hide mini widget canvas while dashboard is shown."""
     canvas.pack_forget()
 
-def restore_mini_popup_elements(w=300, h=90):
+def restore_mini_popup_elements(w=240, h=65):
     """Fully restore the compact widget layout and styling."""
-    global sx, sy, cx, cy, heatmap_cache, current_width, current_height
+    global cx, cy, heatmap_cache, current_width, current_height
 
-    sx, sy = 15, 10
-    cx, cy = 150, 15
+    cx, cy = 35, 32
     heatmap_cache = None
     current_width = w
     current_height = h
@@ -476,41 +388,33 @@ def restore_mini_popup_elements(w=300, h=90):
     canvas.config(bg='magenta', width=w, height=h)
     canvas.pack(fill='both', expand=True)
 
-    set_round_rect(pill, 10, 10, w - 10, h - 10, 20)
+    set_round_rect(pill, 5, 5, w - 5, h - 5, 27)
     canvas.itemconfig(pill, state='normal', fill=bg_idle, outline=border_idle, width=2)
 
-    canvas.coords(body, sx + 15, sy + 15, sx + 65, sy + 55)
-    canvas.coords(arm_l, sx + 8, sy + 30, sx + 15, sy + 45)
-    canvas.coords(arm_r, sx + 65, sy + 30, sx + 72, sy + 45)
-    canvas.coords(leg1, sx + 15, sy + 55, sx + 23, sy + 70)
-    canvas.coords(leg2, sx + 28, sy + 55, sx + 36, sy + 70)
-    canvas.coords(leg3, sx + 44, sy + 55, sx + 52, sy + 70)
-    canvas.coords(leg4, sx + 57, sy + 55, sx + 65, sy + 70)
-    canvas.coords(eye_l, sx + 22, sy + 28, sx + 32, sy + 38)
-    canvas.coords(eye_r, sx + 48, sy + 28, sx + 58, sy + 38)
-    canvas.coords(eye_l_shine, sx + 27, sy + 30, sx + 30, sy + 33)
-    canvas.coords(eye_r_shine, sx + 53, sy + 30, sx + 56, sy + 33)
-    canvas.coords(eyebrow_l, sx+16, sy+20, sx+36, sy+26)
-    canvas.coords(eyebrow_r, sx+64, sy+20, sx+44, sy+26)
+    canvas.coords(core_bg, cx-20, cy-20, cx+20, cy+20)
+    canvas.coords(core_arc1, cx-20, cy-20, cx+20, cy+20)
+    canvas.coords(core_arc2, cx-15, cy-15, cx+15, cy+15)
+    canvas.coords(core_arc3, cx-25, cy-25, cx+25, cy+25)
+    
+    canvas.coords(term_prompt, cx, cy)
+    canvas.coords(file_icon, cx-8, cy-10, cx+4, cy-10, cx+10, cy-4, cx+10, cy+12, cx-8, cy+12)
+    canvas.coords(radar_arc, cx-22, cy-22, cx+22, cy+22)
+    canvas.coords(browser_box, cx-12, cy-10, cx+12, cy+10)
+    canvas.coords(browser_line, cx-12, cy-4, cx+12, cy-4)
 
-    canvas.coords(c_dot1, 90, 40, 95, 45)
-    canvas.coords(c_dot2, 110, 30, 120, 40)
-    canvas.coords(c_dot3, 130, 20, 145, 35)
-    canvas.coords(c_oval1, cx, cy + 10, cx + 40, cy + 50)
-    canvas.coords(c_oval2, cx + 20, cy, cx + 80, cy + 60)
-    canvas.coords(c_oval3, cx + 60, cy + 10, cx + 110, cy + 50)
-    canvas.coords(c_oval4, cx + 40, cy - 5, cx + 100, cy + 45)
+    canvas.coords(title_text, 70, 24)
+    canvas.itemconfig(title_text, state='normal', fill="#f3f4f6", font=("Segoe UI", 12, "bold"))
 
-    canvas.coords(title_text, 90, 45)
-    canvas.itemconfig(title_text, state='normal', fill="#ffffff", font=("Segoe UI", 12, "bold"))
+    set_round_rect(mode_badge_bg, 145, 16, 195, 32, 6)
+    canvas.coords(mode_badge_text, 170, 24)
+    
+    canvas.coords(status_text, 70, 44)
+    canvas.itemconfig(status_text, state='normal', width=130, fill="#9ca3af", font=("Segoe UI", 9))
 
-    canvas.coords(status_text, cx + 55, cy + 25)
-    canvas.itemconfig(status_text, state='normal', width=150)
-
-    canvas.coords(close_btn_bg, 245, 25, 295, 65)
-    canvas.itemconfig(close_btn_bg, state='hidden', fill="", outline="")
-    canvas.coords(close_btn, w - 25, h // 2)
-    canvas.itemconfig(close_btn, state='normal', fill="#888888", font=("Segoe UI", 20, "bold"))
+    canvas.coords(close_btn_bg, 205, 22, 225, 42)
+    canvas.itemconfig(close_btn_bg, state='normal', fill="", outline="")
+    canvas.coords(close_btn, 215, 32)
+    canvas.itemconfig(close_btn, state='normal', fill="#6b7280", font=("Segoe UI", 10, "bold"))
     
     # Ensure they are clickable above the pill
     canvas.tag_raise(close_btn_bg)
@@ -1435,34 +1339,102 @@ def _draw_dashboard_section(dc, w, h):
             idx = min(4, int(intensity * 5))
             dc.create_rectangle(day * cell_w, heatmap_y + 18 + hour * cell_h, day * cell_w + cell_w - 3, heatmap_y + 18 + hour * cell_h + cell_h - 2, fill=colors[idx], outline='')
 
+dash_transition_progress = 0.0
+is_dash_transitioning = False
+dash_opening = False
+
 def open_dashboard():
-    global dashboard_active, heatmap_cache, current_width, current_height
+    global dashboard_active, heatmap_cache, is_dash_transitioning, dash_opening, dash_transition_progress
+    if is_dash_transitioning: return
     build_dashboard_ui()
     heatmap_cache = None
     dashboard_active = True
-    hide_mini_popup_elements()
-
-    screen_w = root.winfo_screenwidth()
-    screen_h = root.winfo_screenheight()
-    x = (screen_w - DASHBOARD_W) // 2
-    y = (screen_h - DASHBOARD_H) // 2
-    root.geometry(f'{DASHBOARD_W}x{DASHBOARD_H}+{x}+{y}')
-    current_width = DASHBOARD_W
-    current_height = DASHBOARD_H
-
-    dashboard_frame.pack(fill='both', expand=True)
-    root.update_idletasks()
-    refresh_dashboard_content()
+    
+    # Hide all canvas items EXCEPT the background pill
+    for item in face_parts + (status_text, title_text, mode_badge_bg, mode_badge_text, close_btn_bg, close_btn):
+        try: canvas.itemconfig(item, state='hidden')
+        except: pass
+        
+    # We do NOT pack dashboard_frame yet! We let the empty canvas animate to prevent layout lag.
+    is_dash_transitioning = True
+    dash_opening = True
+    dash_transition_progress = 0.0
+    animate_dashboard_size()
 
 def close_dashboard():
-    global dashboard_active, heatmap_cache, current_width, current_height
+    global dashboard_active, heatmap_cache, is_dash_transitioning, dash_opening, dash_transition_progress
+    if is_dash_transitioning: return
     dashboard_active = False
     heatmap_cache = None
+    
+    # Instantly hide heavy UI to prevent lag, restore empty canvas for the animation
     dashboard_frame.pack_forget()
-    root.geometry(f'300x90+{original_pos[0]}+{original_pos[1]}')
-    current_width = 300
-    current_height = 90
-    restore_mini_popup_elements(300, 90)
+    canvas.pack(fill='both', expand=True)
+    
+    is_dash_transitioning = True
+    dash_opening = False
+    dash_transition_progress = 1.0
+    animate_dashboard_size()
+
+def animate_dashboard_size():
+    global is_dash_transitioning, dash_transition_progress, current_width, current_height
+    if not is_dash_transitioning: return
+        
+    speed = 0.08 # ~12 frames
+    if dash_opening:
+        dash_transition_progress += speed
+        if dash_transition_progress >= 1.0:
+            dash_transition_progress = 1.0
+            is_dash_transitioning = False
+    else:
+        dash_transition_progress -= speed
+        if dash_transition_progress <= 0.0:
+            dash_transition_progress = 0.0
+            is_dash_transitioning = False
+            
+    # Cubic ease-out
+    t = dash_transition_progress
+    ease = 1 - (1 - t) * (1 - t) * (1 - t)
+    
+    screen_w = root.winfo_screenwidth()
+    screen_h = root.winfo_screenheight()
+    target_x = (screen_w - DASHBOARD_W) // 2
+    target_y = (screen_h - DASHBOARD_H) // 2
+    
+    start_x, start_y = original_pos
+    start_w, start_h = 240, 65
+    
+    w = int(start_w + (DASHBOARD_W - start_w) * ease)
+    h = int(start_h + (DASHBOARD_H - start_h) * ease)
+    x = int(start_x + (target_x - start_x) * ease)
+    y = int(start_y + (target_y - start_y) * ease)
+    
+    root.geometry(f'{w}x{h}+{x}+{y}')
+    current_width = w
+    current_height = h
+    
+    # Hardware-accelerated canvas morph (no layout engine lag!)
+    morph_r = int(27 + (10 - 27) * ease)
+    # Interpolate padding so the pill seamlessly connects with the idle state (padding 5)
+    pad = int(5 + (0 - 5) * ease)
+    set_round_rect(pill, pad, pad, w - pad, h - pad, morph_r)
+    canvas.itemconfig(pill, fill='#0F1115', outline='#27272a') # blend into dashboard color
+    canvas.config(width=w, height=h)
+    
+    # Critical for smooth Tkinter resizing: force the layout engine to paint the canvas 
+    # immediately, synchronizing it with the OS-level root.geometry() window resize!
+    root.update_idletasks()
+    
+    if not is_dash_transitioning:
+        if dash_opening:
+            canvas.pack_forget()
+            dashboard_frame.pack(fill='both', expand=True)
+            refresh_dashboard_content()
+        else:
+            restore_mini_popup_elements(start_w, start_h)
+            
+    if is_dash_transitioning:
+        root.after(16, animate_dashboard_size)
 
 def ensure_heatmap_cache():
     global heatmap_cache
@@ -1489,11 +1461,11 @@ def ensure_heatmap_cache():
     return cache
 
 def toggle_dashboard():
-    """Instant switch between mini popup canvas and dashboard frame."""
+    """Smooth animated switch between mini popup canvas and dashboard frame."""
     global original_pos, original_size
     if not dashboard_active:
         original_pos = (root.winfo_x(), root.winfo_y())
-        original_size = (300, 90)
+        original_size = (240, 65)
         open_dashboard()
     else:
         close_dashboard()
@@ -1533,32 +1505,21 @@ def animate_size_transition():
     canvas.config(width=new_width, height=new_height)
     
     # Reposition elements based on new width
-    new_cx = new_width // 2
     new_close_x = new_width - 25
-    new_cy = new_height // 2 - 10
     
-    # Update cloud position
-    canvas.coords(c_dot1, new_cx-60, new_cy+15, new_cx-55, new_cy+20)
-    canvas.coords(c_dot2, new_cx-40, new_cy+5, new_cx-30, new_cy+15)
-    canvas.coords(c_dot3, new_cx-20, new_cy-5, new_cx-5, new_cy+10)
-    canvas.coords(c_oval1, new_cx, new_cy, new_cx+40, new_cy+40)
-    canvas.coords(c_oval2, new_cx+20, new_cy-10, new_cx+80, new_cy+50)
-    canvas.coords(c_oval3, new_cx+60, new_cy, new_cx+110, new_cy+40)
-    canvas.coords(c_oval4, new_cx+40, new_cy-15, new_cx+100, new_cy+35)
-    
-    # Update status text position
-    canvas.coords(status_text, new_cx+55, new_cy+10)
+    # Update status text width
     canvas.itemconfig(status_text, width=max(150, new_width - 120))
     
     # Update close button position
     canvas.coords(close_btn, new_close_x, 45)
+    canvas.coords(close_btn_bg, new_close_x - 10, 35, new_close_x + 10, 55)
     
-    # Update pill outline to match new width
-    set_round_rect(pill, 10, 10, new_width - 10, new_height - 10, 20)
-    
-    # Update global positions
-    cx = new_cx
-    cy = new_cy
+    # Update pill outline to match new width and morph radius
+    if target_width > 240:
+        new_r = int(27 + (15 - 27) * ease)
+    else:
+        new_r = int(15 + (27 - 15) * ease)
+    set_round_rect(pill, 5, 5, new_width - 5, new_height - 5, new_r)
     
     # Update current values
     current_width = new_width
@@ -1573,341 +1534,205 @@ def animate_size_transition():
         transition_in_progress = False
 
 def animation_loop():
-    global anim_frame, usage_stats
+    global anim_frame, usage_stats, current_rendered_state, transition_scale, transitioning
     anim_frame += 1
-    dots = "." * (anim_frame % 4)
+    dots = "." * ((anim_frame // 10) % 4)
 
     if not dashboard_active and not dashboard_transition_in_progress:
-        # usage_stats are now updated in real-time via STATUS: protocol messages
-        # (STATUS: CMD_DONE:SUCCESS/FAILED, STATUS: LATENCY_MS:N)
-
         if alert_state.get("state_changed"):
             update_expression()
             alert_state["state_changed"] = False
 
+        # State transition morphing logic
+        if current_rendered_state != ai_state and not transitioning:
+            transitioning = True
+            
+        if transitioning:
+            transition_scale -= 0.15
+            if transition_scale <= 0:
+                transition_scale = 0
+                current_rendered_state = ai_state
+                transitioning = False
+        else:
+            if transition_scale < 1.0:
+                transition_scale += 0.15
+                if transition_scale > 1.0:
+                    transition_scale = 1.0
+
         if mobile_clients == 0:
-            # Animate Sleep Mode (but preserve alert text if active)
             if not alert_state["active"]:
-                canvas.itemconfig(status_text, text=f"Offline (Zzz{dots})", fill='#888888')
-                canvas.itemconfig(eyebrow_l, state='hidden')
-                canvas.itemconfig(eyebrow_r, state='hidden')
+                canvas.itemconfig(status_text, text="Offline (Standing by)", fill='#6b7280')
+            canvas.itemconfig(core_bg, fill='#18181b')
+            target_outline = '#6666ff' if is_hovering_pill else '#27272a'
+            canvas.itemconfig(pill, outline=target_outline, fill='#09090b')
+            canvas.itemconfig(core_arc1, state="hidden")
+            canvas.itemconfig(core_arc2, state="hidden")
+            canvas.itemconfig(core_arc3, state="hidden")
+            canvas.itemconfig(term_prompt, state="hidden")
+            canvas.itemconfig(file_icon, state="hidden")
+            canvas.itemconfig(radar_arc, state="hidden")
+            canvas.itemconfig(browser_box, state="hidden")
+            canvas.itemconfig(browser_line, state="hidden")
+            canvas.itemconfig(mode_badge_bg, fill='#1f2937')
+            canvas.itemconfig(mode_badge_text, fill='#4b5563', text=current_mode)
 
-            # Snot Bubble expansion/contraction (only if no alert)
-            if not alert_state["active"]:
-                canvas.itemconfig(snot_bubble, state='normal')
-                canvas.itemconfig(snot_shine, state='normal')
-                bubble_phase = anim_frame % 24
-                if bubble_phase < 20:
-                    # Inflate exponentially (0 to 19): grows slowly then pops out at the end
-                    t = bubble_phase / 19.0
-                    br = 2 + 8 * (t ** 3)
-                else:
-                    # Deflate quickly (20 to 23)
-                    t = (23 - bubble_phase) / 3.0
-                    br = 2 + 8 * t
-                bx, by = sx + 40, sy + 40
-                # Teardrop oval: anchors near the nose at the top, stretches downwards
-                canvas.coords(snot_bubble, bx - br, by, bx + br, by + br * 2.5)
-                # Shine patch in top-right of the bubble
-                canvas.coords(snot_shine, bx + br*0.2, by + br*0.4, bx + br*0.7, by + br*1.0)
-            else:
-                canvas.itemconfig(snot_bubble, state='hidden')
-                canvas.itemconfig(snot_shine, state='hidden')
-
-            # Zzz flying animation (only if no alert)
-            if not alert_state["active"]:
-                canvas.itemconfig(zzz1, state='normal')
-                canvas.itemconfig(zzz2, state='normal')
-                canvas.itemconfig(zzz3, state='normal')
-
-                z_phase = anim_frame % 24
-                zx1, zy1 = bx + 10 + z_phase, by - 10 - z_phase
-                canvas.coords(zzz1, zx1, zy1)
-
-                z_phase2 = (anim_frame + 8) % 24
-                zx2, zy2 = bx + 10 + z_phase2, by - 10 - z_phase2
-                canvas.coords(zzz2, zx2, zy2)
-
-                z_phase3 = (anim_frame + 16) % 24
-                zx3, zy3 = bx + 10 + z_phase3, by - 10 - z_phase3
-                canvas.coords(zzz3, zx3, zy3)
-            else:
-                canvas.itemconfig(zzz1, state='hidden')
-                canvas.itemconfig(zzz2, state='hidden')
-                canvas.itemconfig(zzz3, state='hidden')
-
-        # Working states (only when not sleeping)
-        if mobile_clients > 0 and ai_state != "IDLE":
-            canvas.itemconfig(pill, fill='#22222a')
+        else:
+            canvas.itemconfig(pill, fill='#18181b')
             canvas.itemconfig(status_text, state='normal')
-            for cp in cloud_parts:
-                canvas.itemconfig(cp, state='normal', fill='#33333d')
+            canvas.itemconfig(mode_badge_bg, fill='#27272a')
+            canvas.itemconfig(mode_badge_text, fill='#9ca3af', text=current_mode)
+            
+            visual_state = current_rendered_state
+            scale = transition_scale
+            
+            r1 = 16 * scale
+            r2 = 12 * scale
+            r3 = 20 * scale
+            rr = 18 * scale
+            
+            canvas.coords(core_bg, cx-16*scale, cy-16*scale, cx+16*scale, cy+16*scale)
+            canvas.coords(core_arc1, cx-r1, cy-r1, cx+r1, cy+r1)
+            canvas.coords(core_arc2, cx-r2, cy-r2, cx+r2, cy+r2)
+            canvas.coords(core_arc3, cx-r3, cy-r3, cx+r3, cy+r3)
+            canvas.coords(radar_arc, cx-rr, cy-rr, cx+rr, cy+rr)
+            
+            canvas.itemconfig(core_bg, fill='#27272a')
+            canvas.itemconfig(core_arc1, state="normal")
+            canvas.itemconfig(core_arc2, state="normal")
+            canvas.itemconfig(core_arc3, state="normal")
+            canvas.itemconfig(term_prompt, state="hidden")
+            canvas.itemconfig(file_icon, state="hidden")
+            canvas.itemconfig(radar_arc, state="hidden")
+            canvas.itemconfig(browser_box, state="hidden")
+            canvas.itemconfig(browser_line, state="hidden")
 
-            # Base eye positions
-            elx, ely = sx + 27, sy + 33
-            erx, ery = sx + 53, sy + 33
+            # Arc animations (adjusted for 50fps)
+            canvas.itemconfig(core_arc1, start=(anim_frame * 3) % 360)
+            canvas.itemconfig(core_arc2, start=(-anim_frame * 5) % 360)
+            canvas.itemconfig(core_arc3, start=(anim_frame * 2) % 360)
 
-            if ai_state == "THINKING":
-                # Eyes look up and blink occasionally
-                think_phase = anim_frame % 16
-                if think_phase == 0 or think_phase == 1:
-                    # Blink
-                    canvas.coords(eye_l, elx - 4, ely - 1, elx + 4, ely + 1)
-                    canvas.coords(eye_r, erx - 4, ery - 1, erx + 4, ery + 1)
-                    canvas.itemconfig(eyebrow_l, state='hidden')
-                    canvas.itemconfig(eyebrow_r, state='hidden')
-                else:
-                    # Look up and right slightly
-                    offset_x = 2
-                    offset_y = -3
-                    canvas.coords(eye_l, elx - 4 + offset_x, ely - 4 + offset_y, elx + 4 + offset_x, ely + 4 + offset_y)
-                    canvas.coords(eye_r, erx - 4 + offset_x, ery - 4 + offset_y, erx + 4 + offset_x, ery + 4 + offset_y)
-                    # Eyebrows raised
-                    canvas.itemconfig(eyebrow_l, state='normal')
-                    canvas.itemconfig(eyebrow_r, state='normal')
-                    canvas.coords(eyebrow_l, sx+16, sy+18+offset_y, sx+36, sy+24+offset_y)
-                    canvas.coords(eyebrow_r, sx+64, sy+18+offset_y, sx+44, sy+24+offset_y)
-                    
-                canvas.itemconfig(status_text, text=f"Thinking{dots}", fill='#ffffaa')
-                canvas.itemconfig(pill, outline='#ffff55')
-                canvas.itemconfig(eye_l, fill='#ffff55')
-                canvas.itemconfig(eye_r, fill='#ffff55')
+            target_text = "Standing by"
+            target_color = '#9ca3af'
+            target_outline = '#27272a'
+            show_dots = False
 
-            elif ai_state == "GRAPHIFY":
-                canvas.itemconfig(status_text, text=f"Team Sync{dots}", fill='#e879f9')
-                canvas.itemconfig(pill, outline='#c026d3')
-                # Eyes moving fast side to side (syncing data)
-                sync_offset = math.sin(anim_frame * 1.5) * 5
-                canvas.coords(eye_l, elx - 4 + sync_offset, ely - 3, elx + 4 + sync_offset, ely + 3)
-                canvas.coords(eye_r, erx - 4 + sync_offset, ery - 3, erx + 4 + sync_offset, ery + 3)
-                # Eyebrows neutral
-                canvas.itemconfig(eyebrow_l, state='normal')
-                canvas.itemconfig(eyebrow_r, state='normal')
-                canvas.coords(eyebrow_l, sx+16, sy+20, sx+36, sy+26)
-                canvas.coords(eyebrow_r, sx+64, sy+20, sx+44, sy+26)
+            if visual_state == "THINKING":
+                target_text = "Thinking"
+                target_color = '#fbbf24'
+                target_outline = '#b45309'
+                show_dots = True
+                canvas.itemconfig(core_arc1, outline='#fcd34d', start=(anim_frame * 12) % 360)
+                canvas.itemconfig(core_arc2, outline='#fbbf24', start=(-anim_frame * 18) % 360)
+                canvas.itemconfig(core_arc3, outline='#f59e0b', start=(anim_frame * 8) % 360)
                 
-                canvas.itemconfig(eye_l, fill='#e879f9')
-                canvas.itemconfig(eye_r, fill='#e879f9')
+            elif visual_state == "GRAPHIFY":
+                target_text = "Team Sync"
+                target_color = '#e879f9'
+                target_outline = '#86198f'
+                show_dots = True
+                canvas.itemconfig(core_arc1, outline='#f472b6', start=(anim_frame * 12 + math.sin(anim_frame*0.2)*20) % 360)
+                canvas.itemconfig(core_arc2, outline='#e879f9', start=(-anim_frame * 15 + math.cos(anim_frame*0.2)*20) % 360)
+                canvas.itemconfig(core_arc3, outline='#c026d3')
                 
-            elif ai_state == "SEARCH":
-                # Eyes look around dynamically
-                search_phase = anim_frame % 16
-                if search_phase < 4:
-                    # Look left
-                    canvas.coords(eye_l, elx - 6, ely - 2, elx + 2, ely + 2)
-                    canvas.coords(eye_r, erx - 6, ery - 2, erx + 2, ery + 2)
-                    canvas.itemconfig(eyebrow_l, state='normal')
-                    canvas.itemconfig(eyebrow_r, state='normal')
-                    canvas.coords(eyebrow_l, sx+16, sy+24, sx+36, sy+24)
-                    canvas.coords(eyebrow_r, sx+64, sy+20, sx+44, sy+28)
-                elif search_phase < 8:
-                    # Look right
-                    canvas.coords(eye_l, elx - 2, ely - 2, elx + 6, ely + 2)
-                    canvas.coords(eye_r, erx - 2, ery - 2, erx + 6, ery + 2)
-                    canvas.itemconfig(eyebrow_l, state='normal')
-                    canvas.itemconfig(eyebrow_r, state='normal')
-                    canvas.coords(eyebrow_l, sx+16, sy+20, sx+36, sy+28)
-                    canvas.coords(eyebrow_r, sx+64, sy+24, sx+44, sy+24)
-                elif search_phase < 12:
-                    # Look down and squint
-                    canvas.coords(eye_l, elx - 4, ely + 1, elx + 4, ely + 5)
-                    canvas.coords(eye_r, erx - 4, ery + 1, erx + 4, ery + 5)
-                    canvas.itemconfig(eyebrow_l, state='normal')
-                    canvas.itemconfig(eyebrow_r, state='normal')
-                    canvas.coords(eyebrow_l, sx+16, sy+24, sx+36, sy+28)
-                    canvas.coords(eyebrow_r, sx+64, sy+24, sx+44, sy+28)
-                else:
-                    # Look up
-                    canvas.coords(eye_l, elx - 4, ely - 5, elx + 4, ely - 1)
-                    canvas.coords(eye_r, erx - 4, ery - 5, erx + 4, ery - 1)
-                    canvas.itemconfig(eyebrow_l, state='normal')
-                    canvas.itemconfig(eyebrow_r, state='normal')
-                    canvas.coords(eyebrow_l, sx+16, sy+16, sx+36, sy+22)
-                    canvas.coords(eyebrow_r, sx+64, sy+16, sx+44, sy+22)
+            elif visual_state == "SEARCH" or visual_state == "RESEARCH":
+                target_text = "Researching"
+                target_color = '#60a5fa'
+                target_outline = '#1e3a8a'
+                show_dots = True
+                canvas.itemconfig(core_arc1, state="hidden")
+                canvas.itemconfig(core_arc2, state="hidden")
+                canvas.itemconfig(core_arc3, state="hidden")
+                canvas.itemconfig(radar_arc, state="normal", start=(-anim_frame * 8) % 360)
                 
-                canvas.itemconfig(status_text, text=f"Search{dots}", fill='#aaffff')
-                canvas.itemconfig(pill, outline='#00aaff')
-                canvas.itemconfig(eye_l, fill='#00aaff')
-                canvas.itemconfig(eye_r, fill='#00aaff')
+            elif visual_state == "BROWSER":
+                target_text = "Browsing"
+                target_color = '#fdba74'
+                target_outline = '#c2410c'
+                show_dots = True
+                canvas.itemconfig(core_arc1, state="hidden")
+                canvas.itemconfig(core_arc2, state="hidden")
+                canvas.itemconfig(core_arc3, state="hidden")
+                if scale > 0.5:
+                    canvas.itemconfig(browser_box, state="normal")
+                    canvas.itemconfig(browser_line, state="normal")
+                bounce = math.cos(anim_frame * 0.1) * 2
+                bw, bh = 10 * scale, 8 * scale
+                canvas.coords(browser_box, cx-bw, cy-bh+bounce, cx+bw, cy+bh+bounce)
+                canvas.coords(browser_line, cx-bw, cy-bh*0.4+bounce, cx+bw, cy-bh*0.4+bounce)
                 
-            elif ai_state == "BASH":
-                # Eyes squint and dart like reading terminal
-                bash_phase = anim_frame % 8
-                dart_x = (bash_phase % 4) * 2 - 2
-                squint = 2
-                canvas.coords(eye_l, elx - 4 + dart_x, ely - squint, elx + 4 + dart_x, ely + squint)
-                canvas.coords(eye_r, erx - 4 + dart_x, ery - squint, erx + 4 + dart_x, ery + squint)
-                # Eyebrows furrowed
-                canvas.itemconfig(eyebrow_l, state='normal')
-                canvas.itemconfig(eyebrow_r, state='normal')
-                canvas.coords(eyebrow_l, sx+16, sy+22, sx+36, sy+28)
-                canvas.coords(eyebrow_r, sx+64, sy+22, sx+44, sy+28)
+            elif visual_state == "BASH":
+                target_text = "Bash"
+                target_color = '#34d399'
+                target_outline = '#065f46'
+                show_dots = True
+                canvas.itemconfig(core_arc1, state="hidden")
+                canvas.itemconfig(core_arc2, state="hidden")
+                canvas.itemconfig(core_arc3, state="hidden")
+                if scale > 0.5:
+                    canvas.itemconfig(term_prompt, state="normal" if anim_frame % 20 < 10 else "hidden", font=("Consolas", max(1, int(11 * scale)), "bold"))
                 
-                canvas.itemconfig(status_text, text=f"Bash{dots}", fill='#aaffaa')
-                canvas.itemconfig(pill, outline='#00ff44')
-                canvas.itemconfig(eye_l, fill='#00ff44')
-                canvas.itemconfig(eye_r, fill='#00ff44')
+            elif visual_state == "FILE":
+                target_text = "I/O"
+                target_color = '#818cf8'
+                target_outline = '#3730a3'
+                show_dots = True
+                canvas.itemconfig(core_arc1, state="hidden")
+                canvas.itemconfig(core_arc2, state="hidden")
+                canvas.itemconfig(core_arc3, state="hidden")
+                if scale > 0.5:
+                    canvas.itemconfig(file_icon, state="normal")
+                bounce = math.sin(anim_frame * 0.1) * 2
+                w, h = 6 * scale, 8 * scale
+                canvas.coords(file_icon, cx-w, cy-h+bounce, cx+w/2, cy-h+bounce, cx+w+2, cy-h/2+bounce, cx+w+2, cy+h+2+bounce, cx-w, cy+h+2+bounce)
+
+            elif visual_state == "RUNNING":
+                target_text = "Processing"
+                target_color = '#e5e7eb'
+                target_outline = '#374151'
+                show_dots = True
+                canvas.itemconfig(core_arc1, outline='#e5e7eb')
+                canvas.itemconfig(core_arc2, outline='#9ca3af')
+                canvas.itemconfig(core_arc3, outline='#d1d5db')
                 
-            elif ai_state == "FILE":
-                # Eyes scan up and down like reading a file
-                scan_y = math.sin(anim_frame * 0.8) * 3
-                canvas.coords(eye_l, elx - 4, ely - 3 + scan_y, elx + 4, ely + 3 + scan_y)
-                canvas.coords(eye_r, erx - 4, ery - 3 + scan_y, erx + 4, ery + 3 + scan_y)
-                # Eyebrows focused
-                canvas.itemconfig(eyebrow_l, state='normal')
-                canvas.itemconfig(eyebrow_r, state='normal')
-                canvas.coords(eyebrow_l, sx+16, sy+21, sx+36, sy+27)
-                canvas.coords(eyebrow_r, sx+64, sy+21, sx+44, sy+27)
-                
-                canvas.itemconfig(status_text, text=f"I/O{dots}", fill='#ffddaa')
-                canvas.itemconfig(pill, outline='#ffaa00')
-                canvas.itemconfig(eye_l, fill='#ffaa00')
-                canvas.itemconfig(eye_r, fill='#ffaa00')
-                
+            else: # IDLE
+                target_text = "Standing by..."
+                target_outline = '#27272a'
+                canvas.itemconfig(core_arc1, outline='#06b6d4')
+                canvas.itemconfig(core_arc2, outline='#3b82f6')
+                canvas.itemconfig(core_arc3, outline='#0ea5e9')
+
+            if is_hovering_pill:
+                canvas.itemconfig(pill, outline='#6666ff')
             else:
-                # Default processing - rhythmic scanning with blinks
-                proc_phase = anim_frame % 20
-                if proc_phase == 0 or proc_phase == 10:
-                    # Blink
-                    canvas.coords(eye_l, elx - 4, ely - 1, elx + 4, ely + 1)
-                    canvas.coords(eye_r, erx - 4, ery - 1, erx + 4, ery + 1)
-                else:
-                    # Gentle sway
-                    sway_x = math.sin(anim_frame * 0.3) * 2
-                    canvas.coords(eye_l, elx - 4 + sway_x, ely - 4, elx + 4 + sway_x, ely + 4)
-                    canvas.coords(eye_r, erx - 4 + sway_x, ery - 4, erx + 4 + sway_x, ery + 4)
-                
-                # Eyebrows neutral
-                canvas.itemconfig(eyebrow_l, state='normal')
-                canvas.itemconfig(eyebrow_r, state='normal')
-                canvas.coords(eyebrow_l, sx+16, sy+20, sx+36, sy+26)
-                canvas.coords(eyebrow_r, sx+64, sy+20, sx+44, sy+26)
-                
-                canvas.itemconfig(status_text, text=f"Processing{dots}", fill='#aaffff')
-                canvas.itemconfig(pill, outline='#00ffcc')
-                canvas.itemconfig(eye_l, fill='#00ffcc')
-                canvas.itemconfig(eye_r, fill='#00ffcc')
+                canvas.itemconfig(pill, outline=target_outline)
 
-            # Update shine for all states (follow eye positions)
-            canvas.itemconfig(eye_l_shine, state='normal')
-            canvas.itemconfig(eye_r_shine, state='normal')
+            # --- Typewriter Animation Logic ---
+            global typewriter_idx, typewriter_base, typewriter_target
             
-            # Get current eye positions to update shine
-            eye_l_coords = canvas.coords(eye_l)
-            eye_r_coords = canvas.coords(eye_r)
-            
-            if eye_l_coords and eye_r_coords:
-                # Calculate center of each eye for shine positioning
-                shine_lx = (eye_l_coords[0] + eye_l_coords[2]) / 2
-                shine_ly = (eye_l_coords[1] + eye_l_coords[3]) / 2
-                shine_rx = (eye_r_coords[0] + eye_r_coords[2]) / 2
-                shine_ry = (eye_r_coords[1] + eye_r_coords[3]) / 2
+            # If target text changes, reset the typewriter
+            if target_text != typewriter_target:
+                typewriter_target = target_text
+                typewriter_idx = 0
+                typewriter_base = ""
                 
-                # Adjust shine position slightly towards top-right
-                canvas.coords(eye_l_shine, shine_lx - 1, shine_ly - 2, shine_lx + 2, shine_ly + 1)
-                canvas.coords(eye_r_shine, shine_rx - 1, shine_ry - 2, shine_rx + 2, shine_ry + 1)
-
-        # Handle IDLE state when connected
-        elif mobile_clients > 0 and ai_state == "IDLE":
-            blink_phase = anim_frame % 30
-            if blink_phase == 0 or blink_phase == 1:
-                canvas.coords(eye_l, sx + 22, sy + 32, sx + 32, sy + 34)
-                canvas.coords(eye_r, sx + 48, sy + 32, sx + 58, sy + 34)
-                canvas.itemconfig(eye_l_shine, state='hidden')
-                canvas.itemconfig(eye_r_shine, state='hidden')
-                canvas.itemconfig(eyebrow_l, state='hidden')
-                canvas.itemconfig(eyebrow_r, state='hidden')
-            else:
-                canvas.coords(eye_l, sx + 22, sy + 28, sx + 32, sy + 38)
-                canvas.coords(eye_r, sx + 48, sy + 28, sx + 58, sy + 38)
-                canvas.itemconfig(eye_l_shine, state='normal')
-                canvas.itemconfig(eye_r_shine, state='normal')
-                canvas.itemconfig(eyebrow_l, state='normal')
-                canvas.itemconfig(eyebrow_r, state='normal')
-                canvas.coords(eyebrow_l, sx+16, sy+20, sx+36, sy+26)
-                canvas.coords(eyebrow_r, sx+64, sy+20, sx+44, sy+26)
-
-                cycle = anim_frame % 80
-                px_offset, py_offset = 0, 0
-                if cycle >= 20:
-                    mx, my = root.winfo_pointerx(), root.winfo_pointery()
-                    ex = root.winfo_rootx() + sx + 27
-                    ey = root.winfo_rooty() + sy + 33
-                    dx, dy = mx - ex, my - ey
-                    dist = math.hypot(dx, dy)
-                    if dist > 0:
-                        r = min(3.0, dist / 100.0)
-                        px_offset = (dx / dist) * r
-                        py_offset = (dy / dist) * r
-
-                # Get current eye positions for dynamic shine
-                eye_l_coords = canvas.coords(eye_l)
-                eye_r_coords = canvas.coords(eye_r)
+            # Type 1 character every 2 frames (approx 25 chars per second at 50fps)
+            if anim_frame % 2 == 0 and typewriter_idx < len(typewriter_target):
+                typewriter_base += typewriter_target[typewriter_idx]
+                typewriter_idx += 1
                 
-                if eye_l_coords and eye_r_coords:
-                    shine_lx = (eye_l_coords[0] + eye_l_coords[2]) / 2
-                    shine_ly = (eye_l_coords[1] + eye_l_coords[3]) / 2
-                    shine_rx = (eye_r_coords[0] + eye_r_coords[2]) / 2
-                    shine_ry = (eye_r_coords[1] + eye_r_coords[3]) / 2
-                    
-                    canvas.coords(eye_l_shine, shine_lx + px_offset - 1.5, shine_ly + py_offset - 1.5, shine_lx + px_offset + 1.5, shine_ly + py_offset + 1.5)
-                    canvas.coords(eye_r_shine, shine_rx + px_offset - 1.5, shine_ry + py_offset - 1.5, shine_rx + px_offset + 1.5, shine_ry + py_offset + 1.5)
-
-        # Handle IDLE state when connected (no animation, just normal idle behavior)
-        elif mobile_clients > 0 and ai_state == "IDLE":
-            canvas.itemconfig(pill, fill='#22222a')
-            canvas.itemconfig(status_text, state='normal')
-            for cp in cloud_parts:
-                canvas.itemconfig(cp, state='normal', fill='#33333d')
-            
-            # Normal idle blinking and eye tracking
-            blink_phase = anim_frame % 30
-            if blink_phase == 0 or blink_phase == 1:
-                canvas.coords(eye_l, sx + 22, sy + 32, sx + 32, sy + 34)
-                canvas.coords(eye_r, sx + 48, sy + 32, sx + 58, sy + 34)
-                canvas.itemconfig(eye_l_shine, state='hidden')
-                canvas.itemconfig(eye_r_shine, state='hidden')
-            else:
-                canvas.coords(eye_l, sx + 22, sy + 28, sx + 32, sy + 38)
-                canvas.coords(eye_r, sx + 48, sy + 28, sx + 58, sy + 38)
-                canvas.itemconfig(eye_l_shine, state='normal')
-                canvas.itemconfig(eye_r_shine, state='normal')
-
-                cycle = anim_frame % 80
-                px_offset, py_offset = 0, 0
-                if cycle >= 20:
-                    mx, my = root.winfo_pointerx(), root.winfo_pointery()
-                    ex = root.winfo_rootx() + sx + 27
-                    ey = root.winfo_rooty() + sy + 33
-                    dx, dy = mx - ex, my - ey
-                    dist = math.hypot(dx, dy)
-                    if dist > 0:
-                        r = min(3.0, dist / 100.0)
-                        px_offset = (dx / dist) * r
-                        py_offset = (dy / dist) * r
-
-                # Get current eye positions for dynamic shine
-                eye_l_coords = canvas.coords(eye_l)
-                eye_r_coords = canvas.coords(eye_r)
+            display = typewriter_base
+            # Only show dynamic dots if the base word has finished typing
+            if show_dots and typewriter_idx >= len(typewriter_target):
+                display += dots
                 
-                if eye_l_coords and eye_r_coords:
-                    shine_lx = (eye_l_coords[0] + eye_l_coords[2]) / 2
-                    shine_ly = (eye_l_coords[1] + eye_l_coords[3]) / 2
-                    shine_rx = (eye_r_coords[0] + eye_r_coords[2]) / 2
-                    shine_ry = (eye_r_coords[1] + eye_r_coords[3]) / 2
-                    
-                    canvas.coords(eye_l_shine, shine_lx + px_offset - 1.5, shine_ly + py_offset - 1.5, shine_lx + px_offset + 1.5, shine_ly + py_offset + 1.5)
-                    canvas.coords(eye_r_shine, shine_rx + px_offset - 1.5, shine_ry + py_offset - 1.5, shine_rx + px_offset + 1.5, shine_ry + py_offset + 1.5)
-            
-            canvas.itemconfig(status_text, text="Standing by...", fill='#888888', font=("Segoe UI", 8, "italic"))
+            if not alert_state["active"]:
+                canvas.itemconfig(status_text, text=display, fill=target_color)
 
-    elif dashboard_active and anim_frame % 10 == 0:
-        # Don't refresh Settings section — it's widget-based and self-managed.
-        # Refreshing it would destroy all typed API keys every 18 seconds.
+    elif dashboard_active and anim_frame % 50 == 0:
         if current_section != 'Settings':
             refresh_dashboard_content()
 
-    root.after(150, animation_loop)
+    root.after(20, animation_loop)
 
 def reset_to_idle():
     global ai_state
@@ -2015,7 +1840,11 @@ def parse_line(line):
 
     if "STATUS: TOOL:" in line:
         tool = line.split("STATUS: TOOL:")[1].strip().lower()
-        if "web_search" in tool or "search" in tool:
+        if "web_research" in tool:
+            ai_state = "RESEARCH"
+        elif "browser_automation" in tool or "browse" in tool:
+            ai_state = "BROWSER"
+        elif "web_search" in tool or "search" in tool:
             ai_state = "SEARCH"
         elif "run_terminal" in tool or "terminal" in tool:
             ai_state = "BASH"
