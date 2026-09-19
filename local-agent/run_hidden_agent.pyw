@@ -491,6 +491,44 @@ def _style_nav_button(section):
     else:
         btn.configure(bg='#16171C', fg='#9CA3AF', font=('Segoe UI', 9), activebackground='#252528', activeforeground='#FFFFFF')
 
+dash_sphere_canvas = None
+dash_sphere_parts = {}
+
+def init_dash_sphere():
+    global dash_sphere_canvas, dash_sphere_parts
+    if dash_sphere_canvas: return
+    dash_sphere_canvas = tk.Canvas(dash_sidebar, width=60, height=60, bg='#16171C', highlightthickness=0)
+    dash_sphere_canvas.pack(pady=(16, 0))
+    c = dash_sphere_canvas
+    dash_sphere_parts['shadow1'] = c.create_line(0,0, 0,0, fill='#000000', width=1.0, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
+    dash_sphere_parts['shadow2'] = c.create_line(0,0, 0,0, fill='#000000', width=1.5, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
+    dash_sphere_parts['shadow3'] = c.create_line(0,0, 0,0, fill='#000000', width=2.0, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
+    dash_sphere_parts['sun_aura'] = c.create_oval(0,0,0,0, fill='#1e1e24', outline='')
+    dash_sphere_parts['sun_glow4'] = c.create_oval(0,0,0,0, fill='#27272a', outline='')
+    dash_sphere_parts['sun_glow3'] = c.create_oval(0,0,0,0, fill='#3f3f46', outline='')
+    dash_sphere_parts['sun_glow2'] = c.create_oval(0,0,0,0, fill='#52525b', outline='')
+    dash_sphere_parts['sun_glow1'] = c.create_oval(0,0,0,0, fill='#a1a1aa', outline='')
+    dash_sphere_parts['core_bg'] = c.create_oval(0,0,0,0, fill='#ffffff', outline='')
+    dash_sphere_parts['core_arc1'] = c.create_line(0,0, 0,0, fill='#06b6d4', width=1.0, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
+    dash_sphere_parts['core_arc2'] = c.create_line(0,0, 0,0, fill='#3b82f6', width=1.5, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
+    dash_sphere_parts['core_arc3'] = c.create_line(0,0, 0,0, fill='#0ea5e9', width=2.0, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
+
+def update_dash_sphere(pulse, r1_x, r1_y, r1_z, r2_x, r2_y, r2_z, r3_x, r3_y, r3_z):
+    if not dash_sphere_canvas: return
+    c = dash_sphere_canvas
+    p = dash_sphere_parts
+    cx, cy = 30, 30
+    scale = 1.0
+    c.coords(p['sun_aura'], cx-(26+pulse*1.2)*scale, cy-(26+pulse*1.2)*scale, cx+(26+pulse*1.2)*scale, cy+(26+pulse*1.2)*scale)
+    c.coords(p['sun_glow4'], cx-(22+pulse*1.0)*scale, cy-(22+pulse*1.0)*scale, cx+(22+pulse*1.0)*scale, cy+(22+pulse*1.0)*scale)
+    c.coords(p['sun_glow3'], cx-(18+pulse*0.8)*scale, cy-(18+pulse*0.8)*scale, cx+(18+pulse*0.8)*scale, cy+(18+pulse*0.8)*scale)
+    c.coords(p['sun_glow2'], cx-(14+pulse*0.6)*scale, cy-(14+pulse*0.6)*scale, cx+(14+pulse*0.6)*scale, cy+(14+pulse*0.6)*scale)
+    c.coords(p['sun_glow1'], cx-(10+pulse*0.3)*scale, cy-(10+pulse*0.3)*scale, cx+(10+pulse*0.3)*scale, cy+(10+pulse*0.3)*scale)
+    c.coords(p['core_bg'], cx-(6)*scale, cy-(6)*scale, cx+(6)*scale, cy+(6)*scale)
+    update_3d_ring(c, p['core_arc1'], cx, cy, 14, r1_x, r1_y, r1_z, scale, p['shadow1'], 2*scale)
+    update_3d_ring(c, p['core_arc2'], cx, cy, 17, r2_x, r2_y, r2_z, scale, p['shadow2'], 2*scale)
+    update_3d_ring(c, p['core_arc3'], cx, cy, 20, r3_x, r3_y, r3_z, scale, p['shadow3'], 2*scale)
+
 def build_dashboard_ui():
     global _dashboard_ui_built, dash_canvas
     if _dashboard_ui_built:
@@ -1670,6 +1708,7 @@ def animation_loop():
             update_3d_ring(canvas, core_arc1, cx, cy, 14, r1_x, r1_y, r1_z, scale, shadow1, 2*scale)
             update_3d_ring(canvas, core_arc2, cx, cy, 17, r2_x, r2_y, r2_z, scale, shadow2, 2*scale)
             update_3d_ring(canvas, core_arc3, cx, cy, 20, r3_x, r3_y, r3_z, scale, shadow3, 2*scale)
+            update_dash_sphere(pulse, r1_x, r1_y, r1_z, r2_x, r2_y, r2_z, r3_x, r3_y, r3_z)
             canvas.coords(radar_arc, cx-rr, cy-rr, cx+rr, cy+rr)
             
             canvas.itemconfig(sun_aura, state="normal")
