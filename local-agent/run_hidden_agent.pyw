@@ -117,9 +117,9 @@ cx, cy = 35, 30 # Core center
 
 import math
 
-def update_3d_ring(canvas, front_id, back_id, cx, cy, radius, rot_x, rot_y, rot_z, scale, shadow_id=None, shadow_offset=0):
+def update_3d_ring(canvas, ring_id, cx, cy, radius, rot_x, rot_y, rot_z, scale, shadow_id=None, shadow_offset=0):
     points = []
-    steps = 60
+    steps = 40
     for i in range(steps):
         angle = 2 * math.pi * i / steps
         x = radius * math.cos(angle)
@@ -131,65 +131,23 @@ def update_3d_ring(canvas, front_id, back_id, cx, cy, radius, rot_x, rot_y, rot_
         z2 = -x * math.sin(rot_y) + z1 * math.cos(rot_y)
         x3 = x2 * math.cos(rot_z) - y1 * math.sin(rot_z)
         y3 = x2 * math.sin(rot_z) + y1 * math.cos(rot_z)
-        points.append((cx + x3 * scale, cy + y3 * scale, z2))
+        points.extend((cx + x3 * scale, cy + y3 * scale))
 
-    shift_idx = 0
-    for i in range(1, steps):
-        if (points[i][2] >= 0) != (points[i-1][2] >= 0):
-            shift_idx = i
-            break
-            
-    points = points[shift_idx:] + points[:shift_idx]
-    points.append(points[0])
+    # Append first point again to close the loop smoothly
+    points.extend((points[0], points[1]))
 
-    front = []
-    back = []
-    for i in range(len(points) - 1):
-        p1 = points[i]
-        p2 = points[i+1]
-        
-        if p1[2] >= 0 and p2[2] >= 0:
-            if not front: front.extend([p1[0], p1[1]])
-            front.extend([p2[0], p2[1]])
-        elif p1[2] < 0 and p2[2] < 0:
-            if not back: back.extend([p1[0], p1[1]])
-            back.extend([p2[0], p2[1]])
-        else:
-            t = p1[2] / (p1[2] - p2[2]) if p1[2] != p2[2] else 0.5
-            cx_c = p1[0] + t * (p2[0] - p1[0])
-            cy_c = p1[1] + t * (p2[1] - p1[1])
-            if p1[2] >= 0:
-                if not front: front.extend([p1[0], p1[1]])
-                front.extend([cx_c, cy_c])
-                if not back: back.extend([cx_c, cy_c])
-                back.extend([p2[0], p2[1]])
-            else:
-                if not back: back.extend([p1[0], p1[1]])
-                back.extend([cx_c, cy_c])
-                if not front: front.extend([cx_c, cy_c])
-                front.extend([p2[0], p2[1]])
-
-    if len(front) < 4: front = [0,0,0,0]
-    if len(back) < 4: back = [0,0,0,0]
-    
-    canvas.coords(front_id, *front)
-    canvas.coords(back_id, *back)
+    canvas.coords(ring_id, *points)
     
     if shadow_id:
         sh_pts = []
-        for p in points:
-            sh_pts.extend([p[0], p[1] + shadow_offset])
+        for i in range(0, len(points), 2):
+            sh_pts.extend((points[i], points[i+1] + shadow_offset))
         canvas.coords(shadow_id, *sh_pts)
 
 # Shadows (drawn first so they are at the bottom)
-shadow1 = canvas.create_line(0,0, 0,0, fill='#000000', width=2)
+shadow1 = canvas.create_line(0,0, 0,0, fill='#000000', width=3)
 shadow2 = canvas.create_line(0,0, 0,0, fill='#000000', width=2)
-shadow3 = canvas.create_line(0,0, 0,0, fill='#000000', width=2)
-
-# Back Rings (drawn under the sun)
-arc1_back = canvas.create_line(0,0, 0,0, fill='#06b6d4', width=2)
-arc2_back = canvas.create_line(0,0, 0,0, fill='#3b82f6', width=2)
-arc3_back = canvas.create_line(0,0, 0,0, fill='#0ea5e9', width=2)
+shadow3 = canvas.create_line(0,0, 0,0, fill='#000000', width=1)
 
 # Hyperrealistic Dyson Sphere Sun Glow layers
 sun_aura = canvas.create_oval(cx-26, cy-26, cx+26, cy+26, fill='#1e1e24', outline='')
@@ -200,9 +158,9 @@ sun_glow1 = canvas.create_oval(cx-10, cy-10, cx+10, cy+10, fill='#a1a1aa', outli
 core_bg = canvas.create_oval(cx-6, cy-6, cx+6, cy+6, fill='#ffffff', outline='')
 
 # Front Rings (drawn over the sun)
-core_arc1 = canvas.create_line(0,0, 0,0, fill='#06b6d4', width=2)
+core_arc1 = canvas.create_line(0,0, 0,0, fill='#06b6d4', width=3)
 core_arc2 = canvas.create_line(0,0, 0,0, fill='#3b82f6', width=2)
-core_arc3 = canvas.create_line(0,0, 0,0, fill='#0ea5e9', width=2)
+core_arc3 = canvas.create_line(0,0, 0,0, fill='#0ea5e9', width=1)
 
 # Special State Icons (hidden by default)
 term_prompt = canvas.create_text(cx, cy, text=">_", fill="#10b981", font=("Consolas", 11, "bold"), state="hidden")
@@ -212,7 +170,7 @@ browser_box = canvas.create_rectangle(cx-12, cy-10, cx+12, cy+10, fill="", outli
 browser_line = canvas.create_line(cx-12, cy-4, cx+12, cy-4, fill="#f97316", width=2, state="hidden")
 
 # Keep variables compatible with animation loop
-face_parts = (shadow1, shadow2, shadow3, arc1_back, arc2_back, arc3_back, sun_aura, sun_glow4, sun_glow3, sun_glow2, sun_glow1, core_bg, core_arc1, core_arc2, core_arc3, term_prompt, file_icon, radar_arc, browser_box, browser_line)
+face_parts = (shadow1, shadow2, shadow3, sun_aura, sun_glow4, sun_glow3, sun_glow2, sun_glow1, core_bg, core_arc1, core_arc2, core_arc3, term_prompt, file_icon, radar_arc, browser_box, browser_line)
 cloud_parts = () # Empty, we don't use a thought cloud anymore
 
 # Typography Layout
@@ -1656,11 +1614,8 @@ def animation_loop():
             canvas.itemconfig(shadow2, state="hidden")
             canvas.itemconfig(shadow3, state="hidden")
             canvas.itemconfig(core_arc1, state="hidden")
-            canvas.itemconfig(arc1_back, state="hidden")
             canvas.itemconfig(core_arc2, state="hidden")
-            canvas.itemconfig(arc2_back, state="hidden")
             canvas.itemconfig(core_arc3, state="hidden")
-            canvas.itemconfig(arc3_back, state="hidden")
             canvas.itemconfig(term_prompt, state="hidden")
             canvas.itemconfig(file_icon, state="hidden")
             canvas.itemconfig(radar_arc, state="hidden")
@@ -1689,18 +1644,18 @@ def animation_loop():
             time_3 = anim_frame * 0.012
             pulse = math.sin(anim_frame * 0.03) * 1.0
             
-            # Massive sun aura (expanded star diameter)
-            canvas.coords(sun_aura, cx-(24+pulse*1.2)*scale, cy-(24+pulse*1.2)*scale, cx+(24+pulse*1.2)*scale, cy+(24+pulse*1.2)*scale)
-            canvas.coords(sun_glow4, cx-(20+pulse*1.0)*scale, cy-(20+pulse*1.0)*scale, cx+(20+pulse*1.0)*scale, cy+(20+pulse*1.0)*scale)
-            canvas.coords(sun_glow3, cx-(16+pulse*0.8)*scale, cy-(16+pulse*0.8)*scale, cx+(16+pulse*0.8)*scale, cy+(16+pulse*0.8)*scale)
-            canvas.coords(sun_glow2, cx-(12+pulse*0.6)*scale, cy-(12+pulse*0.6)*scale, cx+(12+pulse*0.6)*scale, cy+(12+pulse*0.6)*scale)
-            canvas.coords(sun_glow1, cx-(8+pulse*0.3)*scale, cy-(8+pulse*0.3)*scale, cx+(8+pulse*0.3)*scale, cy+(8+pulse*0.3)*scale)
-            canvas.coords(core_bg, cx-(4)*scale, cy-(4)*scale, cx+(4)*scale, cy+(4)*scale)
+            # Massive sun aura (increased star size)
+            canvas.coords(sun_aura, cx-(26+pulse*1.2)*scale, cy-(26+pulse*1.2)*scale, cx+(26+pulse*1.2)*scale, cy+(26+pulse*1.2)*scale)
+            canvas.coords(sun_glow4, cx-(22+pulse*1.0)*scale, cy-(22+pulse*1.0)*scale, cx+(22+pulse*1.0)*scale, cy+(22+pulse*1.0)*scale)
+            canvas.coords(sun_glow3, cx-(18+pulse*0.8)*scale, cy-(18+pulse*0.8)*scale, cx+(18+pulse*0.8)*scale, cy+(18+pulse*0.8)*scale)
+            canvas.coords(sun_glow2, cx-(14+pulse*0.6)*scale, cy-(14+pulse*0.6)*scale, cx+(14+pulse*0.6)*scale, cy+(14+pulse*0.6)*scale)
+            canvas.coords(sun_glow1, cx-(10+pulse*0.3)*scale, cy-(10+pulse*0.3)*scale, cx+(10+pulse*0.3)*scale, cy+(10+pulse*0.3)*scale)
+            canvas.coords(core_bg, cx-(6)*scale, cy-(6)*scale, cx+(6)*scale, cy+(6)*scale)
 
-            # Draw rings with occlusion and drop shadow (offset Y by 2 pixels)
-            update_3d_ring(canvas, core_arc1, arc1_back, cx, cy, 18, time_1, time_1*1.3, time_1*0.5, scale, shadow1, 2*scale)
-            update_3d_ring(canvas, core_arc2, arc2_back, cx, cy, 22, -time_2*1.2, time_2*0.8, time_2, scale, shadow2, 2*scale)
-            update_3d_ring(canvas, core_arc3, arc3_back, cx, cy, 26, time_3*0.7, -time_3*1.5, -time_3*0.3, scale, shadow3, 2*scale)
+            # Draw rings OVER the star, with reduced radii and descending thickness
+            update_3d_ring(canvas, core_arc1, cx, cy, 14, time_1, time_1*1.3, time_1*0.5, scale, shadow1, 2*scale)
+            update_3d_ring(canvas, core_arc2, cx, cy, 17, -time_2*1.2, time_2*0.8, time_2, scale, shadow2, 2*scale)
+            update_3d_ring(canvas, core_arc3, cx, cy, 20, time_3*0.7, -time_3*1.5, -time_3*0.3, scale, shadow3, 2*scale)
             canvas.coords(radar_arc, cx-rr, cy-rr, cx+rr, cy+rr)
             
             canvas.itemconfig(sun_aura, state="normal")
@@ -1713,11 +1668,8 @@ def animation_loop():
             canvas.itemconfig(shadow2, state="normal")
             canvas.itemconfig(shadow3, state="normal")
             canvas.itemconfig(core_arc1, state="normal")
-            canvas.itemconfig(arc1_back, state="normal")
             canvas.itemconfig(core_arc2, state="normal")
-            canvas.itemconfig(arc2_back, state="normal")
             canvas.itemconfig(core_arc3, state="normal")
-            canvas.itemconfig(arc3_back, state="normal")
             canvas.itemconfig(term_prompt, state="hidden")
             canvas.itemconfig(file_icon, state="hidden")
             canvas.itemconfig(radar_arc, state="hidden")
@@ -1743,11 +1695,8 @@ def animation_loop():
                 canvas.itemconfig(sun_glow1, fill='#f59e0b')
                 canvas.itemconfig(core_bg, fill='#fef3c7')
                 canvas.itemconfig(core_arc1, fill='#fcd34d')
-                canvas.itemconfig(arc1_back, fill='#fcd34d')
                 canvas.itemconfig(core_arc2, fill='#fbbf24')
-                canvas.itemconfig(arc2_back, fill='#fbbf24')
                 canvas.itemconfig(core_arc3, fill='#f59e0b')
-                canvas.itemconfig(arc3_back, fill='#f59e0b')
                 
             elif visual_state == "GRAPHIFY":
                 target_text = "Team Sync"
@@ -1761,11 +1710,8 @@ def animation_loop():
                 canvas.itemconfig(sun_glow1, fill='#e879f9')
                 canvas.itemconfig(core_bg, fill='#fae8ff')
                 canvas.itemconfig(core_arc1, fill='#f472b6')
-                canvas.itemconfig(arc1_back, fill='#f472b6')
                 canvas.itemconfig(core_arc2, fill='#e879f9')
-                canvas.itemconfig(arc2_back, fill='#e879f9')
                 canvas.itemconfig(core_arc3, fill='#c026d3')
-                canvas.itemconfig(arc3_back, fill='#c026d3')
                 
             elif visual_state == "SEARCH" or visual_state == "RESEARCH":
                 target_text = "Researching"
@@ -1777,11 +1723,8 @@ def animation_loop():
                 canvas.itemconfig(sun_glow1, state="hidden")
                 canvas.itemconfig(core_bg, state="hidden")
                 canvas.itemconfig(core_arc1, state="hidden")
-                canvas.itemconfig(arc1_back, state="hidden")
                 canvas.itemconfig(core_arc2, state="hidden")
-                canvas.itemconfig(arc2_back, state="hidden")
                 canvas.itemconfig(core_arc3, state="hidden")
-                canvas.itemconfig(arc3_back, state="hidden")
                 canvas.itemconfig(radar_arc, state="normal", start=(-anim_frame * 8) % 360)
                 
             elif visual_state == "BROWSER":
@@ -1794,11 +1737,8 @@ def animation_loop():
                 canvas.itemconfig(sun_glow1, state="hidden")
                 canvas.itemconfig(core_bg, state="hidden")
                 canvas.itemconfig(core_arc1, state="hidden")
-                canvas.itemconfig(arc1_back, state="hidden")
                 canvas.itemconfig(core_arc2, state="hidden")
-                canvas.itemconfig(arc2_back, state="hidden")
                 canvas.itemconfig(core_arc3, state="hidden")
-                canvas.itemconfig(arc3_back, state="hidden")
                 if scale > 0.5:
                     canvas.itemconfig(browser_box, state="normal")
                     canvas.itemconfig(browser_line, state="normal")
@@ -1817,11 +1757,8 @@ def animation_loop():
                 canvas.itemconfig(sun_glow1, state="hidden")
                 canvas.itemconfig(core_bg, state="hidden")
                 canvas.itemconfig(core_arc1, state="hidden")
-                canvas.itemconfig(arc1_back, state="hidden")
                 canvas.itemconfig(core_arc2, state="hidden")
-                canvas.itemconfig(arc2_back, state="hidden")
                 canvas.itemconfig(core_arc3, state="hidden")
-                canvas.itemconfig(arc3_back, state="hidden")
                 if scale > 0.5:
                     canvas.itemconfig(term_prompt, state="normal" if anim_frame % 20 < 10 else "hidden", font=("Consolas", max(1, int(11 * scale)), "bold"))
                 
@@ -1835,11 +1772,8 @@ def animation_loop():
                 canvas.itemconfig(sun_glow1, state="hidden")
                 canvas.itemconfig(core_bg, state="hidden")
                 canvas.itemconfig(core_arc1, state="hidden")
-                canvas.itemconfig(arc1_back, state="hidden")
                 canvas.itemconfig(core_arc2, state="hidden")
-                canvas.itemconfig(arc2_back, state="hidden")
                 canvas.itemconfig(core_arc3, state="hidden")
-                canvas.itemconfig(arc3_back, state="hidden")
                 if scale > 0.5:
                     canvas.itemconfig(file_icon, state="normal")
                 bounce = math.sin(anim_frame * 0.1) * 2
@@ -1858,11 +1792,8 @@ def animation_loop():
                 canvas.itemconfig(sun_glow1, fill='#d1d5db')
                 canvas.itemconfig(core_bg, fill='#ffffff')
                 canvas.itemconfig(core_arc1, fill='#e5e7eb')
-                canvas.itemconfig(arc1_back, fill='#e5e7eb')
                 canvas.itemconfig(core_arc2, fill='#9ca3af')
-                canvas.itemconfig(arc2_back, fill='#9ca3af')
                 canvas.itemconfig(core_arc3, fill='#d1d5db')
-                canvas.itemconfig(arc3_back, fill='#d1d5db')
                 
             else: # IDLE
                 target_text = "Standing by..."
@@ -1874,11 +1805,8 @@ def animation_loop():
                 canvas.itemconfig(sun_glow1, fill='#71717a')
                 canvas.itemconfig(core_bg, fill='#ffffff')
                 canvas.itemconfig(core_arc1, fill='#06b6d4')
-                canvas.itemconfig(arc1_back, fill='#06b6d4')
                 canvas.itemconfig(core_arc2, fill='#3b82f6')
-                canvas.itemconfig(arc2_back, fill='#3b82f6')
                 canvas.itemconfig(core_arc3, fill='#0ea5e9')
-                canvas.itemconfig(arc3_back, fill='#0ea5e9')
 
             if is_hovering_pill:
                 canvas.itemconfig(pill, outline='#6666ff')
