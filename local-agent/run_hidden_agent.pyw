@@ -134,11 +134,18 @@ def generate_3d_ring(cx, cy, radius, rot_x, rot_y, rot_z, scale=1.0):
         points.extend([cx + x3 * scale, cy + y3 * scale])
     return points
 
-# Dyson Sphere Sun Glow layers
-sun_glow3 = canvas.create_oval(cx-20, cy-20, cx+20, cy+20, fill='#1e1e24', outline='')
-sun_glow2 = canvas.create_oval(cx-16, cy-16, cx+16, cy+16, fill='#27272a', outline='')
-sun_glow1 = canvas.create_oval(cx-12, cy-12, cx+12, cy+12, fill='#3f3f46', outline='')
-core_bg = canvas.create_oval(cx-8, cy-8, cx+8, cy+8, fill='#d4d4d8', outline='')
+# Hyperrealistic Dyson Sphere Sun Glow layers
+sun_aura = canvas.create_oval(cx-26, cy-26, cx+26, cy+26, fill='#1e1e24', outline='')
+sun_glow4 = canvas.create_oval(cx-22, cy-22, cx+22, cy+22, fill='#27272a', outline='')
+sun_glow3 = canvas.create_oval(cx-18, cy-18, cx+18, cy+18, fill='#3f3f46', outline='')
+sun_glow2 = canvas.create_oval(cx-14, cy-14, cx+14, cy+14, fill='#52525b', outline='')
+sun_glow1 = canvas.create_oval(cx-10, cy-10, cx+10, cy+10, fill='#a1a1aa', outline='')
+core_bg = canvas.create_oval(cx-6, cy-6, cx+6, cy+6, fill='#ffffff', outline='')
+
+# Shadows for Rings
+shadow1 = canvas.create_polygon(0,0, 0,0, 0,0, 0,0, fill='', outline='#000000', width=3, smooth=True)
+shadow2 = canvas.create_polygon(0,0, 0,0, 0,0, 0,0, fill='', outline='#000000', width=2, smooth=True)
+shadow3 = canvas.create_polygon(0,0, 0,0, 0,0, 0,0, fill='', outline='#000000', width=3, smooth=True)
 
 # Dyson Rings
 core_arc1 = canvas.create_polygon(0,0, 0,0, 0,0, 0,0, fill='', outline='#06b6d4', width=2, smooth=True)
@@ -153,7 +160,7 @@ browser_box = canvas.create_rectangle(cx-12, cy-10, cx+12, cy+10, fill="", outli
 browser_line = canvas.create_line(cx-12, cy-4, cx+12, cy-4, fill="#f97316", width=2, state="hidden")
 
 # Keep variables compatible with animation loop
-face_parts = (sun_glow3, sun_glow2, sun_glow1, core_bg, core_arc1, core_arc2, core_arc3, term_prompt, file_icon, radar_arc, browser_box, browser_line)
+face_parts = (sun_aura, sun_glow4, sun_glow3, sun_glow2, sun_glow1, core_bg, shadow1, shadow2, shadow3, core_arc1, core_arc2, core_arc3, term_prompt, file_icon, radar_arc, browser_box, browser_line)
 cloud_parts = () # Empty, we don't use a thought cloud anymore
 
 # Typography Layout
@@ -1587,9 +1594,15 @@ def animation_loop():
             canvas.itemconfig(core_bg, fill='#18181b')
             target_outline = '#6666ff' if is_hovering_pill else '#27272a'
             canvas.itemconfig(pill, outline=target_outline, fill='#09090b')
-            canvas.itemconfig(sun_glow1, state="hidden")
-            canvas.itemconfig(sun_glow2, state="hidden")
+            canvas.itemconfig(sun_aura, state="hidden")
+            canvas.itemconfig(sun_glow4, state="hidden")
             canvas.itemconfig(sun_glow3, state="hidden")
+            canvas.itemconfig(sun_glow2, state="hidden")
+            canvas.itemconfig(sun_glow1, state="hidden")
+            canvas.itemconfig(core_bg, state="hidden")
+            canvas.itemconfig(shadow1, state="hidden")
+            canvas.itemconfig(shadow2, state="hidden")
+            canvas.itemconfig(shadow3, state="hidden")
             canvas.itemconfig(core_arc1, state="hidden")
             canvas.itemconfig(core_arc2, state="hidden")
             canvas.itemconfig(core_arc3, state="hidden")
@@ -1615,23 +1628,40 @@ def animation_loop():
             r3 = 20 * scale
             rr = 18 * scale
             
-            # 3D Dyson rings and sun pulse
-            time_val = anim_frame * 0.05
-            pulse = math.sin(time_val * 2) * 1.5
-            canvas.coords(sun_glow3, cx-(18+pulse)*scale, cy-(18+pulse)*scale, cx+(18+pulse)*scale, cy+(18+pulse)*scale)
-            canvas.coords(sun_glow2, cx-(13+pulse*0.8)*scale, cy-(13+pulse*0.8)*scale, cx+(13+pulse*0.8)*scale, cy+(13+pulse*0.8)*scale)
-            canvas.coords(sun_glow1, cx-(9+pulse*0.5)*scale, cy-(9+pulse*0.5)*scale, cx+(9+pulse*0.5)*scale, cy+(9+pulse*0.5)*scale)
-            canvas.coords(core_bg, cx-(5+pulse*0.2)*scale, cy-(5+pulse*0.2)*scale, cx+(5+pulse*0.2)*scale, cy+(5+pulse*0.2)*scale)
+            # Hyperrealistic 3D Dyson rings with shadows and bright pulse
+            time_1 = anim_frame * 0.012
+            time_2 = anim_frame * 0.015
+            time_3 = anim_frame * 0.018
+            pulse = math.sin(anim_frame * 0.05) * 2.0
+            
+            # Massive sun aura
+            canvas.coords(sun_aura, cx-(26+pulse*1.2)*scale, cy-(26+pulse*1.2)*scale, cx+(26+pulse*1.2)*scale, cy+(26+pulse*1.2)*scale)
+            canvas.coords(sun_glow4, cx-(21+pulse)*scale, cy-(21+pulse)*scale, cx+(21+pulse)*scale, cy+(21+pulse)*scale)
+            canvas.coords(sun_glow3, cx-(16+pulse*0.8)*scale, cy-(16+pulse*0.8)*scale, cx+(16+pulse*0.8)*scale, cy+(16+pulse*0.8)*scale)
+            canvas.coords(sun_glow2, cx-(12+pulse*0.6)*scale, cy-(12+pulse*0.6)*scale, cx+(12+pulse*0.6)*scale, cy+(12+pulse*0.6)*scale)
+            canvas.coords(sun_glow1, cx-(8+pulse*0.3)*scale, cy-(8+pulse*0.3)*scale, cx+(8+pulse*0.3)*scale, cy+(8+pulse*0.3)*scale)
+            canvas.coords(core_bg, cx-(5+pulse*0.1)*scale, cy-(5+pulse*0.1)*scale, cx+(5+pulse*0.1)*scale, cy+(5+pulse*0.1)*scale)
 
-            canvas.coords(core_arc1, *generate_3d_ring(cx, cy, 22, time_val, time_val*1.3, time_val*0.5, scale))
-            canvas.coords(core_arc2, *generate_3d_ring(cx, cy, 18, -time_val*1.2, time_val*0.8, time_val, scale))
-            canvas.coords(core_arc3, *generate_3d_ring(cx, cy, 26, time_val*0.7, -time_val*1.5, -time_val*0.3, scale))
+            # Draw shadows first (offset Y by 4 pixels)
+            canvas.coords(shadow1, *generate_3d_ring(cx, cy+4*scale, 22, time_1, time_1*1.3, time_1*0.5, scale))
+            canvas.coords(shadow2, *generate_3d_ring(cx, cy+3*scale, 18, -time_2*1.2, time_2*0.8, time_2, scale))
+            canvas.coords(shadow3, *generate_3d_ring(cx, cy+5*scale, 26, time_3*0.7, -time_3*1.5, -time_3*0.3, scale))
+
+            # Draw actual rings
+            canvas.coords(core_arc1, *generate_3d_ring(cx, cy, 22, time_1, time_1*1.3, time_1*0.5, scale))
+            canvas.coords(core_arc2, *generate_3d_ring(cx, cy, 18, -time_2*1.2, time_2*0.8, time_2, scale))
+            canvas.coords(core_arc3, *generate_3d_ring(cx, cy, 26, time_3*0.7, -time_3*1.5, -time_3*0.3, scale))
             canvas.coords(radar_arc, cx-rr, cy-rr, cx+rr, cy+rr)
             
-            canvas.itemconfig(core_bg, state="normal")
-            canvas.itemconfig(sun_glow1, state="normal")
-            canvas.itemconfig(sun_glow2, state="normal")
+            canvas.itemconfig(sun_aura, state="normal")
+            canvas.itemconfig(sun_glow4, state="normal")
             canvas.itemconfig(sun_glow3, state="normal")
+            canvas.itemconfig(sun_glow2, state="normal")
+            canvas.itemconfig(sun_glow1, state="normal")
+            canvas.itemconfig(core_bg, state="normal")
+            canvas.itemconfig(shadow1, state="normal")
+            canvas.itemconfig(shadow2, state="normal")
+            canvas.itemconfig(shadow3, state="normal")
             canvas.itemconfig(core_arc1, state="normal")
             canvas.itemconfig(core_arc2, state="normal")
             canvas.itemconfig(core_arc3, state="normal")
@@ -1653,10 +1683,12 @@ def animation_loop():
                 target_color = '#fbbf24'
                 target_outline = '#b45309'
                 show_dots = True
-                canvas.itemconfig(sun_glow3, fill='#78350f')
-                canvas.itemconfig(sun_glow2, fill='#b45309')
-                canvas.itemconfig(sun_glow1, fill='#d97706')
-                canvas.itemconfig(core_bg, fill='#fde68a')
+                canvas.itemconfig(sun_aura, fill='#451a03')
+                canvas.itemconfig(sun_glow4, fill='#78350f')
+                canvas.itemconfig(sun_glow3, fill='#b45309')
+                canvas.itemconfig(sun_glow2, fill='#d97706')
+                canvas.itemconfig(sun_glow1, fill='#f59e0b')
+                canvas.itemconfig(core_bg, fill='#fef3c7')
                 canvas.itemconfig(core_arc1, outline='#fcd34d')
                 canvas.itemconfig(core_arc2, outline='#fbbf24')
                 canvas.itemconfig(core_arc3, outline='#f59e0b')
@@ -1666,10 +1698,12 @@ def animation_loop():
                 target_color = '#e879f9'
                 target_outline = '#86198f'
                 show_dots = True
-                canvas.itemconfig(sun_glow3, fill='#4a044e')
-                canvas.itemconfig(sun_glow2, fill='#86198f')
-                canvas.itemconfig(sun_glow1, fill='#c026d3')
-                canvas.itemconfig(core_bg, fill='#f9a8d4')
+                canvas.itemconfig(sun_aura, fill='#2e1065')
+                canvas.itemconfig(sun_glow4, fill='#4a044e')
+                canvas.itemconfig(sun_glow3, fill='#86198f')
+                canvas.itemconfig(sun_glow2, fill='#c026d3')
+                canvas.itemconfig(sun_glow1, fill='#e879f9')
+                canvas.itemconfig(core_bg, fill='#fae8ff')
                 canvas.itemconfig(core_arc1, outline='#f472b6')
                 canvas.itemconfig(core_arc2, outline='#e879f9')
                 canvas.itemconfig(core_arc3, outline='#c026d3')
@@ -1746,10 +1780,12 @@ def animation_loop():
                 target_color = '#e5e7eb'
                 target_outline = '#374151'
                 show_dots = True
-                canvas.itemconfig(sun_glow3, fill='#374151')
-                canvas.itemconfig(sun_glow2, fill='#4b5563')
-                canvas.itemconfig(sun_glow1, fill='#9ca3af')
-                canvas.itemconfig(core_bg, fill='#f3f4f6')
+                canvas.itemconfig(sun_aura, fill='#1f2937')
+                canvas.itemconfig(sun_glow4, fill='#374151')
+                canvas.itemconfig(sun_glow3, fill='#4b5563')
+                canvas.itemconfig(sun_glow2, fill='#9ca3af')
+                canvas.itemconfig(sun_glow1, fill='#d1d5db')
+                canvas.itemconfig(core_bg, fill='#ffffff')
                 canvas.itemconfig(core_arc1, outline='#e5e7eb')
                 canvas.itemconfig(core_arc2, outline='#9ca3af')
                 canvas.itemconfig(core_arc3, outline='#d1d5db')
@@ -1757,10 +1793,12 @@ def animation_loop():
             else: # IDLE
                 target_text = "Standing by..."
                 target_outline = '#27272a'
-                canvas.itemconfig(sun_glow3, fill='#1e1e24')
-                canvas.itemconfig(sun_glow2, fill='#27272a')
-                canvas.itemconfig(sun_glow1, fill='#3f3f46')
-                canvas.itemconfig(core_bg, fill='#d4d4d8')
+                canvas.itemconfig(sun_aura, fill='#18181b')
+                canvas.itemconfig(sun_glow4, fill='#1e1e24')
+                canvas.itemconfig(sun_glow3, fill='#27272a')
+                canvas.itemconfig(sun_glow2, fill='#3f3f46')
+                canvas.itemconfig(sun_glow1, fill='#71717a')
+                canvas.itemconfig(core_bg, fill='#ffffff')
                 canvas.itemconfig(core_arc1, outline='#06b6d4')
                 canvas.itemconfig(core_arc2, outline='#3b82f6')
                 canvas.itemconfig(core_arc3, outline='#0ea5e9')
