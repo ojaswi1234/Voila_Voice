@@ -75,9 +75,18 @@ class _ArtifactsPageState extends State<ArtifactsPage> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.folder_open, size: 48, color: Colors.white.withOpacity(0.2)),
+                  Icon(Icons.auto_awesome_mosaic, size: 48, color: Colors.white.withOpacity(0.2)),
                   const SizedBox(height: 16),
-                  Text('No artifacts yet', style: TextStyle(color: Colors.white.withOpacity(0.5))),
+                  const Text('No Artifacts Yet', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 8),
+                  Text('Ask Voila to generate documents or run research\nto see artifacts appear here.', textAlign: TextAlign.center, style: TextStyle(color: Colors.white54, fontSize: 14)),
+                  const SizedBox(height: 24),
+                  ElevatedButton.icon(
+                    icon: const Icon(Icons.arrow_back, size: 16),
+                    label: const Text('Back to Chat'),
+                    style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1A1A1F), foregroundColor: Colors.white),
+                    onPressed: () => Navigator.pop(context),
+                  )
                 ],
               ),
             )

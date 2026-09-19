@@ -2268,6 +2268,14 @@ func executeCommand(ctx context.Context, command string, mode string, conversati
 		if len(gitBranch) > 0 {
 			contextHeader += "Git Branch: " + strings.TrimSpace(string(gitBranch)) + "\n"
 		}
+		if runtime.GOOS == "windows" {
+			titleOut, err := exec.Command("powershell", "-NoProfile", "-Command", "Get-Process | Where-Object {$_.MainWindowTitle} | Select-Object -ExpandProperty MainWindowTitle -First 3").Output()
+			if err == nil && len(titleOut) > 0 {
+				titles := strings.ReplaceAll(strings.TrimSpace(string(titleOut)), "\r\n", " | ")
+				titles = strings.ReplaceAll(titles, "\n", " | ")
+				contextHeader += "Visible Windows: " + titles + "\n"
+			}
+		}
 		prompt = contextHeader + "\n" + prompt
 
 

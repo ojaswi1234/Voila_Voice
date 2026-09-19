@@ -1770,7 +1770,13 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 						payload, _ := json.Marshal(map[string]interface{}{
 							"client_id": clientID,
 						})
-						http.Post(cancelUrl, "application/json", bytes.NewBuffer(payload))
+						req, err := http.NewRequest("POST", cancelUrl, bytes.NewBuffer(payload))
+						if err == nil {
+							req.Header.Set("Content-Type", "application/json")
+							req.Header.Set("X-Exec-Secret", device.SecurityPhraseHash)
+							client := safeHTTPClient()
+							client.Do(req)
+						}
 					}()
 				}
 				

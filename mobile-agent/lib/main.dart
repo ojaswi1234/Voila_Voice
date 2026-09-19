@@ -121,6 +121,78 @@ class VoiceHomePage extends StatefulWidget {
   State<VoiceHomePage> createState() => _VoiceHomePageState();
 }
 
+class _TokenUsageRow extends StatefulWidget {
+  @override
+  State<_TokenUsageRow> createState() => _TokenUsageRowState();
+}
+
+class _TokenUsageRowState extends State<_TokenUsageRow> {
+  Map<String, dynamic>? _data;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetch();
+  }
+
+  Future<void> _fetch() async {
+    try {
+      final uri = Uri.parse(backendUrl).replace(scheme: backendUrl.startsWith('wss') ? 'https' : 'http', path: '/token-usage');
+      final res = await http.get(uri);
+      if (res.statusCode == 200) {
+        if (mounted) setState(() => _data = jsonDecode(res.body));
+      }
+    } catch (_) {}
+    if (mounted) setState(() => _loading = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) return const Padding(padding: EdgeInsets.all(16), child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))));
+    if (_data == null) return const SizedBox.shrink();
+
+    final limit = _data!['groq_limit_tokens']?.toString() ?? '0';
+    final remaining = _data!['groq_remaining_tokens']?.toString() ?? '0';
+    final sessionIn = _data!['groq_session_in']?.toString() ?? '0';
+    final sessionOut = _data!['groq_session_out']?.toString() ?? '0';
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(12)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.analytics_outlined, size: 16, color: Colors.blueAccent),
+              const SizedBox(width: 8),
+              const Text('Token Usage (Groq)', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Session (In/Out):', style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12)),
+              Text('$sessionIn / $sessionOut', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500, fontFamily: 'Courier')),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Rate Limit Remaining:', style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12)),
+              Text('$remaining / $limit', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500, fontFamily: 'Courier')),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserver {
   WebSocketChannel? _channel;  // nullable â€” prevents LateInitializationError before first connect
   StreamSubscription? _wsSubscription;  // stored so we can cancel on dispose/reconnect
@@ -348,6 +420,11 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     _initTts();
     _loadSession();
     _storage.read(key: 'security_phrase').then((val) => _cachedSecurityPhrase = val ?? '');
+    _storage.read(key: 'quiet_hours_enabled').then((val) {
+      if (val != null && mounted) {
+        setState(() => _quietHoursEnabled = val == 'true');
+      }
+    });
     _setupWebSocket();
     _initializeSpeech();
     _setupFCM().catchError((e) => debugPrint('FCM setup error: $e'));  // FCM-01: errors now visible
@@ -924,6 +1001,18 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                 _activeJobStatus = jsonResponse['job_status'];
                 _activeJobSummary = jsonResponse['summary'] ?? '';
               });
+              
+              if (_activeJobStatus == 'done' || _activeJobStatus == 'failed' || _activeJobStatus == 'cancelled') {
+                final currentId = _activeJobId;
+                Future.delayed(const Duration(seconds: 3), () {
+                  if (mounted && _activeJobId == currentId) {
+                    setState(() {
+                      _activeJobId = null;
+                      _activeJobStatus = '';
+                    });
+                  }
+                });
+              }
               return;
             } else if (jsonResponse is Map && jsonResponse['type'] == 'queued') {
               // Task queued! Keep loader spinning.
@@ -975,7 +1064,15 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                 }
                 if (mounted && (jsonResponse['artifacts'] as List).isNotEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('${(jsonResponse['artifacts'] as List).length} artifacts saved!')),
+                    SnackBar(
+                      content: Text('${(jsonResponse['artifacts'] as List).length} artifacts saved!'),
+                      action: SnackBarAction(
+                        label: 'VIEW',
+                        onPressed: () {
+                          Navigator.push(context, MaterialPageRoute(builder: (context) => const ArtifactsPage()));
+                        },
+                      ),
+                    ),
                   );
                 }
               }
@@ -2583,6 +2680,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                 activeColor: const Color(0xFF3DDC97),
                 contentPadding: EdgeInsets.zero,
               ),
+              _TokenUsageRow(),
               SwitchListTile(
                 title: const Text('Auto-read Voice Responses', style: TextStyle(fontSize: 14)),
                 value: _willTalk,
@@ -2612,6 +2710,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                 contentPadding: EdgeInsets.zero,
                 onChanged: (bool value) {
                   setState(() => _quietHoursEnabled = value);
+                  _storage.write(key: 'quiet_hours_enabled', value: value.toString());
                   Navigator.pop(context);
                 },
               ),
@@ -2979,7 +3078,33 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                       color: isError ? Colors.red.shade200 : Colors.white.withOpacity(0.9),
                     ),
                   ),
-                  if (!isUser && !isSystem && message['summary'] != null && message['summary'].toString().isNotEmpty) ...[
+                  if (isError) ...[
+                    const SizedBox(height: 12),
+                    Divider(color: Colors.redAccent.withOpacity(0.2), height: 1),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton.icon(
+                          icon: const Icon(Icons.description, size: 16, color: Colors.redAccent),
+                          label: const Text('Show log', style: TextStyle(color: Colors.redAccent, fontSize: 12)),
+                          style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), minimumSize: Size.zero),
+                          onPressed: () => _showErrorLog(content),
+                        ),
+                        const SizedBox(width: 8),
+                        TextButton.icon(
+                          icon: const Icon(Icons.refresh, size: 16, color: Colors.white),
+                          label: const Text('Retry', style: TextStyle(color: Colors.white, fontSize: 12)),
+                          style: TextButton.styleFrom(
+                            backgroundColor: Colors.redAccent.withOpacity(0.2),
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4), 
+                            minimumSize: Size.zero
+                          ),
+                          onPressed: _retryLastCommand,
+                        ),
+                      ],
+                    ),
+                  ] else if (!isUser && !isSystem && message['summary'] != null && message['summary'].toString().isNotEmpty) ...[
                     const SizedBox(height: 12),
                     Divider(color: Colors.white.withOpacity(0.05), height: 1),
                     const SizedBox(height: 8),
