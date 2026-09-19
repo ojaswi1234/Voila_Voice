@@ -147,7 +147,7 @@ def update_3d_ring(canvas, ring_id, cx, cy, radius, rot_x, rot_y, rot_z, scale, 
 # Shadows (drawn first so they are at the bottom)
 shadow1 = canvas.create_line(0,0, 0,0, fill='#000000', width=1.0)
 shadow2 = canvas.create_line(0,0, 0,0, fill='#000000', width=1.5)
-shadow3 = canvas.create_line(0,0, 0,0, fill='#000000', width=2.5)
+shadow3 = canvas.create_line(0,0, 0,0, fill='#000000', width=2.0)
 
 # Hyperrealistic Dyson Sphere Sun Glow layers
 sun_aura = canvas.create_oval(cx-26, cy-26, cx+26, cy+26, fill='#1e1e24', outline='')
@@ -160,7 +160,7 @@ core_bg = canvas.create_oval(cx-6, cy-6, cx+6, cy+6, fill='#ffffff', outline='')
 # Front Rings (drawn over the sun)
 core_arc1 = canvas.create_line(0,0, 0,0, fill='#06b6d4', width=1.0)
 core_arc2 = canvas.create_line(0,0, 0,0, fill='#3b82f6', width=1.5)
-core_arc3 = canvas.create_line(0,0, 0,0, fill='#0ea5e9', width=2.5)
+core_arc3 = canvas.create_line(0,0, 0,0, fill='#0ea5e9', width=2.0)
 
 # Special State Icons (hidden by default)
 term_prompt = canvas.create_text(cx, cy, text=">_", fill="#10b981", font=("Consolas", 11, "bold"), state="hidden")
