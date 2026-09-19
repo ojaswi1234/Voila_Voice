@@ -1,10 +1,10 @@
-﻿import 'dart:async';  // unawaited(), StreamSubscription, Timer
+import 'dart:async';  // unawaited(), StreamSubscription, Timer
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import 'dart:convert';
-import 'dart:io' show Platform;
+import 'dart:io';
 import 'package:flutter/foundation.dart'; // For compute()
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -3330,7 +3330,6 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       ),
     );
   }
-}
 
   void _cancelJob() {
     if (_activeJobId == null) return;
