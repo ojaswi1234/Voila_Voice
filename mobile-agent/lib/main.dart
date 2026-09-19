@@ -275,6 +275,17 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
           ),
         );
       }
+      
+      if (message.data['type'] == 'task_finished' && message.data['summary'] != null) {
+        _speakSummary(message.data['summary']);
+      }
+
+      if (message.data['type'] == 'approval_required' && message.data['job_id'] != null) {
+        _speakSummary("Approval required for dangerous action: " + (message.data['summary'] ?? "Unknown"));
+        if (mounted) {
+          _showApprovalDialog(message.data['job_id']!, message.data['summary'] ?? "Unknown");
+        }
+      }
     });
 
     RemoteMessage? initialMessage = await FirebaseMessaging.instance.getInitialMessage();
@@ -2409,6 +2420,48 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     }
   }
 
+  // T1.3 Natural summary TTS using lightweight high-quality fallback
+  Future<void> _speakSummary(String text) async {
+    if (!_willTalk || text.isEmpty) return;
+    
+    String cleanText = _normalizeForSpeech(text);
+    if (cleanText.length > 300) {
+      cleanText = cleanText.substring(0, 300) + "..."; 
+    }
+    
+    if (mounted) {
+      setState(() {
+        _currentAiSubtitle = "Summary: " + cleanText;
+        _isAiSpeaking = true;
+      });
+    }
+
+    try {
+      // Try to use a high-quality "network" voice natively
+      List<dynamic> voices = await flutterTts.getVoices;
+      for (var voice in voices) {
+        if (voice["name"] != null && voice["name"].toString().toLowerCase().contains("network")) {
+          await flutterTts.setVoice({"name": voice["name"], "locale": voice["locale"]});
+          break;
+        }
+      }
+      
+      await flutterTts.setPitch(1.0);
+      await flutterTts.setSpeechRate(0.5);
+      await flutterTts.speak(cleanText);
+    } catch (e) {
+      debugPrint("HQ TTS failed: $e");
+      await flutterTts.speak(cleanText);
+    }
+    
+    if (mounted) {
+      setState(() {
+        _isAiSpeaking = false;
+      });
+    }
+  }
+
+
   void _showSettingsSheet(BuildContext context) {
     FocusScope.of(context).unfocus();
     showModalBottomSheet(
@@ -3210,5 +3263,41 @@ class _CollapsibleOutputState extends State<CollapsibleOutput> {
           ),
       ],
     );
+  }
+
+  Future<void> _showApprovalDialog(String jobId, String summary) async {
+    bool? approved = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF1E1E24),
+          title: const Text('Approval Required', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          content: Text(
+            'A dangerous action requires your approval:\n\n$summary',
+            style: const TextStyle(color: Colors.white70),
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Deny', style: TextStyle(color: Colors.redAccent)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Allow', style: TextStyle(color: Colors.greenAccent)),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (approved != null) {
+      _channel?.sink.add(jsonEncode({
+        'type': 'approve_job',
+        'job_id': jobId,
+        'approved': approved,
+        'session_token': _sessionToken,
+      }));
+    }
   }
 }

@@ -161,6 +161,22 @@ var (
 	// Inter-Agent IPC
 	agentRegistryMu sync.RWMutex
 	activeAgents    = make(map[string]*AgentTask)
+	
+	// T1.1 Job Registry
+	jobRegistryMu sync.RWMutex
+	jobRegistry   = make(map[string]*JobRegistryEntry)
+)
+
+type JobRegistryEntry struct {
+	ID         string `json:"id"`
+	Status     string `json:"status"` // queued | running | done | failed | cancelled
+	ResultPath string `json:"result_path,omitempty"`
+	Summary    string `json:"summary,omitempty"`
+}
+
+var (
+	pendingApprovalsMu sync.Mutex
+	pendingApprovals   = make(map[string]chan bool)
 )
 
 type AgentTask struct {
@@ -1331,6 +1347,41 @@ func startHTTPServer() {
 
 	mux.HandleFunc("/models", listModelsHandler)
 	mux.HandleFunc("/conversations", listConversationsHandler)
+	mux.HandleFunc("/jobs", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Content-Type", "application/json")
+		jobRegistryMu.RLock()
+		defer jobRegistryMu.RUnlock()
+		var list []JobRegistryEntry
+		for _, j := range jobRegistry {
+			list = append(list, *j)
+		}
+		json.NewEncoder(w).Encode(list)
+	})
+
+	mux.HandleFunc("/approve", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var req map[string]interface{}
+		json.NewDecoder(r.Body).Decode(&req)
+		
+		jobID, _ := req["job_id"].(string)
+		approved, _ := req["approved"].(bool)
+		
+		pendingApprovalsMu.Lock()
+		if ch, ok := pendingApprovals[jobID]; ok {
+			ch <- approved
+			delete(pendingApprovals, jobID)
+			w.WriteHeader(http.StatusOK)
+		} else {
+			http.Error(w, "Job ID not found or already processed", http.StatusNotFound)
+		}
+		pendingApprovalsMu.Unlock()
+	})
 
 	// ── API Key management endpoints (called by Python dashboard) ──────────
 	mux.HandleFunc("/api-keys", func(w http.ResponseWriter, r *http.Request) {
@@ -1731,8 +1782,23 @@ if ($LASTEXITCODE -ne 0) {
 				fmt.Println("STATUS: GRAPHIFY")
 				os.Stdout.Sync()
 
+				jobID := fmt.Sprintf("job-graphify-%x", time.Now().UnixNano()%0xFFFF)
+				jobRegistryMu.Lock()
+				jobRegistry[jobID] = &JobRegistryEntry{ID: jobID, Status: "running", Summary: "Graphify DAG: " + command}
+				jobRegistryMu.Unlock()
+
 				output, err := executeGraphifyDAG(ctx, command)
 				
+				jobRegistryMu.Lock()
+				if j, ok := jobRegistry[jobID]; ok {
+					if err != nil {
+						j.Status = "failed"
+					} else {
+						j.Status = "done"
+					}
+				}
+				jobRegistryMu.Unlock()
+
 				fmt.Println("STATUS: IDLE")
 				os.Stdout.Sync()
 
@@ -1753,6 +1819,8 @@ if ($LASTEXITCODE -ne 0) {
 					"secret_hash":         secretHash,
 					"mode":                effectiveMode,
 					"new_conversation_id": conversationID,
+					"job_id":              jobID,
+					"summary":             "Graphify DAG: " + command,
 				}
 
 				if err != nil {
@@ -1832,10 +1900,26 @@ if ($LASTEXITCODE -ne 0) {
 			activeAgents[taskID] = myTask
 			agentRegistryMu.Unlock()
 
+			// T1.1 Job Registry
+			jobID := "job-" + taskID
+			jobRegistryMu.Lock()
+			jobRegistry[jobID] = &JobRegistryEntry{ID: jobID, Status: "running", Summary: command}
+			jobRegistryMu.Unlock()
+
 			defer func() {
 				agentRegistryMu.Lock()
 				delete(activeAgents, taskID)
 				agentRegistryMu.Unlock()
+
+				jobRegistryMu.Lock()
+				if j, ok := jobRegistry[jobID]; ok {
+					if err != nil {
+						j.Status = "failed"
+					} else {
+						j.Status = "done"
+					}
+				}
+				jobRegistryMu.Unlock()
 			}()
 
 			fmt.Printf("STATUS: MODE:%s\n", effectiveMode)
@@ -1898,6 +1982,8 @@ if ($LASTEXITCODE -ne 0) {
 				"secret_hash":         secretHash,
 				"mode":                effectiveMode,
 				"new_conversation_id": newConvID,
+				"job_id":              jobID,
+				"summary":             command,
 			}
 
 			if err != nil {
@@ -2230,6 +2316,37 @@ func executeCommand(ctx context.Context, command string, mode string, conversati
 		return outStr, "", nil
 
 	} else {
+		cmdLower := strings.ToLower(command)
+		dangerousPatterns := []string{
+			"format-volume", "clear-disk", "diskpart",
+			"format c:", "format d:", 
+			"set-itemproperty hklm:", "set-itemproperty hkcu:",
+			"remove-itemproperty hklm:", "remove-itemproperty hkcu:",
+			"net user", "net localgroup",
+			"vssadmin delete shadows", "wbadmin delete",
+			"bcdedit /set", "takeown /f c:\\",
+			"icacls c:\\",
+			"remove-computer", "stop-computer", "restart-computer",
+			"disable-netadapter",
+			"rm -rf", "git push", "-recurse -force",
+		}
+		
+		isDangerous := false
+		for _, p := range dangerousPatterns {
+			if strings.Contains(cmdLower, p) {
+				isDangerous = true
+				break
+			}
+		}
+		
+		if isDangerous {
+			fmt.Printf("STATUS: WAITING_APPROVAL\n")
+			os.Stdout.Sync()
+			if !requireMobileApproval(command, "Raw Shell execution of: "+command) {
+				return "ERROR: Command was denied by user or timed out waiting for mobile approval.", "", fmt.Errorf("user denied")
+			}
+		}
+
 		if runtime.GOOS == "windows" {
 			fullCommand := command + "; Write-Output \"`n___PWD___$((Get-Location).Path)\""
 			cmd = exec.CommandContext(ctx, "powershell", "-Command", fullCommand)
@@ -2467,13 +2584,42 @@ var availableTools = []toolDef{
 	{
 		Type: "function",
 		Function: toolFuncDef{
+			Name:        "list_playbooks",
+			Description: "List all available on-disk playbooks that can be executed.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "run_playbook",
+			Description: "Run a specific playbook by its ID.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"playbook_id": map[string]interface{}{
+						"type":        "string",
+						"description": "The ID of the playbook to run.",
+					},
+				},
+				"required": []string{"playbook_id"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
 			Name:        "create_pdf",
 			Description: "Create a PDF file with text content.",
 			Parameters: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"path":      map[string]interface{}{"type": "string", "description": "Absolute path to save the PDF"},
-					"content":   map[string]interface{}{"type": "string", "description": "The rich HTML or Markdown content of the PDF. The content MUST be exhaustive, massive, and highly detailed. DO NOT write short summaries. Leave empty if using source_files."},
+					"content":   map[string]interface{}{"type": "string", "description": "The rich HTML or Markdown content of the PDF. The content MUST be exhaustive, massive, and highly detailed. DO NOT write short summaries. Leave empty if using source_files or json."},
+					"json":      map[string]interface{}{"type": "string", "description": "A fully valid JSON string representing the Document IR (Intermediate Representation) for creating rich visual reports, blueprints, and audits. E.g., {\"format\":\"pdf\", \"meta\":{\"title\":\"...\"}, \"document\": {\"sections\":[{\"type\":\"text\",\"title\":\"...\",\"body\":\"...\"}, {\"type\":\"diagram\",\"engine\":\"mermaid\",\"source\":\"graph TD...\"}, {\"type\":\"table\",\"columns\":[...],\"rows\":[...]}]}}"},
 					"source_files": map[string]interface{}{
 						"type": "array",
 						"items": map[string]interface{}{
@@ -2490,7 +2636,7 @@ var availableTools = []toolDef{
 - "FlowGPT Visual Infographic": Uses dense, highly visual layouts, bullet point grids, and colorful accent blocks.`},
 					"theme":     map[string]interface{}{"type": "string", "description": "Theme name MUST BE one of: origami, handwritten, sketching, pixelated, asciiart, or notebooklm"},
 				},
-				"required": []string{"path", "content", "theme", "design_strategy"},
+				"required": []string{"path", "theme", "design_strategy"},
 			},
 		},
 	},
@@ -2989,6 +3135,41 @@ func cleanupTerminalSession() {
 		terminalPid = ""
 	}
 }
+func requireMobileApproval(command, summary string) bool {
+	connData, err := loadConnectionData()
+	if err != nil { return false }
+	
+	reqID := fmt.Sprintf("req-%x", time.Now().UnixNano()%0xFFFF)
+	ch := make(chan bool, 1)
+	
+	pendingApprovalsMu.Lock()
+	pendingApprovals[reqID] = ch
+	pendingApprovalsMu.Unlock()
+	
+	backendURL := strings.TrimRight(connData.BackendURL, "/") + "/webhook/approval_request"
+	backendURL = strings.Replace(backendURL, "wss://", "https://", 1)
+	backendURL = strings.Replace(backendURL, "ws://", "http://", 1)
+	
+	payload, _ := json.Marshal(map[string]string{
+		"device_id": connData.DeviceID,
+		"secret_hash": hashPhrase(connData.SecurityPhrase, connData.DeviceID),
+		"job_id": reqID,
+		"summary": summary,
+	})
+	
+	http.Post(backendURL, "application/json", bytes.NewBuffer(payload))
+	
+	select {
+	case approved := <-ch:
+		return approved
+	case <-time.After(45 * time.Second):
+		pendingApprovalsMu.Lock()
+		delete(pendingApprovals, reqID)
+		pendingApprovalsMu.Unlock()
+		return false
+	}
+}
+
 func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMessage, streamFileObj *os.File) string {
 	// Emit status so Python face knows which tool is running
 	fmt.Printf("STATUS: TOOL:%s\n", toolName)
@@ -3237,6 +3418,60 @@ case "read_file":
 		}
 		return "ok"
 
+	case "list_playbooks":
+		exeDir, _ := os.Executable()
+		pbDir := filepath.Join(filepath.Dir(exeDir), "playbooks")
+		files, err := os.ReadDir(pbDir)
+		if err != nil {
+			return "No playbooks found or error reading directory: " + err.Error()
+		}
+		var list []string
+		for _, f := range files {
+			if strings.HasSuffix(f.Name(), ".json") {
+				list = append(list, f.Name())
+			}
+		}
+		if len(list) == 0 {
+			return "No playbooks found."
+		}
+		return "Available playbooks: " + strings.Join(list, ", ")
+
+	case "run_playbook":
+		pbID := getString("playbook_id")
+		exeDir, _ := os.Executable()
+		pbPath := filepath.Join(filepath.Dir(exeDir), "playbooks", pbID)
+		if !strings.HasSuffix(pbPath, ".json") { pbPath += ".json" }
+		
+		data, err := os.ReadFile(pbPath)
+		if err != nil {
+			return "error reading playbook: " + err.Error()
+		}
+		
+		var playbook struct {
+			Steps []struct {
+				Type string `json:"type"`
+				Command string `json:"command,omitempty"`
+				ToolName string `json:"tool_name,omitempty"`
+				Args map[string]interface{} `json:"args,omitempty"`
+			} `json:"steps"`
+		}
+		if err := json.Unmarshal(data, &playbook); err != nil {
+			return "error parsing playbook JSON: " + err.Error()
+		}
+		
+		var results []string
+		for i, step := range playbook.Steps {
+			if step.Type == "tool" {
+				argsJSON, _ := json.Marshal(step.Args)
+				res := executeToolInner(ctx, step.ToolName, argsJSON, streamFileObj)
+				results = append(results, fmt.Sprintf("Step %d (%s) output: %s", i+1, step.ToolName, res))
+			} else if step.Type == "agent_prompt" {
+				// Simply returning this back to the AI context is usually enough for it to see it.
+				results = append(results, fmt.Sprintf("Step %d instructions: %s", i+1, step.Command))
+			}
+		}
+		return strings.Join(results, "\n")
+
 	case "run_terminal":
 		actualCommand := getString("command")
 		// Terminal already starts in Desktop natively via startTerminalSession()
@@ -3261,19 +3496,22 @@ case "read_file":
 			"icacls c:\\",
 			"remove-computer", "stop-computer", "restart-computer",
 			"disable-netadapter",
+			"rm -rf", "git push", "-recurse -force",
 		}
+		
+		isDangerous := false
 		for _, p := range dangerousPatterns {
 			if strings.Contains(cmdLower, p) {
-				return fmt.Sprintf("HARD GUARDRAIL TRIGGERED: The command contains a restricted pattern (%s) and has been BLOCKED to protect system integrity.", p)
+				isDangerous = true
+				break
 			}
 		}
 		
-		// Blanket delete protections
-		if strings.Contains(cmdLower, "rm ") || strings.Contains(cmdLower, "remove-item ") || strings.Contains(cmdLower, "del ") {
-			if strings.Contains(cmdLower, "-recurse") || strings.Contains(cmdLower, "/s") {
-				if strings.Contains(cmdLower, "c:\\windows") || strings.Contains(cmdLower, "c:\\program") || strings.Contains(cmdLower, "system32") {
-					return "HARD GUARDRAIL TRIGGERED: Recursive deletion of OS core directories is strictly forbidden."
-				}
+		if isDangerous {
+			fmt.Printf("STATUS: WAITING_APPROVAL\n")
+			os.Stdout.Sync()
+			if !requireMobileApproval(actualCommand, "Terminal execution of: "+actualCommand) {
+				return "ERROR: Command was denied by user or timed out waiting for mobile approval."
 			}
 		}
 
@@ -3349,7 +3587,12 @@ case "read_file":
 
 		exeDir, _ := os.Executable()
 		scriptPath := filepath.Join(filepath.Dir(exeDir), "browser_tools.py")
-
+		if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
+			scriptPath = filepath.Join(currentWorkingDir, "browser_tools.py")
+			if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
+				scriptPath = filepath.Join(currentWorkingDir, "local-agent", "browser_tools.py")
+			}
+		}
 		cmdArgs := []string{scriptPath, "--action", action}
 		if url != "" {
 			cmdArgs = append(cmdArgs, "--url", url)
@@ -3524,9 +3767,9 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 
 3. McKINSEY-STYLE DESIGN PRINCIPLES:
    - BLUF (Bottom Line Up Front): Slide titles MUST be actionable takeaways (e.g., "Revenue grew 14% due to Q3 marketing," NOT "Q3 Revenue").
-   - Rule of 6: Never exceed 6 bullet points per slide, and 6 words per line.
-   - Variety: Break walls of text using Two-Column layouts ('\begin{multicols}{2}' in LaTeX, or side-by-side text boxes in PPTX).
-   - Visual Hierarchy: Use weight (Bold) and Color (Theme Hex Codes) for emphasis, NOT underlines. Underlines clip into descenders (like p, g, y) and look amateurish.
+   - Blueprints & Architectures: You MUST emit "mermaid" diagram sections for visual architecture. Do NOT use ASCII-only art. Use the 'json' parameter of 'create_pdf' to pass Document IR with a 'diagram' section.
+   - Audits & Reports: You MUST gather real data and fill 'table' sections. NEVER generate title-only or blank PDFs. Ensure deep substance.
+   - Visual Hierarchy: Use weight (Bold) and Color (Theme Hex Codes) for emphasis, NOT underlines.
 
 4. AUTONOMOUS RESEARCH & CONTENT EXPANSION (FOR NON-TECH USERS):
    - The user is non-technical. If they ask for a document (like a "long PDF about X"), they expect YOU to act as a senior researcher and designer.
@@ -3894,9 +4137,9 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 
 3. McKINSEY-STYLE DESIGN PRINCIPLES:
    - BLUF (Bottom Line Up Front): Slide titles MUST be actionable takeaways (e.g., "Revenue grew 14% due to Q3 marketing," NOT "Q3 Revenue").
-   - Rule of 6: Never exceed 6 bullet points per slide, and 6 words per line.
-   - Variety: Break walls of text using Two-Column layouts ('\begin{multicols}{2}' in LaTeX, or side-by-side text boxes in PPTX).
-   - Visual Hierarchy: Use weight (Bold) and Color (Theme Hex Codes) for emphasis, NOT underlines. Underlines clip into descenders (like p, g, y) and look amateurish.
+   - Blueprints & Architectures: You MUST emit "mermaid" diagram sections for visual architecture. Do NOT use ASCII-only art. Use the 'json' parameter of 'create_pdf' to pass Document IR with a 'diagram' section.
+   - Audits & Reports: You MUST gather real data and fill 'table' sections. NEVER generate title-only or blank PDFs. Ensure deep substance.
+   - Visual Hierarchy: Use weight (Bold) and Color (Theme Hex Codes) for emphasis, NOT underlines.
 
 4. AUTONOMOUS RESEARCH & CONTENT EXPANSION (FOR NON-TECH USERS):
    - The user is non-technical. If they ask for a document (like a "long PDF about X"), they expect YOU to act as a senior researcher and designer.

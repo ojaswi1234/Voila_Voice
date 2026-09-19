@@ -362,10 +362,24 @@ def create_pdf(kwargs):
             
             ir = normalize_ir(json_ir)
             
-            # Normalize diagrams
+            # QUALITY GATE: Ensure document has actual substance
+            total_text = sum(len(sec.body or '') + len(sec.text or '') for sec in ir.document.sections if sec.type in ('text', 'prose', 'markdown'))
+            has_tables = any(sec.type == 'table' for sec in ir.document.sections)
+            has_images = any(sec.type in ('diagram', 'image') for sec in ir.document.sections)
+            
+            if total_text < 150 and not has_tables and not has_images:
+                return "ERROR: Document quality gate failed. The document has negligible body text and no tables or diagrams. Do not return an empty or title-only PDF. Retry by including detailed body text, tables of findings, or mermaid diagrams in the sections."
+
+            # Normalize diagrams and parse markdown to HTML
             has_diagrams = False
             for sec in ir.document.sections:
-                if sec.type == 'diagram':
+                if sec.type in ('prose', 'text', 'markdown'):
+                    # Convert minimal markdown (**bold**, lists) to HTML
+                    if sec.body and '<' not in sec.body:
+                        sec.body = markdown.markdown(sec.body, extensions=['sane_lists'])
+                    if sec.text and '<' not in sec.text:
+                        sec.text = markdown.markdown(sec.text, extensions=['sane_lists'])
+                elif sec.type == 'diagram':
                     has_diagrams = True
                     if sec.engine == 'mermaid':
                         sec.image_path = render_mermaid_to_png(sec.source, theme=sec.theme or 'default', background=sec.background or 'transparent')
@@ -410,6 +424,11 @@ def create_pdf(kwargs):
             return f"Error using Design IR: {e}"
             
     content = kwargs.get('content', '')
+    source_files = kwargs.get('source_files', [])
+    
+    # QUALITY GATE for standard fallback
+    if len(content) < 150 and not source_files:
+        return "ERROR: Document quality gate failed. The content provided is too short. Do not return an empty PDF. Retry by including detailed body text, tables, or sections."
     
     # Clean up AI LaTeX math hallucinations
     if content:
@@ -419,7 +438,7 @@ def create_pdf(kwargs):
         content = content.replace('$\\Leftarrow$', '⇐')
         content = content.replace('\\rightarrow', '→')
         content = content.replace('\\Rightarrow', '⇒')
-    source_files = kwargs.get('source_files', [])
+        
     watermark = kwargs.get('watermark', '')
 
     # If source_files are provided, read and concatenate them (for massive 40-page PDFs)

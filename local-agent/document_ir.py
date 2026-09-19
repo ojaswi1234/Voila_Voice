@@ -13,6 +13,8 @@ def sanitize_string(value: str) -> str:
     value = value.replace("Get-Date", "")
     # Normalize degree: Â° / ┬░ repair if present; prefer proper °
     value = value.replace("Â°", "°").replace("┬░", "°")
+    # Fix common UTF-8 mojibake (e.g., em dash, quotes)
+    value = value.replace("â€”", "—").replace("â€\"", "—").replace("â€™", "’").replace("â€˜", "‘").replace("â€œ", "“").replace("â€\x9d", "”")
     return value
 
 class DocumentMeta(BaseModel):

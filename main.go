@@ -268,7 +268,7 @@ func (b *Backend) addSecurityAlert(alertType, ip, deviceID, clientID, detail, se
 }
 
 
-func (b *Backend) sendFCMTaskCompletion(deviceID, title, body string) {
+func (b *Backend) sendFCMTaskCompletion(deviceID, eventType, title, body, jobID, summary, artifactPath string) {
 	b.mu.RLock()
 	device, exists := b.devices[deviceID]
 	if !exists || len(device.FCMTokens) == 0 {
@@ -290,7 +290,10 @@ func (b *Backend) sendFCMTaskCompletion(deviceID, title, body string) {
 				Body:  body,
 			},
 			Data: map[string]string{
-				"type": "task_finished",
+				"type": eventType,
+				"job_id": jobID,
+				"summary": summary,
+				"artifact_path": artifactPath,
 			},
 			Android: &messaging.AndroidConfig{
 				Priority: "high",
@@ -1172,6 +1175,36 @@ func handleWebhookAlert(b *Backend) http.HandlerFunc {
 	}
 }
 
+func handleWebhookApprovalReq(b *Backend) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var req map[string]interface{}
+		json.NewDecoder(r.Body).Decode(&req)
+		
+		deviceID, _ := req["device_id"].(string)
+		secretHash, _ := req["secret_hash"].(string)
+		jobID, _ := req["job_id"].(string)
+		summary, _ := req["summary"].(string)
+
+		b.mu.RLock()
+		device, exists := b.devices[deviceID]
+		b.mu.RUnlock()
+
+		if !exists || subtle.ConstantTimeCompare([]byte(device.SecurityPhraseHash), []byte(secretHash)) != 1 {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		if b.fcmClient != nil {
+			go b.sendFCMTaskCompletion(deviceID, "approval_required", "Approval Required", "Dangerous action pending: "+summary, jobID, summary, "")
+		}
+		w.WriteHeader(http.StatusOK)
+	}
+}
+
 func handleWebhookResult(b *Backend) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -1206,13 +1239,17 @@ func handleWebhookResult(b *Backend) http.HandlerFunc {
 
 		if b.fcmClient != nil {
 			isCancelled := strings.Contains(strings.ToLower(errorMsg), "cancel") || strings.Contains(strings.ToLower(errorMsg), "killed")
+			jobID, _ := req["job_id"].(string)
+			summary, _ := req["summary"].(string)
+			artifactPath, _ := req["artifact_path"].(string)
+
 			if errorMsg != "" {
 				if !isCancelled {
-					go b.sendFCMTaskCompletion(deviceID, "Task Failed", "An error occurred during execution.")
+					go b.sendFCMTaskCompletion(deviceID, "task_failed", "Task Failed", "An error occurred during execution.", jobID, summary, artifactPath)
 				}
 				// If cancelled, deliberately send no push notification
 			} else {
-				go b.sendFCMTaskCompletion(deviceID, "Task Finished", "Your executed command has finished.")
+				go b.sendFCMTaskCompletion(deviceID, "task_finished", "Task Finished", "Your executed command has finished.", jobID, summary, artifactPath)
 			}
 		}
 
@@ -1679,6 +1716,26 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				} else {
 					b.dispatcher.Dispatch(clientID, messageType, []byte("OK: Device switched"))
 				}
+
+			case "approve_job":
+				jobID, _ := msg["job_id"].(string)
+				approved, _ := msg["approved"].(bool)
+				
+				// Post to local agent's /approve endpoint
+				b.mu.RLock()
+				device, exists := b.devices[deviceID]
+				b.mu.RUnlock()
+				
+				if exists && device.Active {
+					go func() {
+						approveUrl := strings.TrimRight(device.Address, "/") + "/approve"
+						payload, _ := json.Marshal(map[string]interface{}{
+							"job_id": jobID,
+							"approved": approved,
+						})
+						http.Post(approveUrl, "application/json", bytes.NewBuffer(payload))
+					}()
+				}
 				
 			case "lock_device":
 				err := b.lockDevice(deviceID, clientID)
@@ -1911,6 +1968,7 @@ func main() {
 	http.HandleFunc("/ws", handleWebSocket(backend))
 	http.HandleFunc("/webhook/result", handleWebhookResult(backend))
 	http.HandleFunc("/webhook/alert", handleWebhookAlert(backend))
+	http.HandleFunc("/webhook/approval_request", handleWebhookApprovalReq(backend))
 	http.HandleFunc("/webhook/status", handleWebhookStatus(backend))
 	http.HandleFunc("/test_optimize", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
