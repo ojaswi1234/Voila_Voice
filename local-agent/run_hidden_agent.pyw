@@ -497,7 +497,7 @@ dash_sphere_parts = {}
 def init_dash_sphere():
     global dash_sphere_canvas, dash_sphere_parts
     if dash_sphere_canvas: return
-    dash_sphere_canvas = tk.Canvas(dash_sidebar, width=60, height=60, bg='#16171C', highlightthickness=0)
+    dash_sphere_canvas = tk.Canvas(dash_sidebar, width=120, height=120, bg='#16171C', highlightthickness=0)
     dash_sphere_canvas.pack(pady=(16, 0))
     c = dash_sphere_canvas
     dash_sphere_parts['shadow1'] = c.create_line(0,0, 0,0, fill='#000000', width=1.0, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
@@ -517,8 +517,8 @@ def update_dash_sphere(pulse, r1_x, r1_y, r1_z, r2_x, r2_y, r2_z, r3_x, r3_y, r3
     if not dash_sphere_canvas: return
     c = dash_sphere_canvas
     p = dash_sphere_parts
-    cx, cy = 30, 30
-    scale = 1.0
+    cx, cy = 60, 60
+    scale = 2.0
     c.coords(p['sun_aura'], cx-(26+pulse*1.2)*scale, cy-(26+pulse*1.2)*scale, cx+(26+pulse*1.2)*scale, cy+(26+pulse*1.2)*scale)
     c.coords(p['sun_glow4'], cx-(22+pulse*1.0)*scale, cy-(22+pulse*1.0)*scale, cx+(22+pulse*1.0)*scale, cy+(22+pulse*1.0)*scale)
     c.coords(p['sun_glow3'], cx-(18+pulse*0.8)*scale, cy-(18+pulse*0.8)*scale, cx+(18+pulse*0.8)*scale, cy+(18+pulse*0.8)*scale)
@@ -1636,6 +1636,28 @@ def animation_loop():
                 if transition_scale > 1.0:
                     transition_scale = 1.0
 
+        # --- COMPUTE ANIMATION MATH UNCONDITIONALLY ---
+        pulse = math.sin(anim_frame * 0.03) * 1.0
+        t = anim_frame * 0.01
+        
+        # Inner ring: Fast and erratic tumbling
+        r1_x = t * 1.5 + math.sin(t * 0.8) * 1.2
+        r1_y = t * 0.9 + math.cos(t * 1.1) * 1.5
+        r1_z = t * 2.1 + math.sin(t * 0.5) * 0.8
+
+        # Middle ring: Smooth, sweeping gyroscopic motion
+        r2_x = -t * 0.8 + math.cos(t * 0.6) * 2.0
+        r2_y = t * 1.2 + math.sin(t * 0.4) * 1.8
+        r2_z = -t * 1.5 + math.cos(t * 0.7) * 1.2
+
+        # Outer ring: Majestic, slow, wide-arching orbital shifts
+        r3_x = t * 0.5 + math.sin(t * 0.3) * 2.5
+        r3_y = -t * 0.7 + math.cos(t * 0.25) * 3.0
+        r3_z = t * 0.4 + math.sin(t * 0.2) * 2.0
+        
+        # ALWAYS UPDATE DASHBOARD SPHERE (it's independent of mobile clients)
+        update_dash_sphere(pulse, r1_x, r1_y, r1_z, r2_x, r2_y, r2_z, r3_x, r3_y, r3_z)
+
         if mobile_clients == 0:
             if not alert_state["active"]:
                 canvas.itemconfig(status_text, text="Offline (Standing by)", fill='#6b7280')
@@ -1676,9 +1698,6 @@ def animation_loop():
             r3 = 20 * scale
             rr = 18 * scale
             
-            # Hyperrealistic 3D Dyson rings with precise occlusion and shadows
-            pulse = math.sin(anim_frame * 0.03) * 1.0
-            
             # Massive sun aura (increased star size)
             canvas.coords(sun_aura, cx-(26+pulse*1.2)*scale, cy-(26+pulse*1.2)*scale, cx+(26+pulse*1.2)*scale, cy+(26+pulse*1.2)*scale)
             canvas.coords(sun_glow4, cx-(22+pulse*1.0)*scale, cy-(22+pulse*1.0)*scale, cx+(22+pulse*1.0)*scale, cy+(22+pulse*1.0)*scale)
@@ -1687,28 +1706,9 @@ def animation_loop():
             canvas.coords(sun_glow1, cx-(10+pulse*0.3)*scale, cy-(10+pulse*0.3)*scale, cx+(10+pulse*0.3)*scale, cy+(10+pulse*0.3)*scale)
             canvas.coords(core_bg, cx-(6)*scale, cy-(6)*scale, cx+(6)*scale, cy+(6)*scale)
 
-            # Draw rings OVER the star, with advanced non-linear gyroscopic mathematics
-            t = anim_frame * 0.01
-            
-            # Inner ring: Fast and erratic tumbling
-            r1_x = t * 1.5 + math.sin(t * 0.8) * 1.2
-            r1_y = t * 0.9 + math.cos(t * 1.1) * 1.5
-            r1_z = t * 2.1 + math.sin(t * 0.5) * 0.8
-
-            # Middle ring: Smooth, sweeping gyroscopic motion
-            r2_x = -t * 0.8 + math.cos(t * 0.6) * 2.0
-            r2_y = t * 1.2 + math.sin(t * 0.4) * 1.8
-            r2_z = -t * 1.5 + math.cos(t * 0.7) * 1.2
-
-            # Outer ring: Majestic, slow, wide-arching orbital shifts
-            r3_x = t * 0.5 + math.sin(t * 0.3) * 2.5
-            r3_y = -t * 0.7 + math.cos(t * 0.25) * 3.0
-            r3_z = t * 0.4 + math.sin(t * 0.2) * 2.0
-
             update_3d_ring(canvas, core_arc1, cx, cy, 14, r1_x, r1_y, r1_z, scale, shadow1, 2*scale)
             update_3d_ring(canvas, core_arc2, cx, cy, 17, r2_x, r2_y, r2_z, scale, shadow2, 2*scale)
             update_3d_ring(canvas, core_arc3, cx, cy, 20, r3_x, r3_y, r3_z, scale, shadow3, 2*scale)
-            update_dash_sphere(pulse, r1_x, r1_y, r1_z, r2_x, r2_y, r2_z, r3_x, r3_y, r3_z)
             canvas.coords(radar_arc, cx-rr, cy-rr, cx+rr, cy+rr)
             
             canvas.itemconfig(sun_aura, state="normal")
