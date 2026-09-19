@@ -3394,7 +3394,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Job: \', style: TextStyle(color: statusColor, fontSize: 10, fontWeight: FontWeight.bold)),
+                Text('Job: ', style: TextStyle(color: statusColor, fontSize: 10, fontWeight: FontWeight.bold)),
                 Text(_activeJobSummary, style: const TextStyle(color: Colors.white, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis),
               ],
             ),
@@ -3410,6 +3410,43 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       ),
     );
   }
+
+  Future<void> _showApprovalDialog(String jobId, String summary) async {
+    bool? approved = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF1E1E24),
+          title: const Text('Approval Required', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          content: Text(
+            'A dangerous action requires your approval:\n\n$summary',
+            style: const TextStyle(color: Colors.white70),
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Deny', style: TextStyle(color: Colors.redAccent)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Allow', style: TextStyle(color: Colors.greenAccent)),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (approved != null) {
+      _channel?.sink.add(jsonEncode({
+        'type': 'approve_job',
+        'job_id': jobId,
+        'approved': approved,
+        'session_token': _sessionToken,
+      }));
+    }
+  }
+}
 
 class CollapsibleOutput extends StatefulWidget {
   final String text;
@@ -3479,41 +3516,6 @@ class _CollapsibleOutputState extends State<CollapsibleOutput> {
     );
   }
 
-  Future<void> _showApprovalDialog(String jobId, String summary) async {
-    bool? approved = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          backgroundColor: const Color(0xFF1E1E24),
-          title: const Text('Approval Required', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-          content: Text(
-            'A dangerous action requires your approval:\n\n$summary',
-            style: const TextStyle(color: Colors.white70),
-          ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Deny', style: TextStyle(color: Colors.redAccent)),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Allow', style: TextStyle(color: Colors.greenAccent)),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (approved != null) {
-      _channel?.sink.add(jsonEncode({
-        'type': 'approve_job',
-        'job_id': jobId,
-        'approved': approved,
-        'session_token': _sessionToken,
-      }));
-    }
-  }
 }
 
 
