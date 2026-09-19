@@ -3,7 +3,7 @@
     {
       "id": "node1",
       "role": "Researcher",
-      "model": "llama3-8b\n(Ollama)",
+      "model": "openai/gpt-oss-20b\n(Groq)",
       "prompt": "Analyze the request and propose an initial approach.",
       "x": 150,
       "y": 150,
@@ -14,7 +14,7 @@
     {
       "id": "node2",
       "role": "Orchestrator",
-      "model": "llama3-70b\n(Groq)",
+      "model": "openai/gpt-oss-120b\n(Groq)",
       "prompt": "Resolve the debate and improve the approach.",
       "x": 350,
       "y": 250,
@@ -25,7 +25,7 @@
     {
       "id": "node3",
       "role": "Reviewer",
-      "model": "gemma-2b\n(Ollama)",
+      "model": "openai/gpt-oss-20b\n(Groq)",
       "prompt": "Critique the approach and point out flaws.",
       "x": 550,
       "y": 150,
@@ -43,5 +43,6 @@
       "node2",
       "node3"
     ]
-  ]
+  ],
+  "is_custom": false
 }
