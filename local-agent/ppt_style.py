@@ -29,7 +29,14 @@ def add_card(slide, x, y, cx, cy, fill_color, border_color):
     card.line.width = Pt(1)
     return card
 
-def set_run_font(run, theme, role="Body"):
+def set_run_font(run_or_p, theme, role="Body"):
+    if hasattr(run_or_p, 'runs'):
+        if not run_or_p.runs:
+            run_or_p.add_run()
+        run = run_or_p.runs[0]
+    else:
+        run = run_or_p
+
     if role == "Title":
         run.font.name = theme.get("font_heading", "Arial")
         run.font.color.rgb = RGBColor(*theme['color_heading'])
@@ -45,7 +52,7 @@ def add_footer(slide, title, page_idx, page_count, theme):
     tf = footer_box.text_frame
     p = tf.paragraphs[0]
     p.text = f"{title}   |   {page_idx}/{page_count}"
-    set_run_font(p.runs[0], theme, "Body")
+    set_run_font(p, theme, "Body")
     p.font.size = Pt(10)
     p.font.color.rgb = RGBColor(*theme['color_accent'])
     p.alignment = PP_ALIGN.RIGHT
@@ -57,6 +64,10 @@ def get_svg_icon_path(icon_name):
     fd, temp_svg = tempfile.mkstemp(suffix=".svg")
     with os.fdopen(fd, 'w', encoding='utf-8') as f:
         f.write(svg_data)
-    import diagram_render
-    png_path = diagram_render.svg_file_to_png(temp_svg)
-    return png_path
+    try:
+        import diagram_render
+        png_path = diagram_render.svg_file_to_png(temp_svg)
+        return png_path
+    except Exception as e:
+        print("SVG icon render failed:", e)
+        return None

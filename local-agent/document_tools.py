@@ -806,7 +806,7 @@ def create_pdf(kwargs):
                         }} else if (["<---", "<--", "<-", "←", "↑"].includes(p)) {{
                             currentEdge = "---";
                         }} else {{
-                            let label = p.replace(/\[/g, '').replace(/\]/g, '').replace(/\*/g, '').replace(/\+/g, '').replace(/\|/g, '').replace(/\(/g, '').replace(/\)/g, '').trim();
+                            let label = p.replace(/\\[/g, '').replace(/\\]/g, '').replace(/\*/g, '').replace(/\+/g, '').replace(/\|/g, '').replace(/\(/g, '').replace(/\)/g, '').trim();
                             if (!label) return;
                             
                             // Truncate overly long text blocks that aren't real nodes
@@ -901,7 +901,6 @@ def create_ppt(kwargs):
     from design_tokens import get_theme
     from document_ir import normalize_ir, Slide
     import ppt_style
-    import diagram_render
     
     path = kwargs.get('path', 'presentation.pptx')
     ir_data = kwargs.get('ir') or kwargs
@@ -930,9 +929,13 @@ def create_ppt(kwargs):
     if not ir.slides:
         return "ERROR: Empty deck. Generate real content slides."
         
-    has_content = any(s.master in ['content', 'stats', 'stat_grid', 'chart', 'diagram', 'two_column', 'comparison', 'image_focus', 'metrics', 'timeline', 'agenda'] for s in ir.slides)
-    if not has_content:
-        return "ERROR: Empty deck. Generate real content slides."
+    def slide_has_content(s):
+        if s.master not in ['title_slide', 'section_divider', 'closing']:
+            return True
+        return bool(s.title or s.body or s.items or s.stats or s.chart_data or s.source)
+    
+    if not any(slide_has_content(s) for s in ir.slides):
+        return "ERROR: Empty deck. Generate real content slides with text, stats, charts, or diagrams."
 
     for idx, slide_data in enumerate(ir.slides):
         slide = prs.slides.add_slide(blank_slide_layout)
@@ -946,7 +949,7 @@ def create_ppt(kwargs):
             tf = tb.text_frame
             p = tf.paragraphs[0]
             p.text = text
-            ppt_style.set_run_font(p.runs[0], theme_config, "Title")
+            ppt_style.set_run_font(p, theme_config, "Title")
             p.font.size = Pt(36)
             return tb
             
@@ -955,7 +958,7 @@ def create_ppt(kwargs):
             tf = title_box.text_frame
             p = tf.paragraphs[0]
             p.text = slide_data.title or "Title"
-            ppt_style.set_run_font(p.runs[0], theme_config, "Title")
+            ppt_style.set_run_font(p, theme_config, "Title")
             p.font.size = Pt(48)
             p.alignment = PP_ALIGN.CENTER
             
@@ -963,7 +966,7 @@ def create_ppt(kwargs):
             stf = sub_box.text_frame
             sp = stf.paragraphs[0]
             sp.text = slide_data.subtitle or ""
-            ppt_style.set_run_font(sp.runs[0], theme_config, "Subtitle")
+            ppt_style.set_run_font(sp, theme_config, "Subtitle")
             sp.font.size = Pt(24)
             sp.alignment = PP_ALIGN.CENTER
             
@@ -972,7 +975,7 @@ def create_ppt(kwargs):
             tf = tb.text_frame
             p = tf.paragraphs[0]
             p.text = slide_data.title or "Section"
-            ppt_style.set_run_font(p.runs[0], theme_config, "Title")
+            ppt_style.set_run_font(p, theme_config, "Title")
             p.font.size = Pt(40)
             p.alignment = PP_ALIGN.CENTER
             
@@ -993,14 +996,14 @@ def create_ppt(kwargs):
                 lb = slide.shapes.add_textbox(x, y + Inches(0.2), Inches(width - 0.2), Inches(0.5))
                 lp = lb.text_frame.paragraphs[0]
                 lp.text = stat.get('label', '')
-                ppt_style.set_run_font(lp.runs[0], theme_config, "Subtitle")
+                ppt_style.set_run_font(lp, theme_config, "Subtitle")
                 lp.font.size = Pt(16)
                 lp.alignment = PP_ALIGN.CENTER
                 
                 vb = slide.shapes.add_textbox(x, y + Inches(0.8), Inches(width - 0.2), Inches(1))
                 vp = vb.text_frame.paragraphs[0]
                 vp.text = str(stat.get('value', ''))
-                ppt_style.set_run_font(vp.runs[0], theme_config, "Title")
+                ppt_style.set_run_font(vp, theme_config, "Title")
                 vp.font.size = Pt(32)
                 vp.alignment = PP_ALIGN.CENTER
                 
@@ -1012,10 +1015,24 @@ def create_ppt(kwargs):
             
             chart_data = CategoryChartData()
             # Expecting cdata to be dict with 'categories' and 'series': [{'name': '..', 'values': []}]
-            if isinstance(cdata, dict) and 'categories' in cdata and 'series' in cdata:
-                chart_data.categories = cdata['categories']
-                for s in cdata['series']:
-                    chart_data.add_series(s['name'], s['values'])
+            if isinstance(cdata, dict):
+                if 'categories' in cdata:
+                    chart_data.categories = cdata['categories']
+                else:
+                    chart_data.categories = ['A', 'B', 'C']
+                
+                if 'series' in cdata:
+                    s_data = cdata['series']
+                    if isinstance(s_data, dict):
+                        for k, v in s_data.items():
+                            try:
+                                chart_data.add_series(str(k), v)
+                            except: pass
+                    elif isinstance(s_data, list):
+                        for s in s_data:
+                            try:
+                                chart_data.add_series(s.get('name', 'Series'), s.get('values', []))
+                            except: pass
             else:
                 # Mock if invalid format
                 chart_data.categories = ['A', 'B', 'C']
@@ -1034,12 +1051,22 @@ def create_ppt(kwargs):
             add_title(slide_data.title or "Diagram")
             source = slide_data.source or ""
             engine = slide_data.engine or "mermaid"
-            if source and engine == 'mermaid':
-                png_path = diagram_render.render_mermaid_to_png(source, background='transparent', scale=3.0)
-                try:
-                    slide.shapes.add_picture(png_path, Inches(1), Inches(2), width=Inches(8))
-                except:
-                    pass
+            if source:
+                success = False
+                if engine == 'mermaid':
+                    try:
+                        import diagram_render
+                        png_path = diagram_render.render_mermaid_to_png(source, background='transparent', scale=3.0)
+                        slide.shapes.add_picture(png_path, Inches(1), Inches(2), width=Inches(8))
+                        success = True
+                    except Exception as e:
+                        print("Diagram render failed:", e)
+                
+                if not success:
+                    tb = slide.shapes.add_textbox(Inches(1), Inches(2), Inches(8), Inches(4))
+                    p = tb.text_frame.paragraphs[0]
+                    p.text = "[Diagram rendering unavailable or failed]\n\n" + (source[:500] + '...' if len(source) > 500 else source)
+                    ppt_style.set_run_font(p, theme_config, "Body")
                     
         elif master in ['two_column', 'comparison']:
             add_title(slide_data.title or "Comparison")
@@ -1050,13 +1077,13 @@ def create_ppt(kwargs):
             if slide_data.items and len(slide_data.items) > 0:
                 p = tb1.text_frame.paragraphs[0]
                 p.text = str(slide_data.items[0])
-                ppt_style.set_run_font(p.runs[0], theme_config, "Body")
+                ppt_style.set_run_font(p, theme_config, "Body")
                 
             tb2 = slide.shapes.add_textbox(Inches(5.45), Inches(2.2), Inches(3.8), Inches(4.1))
             if slide_data.items and len(slide_data.items) > 1:
                 p = tb2.text_frame.paragraphs[0]
                 p.text = str(slide_data.items[1])
-                ppt_style.set_run_font(p.runs[0], theme_config, "Body")
+                ppt_style.set_run_font(p, theme_config, "Body")
                 
         elif master == 'image_focus':
             add_title(slide_data.title or "Focus")
@@ -1064,7 +1091,7 @@ def create_ppt(kwargs):
             tb = slide.shapes.add_textbox(Inches(2.5), Inches(3.5), Inches(5), Inches(1))
             p = tb.text_frame.paragraphs[0]
             p.text = slide_data.content or "Image Placeholder"
-            ppt_style.set_run_font(p.runs[0], theme_config, "Body")
+            ppt_style.set_run_font(p, theme_config, "Body")
             p.alignment = PP_ALIGN.CENTER
             
         elif master == 'timeline':
@@ -1079,7 +1106,7 @@ def create_ppt(kwargs):
                     tb = slide.shapes.add_textbox(x - Inches(0.5), y + Inches(0.5), Inches(1.5), Inches(1))
                     p = tb.text_frame.paragraphs[0]
                     p.text = str(item)
-                    ppt_style.set_run_font(p.runs[0], theme_config, "Body")
+                    ppt_style.set_run_font(p, theme_config, "Body")
                     p.font.size = Pt(12)
         
         elif master == 'closing':
@@ -1087,7 +1114,7 @@ def create_ppt(kwargs):
             tf = tb.text_frame
             p = tf.paragraphs[0]
             p.text = slide_data.title or "Thank You"
-            ppt_style.set_run_font(p.runs[0], theme_config, "Title")
+            ppt_style.set_run_font(p, theme_config, "Title")
             p.font.size = Pt(48)
             p.alignment = PP_ALIGN.CENTER
             
@@ -1101,12 +1128,12 @@ def create_ppt(kwargs):
                 for item in slide_data.items:
                     p = tf.add_paragraph()
                     p.text = f"• {item}"
-                    ppt_style.set_run_font(p.runs[0], theme_config, "Body")
+                    ppt_style.set_run_font(p, theme_config, "Body")
                     p.font.size = Pt(20)
             elif slide_data.content:
                 p = tf.paragraphs[0]
                 p.text = slide_data.content
-                ppt_style.set_run_font(p.runs[0], theme_config, "Body")
+                ppt_style.set_run_font(p, theme_config, "Body")
                 p.font.size = Pt(20)
                 
         ppt_style.add_footer(slide, ir.meta.title or "Presentation", idx + 1, len(ir.slides), theme_config)

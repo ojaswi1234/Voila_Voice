@@ -66,6 +66,9 @@ class Slide(BaseModel):
     bullets: Optional[List[str]] = []
     body: Optional[str] = ""
     content: Optional[str] = ""
+    source: Optional[str] = ""
+    engine: Optional[str] = ""
+    image_path: Optional[str] = ""
 
     @validator("*", pre=True)
     def sanitize(cls, v):
