@@ -121,72 +121,56 @@ class VoiceHomePage extends StatefulWidget {
   State<VoiceHomePage> createState() => _VoiceHomePageState();
 }
 
-class _TokenUsageRow extends StatefulWidget {
-  @override
-  State<_TokenUsageRow> createState() => _TokenUsageRowState();
-}
-
-class _TokenUsageRowState extends State<_TokenUsageRow> {
-  Map<String, dynamic>? _data;
-  bool _loading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _fetch();
-  }
-
-  Future<void> _fetch() async {
-    try {
-      final uri = Uri.parse(backendUrl).replace(scheme: backendUrl.startsWith('wss') ? 'https' : 'http', path: '/token-usage');
-      final res = await http.get(uri);
-      if (res.statusCode == 200) {
-        if (mounted) setState(() => _data = jsonDecode(res.body));
-      }
-    } catch (_) {}
-    if (mounted) setState(() => _loading = false);
-  }
+class _TokenUsageRow extends StatelessWidget {
+  final Map<String, dynamic> tokenData;
+  const _TokenUsageRow({required this.tokenData});
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) return const Padding(padding: EdgeInsets.all(16), child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))));
-    if (_data == null) return const SizedBox.shrink();
-
-    final limit = _data!['groq_limit_tokens']?.toString() ?? '0';
-    final remaining = _data!['groq_remaining_tokens']?.toString() ?? '0';
-    final sessionIn = _data!['groq_session_in']?.toString() ?? '0';
-    final sessionOut = _data!['groq_session_out']?.toString() ?? '0';
-
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(12)),
+    if (tokenData.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 8),
+        child: Row(
+          children: [
+            Icon(Icons.analytics_outlined, size: 16, color: Color(0xFF6B7280)),
+            SizedBox(width: 8),
+            Text(
+              'Token usage: awaiting agent data...',
+              style: TextStyle(color: Color(0xFF6B7280), fontSize: 13),
+            ),
+          ],
+        ),
+      );
+    }
+    final groqIn = tokenData['groq_session_in'] ?? 0;
+    final groqOut = tokenData['groq_session_out'] ?? 0;
+    final groqDayIn = tokenData['groq_day_in'] ?? 0;
+    final groqDayOut = tokenData['groq_day_out'] ?? 0;
+    final tpdLimit = tokenData['groq_tpd_limit'] ?? 0;
+    final tpdRemain = tokenData['groq_tpd_remaining'] ?? 0;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Icon(Icons.analytics_outlined, size: 16, color: Colors.blueAccent),
+              const Icon(Icons.analytics_outlined, size: 16, color: Color(0xFF60A5FA)),
               const SizedBox(width: 8),
-              const Text('Token Usage (Groq)', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+              Text(
+                'Groq session: ${groqIn}in / ${groqOut}out tokens',
+                style: const TextStyle(color: Color(0xFFE5E7EB), fontSize: 13),
+              ),
             ],
           ),
-          const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('Session (In/Out):', style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12)),
-              Text('$sessionIn / $sessionOut', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500, fontFamily: 'Courier')),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('Rate Limit Remaining:', style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12)),
-              Text('$remaining / $limit', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500, fontFamily: 'Courier')),
-            ],
-          ),
+          if (groqDayIn > 0 || groqDayOut > 0)
+            Padding(
+              padding: const EdgeInsets.only(left: 24, top: 2),
+              child: Text(
+                'Daily: ${groqDayIn}in / ${groqDayOut}out${tpdLimit > 0 ? " | ${tpdRemain}/${tpdLimit} remaining" : ""}',
+                style: const TextStyle(color: Color(0xFF6B7280), fontSize: 11),
+              ),
+            ),
         ],
       ),
     );
@@ -293,6 +277,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   String _currentConversationId = '';
   List<Map<String, String>> _conversations = [];
   List<Map<String, dynamic>> _securityAlerts = [];
+  Map<String, dynamic> _lastTokenUsage = {};
   
   // Speech-to-text state
   final SpeechToText _speechToText = SpeechToText();
@@ -371,6 +356,19 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       
       if (message.data['type'] == 'task_finished' && message.data['summary'] != null) {
         _speakSummary(message.data['summary']);
+        
+        // Navigate to Artifacts if artifact_path is present
+        if (message.data['artifact_path'] != null &&
+            message.data['artifact_path'].toString().isNotEmpty) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ArtifactsPage()),
+              );
+            }
+          });
+        }
       }
 
       if (message.data['type'] == 'approval_required' && message.data['job_id'] != null) {
@@ -423,6 +421,29 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     _storage.read(key: 'quiet_hours_enabled').then((val) {
       if (val != null && mounted) {
         setState(() => _quietHoursEnabled = val == 'true');
+      }
+    });
+
+    // Load cached token usage
+    _storage.read(key: 'last_token_usage').then((cachedTokenUsage) {
+      if (cachedTokenUsage != null && mounted) {
+        try {
+          setState(() {
+            _lastTokenUsage = Map<String, dynamic>.from(jsonDecode(cachedTokenUsage));
+          });
+        } catch (_) {}
+      }
+    });
+
+    // Load persisted security alerts
+    _storage.read(key: 'security_alerts').then((cachedAlerts) {
+      if (cachedAlerts != null && mounted) {
+        try {
+          final list = jsonDecode(cachedAlerts) as List;
+          setState(() {
+            _securityAlerts = list.map((e) => Map<String, dynamic>.from(e)).toList();
+          });
+        } catch (_) {}
       }
     });
     _setupWebSocket();
@@ -951,6 +972,16 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                 setState(() {
                   _securityAlerts.add(alert);
                 });
+                
+                // Persist alerts (keep last 50)
+                final alertsToSave = _securityAlerts.length > 50
+                    ? _securityAlerts.sublist(_securityAlerts.length - 50)
+                    : _securityAlerts;
+                await _storage.write(
+                  key: 'security_alerts',
+                  value: jsonEncode(alertsToSave),
+                );
+
                 // Show snackbar for high severity alerts
                 final severity = alert['severity']?.toString() ?? 'low';
                 if (severity == 'high' && mounted) {
@@ -968,6 +999,15 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                 setState(() {
                   _securityAlerts = List<Map<String, dynamic>>.from(alerts);
                 });
+                
+                // Persist alerts (keep last 50)
+                final alertsToSave = _securityAlerts.length > 50
+                    ? _securityAlerts.sublist(_securityAlerts.length - 50)
+                    : _securityAlerts;
+                await _storage.write(
+                  key: 'security_alerts',
+                  value: jsonEncode(alertsToSave),
+                );
               }
             } else if (jsonResponse is Map && jsonResponse['type'] == 'models_list') {
               List<dynamic> parsedData = [];
@@ -991,6 +1031,14 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
             } else if (jsonResponse is Map && jsonResponse['type'] == 'pong') {
               // Silently ignore pong responses
               return;
+            } else if (jsonResponse is Map && jsonResponse['type'] == 'token_usage') {
+              setState(() {
+                _lastTokenUsage = Map<String, dynamic>.from(jsonResponse);
+              });
+              await _storage.write(
+                key: 'last_token_usage',
+                value: jsonEncode(jsonResponse),
+              );
             } else if (jsonResponse is Map && jsonResponse['type'] == 'status_update') {
               // Silently ignore ping/status_update from backend
               return;
@@ -2680,7 +2728,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                 activeColor: const Color(0xFF3DDC97),
                 contentPadding: EdgeInsets.zero,
               ),
-              _TokenUsageRow(),
+              _TokenUsageRow(tokenData: _lastTokenUsage),
               SwitchListTile(
                 title: const Text('Auto-read Voice Responses', style: TextStyle(fontSize: 14)),
                 value: _willTalk,

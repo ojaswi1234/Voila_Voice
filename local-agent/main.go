@@ -464,6 +464,266 @@ func saveTokenUsage(tu TokenUsageFile) {
 	_ = os.WriteFile(tokenUsagePath(), data, 0644)
 }
 
+func pushTokenUsage(connData ConnectionData) {
+	usagePath := tokenUsagePath()
+	data, err := os.ReadFile(usagePath)
+	if err != nil {
+		return
+	}
+	var usage map[string]interface{}
+	if err := json.Unmarshal(data, &usage); err != nil {
+		return
+	}
+	usage["device_id"] = connData.DeviceID
+	payload, err := json.Marshal(usage)
+	if err != nil {
+		return
+	}
+	backendURL := strings.TrimSuffix(connData.BackendURL, "/")
+	targetURL := backendURL + "/webhook/token-usage"
+	req, err := http.NewRequest("POST", targetURL, bytes.NewBuffer(payload))
+	if err != nil {
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err == nil {
+		resp.Body.Close()
+	}
+}
+
+type Schedule struct {
+	ID         string    `json:"id"`
+	Enabled    bool      `json:"enabled"`
+	TimeOfDay  string    `json:"time_of_day"` // "HH:MM" 24h format
+	Prompt     string    `json:"prompt"`
+	PlaybookID string    `json:"playbook_id"`
+	LastRun    time.Time `json:"last_run"`
+	NextRun    time.Time `json:"next_run"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+func getSchedulesFilePath() string {
+	exe, _ := os.Executable()
+	return filepath.Join(filepath.Dir(exe), "schedules.json")
+}
+
+func loadSchedules() ([]Schedule, error) {
+	path := getSchedulesFilePath()
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return []Schedule{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var schedules []Schedule
+	if err := json.Unmarshal(data, &schedules); err != nil {
+		return nil, err
+	}
+	return schedules, nil
+}
+
+func saveSchedules(schedules []Schedule) error {
+	data, err := json.MarshalIndent(schedules, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(getSchedulesFilePath(), data, 0644)
+}
+
+func calcNextRun(timeOfDay string) time.Time {
+	parts := strings.Split(timeOfDay, ":")
+	if len(parts) != 2 {
+		return time.Now().Add(24 * time.Hour)
+	}
+	h, _ := strconv.Atoi(parts[0])
+	m, _ := strconv.Atoi(parts[1])
+	now := time.Now()
+	next := time.Date(now.Year(), now.Month(), now.Day(), h, m, 0, 0, now.Location())
+	if next.Before(now) {
+		next = next.Add(24 * time.Hour)
+	}
+	return next
+}
+
+func postWebhookResult(connData ConnectionData, clientID, convID, output, jobID string, cmdErr error) {
+	backendURL := strings.TrimSuffix(connData.BackendURL, "/")
+	if backendURL == "" {
+		return
+	}
+	backendURL = backendURL + "/webhook/result"
+	backendURL = strings.Replace(backendURL, "ws://", "http://", 1)
+	secretHash := hashPhrase(connData.SecurityPhrase, connData.DeviceID)
+	resultPayload := map[string]string{
+		"client_id":           clientID,
+		"device_id":           connData.DeviceID,
+		"secret_hash":         secretHash,
+		"mode":                "LOCAL",
+		"new_conversation_id": convID,
+		"job_id":              jobID,
+		"summary":             "Scheduled task",
+	}
+	if cmdErr != nil {
+		resultPayload["error"] = "Command failed:\n" + cmdErr.Error()
+	} else {
+		resultPayload["output"] = stripMarkdownForTTS(output)
+	}
+	payloadBytes, _ := json.Marshal(resultPayload)
+	req, _ := http.NewRequest(http.MethodPost, backendURL, bytes.NewBuffer(payloadBytes))
+	req.Header.Set("Content-Type", "application/json")
+	if strings.Contains(connData.BackendURL, "ngrok") || strings.Contains(connData.BackendURL, "ngrok-free") {
+		req.Header.Set("ngrok-skip-browser-warning", "true")
+	}
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err == nil {
+		resp.Body.Close()
+	}
+}
+
+func startScheduleTicker(ctx context.Context) {
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			schedules, err := loadSchedules()
+			if err != nil {
+				continue
+			}
+			now := time.Now()
+			changed := false
+			for i, s := range schedules {
+				if !s.Enabled {
+					continue
+				}
+				if s.NextRun.IsZero() {
+					schedules[i].NextRun = calcNextRun(s.TimeOfDay)
+					changed = true
+					continue
+				}
+				if now.After(s.NextRun) || now.Equal(s.NextRun) {
+					prompt := s.Prompt
+					if s.PlaybookID != "" {
+						prompt = "run_playbook: " + s.PlaybookID
+					}
+					schedules[i].LastRun = now
+					schedules[i].NextRun = calcNextRun(s.TimeOfDay)
+					changed = true
+					go func(p string) {
+						connData, err := loadConnectionData()
+						if err != nil {
+							return
+						}
+						convID := fmt.Sprintf("sched-%d", time.Now().UnixNano())
+						result, _, _ := executeCommand(context.Background(), p, "LOCAL", convID, "flash")
+						postWebhookResult(connData, "schedule", convID, result, "", nil)
+					}(prompt)
+				}
+			}
+			if changed {
+				saveSchedules(schedules)
+			}
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+type MemoryLogEntry struct {
+	ID        string    `json:"id"`
+	Timestamp time.Time `json:"timestamp"`
+	Purpose   string    `json:"purpose"`
+	Command   string    `json:"command"`
+}
+
+func getMemoryLogFilePath() string {
+	exe, _ := os.Executable()
+	return filepath.Join(filepath.Dir(exe), "cmd_memory_log.json")
+}
+
+func appendMemoryLog(purpose, command string) {
+	path := getMemoryLogFilePath()
+	var logList []MemoryLogEntry
+	if data, err := os.ReadFile(path); err == nil {
+		json.Unmarshal(data, &logList)
+	}
+	entry := MemoryLogEntry{
+		ID:        fmt.Sprintf("mem-%d", time.Now().UnixNano()),
+		Timestamp: time.Now(),
+		Purpose:   purpose,
+		Command:   command,
+	}
+	logList = append(logList, entry)
+	if len(logList) > 500 {
+		logList = logList[len(logList)-500:]
+	}
+	data, _ := json.MarshalIndent(logList, "", "  ")
+	os.WriteFile(path, data, 0644)
+}
+
+func searchMemoryLog(query, dateFrom string) []MemoryLogEntry {
+	path := getMemoryLogFilePath()
+	var logList []MemoryLogEntry
+	if data, err := os.ReadFile(path); err == nil {
+		json.Unmarshal(data, &logList)
+	}
+	queryLower := strings.ToLower(query)
+	var results []MemoryLogEntry
+	for _, entry := range logList {
+		if dateFrom != "" {
+			cutoff, err := time.Parse("2006-01-02", dateFrom)
+			if err == nil && entry.Timestamp.Before(cutoff) {
+				continue
+			}
+		}
+		if strings.Contains(strings.ToLower(entry.Purpose), queryLower) ||
+			strings.Contains(strings.ToLower(entry.Command), queryLower) {
+			results = append(results, entry)
+		}
+	}
+	if len(results) > 20 {
+		results = results[len(results)-20:]
+	}
+	return results
+}
+
+type SkillParam struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Required    bool   `json:"required"`
+}
+
+type Skill struct {
+	ID              string       `json:"id"`
+	Name            string       `json:"name"`
+	Description     string       `json:"description"`
+	OS              []string     `json:"os"`
+	Params          []SkillParam `json:"params"`
+	CommandTemplate string       `json:"command_template"`
+}
+
+func getSkillsFilePath() string {
+	exe, _ := os.Executable()
+	return filepath.Join(filepath.Dir(exe), "skills", "skills.json")
+}
+
+func loadSkills() ([]Skill, error) {
+	path := getSkillsFilePath()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var skills []Skill
+	if err := json.Unmarshal(data, &skills); err != nil {
+		return nil, err
+	}
+	return skills, nil
+}
+
+
 func addGroqTokens(in, out int64) {
 	groqSessionTokensMu.Lock()
 	groqSessionTokensIn += in
@@ -2946,6 +3206,105 @@ Example full deck:
 			},
 		},
 	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "list_schedules",
+			Description: "List all scheduled jobs configured on this agent.",
+			Parameters: map[string]interface{}{
+				"type":       "object",
+				"properties": map[string]interface{}{},
+				"required":   []string{},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "add_schedule",
+			Description: "Add a new scheduled job. Fires daily at the specified time.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"time_of_day": map[string]interface{}{"type": "string", "description": "Time to fire in HH:MM 24-hour format, e.g. '09:30'"},
+					"prompt":      map[string]interface{}{"type": "string", "description": "The prompt/command to execute when schedule fires"},
+					"playbook_id": map[string]interface{}{"type": "string", "description": "Optional playbook ID to run instead of prompt"},
+					"enabled":     map[string]interface{}{"type": "boolean", "description": "Whether the schedule is enabled (default true)"},
+				},
+				"required": []string{"time_of_day", "prompt"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "delete_schedule",
+			Description: "Delete a scheduled job by its ID.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"id": map[string]interface{}{"type": "string", "description": "The schedule ID to delete"},
+				},
+				"required": []string{"id"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "search_memory",
+			Description: "Search the command memory log for entries matching a query.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"query":     map[string]interface{}{"type": "string", "description": "Text to search for in purpose or command fields"},
+					"date_from": map[string]interface{}{"type": "string", "description": "Optional start date filter in YYYY-MM-DD format"},
+				},
+				"required": []string{"query"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "rerun_memory_item",
+			Description: "Re-execute a command from the memory log by its ID.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"id": map[string]interface{}{"type": "string", "description": "The memory log entry ID to re-run"},
+				},
+				"required": []string{"id"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "list_skills",
+			Description: "List all available OS skill packs for this platform.",
+			Parameters: map[string]interface{}{
+				"type":       "object",
+				"properties": map[string]interface{}{},
+				"required":   []string{},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "run_skill",
+			Description: "Run a pre-vetted OS skill by its ID.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"skill_id": map[string]interface{}{"type": "string", "description": "The skill ID to run"},
+					"params":   map[string]interface{}{"type": "string", "description": "JSON object of parameters for the skill, e.g. {\"path\":\"C:\\\\Users\\\\...\"}"},
+				},
+				"required": []string{"skill_id"},
+			},
+		},
+	},
 }
 
 // executeTool dispatches to the correct tool implementation and returns a result string.
@@ -3302,7 +3661,11 @@ func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMes
 		}
 		return result
 	case "save_command_memory":
-		return saveMemory(getString("purpose"), getString("command"))
+		purpose := getString("purpose")
+		command := getString("command")
+		res := saveMemory(purpose, command)
+		appendMemoryLog(purpose, command)
+		return res
 	case "web_research":
 		query := getString("query")
 		searchType := getString("search_type")
@@ -3661,6 +4024,178 @@ case "read_file":
 			res = res[:8000] + "\n... (truncated)"
 		}
 		return res
+
+	case "list_schedules":
+		schedules, err := loadSchedules()
+		if err != nil {
+			return fmt.Sprintf("error loading schedules: %v", err)
+		}
+		if len(schedules) == 0 {
+			return "No schedules configured."
+		}
+		data, _ := json.MarshalIndent(schedules, "", "  ")
+		return string(data)
+
+	case "add_schedule":
+		var args struct {
+			TimeOfDay  string `json:"time_of_day"`
+			Prompt     string `json:"prompt"`
+			PlaybookID string `json:"playbook_id"`
+			Enabled    *bool  `json:"enabled"`
+		}
+		if err := json.Unmarshal(argsJSON, &args); err != nil {
+			return fmt.Sprintf("error parsing args: %v", err)
+		}
+		enabled := true
+		if args.Enabled != nil {
+			enabled = *args.Enabled
+		}
+		s := Schedule{
+			ID:         fmt.Sprintf("sched-%d", time.Now().UnixNano()),
+			Enabled:    enabled,
+			TimeOfDay:  args.TimeOfDay,
+			Prompt:     args.Prompt,
+			PlaybookID: args.PlaybookID,
+			NextRun:    calcNextRun(args.TimeOfDay),
+			CreatedAt:  time.Now(),
+		}
+		schedules, _ := loadSchedules()
+		schedules = append(schedules, s)
+		if err := saveSchedules(schedules); err != nil {
+			return fmt.Sprintf("error saving schedule: %v", err)
+		}
+		return fmt.Sprintf("Schedule added: %s (ID: %s, fires daily at %s)", s.Prompt, s.ID, s.TimeOfDay)
+
+	case "delete_schedule":
+		var args struct {
+			ID string `json:"id"`
+		}
+		if err := json.Unmarshal(argsJSON, &args); err != nil {
+			return fmt.Sprintf("error parsing args: %v", err)
+		}
+		schedules, err := loadSchedules()
+		if err != nil {
+			return fmt.Sprintf("error loading schedules: %v", err)
+		}
+		newSchedules := make([]Schedule, 0, len(schedules))
+		found := false
+		for _, s := range schedules {
+			if s.ID == args.ID {
+				found = true
+				continue
+			}
+			newSchedules = append(newSchedules, s)
+		}
+		if !found {
+			return fmt.Sprintf("schedule '%s' not found", args.ID)
+		}
+		if err := saveSchedules(newSchedules); err != nil {
+			return fmt.Sprintf("error saving: %v", err)
+		}
+		return fmt.Sprintf("Schedule '%s' deleted.", args.ID)
+
+	case "search_memory":
+		var args struct {
+			Query    string `json:"query"`
+			DateFrom string `json:"date_from"`
+		}
+		if err := json.Unmarshal(argsJSON, &args); err != nil {
+			return fmt.Sprintf("error parsing args: %v", err)
+		}
+		results := searchMemoryLog(args.Query, args.DateFrom)
+		if len(results) == 0 {
+			return fmt.Sprintf("No memory entries found matching '%s'", args.Query)
+		}
+		data, _ := json.MarshalIndent(results, "", "  ")
+		return string(data)
+
+	case "rerun_memory_item":
+		var args struct {
+			ID string `json:"id"`
+		}
+		if err := json.Unmarshal(argsJSON, &args); err != nil {
+			return fmt.Sprintf("error parsing args: %v", err)
+		}
+		path := getMemoryLogFilePath()
+		var logList []MemoryLogEntry
+		if data, err := os.ReadFile(path); err == nil {
+			json.Unmarshal(data, &logList)
+		}
+		for _, entry := range logList {
+			if entry.ID == args.ID {
+				argsBytes, _ := json.Marshal(map[string]string{"command": entry.Command})
+				result := executeToolInner(ctx, "run_terminal", argsBytes, streamFileObj)
+				return fmt.Sprintf("Reran command '%s':\n%s", entry.Purpose, result)
+			}
+		}
+		return fmt.Sprintf("memory entry '%s' not found", args.ID)
+
+	case "list_skills":
+		skills, err := loadSkills()
+		if err != nil {
+			return fmt.Sprintf("No skills available (could not load skills.json: %v)", err)
+		}
+		currentOS := runtime.GOOS
+		var available []Skill
+		for _, s := range skills {
+			for _, os_ := range s.OS {
+				if os_ == currentOS {
+					available = append(available, s)
+					break
+				}
+			}
+		}
+		if len(available) == 0 {
+			return fmt.Sprintf("No skills available for OS '%s'", currentOS)
+		}
+		data, _ := json.MarshalIndent(available, "", "  ")
+		return string(data)
+
+	case "run_skill":
+		var args struct {
+			SkillID string          `json:"skill_id"`
+			Params  json.RawMessage `json:"params"`
+		}
+		if err := json.Unmarshal(argsJSON, &args); err != nil {
+			return fmt.Sprintf("error parsing args: %v", err)
+		}
+		skills, err := loadSkills()
+		if err != nil {
+			return fmt.Sprintf("Could not load skills: %v", err)
+		}
+		var skill *Skill
+		for i, s := range skills {
+			if s.ID == args.SkillID {
+				skill = &skills[i]
+				break
+			}
+		}
+		if skill == nil {
+			return fmt.Sprintf("skill '%s' not found", args.SkillID)
+		}
+		currentOS := runtime.GOOS
+		osOK := false
+		for _, os_ := range skill.OS {
+			if os_ == currentOS {
+				osOK = true
+				break
+			}
+		}
+		if !osOK {
+			return fmt.Sprintf("skill '%s' not supported on OS '%s'", args.SkillID, currentOS)
+		}
+		cmd := skill.CommandTemplate
+		if len(args.Params) > 0 {
+			var params map[string]string
+			if err := json.Unmarshal(args.Params, &params); err == nil {
+				for k, v := range params {
+					cmd = strings.ReplaceAll(cmd, "{"+k+"}", v)
+				}
+			}
+		}
+		argsBytes, _ := json.Marshal(map[string]string{"command": cmd})
+		result := executeToolInner(ctx, "run_terminal", argsBytes, streamFileObj)
+		return result
 
 	default:
 		return "error: unknown tool: " + toolName
@@ -4967,6 +5502,18 @@ func handleLocalMockExecution(w http.ResponseWriter, r *http.Request, command st
 func main() {
 	initZeroOrphanJobObject()
 	initDebugLog()
+
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			connData, err := loadConnectionData()
+			if err == nil && connData.BackendURL != "" {
+				pushTokenUsage(connData)
+			}
+		}
+	}()
+	go startScheduleTicker(context.Background())
 	// Load circuit state on startup
 	loadCircuitState()
 

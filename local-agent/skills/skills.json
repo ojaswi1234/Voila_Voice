@@ -1,0 +1,38 @@
+[
+  {
+    "id": "open_in_explorer",
+    "name": "Open Path in File Explorer",
+    "description": "Opens a folder or file in Windows File Explorer. Use this when the user asks to open a folder or browse to a path.",
+    "os": ["windows"],
+    "params": [
+      {
+        "name": "path",
+        "description": "The folder or file path to open in Explorer",
+        "required": true
+      }
+    ],
+    "command_template": "explorer.exe \"{path}\""
+  },
+  {
+    "id": "get_active_windows",
+    "name": "Get Active Application Windows",
+    "description": "Lists all currently open application windows with their names and titles.",
+    "os": ["windows"],
+    "params": [],
+    "command_template": "powershell -NoProfile -Command \"Get-Process | Where-Object {$_.MainWindowTitle -ne ''} | Select-Object Name, MainWindowTitle | Format-Table -AutoSize\""
+  },
+  {
+    "id": "set_volume",
+    "name": "Set System Volume",
+    "description": "Sets the Windows system volume level (0-100).",
+    "os": ["windows"],
+    "params": [
+      {
+        "name": "level",
+        "description": "Volume level from 0 to 100",
+        "required": true
+      }
+    ],
+    "command_template": "powershell -NoProfile -Command \"$wshShell = New-Object -ComObject WScript.Shell; $vol = [math]::Round({level} / 100 * 65535); (New-Object -ComObject Shell.Application).NameSpace(0x0).Self.Path | Out-Null; [System.Runtime.InteropServices.Marshal]::ReleaseComObject($wshShell) | Out-Null; nircmd.exe setsysvolume $vol 2>$null; Write-Host 'Volume set to {level}%'\""
+  }
+]

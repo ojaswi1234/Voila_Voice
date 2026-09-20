@@ -1,4 +1,4 @@
-﻿package main
+package main
 
 import (
 	"voice-cli-system/shared/decoy"
@@ -156,6 +156,7 @@ type Backend struct {
 	offlineQueue      map[string][]QueuedMessage
 	queueMu           sync.Mutex
 	fcmClient *messaging.Client
+	lastTokenSnapshot map[string]map[string]interface{}
 }
 
 type WebSocketClient struct {
@@ -174,6 +175,7 @@ func NewBackend() *Backend {
 		ipRateLimits:      make(map[string]int),
 		mockCommandCounts: make(map[string]int),
 		offlineQueue:      make(map[string][]QueuedMessage),
+		lastTokenSnapshot: make(map[string]map[string]interface{}),
 	}
 	
 	// Initialize Firebase FCM Client
@@ -1756,7 +1758,13 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 							"job_id": jobID,
 							"approved": approved,
 						})
-						http.Post(approveUrl, "application/json", bytes.NewBuffer(payload))
+						req, _ := http.NewRequest("POST", approveUrl, bytes.NewBuffer(payload))
+						if req != nil {
+							req.Header.Set("Content-Type", "application/json")
+							req.Header.Set("X-Exec-Secret", device.SecurityPhraseHash)
+							client := safeHTTPClient()
+							client.Do(req)
+						}
 					}()
 				}
 				
@@ -2013,6 +2021,39 @@ func main() {
 	http.HandleFunc("/webhook/alert", handleWebhookAlert(backend))
 	http.HandleFunc("/webhook/approval_request", handleWebhookApprovalReq(backend))
 	http.HandleFunc("/webhook/status", handleWebhookStatus(backend))
+	http.HandleFunc("/webhook/token-usage", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var payload map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			http.Error(w, "Invalid JSON", http.StatusBadRequest)
+			return
+		}
+		deviceID, _ := payload["device_id"].(string)
+		if deviceID == "" {
+			http.Error(w, "device_id required", http.StatusBadRequest)
+			return
+		}
+		// Store snapshot
+		backend.mu.Lock()
+		backend.lastTokenSnapshot[deviceID] = payload
+		backend.mu.Unlock()
+		// Broadcast to all connected mobile clients
+		msg := map[string]interface{}{"type": "token_usage"}
+		for k, v := range payload {
+			msg[k] = v
+		}
+		msgBytes, _ := json.Marshal(msg)
+		backend.mu.RLock()
+		for _, client := range backend.clients {
+			backend.dispatcher.Dispatch(client.clientID, websocket.TextMessage, msgBytes)
+		}
+		backend.mu.RUnlock()
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"ok"}`))
+	})
 	http.HandleFunc("/test_optimize", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)

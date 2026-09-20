@@ -1,23 +1,30 @@
 {
-  "exec_summary_slides": {
-    "provider": "google_slides",
-    "file_id": "GOOGLE_FILE_ID",
-    "placeholders": ["TITLE", "SUBTITLE", "BULLET_1", "BULLET_2", "BULLET_3"],
-    "exports": ["pptx", "pdf"],
-    "intent_tags": ["summary", "exec", "status"]
+  "local_report": {
+    "id": "local_report",
+    "provider": "local",
+    "type": "pdf",
+    "description": "General purpose PDF report. Fills: title, sections (list of {heading, body}), author, date.",
+    "placeholders": ["title", "sections", "author", "date"]
   },
-  "memory_report_doc": {
-    "provider": "google_docs",
-    "file_id": "GOOGLE_FILE_ID_DOC",
-    "placeholders": ["TITLE", "PROCESS_NAME", "MEMORY_MB", "CONCLUSION"],
-    "exports": ["docx", "pdf"],
-    "intent_tags": ["report", "memory", "audit"]
+  "local_slides": {
+    "id": "local_slides",
+    "provider": "local",
+    "type": "pptx",
+    "description": "General purpose presentation. Fills: title, slides (list of {title, bullets}), author.",
+    "placeholders": ["title", "slides", "author"]
   },
-  "kpi_deck": {
-    "provider": "google_slides",
-    "file_id": "GOOGLE_FILE_ID_KPI",
-    "placeholders": ["TITLE", "KPI_1_LABEL", "KPI_1_VALUE", "KPI_2_LABEL", "KPI_2_VALUE"],
-    "exports": ["pptx", "pdf"],
-    "intent_tags": ["metrics", "kpi", "dashboard"]
+  "quarterly_report": {
+    "id": "quarterly_report",
+    "provider": "local",
+    "type": "pdf",
+    "description": "Quarterly business report. Fills: company, quarter, year, highlights (list of strings), metrics (dict of name:value), summary.",
+    "placeholders": ["company", "quarter", "year", "highlights", "metrics", "summary"]
+  },
+  "meeting_notes": {
+    "id": "meeting_notes",
+    "provider": "local",
+    "type": "pdf",
+    "description": "Meeting notes template. Fills: meeting_title, date, attendees (list), agenda (list), action_items (list of {owner, task, due}).",
+    "placeholders": ["meeting_title", "date", "attendees", "agenda", "action_items"]
   }
 }
