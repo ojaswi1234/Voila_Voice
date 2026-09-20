@@ -1127,7 +1127,11 @@ def create_ppt(kwargs):
             if slide_data.items:
                 for item in slide_data.items:
                     p = tf.add_paragraph()
-                    p.text = f"• {item}"
+                    # Sanitize markdown escaped characters
+                    clean_item = str(item).replace('\\-', '-').strip()
+                    if clean_item.startswith('- '):
+                        clean_item = clean_item[2:]
+                    p.text = f"• {clean_item}"
                     ppt_style.set_run_font(p, theme_config, "Body")
                     p.font.size = Pt(20)
             elif slide_data.content:
