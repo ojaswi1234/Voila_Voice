@@ -63,7 +63,19 @@ def _info(page):
     return {"url": u, "title": t}
 
 def _ok(a, page, **k):
-    d = {"ok": True, "action": a, **_info(page)}; d.update(k); return d
+    d = {"ok": True, "action": a, **_info(page)}; d.update(k)
+    # Optional tab telemetry
+    try:
+        if hasattr(page, 'context') and page.context:
+            pages = page.context.pages
+            for i, p in enumerate(pages):
+                if id(p) == id(page):
+                    d["tab_index"] = i
+                    d["tabs_count"] = len(pages)
+                    break
+    except Exception:
+        pass
+    return d
 
 def _err(a, msg, page=None, **k):
     d = {"ok": False, "action": a, "error": msg}
@@ -141,8 +153,11 @@ def _handle(browser, args):
             tabs = []
             if browser.contexts:
                 for i, p in enumerate(browser.contexts[0].pages):
-                    tabs.append({"index": i, **_info(p)})
-            return {"ok": True, "action": action, "tabs": tabs}
+                    tab_info = {"index": i, **_info(p)}
+                    if id(p) == _active_page_id:
+                        tab_info["active"] = True
+                    tabs.append(tab_info)
+            return {"ok": True, "action": action, "tabs": tabs, "tabs_count": len(tabs)}
         if action == "close_tab":
             pages = browser.contexts[0].pages if browser.contexts else []
             if len(pages) <= 1: return _err(action, "refusing to close last tab", page)
