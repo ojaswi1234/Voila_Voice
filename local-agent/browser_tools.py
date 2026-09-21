@@ -1,7 +1,7 @@
 """browser_tools.py - CDP Edge automation (compact P0 fix)."""
 import sys
 sys.stdout.reconfigure(encoding="utf-8")
-import os, json, time, socket, argparse, threading, subprocess, urllib.request
+import os, json, time, socket, argparse, subprocess, urllib.request
 try:
     import keyboard
     keyboard.add_hotkey("ctrl+alt+b", lambda: (print(json.dumps({"ok": False, "error": "stopped"})), os._exit(1)))
@@ -11,7 +11,7 @@ from playwright.sync_api import sync_playwright
 
 DAEMON_PORT, CDP_URL, CDP_PORT = 19879, "http://127.0.0.1:9222", 9222
 USER_DATA_DIR = os.environ.get("VOILA_BROWSER_PROFILE", r"C:\tmp\ai_browser_profile")
-_active_page_id = None
+_active_tab_index = 0
 
 def _cdp_ok(t=1.0):
     try:
@@ -63,46 +63,46 @@ def _info(page):
     return {"url": u, "title": t}
 
 def _ok(a, page, **k):
+    global _active_tab_index
     d = {"ok": True, "action": a, **_info(page)}; d.update(k)
-    # Optional tab telemetry
     try:
         if hasattr(page, 'context') and page.context:
-            pages = page.context.pages
-            for i, p in enumerate(pages):
-                if id(p) == id(page):
-                    d["tab_index"] = i
-                    d["tabs_count"] = len(pages)
-                    break
+            d["tab_index"] = _active_tab_index
+            d["tabs_count"] = len(page.context.pages)
     except Exception:
         pass
     return d
 
 def _err(a, msg, page=None, **k):
+    global _active_tab_index
     d = {"ok": False, "action": a, "error": msg}
     if page is not None: d.update(_info(page))
+    try:
+        if page is not None and hasattr(page, 'context') and page.context:
+            d["tab_index"] = _active_tab_index
+            d["tabs_count"] = len(page.context.pages)
+    except Exception:
+        pass
     d.update(k); return d
 
 def _page(browser):
-    global _active_page_id
+    global _active_tab_index
     ctxs = browser.contexts
     if not ctxs:
-        p = browser.new_context().new_page(); _active_page_id = id(p); return p
-    ctx, pages = ctxs[0], list(ctxs[0].pages)
-    if _active_page_id:
-        for p in pages:
-            if id(p) == _active_page_id: return p
-    for p in pages:
-        try:
-            u = (p.url or "").lower()
-            if u and u not in ("about:blank", "chrome://newtab/", "edge://newtab/"):
-                _active_page_id = id(p); return p
-        except Exception: pass
-    if pages:
-        _active_page_id = id(pages[-1]); return pages[-1]
-    p = ctx.new_page(); _active_page_id = id(p); return p
+        p = browser.new_context().new_page()
+        _active_tab_index = 0
+        return p
+    pages = ctxs[0].pages
+    if not pages:
+        p = ctxs[0].new_page()
+        _active_tab_index = 0
+        return p
+    if _active_tab_index < 0 or _active_tab_index >= len(pages):
+        _active_tab_index = len(pages) - 1
+    return pages[_active_tab_index]
 
 def _handle(browser, args):
-    global _active_page_id
+    global _active_tab_index
     action = (args.get("action") or "").strip().lower()
     page = _page(browser)
     wt = int(args.get("wait_time") or 1000)
@@ -143,10 +143,12 @@ def _handle(browser, args):
             return _ok(action, page)
         if action == "new_tab":
             url = (args.get("url") or "").strip()
-            if not url or url.lower() in ("about:blank", "blank"): url = "https://www.google.com"
+            if not url or url.lower() in ("about:blank", "blank"):
+                return _err(action, "Refusing about:blank — use real https URL", page)
             if not url.startswith("http"): url = "https://" + url
             ctx = browser.contexts[0] if browser.contexts else browser.new_context()
-            np = ctx.new_page(); _active_page_id = id(np)
+            np = ctx.new_page()
+            _active_tab_index = len(ctx.pages) - 1
             np.goto(url, timeout=45000, wait_until="domcontentloaded")
             return _ok(action, np, navigated_to=url)
         if action == "list_tabs":
@@ -154,30 +156,32 @@ def _handle(browser, args):
             if browser.contexts:
                 for i, p in enumerate(browser.contexts[0].pages):
                     tab_info = {"index": i, **_info(p)}
-                    if id(p) == _active_page_id:
+                    if i == _active_tab_index:
                         tab_info["active"] = True
                     tabs.append(tab_info)
-            return {"ok": True, "action": action, "tabs": tabs, "tabs_count": len(tabs)}
+            return {"ok": True, "action": action, "tabs": tabs, "tabs_count": len(tabs), "tab_index": _active_tab_index}
         if action == "close_tab":
             pages = browser.contexts[0].pages if browser.contexts else []
             if len(pages) <= 1: return _err(action, "refusing to close last tab", page)
             page.close()
             rem = browser.contexts[0].pages
-            _active_page_id = id(rem[-1]) if rem else None
-            return {"ok": True, "action": action, "tabs_left": len(rem)}
+            if _active_tab_index >= len(rem):
+                _active_tab_index = len(rem) - 1
+            return {"ok": True, "action": action, "tabs_left": len(rem), "tab_index": _active_tab_index, "tabs_count": len(rem)}
         if action == "switch_tab":
             val = str(args.get("value") or args.get("index") or "0")
             try:
                 i = int(val)
                 pages = browser.contexts[0].pages if browser.contexts else []
                 if i < 0 or i >= len(pages): return _err(action, "index out of range", page)
-                _active_page_id = id(pages[i]); pages[i].bring_to_front()
+                _active_tab_index = i
+                pages[i].bring_to_front()
                 return _ok(action, pages[i], tab_index=i)
             except ValueError:
                 for ctx in browser.contexts:
-                    for p in ctx.pages:
+                    for i, p in enumerate(ctx.pages):
                         if val.lower() in (p.url or "").lower() or val.lower() in (p.title() or "").lower():
-                            _active_page_id = id(p); p.bring_to_front(); return _ok(action, p)
+                            _active_tab_index = i; p.bring_to_front(); return _ok(action, p)
                 return _err(action, f"no tab match: {val}", page)
         if action == "scrape":
             sel = args.get("selector")
@@ -207,7 +211,7 @@ def _daemon(hint=None):
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try: s.bind(("127.0.0.1", DAEMON_PORT))
         except OSError: return
-        s.listen(5); s.settimeout(180)
+        s.listen(5); s.settimeout(600)
         while True:
             try: conn, _ = s.accept()
             except socket.timeout: break
@@ -250,8 +254,12 @@ def _running():
         s = socket.create_connection(("127.0.0.1", DAEMON_PORT), timeout=0.4); s.close(); return True
     except OSError: return False
 
-def _start(hint=None):
-    threading.Thread(target=_daemon, args=(hint,), daemon=True).start()
+def _start_detached(hint=None):
+    flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0
+    args = [sys.executable, __file__, "--serve-daemon"]
+    if hint:
+        args.extend(["--url", hint])
+    subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=flags, close_fds=True)
     for _ in range(50):
         time.sleep(0.2)
         if _running(): return
@@ -259,13 +267,20 @@ def _start(hint=None):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--url"); ap.add_argument("--action", required=True)
+    ap.add_argument("--url")
+    ap.add_argument("--action")
+    ap.add_argument("--serve-daemon", action="store_true")
     ap.add_argument("--selector"); ap.add_argument("--value"); ap.add_argument("--wait_time", type=int, default=1000)
     a = ap.parse_args()
+    if a.serve_daemon:
+        _daemon(a.url)
+        return
+    if not a.action:
+        print(json.dumps({"ok": False, "error": "action required"})); sys.exit(1)
     req = {"action": a.action, "url": a.url, "selector": a.selector, "value": a.value, "wait_time": a.wait_time}
     try:
         if not _running():
-            _start(a.url if a.action in ("goto", "new_tab") else None)
+            _start_detached(a.url if a.action in ("goto", "new_tab") else None)
         r = _send(req)
         print(json.dumps(r, default=str))
         if isinstance(r, dict) and r.get("ok") is False: sys.exit(2)

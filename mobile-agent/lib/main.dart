@@ -357,9 +357,27 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       if (message.data['type'] == 'task_finished' && message.data['summary'] != null) {
         _speakSummary(message.data['summary']);
         
+        final String? artifactPath = message.data['artifact_path']?.toString();
+        final String summary = message.data['summary'].toString();
+        
+        String title = summary;
+        if (artifactPath != null && artifactPath.isNotEmpty) {
+          final segments = artifactPath.replaceAll('\\', '/').split('/');
+          if (segments.isNotEmpty && segments.last.isNotEmpty) {
+            title = segments.last;
+          } else {
+            title = 'Task result';
+          }
+        }
+        
+        ArtifactsManager.addArtifact(
+          title: title,
+          content: (artifactPath != null && artifactPath.isNotEmpty) ? artifactPath : summary,
+          source: 'fcm_task_finished',
+        );
+
         // Navigate to Artifacts if artifact_path is present
-        if (message.data['artifact_path'] != null &&
-            message.data['artifact_path'].toString().isNotEmpty) {
+        if (artifactPath != null && artifactPath.isNotEmpty) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) {
               Navigator.push(
