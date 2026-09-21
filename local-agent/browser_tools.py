@@ -141,6 +141,14 @@ def _handle(browser, args):
                 try: page.evaluate(f"window.scrollBy(0,{int(val)})")
                 except Exception: page.evaluate("window.scrollBy(0,window.innerHeight)")
             return _ok(action, page)
+        if action == "search_word":
+            val = args.get("value")
+            if not val: return _err(action, "value (search term) required", page)
+            count = page.locator(f"text={val}").count()
+            if count > 0:
+                page.locator(f"text={val}").first.scroll_into_view_if_needed()
+                return _ok(action, page, message=f"Found {count} occurrences, scrolled to first.")
+            return _ok(action, page, message="Word not found")
         if action == "new_tab":
             url = (args.get("url") or "").strip()
             if not url or url.lower() in ("about:blank", "blank"):

@@ -333,6 +333,34 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       if (message.data['type'] == 'security_alert' && mounted) {  // FCM-04 fix
         _showSecurityAlerts();
       }
+      if (message.data['type'] == 'task_finished' && message.data['summary'] != null) {
+        final String? artifactPath = message.data['artifact_path']?.toString();
+        final String summary = message.data['summary'].toString();
+        String title = summary;
+        if (artifactPath != null && artifactPath.isNotEmpty) {
+          final segments = artifactPath.replaceAll('\\', '/').split('/');
+          if (segments.isNotEmpty && segments.last.isNotEmpty) {
+            title = segments.last;
+          } else {
+            title = 'Task result';
+          }
+        }
+        ArtifactsManager.addArtifact(
+          title: title,
+          content: (artifactPath != null && artifactPath.isNotEmpty) ? artifactPath : summary,
+          source: 'fcm_task_finished',
+        );
+        if (artifactPath != null && artifactPath.isNotEmpty) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ArtifactsPage()),
+              );
+            }
+          });
+        }
+      }
     });
 
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
@@ -398,10 +426,40 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     });
 
     RemoteMessage? initialMessage = await FirebaseMessaging.instance.getInitialMessage();
-    if (initialMessage != null && initialMessage.data['type'] == 'security_alert' && mounted) {  // FCM-05 fix
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _showSecurityAlerts();  // double-check inside callback
-      });
+    if (initialMessage != null) {
+      if (initialMessage.data['type'] == 'security_alert' && mounted) {  // FCM-05 fix
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _showSecurityAlerts();  // double-check inside callback
+        });
+      }
+      if (initialMessage.data['type'] == 'task_finished' && initialMessage.data['summary'] != null) {
+        final String? artifactPath = initialMessage.data['artifact_path']?.toString();
+        final String summary = initialMessage.data['summary'].toString();
+        String title = summary;
+        if (artifactPath != null && artifactPath.isNotEmpty) {
+          final segments = artifactPath.replaceAll('\\', '/').split('/');
+          if (segments.isNotEmpty && segments.last.isNotEmpty) {
+            title = segments.last;
+          } else {
+            title = 'Task result';
+          }
+        }
+        ArtifactsManager.addArtifact(
+          title: title,
+          content: (artifactPath != null && artifactPath.isNotEmpty) ? artifactPath : summary,
+          source: 'fcm_task_finished',
+        );
+        if (artifactPath != null && artifactPath.isNotEmpty) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ArtifactsPage()),
+              );
+            }
+          });
+        }
+      }
     }
   }
 
