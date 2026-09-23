@@ -317,86 +317,86 @@ var (
 const (
 	logoArt = `
                               
-  â–„â–„â–„              â–„â–„       
- â–ˆâ–€â–ˆâ–ˆ  â–ˆâ–ˆâ–€â–€        â–ˆâ–ˆ      
-   â–ˆâ–ˆ  â–ˆâ–ˆ       â–€â–€ â–ˆâ–ˆ      
-   â–ˆâ–ˆ  â–ˆâ–ˆ â–„â–ˆâ–ˆâ–ˆâ–„ â–ˆâ–ˆ â–ˆâ–ˆ â–„â–€â–€â–ˆâ–„
-   â–ˆâ–ˆâ–„ â–ˆâ–ˆ â–ˆâ–ˆ â–ˆâ–ˆ â–ˆâ–ˆ â–ˆâ–ˆ â–„â–ˆâ–€â–ˆâ–ˆ
-    â–€â–ˆâ–ˆâ–ˆâ–€ â–€â–ˆâ–ˆâ–ˆâ–€â–„â–ˆâ–ˆâ–„â–ˆâ–ˆâ–„â–€â–ˆâ–„â–ˆâ–ˆ
+  Ã¢â€“â€žÃ¢â€“â€žÃ¢â€“â€ž              Ã¢â€“â€žÃ¢â€“â€ž       
+ Ã¢â€“Ë†Ã¢â€“â‚¬Ã¢â€“Ë†Ã¢â€“Ë†  Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“â‚¬Ã¢â€“â‚¬        Ã¢â€“Ë†Ã¢â€“Ë†      
+   Ã¢â€“Ë†Ã¢â€“Ë†  Ã¢â€“Ë†Ã¢â€“Ë†       Ã¢â€“â‚¬Ã¢â€“â‚¬ Ã¢â€“Ë†Ã¢â€“Ë†      
+   Ã¢â€“Ë†Ã¢â€“Ë†  Ã¢â€“Ë†Ã¢â€“Ë† Ã¢â€“â€žÃ¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“â€ž Ã¢â€“Ë†Ã¢â€“Ë† Ã¢â€“Ë†Ã¢â€“Ë† Ã¢â€“â€žÃ¢â€“â‚¬Ã¢â€“â‚¬Ã¢â€“Ë†Ã¢â€“â€ž
+   Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“â€ž Ã¢â€“Ë†Ã¢â€“Ë† Ã¢â€“Ë†Ã¢â€“Ë† Ã¢â€“Ë†Ã¢â€“Ë† Ã¢â€“Ë†Ã¢â€“Ë† Ã¢â€“Ë†Ã¢â€“Ë† Ã¢â€“â€žÃ¢â€“Ë†Ã¢â€“â‚¬Ã¢â€“Ë†Ã¢â€“Ë†
+    Ã¢â€“â‚¬Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“â‚¬ Ã¢â€“â‚¬Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“â‚¬Ã¢â€“â€žÃ¢â€“Ë†Ã¢â€“Ë†Ã¢â€“â€žÃ¢â€“Ë†Ã¢â€“Ë†Ã¢â€“â€žÃ¢â€“â‚¬Ã¢â€“Ë†Ã¢â€“â€žÃ¢â€“Ë†Ã¢â€“Ë†
                            
                            
-        âš¡ ZERO TRUST â€¢ SECURE â€¢ FAST âš¡
+        Ã¢Å¡Â¡ ZERO TRUST Ã¢â‚¬Â¢ SECURE Ã¢â‚¬Â¢ FAST Ã¢Å¡Â¡
 `
 
 	connectedArt = `
-   â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—
-   â•‘    âœ“ CONNECTION ESTABLISHED              â•‘
-   â•‘    â— READY TO EXECUTE COMMANDS          â•‘
-   â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   Ã¢â€¢â€Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢â€”
+   Ã¢â€¢â€˜    Ã¢Å“â€œ CONNECTION ESTABLISHED              Ã¢â€¢â€˜
+   Ã¢â€¢â€˜    Ã¢â€”Â READY TO EXECUTE COMMANDS          Ã¢â€¢â€˜
+   Ã¢â€¢Å¡Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
 `
 
 	menuArt = `
-â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—
-â•‘              VOILA - LOCAL AGENT MENU             â•‘
-â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+Ã¢â€¢â€Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢â€”
+Ã¢â€¢â€˜              VOILA - LOCAL AGENT MENU             Ã¢â€¢â€˜
+Ã¢â€¢Å¡Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
 `
 
-	separatorLine = "â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•"
+	separatorLine = "Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â"
 
 	footerArt = `
-    â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—
-    â•‘  Voice-to-CLI Remote Execution System     â•‘
-    â•‘  Zero Trust | Multi-Device | Secure        â•‘
-    â•‘  v1.0.0 | âš¡ Fast | ðŸ”’ Secure              â•‘
-    â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    Ã¢â€¢â€Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢â€”
+    Ã¢â€¢â€˜  Voice-to-CLI Remote Execution System     Ã¢â€¢â€˜
+    Ã¢â€¢â€˜  Zero Trust | Multi-Device | Secure        Ã¢â€¢â€˜
+    Ã¢â€¢â€˜  v1.0.0 | Ã¢Å¡Â¡ Fast | Ã°Å¸â€â€™ Secure              Ã¢â€¢â€˜
+    Ã¢â€¢Å¡Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
 `
 
 	statusOnline = `
-   â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—
-   â•‘  â— ONLINE - CONNECTED - LISTENING:8088  â•‘
-   â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   Ã¢â€¢â€Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢â€”
+   Ã¢â€¢â€˜  Ã¢â€”Â ONLINE - CONNECTED - LISTENING:8088  Ã¢â€¢â€˜
+   Ã¢â€¢Å¡Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
 `
 
 	statusOffline = `
-   â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—
-   â•‘  â—‹ OFFLINE - DISCONNECTED - STOPPED     â•‘
-   â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   Ã¢â€¢â€Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢â€”
+   Ã¢â€¢â€˜  Ã¢â€”â€¹ OFFLINE - DISCONNECTED - STOPPED     Ã¢â€¢â€˜
+   Ã¢â€¢Å¡Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
 `
 
 	arrowsArt = `
-    â†‘   â†“   â†’   â†
+    Ã¢â€ â€˜   Ã¢â€ â€œ   Ã¢â€ â€™   Ã¢â€ Â
   Navigate Options
 `
 
-	decorativeLine = "â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—"
+	decorativeLine = "Ã¢â€¢â€Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢â€”"
 
-	sparklineConnected    = "â–“â–“â–“â–“â–“â–“â–“â–“â–“â–“â–“ 100%"
-	sparklineDisconnected = "â–‘â–‘â–‘â–‘â–‘â–‘â–‘â–‘â–‘â–‘â–‘ 0%"
+	sparklineConnected    = "Ã¢â€“â€œÃ¢â€“â€œÃ¢â€“â€œÃ¢â€“â€œÃ¢â€“â€œÃ¢â€“â€œÃ¢â€“â€œÃ¢â€“â€œÃ¢â€“â€œÃ¢â€“â€œÃ¢â€“â€œ 100%"
+	sparklineDisconnected = "Ã¢â€“â€˜Ã¢â€“â€˜Ã¢â€“â€˜Ã¢â€“â€˜Ã¢â€“â€˜Ã¢â€“â€˜Ã¢â€“â€˜Ã¢â€“â€˜Ã¢â€“â€˜Ã¢â€“â€˜Ã¢â€“â€˜ 0%"
 
-	progressBarConnected    = "â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆ 100%"
-	progressBarDisconnected = "â–‘â–‘â–‘â–‘â–‘â–‘â–‘â–‘â–‘â–‘â–‘â–‘â–‘â–‘â–‘â–‘â–‘â–‘â–‘ 0%"
+	progressBarConnected    = "Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë† 100%"
+	progressBarDisconnected = "Ã¢â€“â€˜Ã¢â€“â€˜Ã¢â€“â€˜Ã¢â€“â€˜Ã¢â€“â€˜Ã¢â€“â€˜Ã¢â€“â€˜Ã¢â€“â€˜Ã¢â€“â€˜Ã¢â€“â€˜Ã¢â€“â€˜Ã¢â€“â€˜Ã¢â€“â€˜Ã¢â€“â€˜Ã¢â€“â€˜Ã¢â€“â€˜Ã¢â€“â€˜Ã¢â€“â€˜Ã¢â€“â€˜ 0%"
 
-	frameTop    = "â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—"
-	frameBottom = "â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•"
+	frameTop    = "Ã¢â€¢â€Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢â€”"
+	frameBottom = "Ã¢â€¢Å¡Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â"
 
-	dividerLine = "â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€"
+	dividerLine = "Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬"
 
 	loadingArt = `
-    â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—
-    â•‘  âŸ³ CONNECTING TO BACKEND...            â•‘
-    â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    Ã¢â€¢â€Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢â€”
+    Ã¢â€¢â€˜  Ã¢Å¸Â³ CONNECTING TO BACKEND...            Ã¢â€¢â€˜
+    Ã¢â€¢Å¡Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
 `
 
 	successCheckArt = `
-    â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—
-    â•‘    âœ“ SUCCESS                            â•‘
-    â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    Ã¢â€¢â€Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢â€”
+    Ã¢â€¢â€˜    Ã¢Å“â€œ SUCCESS                            Ã¢â€¢â€˜
+    Ã¢â€¢Å¡Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
 `
 
 	errorCrossArt = `
-    â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—
-    â•‘    âœ— ERROR                              â•‘
-    â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    Ã¢â€¢â€Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢â€”
+    Ã¢â€¢â€˜    Ã¢Å“â€” ERROR                              Ã¢â€¢â€˜
+    Ã¢â€¢Å¡Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
 `
 )
 
@@ -420,7 +420,7 @@ type ConnectionData struct {
 	ActiveMode    string `json:"active_mode,omitempty"`
 }
 
-// â”€â”€ Token Usage Tracking â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬ Token Usage Tracking Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 var (
 	groqSessionTokensMu   sync.Mutex
 	groqSessionTokensIn   int64
@@ -903,15 +903,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = "Stopped"
 		}
 	case securityDisconnectMsg:
-		m.messages = append(m.messages, warningStyle.Render("âš  Security disconnect triggered"))
+		m.messages = append(m.messages, warningStyle.Render("Ã¢Å¡Â  Security disconnect triggered"))
 		m.connectionData.Connected = false
 		m.isRunning = false
 		m.serverRunning = false
 		return m, m.stopServer()
 	case successMsg:
-		m.messages = append(m.messages, successStyle.Render("âœ“ "+msg.message))
+		m.messages = append(m.messages, successStyle.Render("Ã¢Å“â€œ "+msg.message))
 	case errorMsg:
-		m.messages = append(m.messages, errorStyle.Render("âœ— "+msg.message))
+		m.messages = append(m.messages, errorStyle.Render("Ã¢Å“â€” "+msg.message))
 		if msg.message == "Local data cleared" {
 			m.connectionData = ConnectionData{}
 			m.state = "setup"
@@ -1171,7 +1171,7 @@ func (m model) setupView() string {
 	content.WriteString(separatorStyle.Render(separatorLine))
 	content.WriteString("\n\n")
 	content.WriteString(subtitleStyle.Render("Enter your connection details:\n\n"))
-	content.WriteString(subtitleStyle.Render("ðŸ’¡ Tip: Use Ctrl+V to paste from clipboard\n\n"))
+	content.WriteString(subtitleStyle.Render("Ã°Å¸â€™Â¡ Tip: Use Ctrl+V to paste from clipboard\n\n"))
 
 	switch m.inputStep {
 	case 0:
@@ -1269,13 +1269,13 @@ func (m model) menuView() string {
 	// Show background service status
 	if isBackgroundServiceRunning() {
 		content.WriteString("\n\n")
-		content.WriteString(successStyle.Render("â— Background service running"))
+		content.WriteString(successStyle.Render("Ã¢â€”Â Background service running"))
 	}
 
 	// Show connection status message
 	if !m.connectionData.Connected {
 		content.WriteString("\n\n")
-		content.WriteString(warningStyle.Render("âš  No connection configured"))
+		content.WriteString(warningStyle.Render("Ã¢Å¡Â  No connection configured"))
 	}
 
 	content.WriteString("\n\n")
@@ -1286,41 +1286,41 @@ func (m model) menuView() string {
 	var options []string
 	if m.connectionData.Connected {
 		options = []string{
-			"â¯  Stop/Start Service",
-			"ðŸ—‘  Delete Connection",
-			"ðŸŒ Start Ngrok",
-			"ðŸ§¹ Clear Backend Data",
-			"âš¡ Reset Circuit Breaker",
-			"ðŸ’¾ Clear Local Data",
-			"ðŸ“Š View Status",
-			"ðŸšª Exit",
+			"Ã¢ÂÂ¯  Stop/Start Service",
+			"Ã°Å¸â€”â€˜  Delete Connection",
+			"Ã°Å¸Å’Â Start Ngrok",
+			"Ã°Å¸Â§Â¹ Clear Backend Data",
+			"Ã¢Å¡Â¡ Reset Circuit Breaker",
+			"Ã°Å¸â€™Â¾ Clear Local Data",
+			"Ã°Å¸â€œÅ  View Status",
+			"Ã°Å¸Å¡Âª Exit",
 		}
 
 		if isBackgroundServiceRunning() {
 			options = []string{
-				"â¯  Stop Background Service",
-				"ðŸ—‘  Delete Connection",
-				"ðŸŒ Start Ngrok",
-				"ðŸ§¹ Clear Backend Data",
-				"âš¡ Reset Circuit Breaker",
-				"ðŸ’¾ Clear Local Data",
-				"ðŸ“Š View Status",
-				"ðŸšª Exit",
+				"Ã¢ÂÂ¯  Stop Background Service",
+				"Ã°Å¸â€”â€˜  Delete Connection",
+				"Ã°Å¸Å’Â Start Ngrok",
+				"Ã°Å¸Â§Â¹ Clear Backend Data",
+				"Ã¢Å¡Â¡ Reset Circuit Breaker",
+				"Ã°Å¸â€™Â¾ Clear Local Data",
+				"Ã°Å¸â€œÅ  View Status",
+				"Ã°Å¸Å¡Âª Exit",
 			}
 		}
 	} else {
 		// Not connected - show setup-only options
 		options = []string{
-			"ðŸ”§ Setup Connection",
-			"ðŸŒ Start Ngrok",
-			"ðŸšª Exit",
+			"Ã°Å¸â€Â§ Setup Connection",
+			"Ã°Å¸Å’Â Start Ngrok",
+			"Ã°Å¸Å¡Âª Exit",
 		}
 	}
 
 	for i, option := range options {
 		prefix := " "
 		if i == m.selectedOption {
-			prefix = "â†’"
+			prefix = "Ã¢â€ â€™"
 			content.WriteString(activeButtonStyle.Render(prefix + " " + option))
 		} else {
 			content.WriteString(buttonStyle.Render(prefix + " " + option))
@@ -1664,7 +1664,7 @@ func startHTTPServer() {
 		pendingApprovalsMu.Unlock()
 	})
 
-	// â”€â”€ API Key management endpoints (called by Python dashboard) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+	// Ã¢â€â‚¬Ã¢â€â‚¬ API Key management endpoints (called by Python dashboard) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 	mux.HandleFunc("/api-keys", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Content-Type", "application/json")
@@ -1771,7 +1771,7 @@ func startHTTPServer() {
 		}
 	})
 
-	// /verify-groq â€” pings Groq API with a tiny "hello" prompt
+	// /verify-groq Ã¢â‚¬â€ pings Groq API with a tiny "hello" prompt
 	mux.HandleFunc("/verify-groq", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Content-Type", "application/json")
@@ -1803,7 +1803,7 @@ func startHTTPServer() {
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "response": out})
 	})
 
-	// /verify-ollama â€” pings Ollama endpoint with a tiny "hello" prompt
+	// /verify-ollama Ã¢â‚¬â€ pings Ollama endpoint with a tiny "hello" prompt
 	mux.HandleFunc("/verify-ollama", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Content-Type", "application/json")
@@ -1840,7 +1840,7 @@ func startHTTPServer() {
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "response": out})
 	})
 
-	// /token-usage â€” returns local session + daily token counts, plus Groq rate limit headers
+	// /token-usage Ã¢â‚¬â€ returns local session + daily token counts, plus Groq rate limit headers
 	mux.HandleFunc("/token-usage", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Content-Type", "application/json")
@@ -2282,7 +2282,7 @@ if ($LASTEXITCODE -ne 0) {
 				os.Stdout.Sync()
 				newConvID = conversationID
 			default:
-				// LOCAL / AGENT / SHELL â€” use agy or powershell
+				// LOCAL / AGENT / SHELL Ã¢â‚¬â€ use agy or powershell
 				output, newConvID, err = executeCommand(ctx, command, effectiveMode, conversationID, modelName)
 			}
 
@@ -2358,12 +2358,12 @@ if ($LASTEXITCODE -ne 0) {
 				log.Printf("Webhook delivery attempt %d/3 failed: %v", attempt+1, err)
 			}
 			if webhookErr != nil {
-				log.Printf("All webhook delivery attempts failed â€” mobile app may be stuck: %v", webhookErr)
+				log.Printf("All webhook delivery attempts failed Ã¢â‚¬â€ mobile app may be stuck: %v", webhookErr)
 			}
 		}()
 	})
 
-	// /set-mode â€” Python widget badge sends the chosen mode (LOCAL/GROQ/OLLAMA) here.
+	// /set-mode Ã¢â‚¬â€ Python widget badge sends the chosen mode (LOCAL/GROQ/OLLAMA) here.
 	// No auth required: this is localhost-only and the worst an attacker can do is
 	// switch execution mode, which still requires the mobile auth secret to /execute.
 	mux.HandleFunc("/set-mode", func(w http.ResponseWriter, r *http.Request) {
@@ -2576,7 +2576,7 @@ func executeCommand(ctx context.Context, command string, mode string, conversati
 	// LOCAL = agy (local Gemini agent). AGENT = also agy (legacy name).
 	// Only SHELL = raw PowerShell. Empty string = default to agy.
 	if modeUpper == "AGENT" || modeUpper == "LOCAL" || modeUpper == "" {
-		prompt := command + "\n\nCRITICAL - COMMAND MEMORY:\nHere are your highly compressed, previously successful PowerShell techniques:\n" + loadMemory() + "\nWhen asked to do a task, FIRST check if a command in this memory perfectly satisfies the purpose. If yes, RUN IT EXACTLY AS-IS from memory (unless the user explicitly requests a new/specific method). If you invent a NEW successful technique, you MUST immediately call the 'save_command_memory' tool to permanently memorize it.\n\n(CRITICAL SYSTEM NOTE: When speaking to the user in your final text response, keep your voice responses casual, brief, and conversational. HOWEVER, when writing code, generating PDFs, or creating documents via tools, your output MUST be exhaustively detailed, massive, and highly comprehensive. NEVER generate a short summary for a document.)\n\nCRITICAL - ONE-SHOT TERMINAL EXECUTION (MAX TOOLS):\nTo avoid hitting max_tool iteration limits and increase execution speed, you MUST combine multiple PowerShell steps into a SINGLE detailed command per tool_call. Do NOT run one tiny command, wait for the result, and then run the next tiny command. Instead, write a robust PowerShell script block (using semicolons or newlines) that loops, searches, or processes everything in one shot and returns the final desired output. Keep writing detailed combined commands until you get the exact required output!\n\nCRITICAL OS GUARDRAIL: You MUST NEVER modify, delete, or touch Windows system files, System32, Program Files, the Registry, or any critical OS configuration. You must refuse commands that could harm or break the OS. Address the user as 'boss'. Do not use overly formal language.\n\nCRITICAL SYSTEM NOTE: You are running inside an isolated background sandbox (`exebox` desktop). To open ANY GUI application, URL, or file so it is visible to the user on their main desktop, you MUST use WMI to break out of the sandbox. Use exactly this command format: `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'explorer.exe \"<URL_OR_PATH>\"'` (for URLs/files) or `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList '<APP_EXE>'` (for apps). DO NOT use Start-Process, as it will spawn invisibly in the sandbox! To perform browser automation, you MUST use the browser_automation tool — do NOT launch Edge via WMI/shell with about:blank, and do NOT call browser_tools.py via a hardcoded path. Workflow: (1) Choose browser_automation action=goto (navigate current tab) OR action=new_tab (open new tab) based on whether the current tab must be preserved. Use new_tab when user says 'in another tab', 'keep this page', 'compare A and B', or for independent URLs. (2) Use list_tabs/switch_tab when working across tabs. (3) snapshot/extract_links/click/type/press/scroll/search_word/hover on the active tab. (4) close_tab when done with an extra tab if useful. Never use about:blank. Every tool result includes ok/url/title - if ok is false, explain the error to the user. Never stop after only opening a blank browser. To create or save a playbook, you MUST use the save_playbook tool. To list, create, or delete scheduled Voila tasks, use the list_schedules, create_schedule, and delete_schedule tools. Do NOT use PowerShell Get-ScheduledTask unless the user explicitly asks for Windows OS tasks.\n\nCRITICAL - .AIIGNORE & DEPENDENCY OVERHEAD (0 BUGS POLICY):\nWhen exploring projects, NEVER search or read inside dependency folders (node_modules, .venv, venv, __pycache__, vendor, .git, .m2, .gradle, target, packages, .cargo/registry). They contain massive overhead that breaks your context limits.\nTo understand dependencies, ONLY read blueprint files (package.json, pyproject.toml, requirements.txt, go.mod, pom.xml, build.gradle, composer.json, Gemfile, Cargo.toml, *.csproj). Also NEVER read standard '.env' files; if you need environment context, ONLY look at '.env.example' or '.env.local'. Also NEVER read standard '.env' files; if you need environment context, ONLY look at '.env.example' or '.env.local'.\nWhen searching for files, enforce this .aiignore policy by using native PowerShell regex filtering:\n`Get-ChildItem -Recurse -Filter \"*name*\" -File -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch '\\\\(node_modules|\\.venv|venv|vendor|\\.git|target|\\.gradle|\\.m2|packages|__pycache__|dist|build|out|bin|obj|\\.idea|\\.vscode)\\\\' } | Select-Object -ExpandProperty FullName`)"
+		prompt := command + "\n\nCRITICAL - COMMAND MEMORY:\nHere are your highly compressed, previously successful PowerShell techniques:\n" + loadMemory() + "\nWhen asked to do a task, FIRST check if a command in this memory perfectly satisfies the purpose. If yes, RUN IT EXACTLY AS-IS from memory (unless the user explicitly requests a new/specific method). If you invent a NEW successful technique, you MUST immediately call the 'save_command_memory' tool to permanently memorize it.\n\n(CRITICAL SYSTEM NOTE: When speaking to the user in your final text response, keep your voice responses casual, brief, and conversational. HOWEVER, when writing code, generating PDFs, or creating documents via tools, your output MUST be exhaustively detailed, massive, and highly comprehensive. NEVER generate a short summary for a document.)\n\nCRITICAL - ONE-SHOT TERMINAL EXECUTION (MAX TOOLS):\nTo avoid hitting max_tool iteration limits and increase execution speed, you MUST combine multiple PowerShell steps into a SINGLE detailed command per tool_call. Do NOT run one tiny command, wait for the result, and then run the next tiny command. Instead, write a robust PowerShell script block (using semicolons or newlines) that loops, searches, or processes everything in one shot and returns the final desired output. Keep writing detailed combined commands until you get the exact required output!\n\nCRITICAL OS GUARDRAIL: You MUST NEVER modify, delete, or touch Windows system files, System32, Program Files, the Registry, or any critical OS configuration. You must refuse commands that could harm or break the OS. Address the user as 'boss'. Do not use overly formal language.\n\nCRITICAL SYSTEM NOTE: You are running inside an isolated background sandbox (`exebox` desktop). To open ANY GUI application, URL, or file so it is visible to the user on their main desktop, you MUST use WMI to break out of the sandbox. Use exactly this command format: `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'explorer.exe \"<URL_OR_PATH>\"'` (for URLs/files) or `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList '<APP_EXE>'` (for apps). DO NOT use Start-Process, as it will spawn invisibly in the sandbox! To perform browser automation, you MUST use the browser_automation tool â€” do NOT launch Edge via WMI/shell with about:blank, and do NOT call browser_tools.py via a hardcoded path. Workflow: (1) Choose browser_automation action=goto (navigate current tab) OR action=new_tab (open new tab) based on whether the current tab must be preserved. Use new_tab when user says 'in another tab', 'keep this page', 'compare A and B', or for independent URLs. (2) Use list_tabs/switch_tab when working across tabs. (3) snapshot/extract_links/click/type/press/scroll/search_word/hover on the active tab. (4) close_tab when done with an extra tab if useful. Never use about:blank. Every tool result includes ok/url/title - if ok is false, explain the error to the user. Never stop after only opening a blank browser. To create or save a playbook, you MUST use the save_playbook tool. To list, create, or delete scheduled Voila tasks, use the list_schedules, create_schedule, and delete_schedule tools. Do NOT use PowerShell Get-ScheduledTask unless the user explicitly asks for Windows OS tasks.\n\nCRITICAL - .AIIGNORE & DEPENDENCY OVERHEAD (0 BUGS POLICY):\nWhen exploring projects, NEVER search or read inside dependency folders (node_modules, .venv, venv, __pycache__, vendor, .git, .m2, .gradle, target, packages, .cargo/registry). They contain massive overhead that breaks your context limits.\nTo understand dependencies, ONLY read blueprint files (package.json, pyproject.toml, requirements.txt, go.mod, pom.xml, build.gradle, composer.json, Gemfile, Cargo.toml, *.csproj). Also NEVER read standard '.env' files; if you need environment context, ONLY look at '.env.example' or '.env.local'. Also NEVER read standard '.env' files; if you need environment context, ONLY look at '.env.example' or '.env.local'.\nWhen searching for files, enforce this .aiignore policy by using native PowerShell regex filtering:\n`Get-ChildItem -Recurse -Filter \"*name*\" -File -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch '\\\\(node_modules|\\.venv|venv|vendor|\\.git|target|\\.gradle|\\.m2|packages|__pycache__|dist|build|out|bin|obj|\\.idea|\\.vscode)\\\\' } | Select-Object -ExpandProperty FullName`)"
 		if modelName == "" || modelName == "flash" {
 			modelName = "Gemini 3.7 Flash (High)"
 		}
@@ -2766,9 +2766,9 @@ func executeCommand(ctx context.Context, command string, mode string, conversati
 	return outStr, conversationID, nil
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// Cloud API executors â€” Groq & Ollama (with tool-calling support)
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// Cloud API executors Ã¢â‚¬â€ Groq & Ollama (with tool-calling support)
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 // groqMessage mirrors the Groq / OpenAI chat message format.
 // For tool-calling we need a richer raw message so we use map[string]interface{} in loops.
@@ -2777,7 +2777,7 @@ type groqMessage struct {
 	Content string `json:"content"`
 }
 
-// â”€â”€ Tool definitions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬ Tool definitions Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 // toolDef is the JSON structure sent to cloud APIs describing an available tool.
 type toolDef struct {
@@ -3075,31 +3075,31 @@ var availableTools = []toolDef{
 - "PromptBase Y-Combinator Pitch Deck": Forces problem-solution structure, large metric callouts, and minimalist startup aesthetics.
 - "McKinsey Strategy Deck": Forces dense data slides, actionable slide titles, 6x6 rule, and highly analytical visual blocks.
 - "SnackPrompt Storytelling Flow": Uses quote blocks, full-image backgrounds, and narrative-driven section dividers.`},
-					"theme": map[string]interface{}{"type": "string", "description": `Theme name â€” choose carefully based on audience and tone:
-â€¢ corporate_blue   â€” professional navy/blue. Best for business reports, investor decks
-â€¢ cyberpunk        â€” neon pink/cyan on dark. Best for tech demos, gaming, edgy brands
-â€¢ minimalist       â€” near-black with white text. Best for creative portfolios, editorial
-â€¢ modern_dark      â€” charcoal + orange. Best for product launches, general purpose dark
-â€¢ illustrated_lightâ€” light lavender gradient, white cards, purple accents. Best for education, health, startups (Gamma-style)
-â€¢ warm_sunset      â€” cream/coral gradient, white cards. Best for lifestyle, personal brands, workshops
-â€¢ ocean_depth      â€” deep blue gradient, cyan accents. Best for finance, maritime, analytics
-â€¢ forest_sage      â€” light green gradient, white cards. Best for sustainability, wellness, HR
-â€¢ dynamic          â€” AI-randomized palette unique per presentation`},
+					"theme": map[string]interface{}{"type": "string", "description": `Theme name Ã¢â‚¬â€ choose carefully based on audience and tone:
+Ã¢â‚¬Â¢ corporate_blue   Ã¢â‚¬â€ professional navy/blue. Best for business reports, investor decks
+Ã¢â‚¬Â¢ cyberpunk        Ã¢â‚¬â€ neon pink/cyan on dark. Best for tech demos, gaming, edgy brands
+Ã¢â‚¬Â¢ minimalist       Ã¢â‚¬â€ near-black with white text. Best for creative portfolios, editorial
+Ã¢â‚¬Â¢ modern_dark      Ã¢â‚¬â€ charcoal + orange. Best for product launches, general purpose dark
+Ã¢â‚¬Â¢ illustrated_lightÃ¢â‚¬â€ light lavender gradient, white cards, purple accents. Best for education, health, startups (Gamma-style)
+Ã¢â‚¬Â¢ warm_sunset      Ã¢â‚¬â€ cream/coral gradient, white cards. Best for lifestyle, personal brands, workshops
+Ã¢â‚¬Â¢ ocean_depth      Ã¢â‚¬â€ deep blue gradient, cyan accents. Best for finance, maritime, analytics
+Ã¢â‚¬Â¢ forest_sage      Ã¢â‚¬â€ light green gradient, white cards. Best for sustainability, wellness, HR
+Ã¢â‚¬Â¢ dynamic          Ã¢â‚¬â€ AI-randomized palette unique per presentation`},
 					"slides": map[string]interface{}{"type": "string", "description": `JSON array of slide objects. Every slide must have a "type" field. Choose the most expressive layout for each slide:
 
-LAYOUT GUIDE â€” pick the type that best fits the content:
-â€¢ "content"     â€” Default. Card-backed text + bullets. Use for explanations, descriptions, analysis.
-â€¢ "section"     â€” Full-bleed section divider, large centered text. Use between major chapters.
-â€¢ "title_slide" â€” Opening or closing slide. Fields: title, subtitle, author. Use FIRST and LAST.
-â€¢ "quote"       â€” Decorative large quote card with attribution. Fields: content, author. Use for testimonials, key insights.
-â€¢ "chart"       â€” Data visualization. Fields: chart_type (bar/line/pie), chart_data ({label:value}), title. Use when showing trends, comparisons, distributions.
-â€¢ "image"       â€” Image fill slide. Fields: image_path (optional â€” set auto_images:true to auto-search). Use for visual impact.
-â€¢ "two_column"  â€” Side-by-side text. Fields: content_left, content_right. Use for pros/cons lists, parallel info.
-â€¢ "comparison"  â€” VS layout with colored headers and center badge. Fields: left_title, right_title, content_left (bullets), content_right (bullets). Use for before/after, competitor analysis.
-â€¢ "metrics"     â€” KPI dashboard. Fields: metrics:[{value, label, sublabel?}]. Use when 2â€“4 big numbers are the story (revenue, growth, NPS, etc.).
-â€¢ "timeline"    â€” Horizontal step chain. Fields: steps:[{label, description?}] or steps:["Step1","Step2"]. Use for roadmaps, processes, history (max 6 steps).
-â€¢ "agenda"      â€” Numbered list with accent badge per item. Fields: items:["Item 1","Item 2"]. Use for table of contents, meeting agendas, feature lists (max 8 items).
-â€¢ "diagram"     â€” Architecture or flow diagram. Fields: title, diagram (Mermaid JS source code). This will be accurately rendered to a beautiful high-res PNG and embedded in the slide!
+LAYOUT GUIDE Ã¢â‚¬â€ pick the type that best fits the content:
+Ã¢â‚¬Â¢ "content"     Ã¢â‚¬â€ Default. Card-backed text + bullets. Use for explanations, descriptions, analysis.
+Ã¢â‚¬Â¢ "section"     Ã¢â‚¬â€ Full-bleed section divider, large centered text. Use between major chapters.
+Ã¢â‚¬Â¢ "title_slide" Ã¢â‚¬â€ Opening or closing slide. Fields: title, subtitle, author. Use FIRST and LAST.
+Ã¢â‚¬Â¢ "quote"       Ã¢â‚¬â€ Decorative large quote card with attribution. Fields: content, author. Use for testimonials, key insights.
+Ã¢â‚¬Â¢ "chart"       Ã¢â‚¬â€ Data visualization. Fields: chart_type (bar/line/pie), chart_data ({label:value}), title. Use when showing trends, comparisons, distributions.
+Ã¢â‚¬Â¢ "image"       Ã¢â‚¬â€ Image fill slide. Fields: image_path (optional Ã¢â‚¬â€ set auto_images:true to auto-search). Use for visual impact.
+Ã¢â‚¬Â¢ "two_column"  Ã¢â‚¬â€ Side-by-side text. Fields: content_left, content_right. Use for pros/cons lists, parallel info.
+Ã¢â‚¬Â¢ "comparison"  Ã¢â‚¬â€ VS layout with colored headers and center badge. Fields: left_title, right_title, content_left (bullets), content_right (bullets). Use for before/after, competitor analysis.
+Ã¢â‚¬Â¢ "metrics"     Ã¢â‚¬â€ KPI dashboard. Fields: metrics:[{value, label, sublabel?}]. Use when 2Ã¢â‚¬â€œ4 big numbers are the story (revenue, growth, NPS, etc.).
+Ã¢â‚¬Â¢ "timeline"    Ã¢â‚¬â€ Horizontal step chain. Fields: steps:[{label, description?}] or steps:["Step1","Step2"]. Use for roadmaps, processes, history (max 6 steps).
+Ã¢â‚¬Â¢ "agenda"      Ã¢â‚¬â€ Numbered list with accent badge per item. Fields: items:["Item 1","Item 2"]. Use for table of contents, meeting agendas, feature lists (max 8 items).
+Ã¢â‚¬Â¢ "diagram"     Ã¢â‚¬â€ Architecture or flow diagram. Fields: title, diagram (Mermaid JS source code). This will be accurately rendered to a beautiful high-res PNG and embedded in the slide!
 
 Example full deck:
 [{"type":"title_slide","title":"Q3 Business Review","subtitle":"September 2026","author":"Product Team"},
@@ -3785,7 +3785,7 @@ func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMes
 			return "error: query is required"
 		}
 
-		// Image search branch â€” Openverse CC content-matching search (no API key required)
+		// Image search branch Ã¢â‚¬â€ Openverse CC content-matching search (no API key required)
 		if searchType == "image" {
 			escapedQuery := strings.ReplaceAll(query, " ", "+")
 			openverseURL := "https://api.openverse.org/v1/images/?q=" + escapedQuery + "&format=json&page_size=5"
@@ -4016,7 +4016,7 @@ case "read_file":
 			return "(Error: Empty command provided)"
 		}
 
-		// ðŸ›¡ï¸ HARD GUARDRAILS TO PROTECT THE USER SYSTEM ðŸ›¡ï¸
+		// Ã°Å¸â€ºÂ¡Ã¯Â¸Â HARD GUARDRAILS TO PROTECT THE USER SYSTEM Ã°Å¸â€ºÂ¡Ã¯Â¸Â
 		cmdLower := strings.ToLower(actualCommand)
 		dangerousPatterns := []string{
 			"format-volume", "clear-disk", "diskpart",
@@ -4149,6 +4149,39 @@ case "read_file":
 		}
 		return res
 
+	case "desktop_automation":
+		action   := getString("action")
+		ref      := getString("ref")
+		selector := getString("selector")
+		value    := getString("value")
+		window   := getString("window")
+		depthStr   := getString("depth")
+		timeoutStr := getString("timeout_ms")
+		depth   := 8
+		timeout := 5000
+		if d, err2 := strconv.Atoi(depthStr);   err2 == nil && d > 0 { depth   = d }
+		if t, err2 := strconv.Atoi(timeoutStr); err2 == nil && t > 0 { timeout = t }
+
+		exeDir2, _ := os.Executable()
+		dtScript := filepath.Join(filepath.Dir(exeDir2), "desktop_tools.py")
+		if _, err := os.Stat(dtScript); os.IsNotExist(err) {
+			dtScript = filepath.Join(currentWorkingDir, "desktop_tools.py")
+			if _, err := os.Stat(dtScript); os.IsNotExist(err) {
+				dtScript = filepath.Join(currentWorkingDir, "local-agent", "desktop_tools.py")
+			}
+		}
+		dtArgs := []string{dtScript, "--action", action, "--depth", fmt.Sprintf("%d", depth), "--timeout", fmt.Sprintf("%d", timeout)}
+		if ref      != "" { dtArgs = append(dtArgs, "--ref", ref) }
+		if selector != "" { dtArgs = append(dtArgs, "--selector", selector) }
+		if value    != "" { dtArgs = append(dtArgs, "--value", value) }
+		if window   != "" { dtArgs = append(dtArgs, "--window", window) }
+
+		dtCmd := exec.Command("python", dtArgs...)
+		dtOut, dtErr := dtCmd.CombinedOutput()
+		dtRes := string(dtOut)
+		if dtErr != nil { dtRes += "\n(Error: " + dtErr.Error() + ")" }
+		if len(dtRes) > 12000 { dtRes = dtRes[:12000] + "\n... (truncated)" }
+		return dtRes
 	case "list_schedules":
 		schedules, err := loadSchedules()
 		if err != nil {
@@ -4326,7 +4359,7 @@ case "read_file":
 	}
 }
 
-// â”€â”€ Groq executor with tool-calling loop â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬ Groq executor with tool-calling loop Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 // executeGroqCommand sends a prompt to the Groq cloud API and returns the response.
 // It uses the fast llama3-70b-8192 model by default, but respects modelName if provided.
@@ -4374,7 +4407,7 @@ func saveCloudHistory(convID, userContent, assistantContent string) {
 func executeGroqCommand(ctx context.Context, command, apiKey, modelName, clientID string, streamFileObj *os.File, taskID string, convID string) (string, error) {
 	defer cleanupTerminalSession()
 	if apiKey == "" {
-		return "", fmt.Errorf("Groq API key not set. Open the Voila dashboard â†’ Settings to add your key")
+		return "", fmt.Errorf("Groq API key not set. Open the Voila dashboard Ã¢â€ â€™ Settings to add your key")
 	}
 	if modelName == "" {
 		modelName = "openai/gpt-oss-120b" // Groq free-tier default
@@ -4415,7 +4448,7 @@ When asked to do a task, FIRST check if a command in this memory perfectly satis
 
 CRITICAL OS GUARDRAIL: You MUST NEVER modify, delete, or touch Windows system files, System32, Program Files, the Registry, or any critical OS configuration. You must refuse commands that could harm or break the OS.
 
-CRITICAL SYSTEM NOTE: You are running inside an isolated background sandbox (` + "`exebox`" + ` desktop). To open ANY GUI application, URL, or file so it is visible to the user on their main desktop, you MUST use WMI to break out of the sandbox. Use exactly this command format: ` + "`Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'explorer.exe \"<URL_OR_PATH>\"'`" + ` (for URLs/files) or ` + "`Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList '<APP_EXE>'`" + ` (for apps). DO NOT use Start-Process, as it will spawn invisibly in the sandbox! To perform browser automation, you MUST use the browser_automation tool — do NOT launch Edge via WMI/shell with about:blank, and do NOT call browser_tools.py via a hardcoded path. Workflow: (1) Choose browser_automation action=goto (navigate current tab) OR action=new_tab (open new tab) based on whether the current tab must be preserved. Use new_tab when user says 'in another tab', 'keep this page', 'compare A and B', or for independent URLs. (2) Use list_tabs/switch_tab when working across tabs. (3) snapshot/extract_links/click/type/press/scroll/search_word/hover on the active tab. (4) close_tab when done with an extra tab if useful. Never use about:blank. Every tool result includes ok/url/title - if ok is false, explain the error to the user. Never stop after only opening a blank browser. To create or save a playbook, you MUST use the save_playbook tool. To list, create, or delete scheduled Voila tasks, use the list_schedules, create_schedule, and delete_schedule tools. Do NOT use PowerShell Get-ScheduledTask unless the user explicitly asks for Windows OS tasks.
+CRITICAL SYSTEM NOTE: You are running inside an isolated background sandbox (` + "`exebox`" + ` desktop). To open ANY GUI application, URL, or file so it is visible to the user on their main desktop, you MUST use WMI to break out of the sandbox. Use exactly this command format: ` + "`Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'explorer.exe \"<URL_OR_PATH>\"'`" + ` (for URLs/files) or ` + "`Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList '<APP_EXE>'`" + ` (for apps). DO NOT use Start-Process, as it will spawn invisibly in the sandbox! To perform browser automation, you MUST use the browser_automation tool â€” do NOT launch Edge via WMI/shell with about:blank, and do NOT call browser_tools.py via a hardcoded path. Workflow: (1) Choose browser_automation action=goto (navigate current tab) OR action=new_tab (open new tab) based on whether the current tab must be preserved. Use new_tab when user says 'in another tab', 'keep this page', 'compare A and B', or for independent URLs. (2) Use list_tabs/switch_tab when working across tabs. (3) snapshot/extract_links/click/type/press/scroll/search_word/hover on the active tab. (4) close_tab when done with an extra tab if useful. Never use about:blank. Every tool result includes ok/url/title - if ok is false, explain the error to the user. Never stop after only opening a blank browser. To create or save a playbook, you MUST use the save_playbook tool. To list, create, or delete scheduled Voila tasks, use the list_schedules, create_schedule, and delete_schedule tools. Do NOT use PowerShell Get-ScheduledTask unless the user explicitly asks for Windows OS tasks.
 
 CRITICAL: You are running inside a Windows PowerShell environment. You MUST use PowerShell syntax, NOT Bash!
 - Use 'Get-ChildItem' or 'ls' (without bash flags like -la). Do NOT use 'ls -la'.
@@ -4449,7 +4482,7 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
    - NEVER place an image over text. If injecting an image, push all subsequent text boxes down by the image's exact height + 0.5 Inches.
 
 2. PDF TYPESETTING & THEMES (CHROMIUM ENGINE):
-   - NEVER use LaTeX! The PDF engine is a Headless Chromium HTML/CSS Architecture. Do NOT use LaTeX math symbols (like $\rightarrow$). Use actual Unicode characters like â†’ or standard HTML.
+   - NEVER use LaTeX! The PDF engine is a Headless Chromium HTML/CSS Architecture. Do NOT use LaTeX math symbols (like $\rightarrow$). Use actual Unicode characters like Ã¢â€ â€™ or standard HTML.
    - For maximum elegance, output pure HTML. You have access to these CSS layout classes: '.page-break', '.cover-page', '.grid-2', '.grid-3', '.card', and '.callout'. 
    - DO NOT wrap your HTML in '<html>' or '<body>' tags. The backend injects it into a master themed body with auto page-numbering.
    - **UI DESIGN & TAILWIND**: You have full access to Tailwind CSS via class attributes. Do NOT just output boring text walls! You MUST design beautiful UI components, metric cards, dashboards, and styled layouts using Tailwind classes (e.g. '<div class="p-6 bg-white rounded-xl shadow-lg border border-gray-200">'). Use Tailwind to make the PDF look like a modern web application! The theme colors are injected into Tailwind as 'bg-primary', 'text-accent', etc.
@@ -4642,7 +4675,7 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 
 		choice := result.Choices[0]
 
-		// No tool calls â€” return the final text answer
+		// No tool calls Ã¢â‚¬â€ return the final text answer
 		if len(choice.Message.ToolCalls) == 0 {
 			debugLog.Printf("================================================================")
 			debugLog.Printf("[DEBUG_LIFECYCLE: GROQ] 4. SUMMARY PREPARATION & TRANSFERRING")
@@ -4670,7 +4703,7 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 		}
 		messages = append(messages, assistantMsg)
 
-		// âœ¨ RESTORE DEBATE & CHAT: If the model generated text before calling a tool, print it to the DAG live logs!
+		// Ã¢Å“Â¨ RESTORE DEBATE & CHAT: If the model generated text before calling a tool, print it to the DAG live logs!
 		if strings.HasPrefix(taskID, "node-") && choice.Message.Content != "" {
 			cleanMsg := strings.TrimSpace(choice.Message.Content)
 			if len(cleanMsg) > 500 { cleanMsg = cleanMsg[:497] + "..." }
@@ -4728,7 +4761,7 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 	return "(max tool iterations reached)", nil
 }
 
-// â”€â”€ Ollama executor with tool-calling loop â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬ Ollama executor with tool-calling loop Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 // executeOllamaCommand sends a prompt to an Ollama-compatible endpoint.
 // Works for both local Ollama (http://localhost:11434) and Ollama Cloud (https://api.ollama.ai).
@@ -4785,7 +4818,7 @@ When asked to do a task, FIRST check if a command in this memory perfectly satis
 
 CRITICAL OS GUARDRAIL: You MUST NEVER modify, delete, or touch Windows system files, System32, Program Files, the Registry, or any critical OS configuration. You must refuse commands that could harm or break the OS.
 
-CRITICAL SYSTEM NOTE: You are running inside an isolated background sandbox (` + "`exebox`" + ` desktop). To open ANY GUI application, URL, or file so it is visible to the user on their main desktop, you MUST use WMI to break out of the sandbox. Use exactly this command format: ` + "`Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'explorer.exe \"<URL_OR_PATH>\"'`" + ` (for URLs/files) or ` + "`Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList '<APP_EXE>'`" + ` (for apps). DO NOT use Start-Process, as it will spawn invisibly in the sandbox! To perform browser automation, you MUST use the browser_automation tool — do NOT launch Edge via WMI/shell with about:blank, and do NOT call browser_tools.py via a hardcoded path. Workflow: (1) Choose browser_automation action=goto (navigate current tab) OR action=new_tab (open new tab) based on whether the current tab must be preserved. Use new_tab when user says 'in another tab', 'keep this page', 'compare A and B', or for independent URLs. (2) Use list_tabs/switch_tab when working across tabs. (3) snapshot/extract_links/click/type/press/scroll/search_word/hover on the active tab. (4) close_tab when done with an extra tab if useful. Never use about:blank. Every tool result includes ok/url/title - if ok is false, explain the error to the user. Never stop after only opening a blank browser. To create or save a playbook, you MUST use the save_playbook tool. To list, create, or delete scheduled Voila tasks, use the list_schedules, create_schedule, and delete_schedule tools. Do NOT use PowerShell Get-ScheduledTask unless the user explicitly asks for Windows OS tasks.
+CRITICAL SYSTEM NOTE: You are running inside an isolated background sandbox (` + "`exebox`" + ` desktop). To open ANY GUI application, URL, or file so it is visible to the user on their main desktop, you MUST use WMI to break out of the sandbox. Use exactly this command format: ` + "`Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'explorer.exe \"<URL_OR_PATH>\"'`" + ` (for URLs/files) or ` + "`Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList '<APP_EXE>'`" + ` (for apps). DO NOT use Start-Process, as it will spawn invisibly in the sandbox! To perform browser automation, you MUST use the browser_automation tool â€” do NOT launch Edge via WMI/shell with about:blank, and do NOT call browser_tools.py via a hardcoded path. Workflow: (1) Choose browser_automation action=goto (navigate current tab) OR action=new_tab (open new tab) based on whether the current tab must be preserved. Use new_tab when user says 'in another tab', 'keep this page', 'compare A and B', or for independent URLs. (2) Use list_tabs/switch_tab when working across tabs. (3) snapshot/extract_links/click/type/press/scroll/search_word/hover on the active tab. (4) close_tab when done with an extra tab if useful. Never use about:blank. Every tool result includes ok/url/title - if ok is false, explain the error to the user. Never stop after only opening a blank browser. To create or save a playbook, you MUST use the save_playbook tool. To list, create, or delete scheduled Voila tasks, use the list_schedules, create_schedule, and delete_schedule tools. Do NOT use PowerShell Get-ScheduledTask unless the user explicitly asks for Windows OS tasks.
 
 CRITICAL: You are running inside a Windows PowerShell environment. You MUST use PowerShell syntax, NOT Bash!
 - Use 'Get-ChildItem' or 'ls' (without bash flags like -la). Do NOT use 'ls -la'.
@@ -4819,7 +4852,7 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
    - NEVER place an image over text. If injecting an image, push all subsequent text boxes down by the image's exact height + 0.5 Inches.
 
 2. PDF TYPESETTING & THEMES (CHROMIUM ENGINE):
-   - NEVER use LaTeX! The PDF engine is a Headless Chromium HTML/CSS Architecture. Do NOT use LaTeX math symbols (like $\rightarrow$). Use actual Unicode characters like â†’ or standard HTML.
+   - NEVER use LaTeX! The PDF engine is a Headless Chromium HTML/CSS Architecture. Do NOT use LaTeX math symbols (like $\rightarrow$). Use actual Unicode characters like Ã¢â€ â€™ or standard HTML.
    - For maximum elegance, output pure HTML. You have access to these CSS layout classes: '.page-break', '.cover-page', '.grid-2', '.grid-3', '.card', and '.callout'. 
    - DO NOT wrap your HTML in '<html>' or '<body>' tags. The backend injects it into a master themed body with auto page-numbering.
    - **UI DESIGN & TAILWIND**: You have full access to Tailwind CSS via class attributes. Do NOT just output boring text walls! You MUST design beautiful UI components, metric cards, dashboards, and styled layouts using Tailwind classes (e.g. '<div class="p-6 bg-white rounded-xl shadow-lg border border-gray-200">'). Use Tailwind to make the PDF look like a modern web application! The theme colors are injected into Tailwind as 'bg-primary', 'text-accent', etc.
@@ -4983,7 +5016,7 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 			return "", fmt.Errorf("Ollama error: %s", result.Error)
 		}
 
-		// No tool calls â€” return the final text answer
+		// No tool calls Ã¢â‚¬â€ return the final text answer
 		if len(result.Message.ToolCalls) == 0 {
 			debugLog.Printf("================================================================")
 			debugLog.Printf("[DEBUG_LIFECYCLE: OLLAMA] 4. SUMMARY PREPARATION & TRANSFERRING")
@@ -5011,7 +5044,7 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 		}
 		messages = append(messages, assistantMsg)
 
-		// âœ¨ RESTORE DEBATE & CHAT: If the model generated text before calling a tool, print it to the DAG live logs!
+		// Ã¢Å“Â¨ RESTORE DEBATE & CHAT: If the model generated text before calling a tool, print it to the DAG live logs!
 		if strings.HasPrefix(taskID, "node-") && result.Message.Content != "" {
 			cleanMsg := strings.TrimSpace(result.Message.Content)
 			if len(cleanMsg) > 500 { cleanMsg = cleanMsg[:497] + "..." }
@@ -5740,4 +5773,5 @@ func main() {
 		setupAutoStart()
 	}
 }
+
 
