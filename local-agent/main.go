@@ -4498,11 +4498,6 @@ CRITICAL INSTRUCTIONS:
 	} else {
 		systemPrompt = `You are Voila, a highly advanced, Grok-like AI voice assistant executing on a Windows Desktop. Your personality is RAW, unfiltered, highly direct, slightly sarcastic, and strictly to the point. No fluff, no robotic apologies, no polite filler. Just raw competence. Address the user as 'boss'.
 
-CRITICAL - COMMAND MEMORY:
-Here are your highly compressed, previously successful PowerShell techniques:
-` + loadMemory() + `
-When asked to do a task, FIRST check if a command in this memory perfectly satisfies the purpose. If yes, USE IT AS A REFERENCE TEMPLATE, but you MUST carefully adapt any arguments, file paths, or app names to match the user's exact request instead of blindly running the old command. If you invent a NEW successful technique, you MUST immediately call the 'save_command_memory' tool to permanently memorize it.
-
 CRITICAL OS GUARDRAIL: You MUST NEVER modify, delete, or touch Windows system files, System32, Program Files, the Registry, or any critical OS configuration. You must refuse commands that could harm or break the OS.
 
 
@@ -4579,8 +4574,7 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 	messages := []map[string]interface{}{
 		{"role": "system", "content": systemPrompt},
 	}
-	historyMsgs := loadCloudHistory(convID)
-	messages = append(messages, historyMsgs...)
+	// History loading removed per user request to only consider latest task
 	messages = append(messages, map[string]interface{}{"role": "user", "content": command})
 
 	client := &http.Client{Timeout: 60 * time.Second}
@@ -4867,11 +4861,6 @@ CRITICAL INSTRUCTIONS:
 	} else {
 		systemPrompt = `You are Voila, a highly advanced, Grok-like AI voice assistant executing on a Windows Desktop. Your personality is RAW, unfiltered, highly direct, slightly sarcastic, and strictly to the point. No fluff, no robotic apologies, no polite filler. Just raw competence. Address the user as 'boss'.
 
-CRITICAL - COMMAND MEMORY:
-Here are your highly compressed, previously successful PowerShell techniques:
-` + loadMemory() + `
-When asked to do a task, FIRST check if a command in this memory perfectly satisfies the purpose. If yes, USE IT AS A REFERENCE TEMPLATE, but you MUST carefully adapt any arguments, file paths, or app names to match the user's exact request instead of blindly running the old command. If you invent a NEW successful technique, you MUST immediately call the 'save_command_memory' tool to permanently memorize it.
-
 CRITICAL OS GUARDRAIL: You MUST NEVER modify, delete, or touch Windows system files, System32, Program Files, the Registry, or any critical OS configuration. You must refuse commands that could harm or break the OS.
 
 CRITICAL SYSTEM NOTE: You are running inside an isolated background sandbox (` + "`exebox`" + ` desktop). To open ANY GUI application, URL, or file so it is visible to the user on their main desktop, you MUST use WMI to break out of the sandbox. Use exactly this command format: ` + "`Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'explorer.exe \"<URL_OR_PATH>\"'`" + ` (for URLs/files) or ` + "`Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList '<APP_EXE>'`" + ` (for apps). DO NOT use Start-Process, as it will spawn invisibly in the sandbox! To control the user's desktop (click buttons, open apps from taskbar, fill forms, move the mouse on screen), you MUST use the desktop_automation tool - NEVER use run_terminal for UI interactions. To perform browser automation, you MUST use the browser_automation tool - do NOT launch Edge via WMI/shell with about:blank, and do NOT call browser_tools.py via a hardcoded path. Workflow: (1) Choose browser_automation action=goto (navigate current tab) OR action=new_tab (open new tab) based on whether the current tab must be preserved. Use new_tab when user says 'in another tab', 'keep this page', 'compare A and B', or for independent URLs. (2) Use list_tabs/switch_tab when working across tabs. (3) snapshot/extract_links/click/type/press/scroll/search_word/hover on the active tab. (4) close_tab when done with an extra tab if useful. Never use about:blank. Every tool result includes ok/url/title - if ok is false, explain the error to the user. Never stop after only opening a blank browser. To create or save a playbook, you MUST use the save_playbook tool. To list, create, or delete scheduled Voila tasks, use the list_schedules, create_schedule, and delete_schedule tools. Do NOT use PowerShell Get-ScheduledTask unless the user explicitly asks for Windows OS tasks.
@@ -4950,8 +4939,7 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 	messages := []map[string]interface{}{
 		{"role": "system", "content": systemPrompt},
 	}
-	historyMsgs := loadCloudHistory(convID)
-	messages = append(messages, historyMsgs...)
+	// History loading removed per user request to only consider latest task
 	messages = append(messages, map[string]interface{}{"role": "user", "content": command})
 
 	client := &http.Client{Timeout: 300 * time.Second}
