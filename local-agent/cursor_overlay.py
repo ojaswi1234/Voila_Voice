@@ -28,9 +28,11 @@ def create_overlay():
     # Match the desktop face icon we added to run_hidden_agent
     canvas.create_polygon(cx+2, cy+2, cx+2, cy+22, cx+8, cy+17, cx+12, cy+25, cx+15, cy+24, cx+11, cy+15, cx+17, cy+15, fill="#a78bfa", outline="#7c3aed", width=1.5)
     canvas.create_oval(cx+15, cy+22, cx+20, cy+27, fill="#a78bfa", outline="")
+    # AI Label
+    canvas.create_text(cx+23, cy+15, text="AI", fill="#7c3aed", font=("Segoe UI", 8, "bold"), anchor="w")
 
     # Place window initially off-screen
-    root.geometry(f"32x32+-100+-100")
+    root.geometry(f"48x32+-100+-100")
     
     import socket
     import threading
@@ -42,13 +44,13 @@ def create_overlay():
             try:
                 data, _ = sock.recvfrom(64)
                 if data == b"HIDE":
-                    root.after(0, lambda: root.geometry(f"32x32+-100+-100"))
+                    root.after(0, lambda: root.geometry(f"48x32+-100+-100"))
                     continue
                 parts = data.decode("utf-8").split(",")
                 if len(parts) == 2:
                     x, y = int(float(parts[0])), int(float(parts[1]))
                     # Offset slightly so the tip of the arrow is at x,y
-                    root.after(0, lambda x=x, y=y: root.geometry(f"32x32+{x}+{y}"))
+                    root.after(0, lambda x=x, y=y: root.geometry(f"48x32+{x}+{y}"))
             except Exception:
                 pass
 

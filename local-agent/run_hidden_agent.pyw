@@ -239,9 +239,10 @@ browser_line = canvas.create_line(cx-12, cy-4, cx+12, cy-4, fill="#f97316", widt
 # Desktop automation cursor icon: arrow + small dot
 desktop_cursor_arrow = canvas.create_polygon(cx-10, cy-12, cx-10, cy+6, cx-5, cy+1, cx-1, cy+8, cx+2, cy+7, cx-2, cy, cx+4, cy, fill="#a78bfa", outline="#7c3aed", width=1.5, state="hidden")
 desktop_cursor_dot = canvas.create_oval(cx+2, cy+6, cx+7, cy+11, fill="#a78bfa", outline="", state="hidden")
+desktop_cursor_label = canvas.create_text(cx+12, cy, text="AI", fill="#a78bfa", font=("Segoe UI", 7, "bold"), anchor="w", state="hidden")
 
 # Keep variables compatible with animation loop
-face_parts = (shadow1, shadow2, shadow3, sun_aura, sun_glow4, sun_glow3, sun_glow2, sun_glow1, core_bg, core_arc1, core_arc2, core_arc3, term_prompt, file_icon, radar_arc, browser_box, browser_line, desktop_cursor_arrow, desktop_cursor_dot)
+face_parts = (shadow1, shadow2, shadow3, sun_aura, sun_glow4, sun_glow3, sun_glow2, sun_glow1, core_bg, core_arc1, core_arc2, core_arc3, term_prompt, file_icon, radar_arc, browser_box, browser_line, desktop_cursor_arrow, desktop_cursor_dot, desktop_cursor_label)
 cloud_parts = () # Empty, we don't use a thought cloud anymore
 
 # Typography Layout
@@ -513,6 +514,7 @@ def restore_mini_popup_elements(w=240, h=65):
     canvas.coords(browser_line, cx-12, cy-4, cx+12, cy-4)
     canvas.coords(desktop_cursor_arrow, cx-10, cy-12, cx-10, cy+6, cx-5, cy+1, cx-1, cy+8, cx+2, cy+7, cx-2, cy, cx+4, cy)
     canvas.coords(desktop_cursor_dot, cx+2, cy+6, cx+7, cy+11)
+    canvas.coords(desktop_cursor_label, cx+12, cy)
 
     canvas.coords(title_text, 70, 24)
     canvas.itemconfig(title_text, state='normal', fill="#f3f4f6", font=("Segoe UI", 12, "bold"))
@@ -1770,6 +1772,9 @@ def animation_loop():
             canvas.itemconfig(radar_arc, state="hidden")
             canvas.itemconfig(browser_box, state="hidden")
             canvas.itemconfig(browser_line, state="hidden")
+            canvas.itemconfig(desktop_cursor_arrow, state="hidden")
+            canvas.itemconfig(desktop_cursor_dot, state="hidden")
+            canvas.itemconfig(desktop_cursor_label, state="hidden")
             canvas.itemconfig(mode_badge_bg, fill='#1f2937')
             canvas.itemconfig(mode_badge_text, fill='#4b5563', text=current_mode)
 
@@ -1817,6 +1822,9 @@ def animation_loop():
             canvas.itemconfig(radar_arc, state="hidden")
             canvas.itemconfig(browser_box, state="hidden")
             canvas.itemconfig(browser_line, state="hidden")
+            canvas.itemconfig(desktop_cursor_arrow, state="hidden")
+            canvas.itemconfig(desktop_cursor_dot, state="hidden")
+            canvas.itemconfig(desktop_cursor_label, state="hidden")
 
             target_text = "Standing by"
             target_color = '#9ca3af'
@@ -1892,6 +1900,7 @@ def animation_loop():
                   canvas.itemconfig(browser_line, state="hidden")
                   canvas.itemconfig(desktop_cursor_arrow, state="normal")
                   canvas.itemconfig(desktop_cursor_dot, state="normal")
+                  canvas.itemconfig(desktop_cursor_label, state="normal")
             elif visual_state == "BASH":
                 target_text = "Bash"
                 target_color = '#34d399'
