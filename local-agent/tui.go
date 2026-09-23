@@ -332,6 +332,14 @@ func renderMeshGraph(state LiveState, styles map[string]lipgloss.Style, termW in
 		}
 	}
 
+	// Recalculate maxLevel in case cycle/unvisited nodes pushed a level beyond queue max
+	maxLevel = 0
+	for _, lvl := range levelMap {
+		if lvl > maxLevel {
+			maxLevel = lvl
+		}
+	}
+
 	levelNodes := make([][]string, maxLevel+1)
 	for _, n := range state.Nodes {
 		lvl, ok := levelMap[n.ID]
