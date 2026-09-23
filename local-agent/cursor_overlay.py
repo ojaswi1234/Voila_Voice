@@ -23,47 +23,50 @@ def create_overlay():
     canvas = tk.Canvas(root, width=80, height=80, bg="white", highlightthickness=0)
     canvas.pack()
     
-    # Premium AI Cursor Design
-    cx, cy = 2, 2
+    # Premium Cyberpunk AI Cursor Design
+    cx, cy = 16, 16
     
-    # Sleek arrow coordinates
-    arrow_pts = [
-        cx, cy,
-        cx, cy + 24,
-        cx + 5, cy + 18,
-        cx + 11, cy + 28,
-        cx + 15, cy + 26,
-        cx + 9, cy + 16,
-        cx + 17, cy + 16
-    ]
+    T = (cx, cy)
+    L = (cx, cy + 40)
+    I = (cx + 12, cy + 30)
+    RT = (cx + 26, cy + 54)
+    R = (cx + 34, cy + 32)
+    C = (cx + 10, cy + 24)
     
-    # 1. Drop shadow (dark gray, slightly offset)
-    shadow_offset = 2
-    shadow_pts = [p + shadow_offset for p in arrow_pts]
-    canvas.create_polygon(*shadow_pts, fill="#2a2a2a", outline="")
+    # 1. 3D Beveled Facets (Dark Hacker Theme)
+    canvas.create_polygon(*T, *L, *I, *C, fill="#2C313A", outline="")
+    canvas.create_polygon(*T, *C, *R, fill="#181A1F", outline="")
+    canvas.create_polygon(*C, *I, *RT, *R, fill="#0D0F12", outline="")
     
-    # 2. Main Arrow Body (Emerald Green with almost-white border to avoid transparency clipping)
-    canvas.create_polygon(*arrow_pts, fill="#10B981", outline="#FEFEFE", width=2, joinstyle=tk.MITER)
+    # 2. Electric Blue Glow (Right Edge)
+    canvas.create_line(*T, *R, *RT, fill="#0088FF", width=2, capstyle=tk.ROUND, joinstyle=tk.ROUND)
     
-    # 3. AI Pill Badge
-    px, py = cx + 20, cy + 14
+    # 3. Cyberpunk Crosshair at the Tip
+    ch_len = 8
+    canvas.create_line(cx - ch_len, cy, cx + ch_len, cy, fill="#0088FF", width=1.5)
+    canvas.create_line(cx, cy - ch_len, cx, cy + ch_len, fill="#0088FF", width=1.5)
+    canvas.create_oval(cx - 2, cy - 2, cx + 2, cy + 2, fill="#181A1F", outline="#0088FF", width=1.5)
+
+    # 4. Electric Blue AI Pill Badge
+    px, py = cx + 28, cy + 18
     pw, ph = 26, 16
     
-    # Pill Shadow
-    canvas.create_oval(px + shadow_offset, py + shadow_offset, px + ph + shadow_offset, py + ph + shadow_offset, fill="#2a2a2a", outline="")
-    canvas.create_oval(px + pw - ph + shadow_offset, py + shadow_offset, px + pw + shadow_offset, py + ph + shadow_offset, fill="#2a2a2a", outline="")
-    canvas.create_rectangle(px + ph/2 + shadow_offset, py + shadow_offset, px + pw - ph/2 + shadow_offset, py + ph + shadow_offset, fill="#2a2a2a", outline="")
+    # Pill Shadow (Dark Drop shadow for depth)
+    shadow_offset = 2
+    canvas.create_oval(px + shadow_offset, py + shadow_offset, px + ph + shadow_offset, py + ph + shadow_offset, fill="#050505", outline="")
+    canvas.create_oval(px + pw - ph + shadow_offset, py + shadow_offset, px + pw + shadow_offset, py + ph + shadow_offset, fill="#050505", outline="")
+    canvas.create_rectangle(px + ph/2 + shadow_offset, py + shadow_offset, px + pw - ph/2 + shadow_offset, py + ph + shadow_offset, fill="#050505", outline="")
     
     # Pill Body
-    canvas.create_oval(px, py, px + ph, py + ph, fill="#10B981", outline="#FEFEFE", width=1.5)
-    canvas.create_oval(px + pw - ph, py, px + pw, py + ph, fill="#10B981", outline="#FEFEFE", width=1.5)
-    canvas.create_rectangle(px + ph/2, py, px + pw - ph/2, py + ph, fill="#10B981", outline="")
-    # Redraw top/bottom lines of the pill so they have borders
-    canvas.create_line(px + ph/2, py, px + pw - ph/2, py, fill="#FEFEFE", width=1.5)
-    canvas.create_line(px + ph/2, py + ph, px + pw - ph/2, py + ph, fill="#FEFEFE", width=1.5)
+    canvas.create_oval(px, py, px + ph, py + ph, fill="#181A1F", outline="#0088FF", width=1.5)
+    canvas.create_oval(px + pw - ph, py, px + pw, py + ph, fill="#181A1F", outline="#0088FF", width=1.5)
+    canvas.create_rectangle(px + ph/2, py, px + pw - ph/2, py + ph, fill="#181A1F", outline="")
+    # Redraw top/bottom edges of rectangle
+    canvas.create_line(px + ph/2, py, px + pw - ph/2, py, fill="#0088FF", width=1.5)
+    canvas.create_line(px + ph/2, py + ph, px + pw - ph/2, py + ph, fill="#0088FF", width=1.5)
     
     # AI Text
-    canvas.create_text(px + pw/2, py + ph/2, text="AI", fill="#FEFEFE", font=("Segoe UI", 8, "bold"))
+    canvas.create_text(px + pw/2, py + ph/2, text="AI", fill="#00AAFF", font=("Segoe UI", 8, "bold"))
 
     # Place window initially off-screen
     root.geometry(f"80x80+-100+-100")
@@ -83,8 +86,8 @@ def create_overlay():
                 parts = data.decode("utf-8").split(",")
                 if len(parts) == 2:
                     x, y = int(float(parts[0])), int(float(parts[1]))
-                    # Offset slightly so the tip of the arrow is at x,y (since cx,cy=2,2)
-                    root.after(0, lambda x=x, y=y: root.geometry(f"80x80+{x-2}+{y-2}"))
+                    # Offset by 16 because cx, cy = 16, 16
+                    root.after(0, lambda x=x, y=y: root.geometry(f"80x80+{x-16}+{y-16}"))
             except Exception:
                 pass
 
