@@ -2105,6 +2105,8 @@ def parse_line(line):
             ai_state = "BROWSER"
         elif "web_search" in tool or "search" in tool:
             ai_state = "SEARCH"
+        elif "desktop_automation" in tool or "desktop" in tool:
+            ai_state = "DESKTOP"
         elif "run_terminal" in tool or "terminal" in tool:
             ai_state = "BASH"
         elif "read_file" in tool or "write_file" in tool or "file" in tool:
