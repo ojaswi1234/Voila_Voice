@@ -236,9 +236,12 @@ file_icon = canvas.create_polygon(cx-8, cy-10, cx+4, cy-10, cx+10, cy-4, cx+10, 
 radar_arc = canvas.create_arc(cx-22, cy-22, cx+22, cy+22, start=0, extent=60, outline="#3b82f6", fill="", width=3, style=tk.ARC, state="hidden")
 browser_box = canvas.create_rectangle(cx-12, cy-10, cx+12, cy+10, fill="", outline="#f97316", width=2, state="hidden")
 browser_line = canvas.create_line(cx-12, cy-4, cx+12, cy-4, fill="#f97316", width=2, state="hidden")
+# Desktop automation cursor icon: arrow + small dot
+desktop_cursor_arrow = canvas.create_polygon(cx-10, cy-12, cx-10, cy+6, cx-5, cy+1, cx-1, cy+8, cx+2, cy+7, cx-2, cy, cx+4, cy, fill="#a78bfa", outline="#7c3aed", width=1.5, state="hidden")
+desktop_cursor_dot = canvas.create_oval(cx+2, cy+6, cx+7, cy+11, fill="#a78bfa", outline="", state="hidden")
 
 # Keep variables compatible with animation loop
-face_parts = (shadow1, shadow2, shadow3, sun_aura, sun_glow4, sun_glow3, sun_glow2, sun_glow1, core_bg, core_arc1, core_arc2, core_arc3, term_prompt, file_icon, radar_arc, browser_box, browser_line)
+face_parts = (shadow1, shadow2, shadow3, sun_aura, sun_glow4, sun_glow3, sun_glow2, sun_glow1, core_bg, core_arc1, core_arc2, core_arc3, term_prompt, file_icon, radar_arc, browser_box, browser_line, desktop_cursor_arrow, desktop_cursor_dot)
 cloud_parts = () # Empty, we don't use a thought cloud anymore
 
 # Typography Layout
@@ -508,6 +511,8 @@ def restore_mini_popup_elements(w=240, h=65):
     canvas.coords(radar_arc, cx-22, cy-22, cx+22, cy+22)
     canvas.coords(browser_box, cx-12, cy-10, cx+12, cy+10)
     canvas.coords(browser_line, cx-12, cy-4, cx+12, cy-4)
+    canvas.coords(desktop_cursor_arrow, cx-10, cy-12, cx-10, cy+6, cx-5, cy+1, cx-1, cy+8, cx+2, cy+7, cx-2, cy, cx+4, cy)
+    canvas.coords(desktop_cursor_dot, cx+2, cy+6, cx+7, cy+11)
 
     canvas.coords(title_text, 70, 24)
     canvas.itemconfig(title_text, state='normal', fill="#f3f4f6", font=("Segoe UI", 12, "bold"))
@@ -1868,6 +1873,25 @@ def animation_loop():
                 canvas.coords(browser_box, cx-bw, cy-bh+bounce, cx+bw, cy+bh+bounce)
                 canvas.coords(browser_line, cx-bw, cy-bh*0.4+bounce, cx+bw, cy-bh*0.4+bounce)
                 
+            elif visual_state == "DESKTOP":
+                  target_text = "Desktop"
+                  target_color = '#a78bfa'
+                  target_outline = '#7c3aed'
+                  show_dots = True
+                  canvas.itemconfig(sun_glow3, state="hidden")
+                  canvas.itemconfig(sun_glow2, state="hidden")
+                  canvas.itemconfig(sun_glow1, state="hidden")
+                  canvas.itemconfig(core_bg, state="hidden")
+                  canvas.itemconfig(core_arc1, state="hidden")
+                  canvas.itemconfig(core_arc2, state="hidden")
+                  canvas.itemconfig(core_arc3, state="hidden")
+                  canvas.itemconfig(term_prompt, state="hidden")
+                  canvas.itemconfig(file_icon, state="hidden")
+                  canvas.itemconfig(radar_arc, state="hidden")
+                  canvas.itemconfig(browser_box, state="hidden")
+                  canvas.itemconfig(browser_line, state="hidden")
+                  canvas.itemconfig(desktop_cursor_arrow, state="normal")
+                  canvas.itemconfig(desktop_cursor_dot, state="normal")
             elif visual_state == "BASH":
                 target_text = "Bash"
                 target_color = '#34d399'
