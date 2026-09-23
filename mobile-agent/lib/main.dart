@@ -2624,40 +2624,44 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
 
     String cleanText = _normalizeForSpeech(text);
     
-    try {
-      final RegExp chunkRegex = RegExp(r'([^.?!]+[.?!]*)');
-      final Iterable<Match> matches = chunkRegex.allMatches(cleanText);
-      
-      for (final Match match in matches) {
-        String chunk = match.group(0)?.trim() ?? "";
-        if (chunk.isEmpty) continue;
+    // T1.4 Prioritize network (Edge) TTS first
+    bool edgeSuccess = await _playEdgeTts(cleanText);
+    
+    if (!edgeSuccess) {
+      // Fallback to native built-in TTS
+      try {
+        final RegExp chunkRegex = RegExp(r'([^.?!]+[.?!]*)');
+        final Iterable<Match> matches = chunkRegex.allMatches(cleanText);
         
-        double pitch = 0.85;
-        double rate = 0.55; 
-        
-        if (chunk.contains('?')) {
-          pitch = 1.15; rate = 0.5;
-        } else if (chunk.contains('!')) {
-          pitch = 1.1; rate = 0.6;
-        } else if (chunk.contains('...')) {
-          pitch = 0.75; rate = 0.4;
-        } else if (chunk.toLowerCase().contains("boss")) {
-          pitch = 0.80;
-        } else if (chunk.toLowerCase().contains("error") || chunk.toLowerCase().contains("fail")) {
-          pitch = 0.9; rate = 0.45;
+        for (final Match match in matches) {
+          String chunk = match.group(0)?.trim() ?? "";
+          if (chunk.isEmpty) continue;
+          
+          double pitch = 0.85;
+          double rate = 0.55; 
+          
+          if (chunk.contains('?')) {
+            pitch = 1.15; rate = 0.5;
+          } else if (chunk.contains('!')) {
+            pitch = 1.1; rate = 0.6;
+          } else if (chunk.contains('...')) {
+            pitch = 0.75; rate = 0.4;
+          } else if (chunk.toLowerCase().contains("boss")) {
+            pitch = 0.80;
+          } else if (chunk.toLowerCase().contains("error") || chunk.toLowerCase().contains("fail")) {
+            pitch = 0.9; rate = 0.45;
+          }
+          
+          await flutterTts.setPitch(pitch);
+          await flutterTts.setSpeechRate(rate);
+          
+          await flutterTts.speak(chunk);
         }
-        
-        await flutterTts.setPitch(pitch);
-        await flutterTts.setSpeechRate(rate);
-        
-        // This naturally blocks until finished because of awaitSpeakCompletion(true)
-        await flutterTts.speak(chunk);
+      } catch (e) {
+        debugPrint("TTS Speak Error: $e");
+        await flutterTts.setPitch(1.0);
+        await flutterTts.speak(cleanText);
       }
-    } catch (e) {
-      debugPrint("TTS Speak Error: $e");
-      // Fallback: if chunking crashes, just play the whole text at normal pitch
-      await flutterTts.setPitch(1.0);
-      await flutterTts.speak(cleanText);
     }
     
     if (mounted) {
@@ -2686,7 +2690,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       
       channel.sink.add(configMsg);
 
-      final String ssml = "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'><voice name='en-US-AriaNeural'><prosody pitch='+0Hz' rate='-10%'>$text</prosody></voice></speak>";
+      final String ssml = "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-IN'><voice name='en-IN-NeerjaNeural'><prosody pitch='+0Hz' rate='-10%'>$text</prosody></voice></speak>";
 
       final String reqMsg = "X-RequestId:$uuid\r\n"
           "Content-Type:application/ssml+xml\r\n"
