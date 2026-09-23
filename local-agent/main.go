@@ -2170,6 +2170,13 @@ if ($LASTEXITCODE -ne 0) {
 			return
 		}
 
+		// Preemptively cancel any currently running task so this new command can take over
+		cmdMu.Lock()
+		if currentCancel != nil {
+			currentCancel()
+		}
+		cmdMu.Unlock()
+
 		// Check circuit breaker before executing
 		if isCircuitOpen() {
 			w.WriteHeader(http.StatusForbidden)
@@ -2177,14 +2184,14 @@ if ($LASTEXITCODE -ne 0) {
 			return
 		}
 
-		// Check semaphore to limit concurrent executions
+		// Wait up to 5 seconds for the previous task to exit and release the semaphore
 		select {
 		case execSemaphore <- struct{}{}:
 			// Acquired semaphore, proceed
-		default:
-			// Semaphore full, reject request
+		case <-time.After(5 * time.Second):
+			// Semaphore full even after waiting for cancellation to finish
 			w.WriteHeader(http.StatusTooManyRequests)
-			json.NewEncoder(w).Encode(map[string]string{"error": "too_many_requests", "message": "Maximum concurrent executions reached"})
+			json.NewEncoder(w).Encode(map[string]string{"error": "too_many_requests", "message": "Previous task is still cancelling, please try again"})
 			return
 		}
 
