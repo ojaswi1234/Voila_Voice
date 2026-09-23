@@ -64,9 +64,10 @@ def _launch_bridge() -> bool:
     except Exception as e:
         # Fallback: simple subprocess (may spawn in sandbox)
         import subprocess
+        python_exe = sys.executable.replace("python.exe", "pythonw.exe")
         subprocess.Popen(
-            [sys.executable, bridge_path, "--port", str(BRIDGE_PORT)],
-            creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+            [python_exe, bridge_path, "--port", str(BRIDGE_PORT)],
+            creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP | 0x08000000
         )
 
     # Wait up to 5 s for bridge to come online
@@ -132,6 +133,8 @@ def main():
     }
 
     result = _proxy(req)
+    with open("desktop_tools_req.log", "a", encoding="utf-8") as f:
+        f.write(f"REQ: {json.dumps(req)}\nRES: {json.dumps(result, ensure_ascii=False)}\n\n")
     print(json.dumps(result, ensure_ascii=False))
 
 if __name__ == "__main__":

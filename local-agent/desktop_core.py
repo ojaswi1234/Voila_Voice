@@ -203,10 +203,15 @@ else:
         return r
 
     def act_find(window, depth: int, selector: str, value: str) -> dict:
+        parts = _parse_selector(selector) if selector else {}
+        
+        # FIX: If AI mistakenly searches for a Window using selector instead of the window arg
+        if not window and parts.get("role", "").lower() in ("window", "windowcontrol"):
+            window = parts.get("name", "").replace("*", "")
+            
         snap = act_snapshot(window, depth)
         if not snap["ok"]:
             return snap
-        parts = _parse_selector(selector) if selector else {}
         if value:
             try:
                 parts.update(json.loads(value))
