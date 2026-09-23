@@ -203,10 +203,9 @@ else:
         return r
 
     def act_find(window, depth: int, selector: str, value: str) -> dict:
-        if not _ref_store:
-            snap = act_snapshot(window, depth)
-            if not snap["ok"]:
-                return snap
+        snap = act_snapshot(window, depth)
+        if not snap["ok"]:
+            return snap
         parts = _parse_selector(selector) if selector else {}
         if value:
             try:

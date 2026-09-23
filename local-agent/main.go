@@ -4197,6 +4197,9 @@ case "read_file":
 		if window   != "" { dtArgs = append(dtArgs, "--window", window) }
 
 		dtCmd := exec.Command("python", dtArgs...)
+		if runtime.GOOS == "windows" {
+			dtCmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+		}
 		dtOut, dtErr := dtCmd.CombinedOutput()
 		dtRes := string(dtOut)
 		if dtErr != nil { dtRes += "\n(Error: " + dtErr.Error() + ")" }

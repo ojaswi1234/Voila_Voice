@@ -321,6 +321,11 @@ import atexit
 
 def cleanup_processes():
     try:
+        # Kill detached desktop automation processes (bridge and overlay)
+        subprocess.run(['wmic', 'process', 'where', 'commandline like "%desktop_bridge.py%" or commandline like "%cursor_overlay.py%"', 'call', 'terminate'], creationflags=subprocess.CREATE_NO_WINDOW, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except:
+        pass
+    try:
         # Only kill the specific voila.exe instance we started
         subprocess.run(['taskkill', '/F', '/T', '/PID', str(agent_process.pid)], creationflags=CREATE_NO_WINDOW, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except:
