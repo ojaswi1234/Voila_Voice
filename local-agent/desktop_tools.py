@@ -49,32 +49,25 @@ def _launch_bridge() -> bool:
     bridge_path = os.path.join(here, "desktop_bridge.py")
 
     # Use WMI Win32_Process.Create to break out of sandbox into Session 1
-    # This is the same escape pattern used by the browser automation layer.
-    cmd = f'python "{bridge_path}" --port {BRIDGE_PORT}'
+    python_exe = sys.executable.replace("python.exe", "pythonw.exe")
+    cmd = f'{python_exe} "{bridge_path}" --port {BRIDGE_PORT}'
     try:
-        import subprocess
-        ps_cmd = (
-            f"(Get-WmiObject -Class Win32_Process).Create('{cmd}')"
-        )
-        subprocess.Popen(
-            ["powershell", "-WindowStyle", "Hidden", "-Command", ps_cmd],
-            creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        import win32com.client
+        import pythoncom
+        pythoncom.CoInitialize()
+        wmi = win32com.client.Dispatch("WbemScripting.SWbemLocator").ConnectServer(".", "root\\cimv2")
+        process_startup = wmi.Get("Win32_ProcessStartup").SpawnInstance_()
+        process_startup.ShowWindow = 0  # Hidden
+        result, pid = wmi.Get("Win32_Process").Create(cmd, None, process_startup)
+        if result != 0:
+            raise RuntimeError(f"WMI Create returned {result}")
     except Exception as e:
-        # Fallback: try direct WMI via COM
-        try:
-            import subprocess as sp
-            wmi_cmd = (
-                f'$wmi=[wmiclass]"Win32_Process";'
-                f'$wmi.Create("{cmd}")'
-            )
-            sp.Popen(["powershell", "-Command", wmi_cmd],
-                     creationflags=sp.DETACHED_PROCESS | sp.CREATE_NEW_PROCESS_GROUP,
-                     stdout=sp.DEVNULL, stderr=sp.DEVNULL)
-        except Exception:
-            pass
+        # Fallback: simple subprocess (may spawn in sandbox)
+        import subprocess
+        subprocess.Popen(
+            [sys.executable, bridge_path, "--port", str(BRIDGE_PORT)],
+            creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+        )
 
     # Wait up to 5 s for bridge to come online
     for _ in range(20):
