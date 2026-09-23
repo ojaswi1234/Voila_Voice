@@ -124,6 +124,12 @@ func resolveAgentPath(p string) string {
 	if filepath.IsAbs(p) {
 		return p
 	}
+	workingDirMutex.Lock()
+	cwd := currentWorkingDir
+	workingDirMutex.Unlock()
+	if cwd != "" {
+		return filepath.Join(cwd, p)
+	}
 	home, err := os.UserHomeDir()
 	if err == nil {
 		return filepath.Join(home, "Desktop", p)
@@ -1771,7 +1777,25 @@ func startHTTPServer() {
 		w.Header().Set("Content-Type", "application/json")
 
 		connData, _ := loadConnectionData()
-		out, err := executeGroqCommand(context.Background(), "Say hello in one word", connData.GroqAPIKey, connData.GroqModel, connData.DeviceID, nil, "verify", "")
+		apiKey := connData.GroqAPIKey
+		modelName := connData.GroqModel
+
+		if r.Method == http.MethodPost {
+			var payload struct {
+				GroqAPIKey string `json:"api_key"`
+				GroqModel  string `json:"model"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&payload); err == nil {
+				if payload.GroqAPIKey != "" {
+					apiKey = payload.GroqAPIKey
+				}
+				if payload.GroqModel != "" {
+					modelName = payload.GroqModel
+				}
+			}
+		}
+
+		out, err := executeGroqCommand(context.Background(), "Say hello in one word", apiKey, modelName, connData.DeviceID, nil, "verify", "")
 		if err != nil {
 			json.NewEncoder(w).Encode(map[string]string{"status": "error", "message": err.Error()})
 			return
@@ -1785,7 +1809,30 @@ func startHTTPServer() {
 		w.Header().Set("Content-Type", "application/json")
 
 		connData, _ := loadConnectionData()
-		out, err := executeOllamaCommand(context.Background(), "Say hello in one word", connData.OllamaBaseURL, connData.OllamaModel, connData.OllamaAPIKey, nil, "verify", "")
+		baseURL := connData.OllamaBaseURL
+		modelName := connData.OllamaModel
+		apiKey := connData.OllamaAPIKey
+
+		if r.Method == http.MethodPost {
+			var payload struct {
+				BaseURL   string `json:"base_url"`
+				ModelName string `json:"model"`
+				APIKey    string `json:"api_key"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&payload); err == nil {
+				if payload.BaseURL != "" {
+					baseURL = payload.BaseURL
+				}
+				if payload.ModelName != "" {
+					modelName = payload.ModelName
+				}
+				if payload.APIKey != "" {
+					apiKey = payload.APIKey
+				}
+			}
+		}
+
+		out, err := executeOllamaCommand(context.Background(), "Say hello in one word", baseURL, modelName, apiKey, nil, "verify", "")
 		if err != nil {
 			json.NewEncoder(w).Encode(map[string]string{"status": "error", "message": err.Error()})
 			return
@@ -2104,7 +2151,7 @@ if ($LASTEXITCODE -ne 0) {
 				} else {
 					resultPayload["output"] = stripMarkdownForTTS(output)
 					
-					artifactRe := regexp.MustCompile(`(?i)([A-Z]:\\[^\s*|<>"]+\.(?:pdf|png|docx|pptx|html))`)
+					artifactRe := regexp.MustCompile("(?i)([A-Z]:\\\\[^\\n*|<>\\'\\`\"]+\\.(?:pdf|png|docx|pptx|html))")
 					if match := artifactRe.FindStringSubmatch(output); len(match) > 1 {
 						resultPayload["artifact_path"] = match[1]
 					}
@@ -2274,7 +2321,7 @@ if ($LASTEXITCODE -ne 0) {
 				resultPayload["output"] = stripMarkdownForTTS(output)
 				
 				// T1.3 / Gap 3: Extract artifact_path if a document was created
-				artifactRe := regexp.MustCompile(`(?i)([A-Z]:\\[^\s*|<>"]+\.(?:pdf|png|docx|pptx|html))`)
+					artifactRe := regexp.MustCompile("(?i)([A-Z]:\\\\[^\\n*|<>\\'\\`\"]+\\.(?:pdf|png|docx|pptx|html))")
 				if match := artifactRe.FindStringSubmatch(output); len(match) > 1 {
 					resultPayload["artifact_path"] = match[1]
 				}
@@ -2529,7 +2576,7 @@ func executeCommand(ctx context.Context, command string, mode string, conversati
 	// LOCAL = agy (local Gemini agent). AGENT = also agy (legacy name).
 	// Only SHELL = raw PowerShell. Empty string = default to agy.
 	if modeUpper == "AGENT" || modeUpper == "LOCAL" || modeUpper == "" {
-		prompt := command + "\n\nCRITICAL - COMMAND MEMORY:\nHere are your highly compressed, previously successful PowerShell techniques:\n" + loadMemory() + "\nWhen asked to do a task, FIRST check if a command in this memory perfectly satisfies the purpose. If yes, RUN IT EXACTLY AS-IS from memory (unless the user explicitly requests a new/specific method). If you invent a NEW successful technique, you MUST immediately call the 'save_command_memory' tool to permanently memorize it.\n\n(CRITICAL SYSTEM NOTE: When speaking to the user in your final text response, keep your voice responses casual, brief, and conversational. HOWEVER, when writing code, generating PDFs, or creating documents via tools, your output MUST be exhaustively detailed, massive, and highly comprehensive. NEVER generate a short summary for a document.)\n\nCRITICAL - ONE-SHOT TERMINAL EXECUTION (MAX TOOLS):\nTo avoid hitting max_tool iteration limits and increase execution speed, you MUST combine multiple PowerShell steps into a SINGLE detailed command per tool_call. Do NOT run one tiny command, wait for the result, and then run the next tiny command. Instead, write a robust PowerShell script block (using semicolons or newlines) that loops, searches, or processes everything in one shot and returns the final desired output. Keep writing detailed combined commands until you get the exact required output!\n\nCRITICAL OS GUARDRAIL: You MUST NEVER modify, delete, or touch Windows system files, System32, Program Files, the Registry, or any critical OS configuration. You must refuse commands that could harm or break the OS. Address the user as 'boss'. Do not use overly formal language.\n\nCRITICAL SYSTEM NOTE: You are running inside an isolated background sandbox (`exebox` desktop). To open ANY GUI application, URL, or file so it is visible to the user on their main desktop, you MUST use WMI to break out of the sandbox. Use exactly this command format: `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'explorer.exe \"<URL_OR_PATH>\"'` (for URLs/files) or `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList '<APP_EXE>'` (for apps). DO NOT use Start-Process, as it will spawn invisibly in the sandbox! To perform browser automation, you MUST use the browser_automation tool — do NOT launch Edge via WMI/shell with about:blank, and do NOT call browser_tools.py via a hardcoded path. Workflow: (1) Choose browser_automation action=goto (navigate current tab) OR action=new_tab (open new tab) based on whether the current tab must be preserved. Use new_tab when user says 'in another tab', 'keep this page', 'compare A and B', or for independent URLs. (2) Use list_tabs/switch_tab when working across tabs. (3) snapshot/extract_links/click/type/press/scroll/search_word on the active tab. (4) close_tab when done with an extra tab if useful. Never use about:blank. Every tool result includes ok/url/title - if ok is false, explain the error to the user. Never stop after only opening a blank browser. To create or save a playbook, you MUST use the save_playbook tool.\n\nCRITICAL - .AIIGNORE & DEPENDENCY OVERHEAD (0 BUGS POLICY):\nWhen exploring projects, NEVER search or read inside dependency folders (node_modules, .venv, venv, __pycache__, vendor, .git, .m2, .gradle, target, packages, .cargo/registry). They contain massive overhead that breaks your context limits.\nTo understand dependencies, ONLY read blueprint files (package.json, pyproject.toml, requirements.txt, go.mod, pom.xml, build.gradle, composer.json, Gemfile, Cargo.toml, *.csproj). Also NEVER read standard '.env' files; if you need environment context, ONLY look at '.env.example' or '.env.local'. Also NEVER read standard '.env' files; if you need environment context, ONLY look at '.env.example' or '.env.local'.\nWhen searching for files, enforce this .aiignore policy by using native PowerShell regex filtering:\n`Get-ChildItem -Recurse -Filter \"*name*\" -File -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch '\\\\(node_modules|\\.venv|venv|vendor|\\.git|target|\\.gradle|\\.m2|packages|__pycache__|dist|build|out|bin|obj|\\.idea|\\.vscode)\\\\' } | Select-Object -ExpandProperty FullName`)"
+		prompt := command + "\n\nCRITICAL - COMMAND MEMORY:\nHere are your highly compressed, previously successful PowerShell techniques:\n" + loadMemory() + "\nWhen asked to do a task, FIRST check if a command in this memory perfectly satisfies the purpose. If yes, RUN IT EXACTLY AS-IS from memory (unless the user explicitly requests a new/specific method). If you invent a NEW successful technique, you MUST immediately call the 'save_command_memory' tool to permanently memorize it.\n\n(CRITICAL SYSTEM NOTE: When speaking to the user in your final text response, keep your voice responses casual, brief, and conversational. HOWEVER, when writing code, generating PDFs, or creating documents via tools, your output MUST be exhaustively detailed, massive, and highly comprehensive. NEVER generate a short summary for a document.)\n\nCRITICAL - ONE-SHOT TERMINAL EXECUTION (MAX TOOLS):\nTo avoid hitting max_tool iteration limits and increase execution speed, you MUST combine multiple PowerShell steps into a SINGLE detailed command per tool_call. Do NOT run one tiny command, wait for the result, and then run the next tiny command. Instead, write a robust PowerShell script block (using semicolons or newlines) that loops, searches, or processes everything in one shot and returns the final desired output. Keep writing detailed combined commands until you get the exact required output!\n\nCRITICAL OS GUARDRAIL: You MUST NEVER modify, delete, or touch Windows system files, System32, Program Files, the Registry, or any critical OS configuration. You must refuse commands that could harm or break the OS. Address the user as 'boss'. Do not use overly formal language.\n\nCRITICAL SYSTEM NOTE: You are running inside an isolated background sandbox (`exebox` desktop). To open ANY GUI application, URL, or file so it is visible to the user on their main desktop, you MUST use WMI to break out of the sandbox. Use exactly this command format: `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'explorer.exe \"<URL_OR_PATH>\"'` (for URLs/files) or `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList '<APP_EXE>'` (for apps). DO NOT use Start-Process, as it will spawn invisibly in the sandbox! To perform browser automation, you MUST use the browser_automation tool — do NOT launch Edge via WMI/shell with about:blank, and do NOT call browser_tools.py via a hardcoded path. Workflow: (1) Choose browser_automation action=goto (navigate current tab) OR action=new_tab (open new tab) based on whether the current tab must be preserved. Use new_tab when user says 'in another tab', 'keep this page', 'compare A and B', or for independent URLs. (2) Use list_tabs/switch_tab when working across tabs. (3) snapshot/extract_links/click/type/press/scroll/search_word/hover on the active tab. (4) close_tab when done with an extra tab if useful. Never use about:blank. Every tool result includes ok/url/title - if ok is false, explain the error to the user. Never stop after only opening a blank browser. To create or save a playbook, you MUST use the save_playbook tool. To list, create, or delete scheduled Voila tasks, use the list_schedules, create_schedule, and delete_schedule tools. Do NOT use PowerShell Get-ScheduledTask unless the user explicitly asks for Windows OS tasks.\n\nCRITICAL - .AIIGNORE & DEPENDENCY OVERHEAD (0 BUGS POLICY):\nWhen exploring projects, NEVER search or read inside dependency folders (node_modules, .venv, venv, __pycache__, vendor, .git, .m2, .gradle, target, packages, .cargo/registry). They contain massive overhead that breaks your context limits.\nTo understand dependencies, ONLY read blueprint files (package.json, pyproject.toml, requirements.txt, go.mod, pom.xml, build.gradle, composer.json, Gemfile, Cargo.toml, *.csproj). Also NEVER read standard '.env' files; if you need environment context, ONLY look at '.env.example' or '.env.local'. Also NEVER read standard '.env' files; if you need environment context, ONLY look at '.env.example' or '.env.local'.\nWhen searching for files, enforce this .aiignore policy by using native PowerShell regex filtering:\n`Get-ChildItem -Recurse -Filter \"*name*\" -File -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch '\\\\(node_modules|\\.venv|venv|vendor|\\.git|target|\\.gradle|\\.m2|packages|__pycache__|dist|build|out|bin|obj|\\.idea|\\.vscode)\\\\' } | Select-Object -ExpandProperty FullName`)"
 		if modelName == "" || modelName == "flash" {
 			modelName = "Gemini 3.7 Flash (High)"
 		}
@@ -2772,11 +2819,11 @@ var availableTools = []toolDef{
 		Type: "function",
 		Function: toolFuncDef{
 			Name:        "browser_automation",
-			Description: "multi-tab workflow: First page: action=goto + full https URL (never about:blank) Extra pages: action=new_tab + url Switch: action=switch_tab value=<index> Close: action=close_tab List: action=list_tabs Then click/type/scroll/search_word; snapshot/extract_links when selectors unknown Returns ok, url, title, tab_index, tabs_count, error",
+			Description: "multi-tab workflow: First page: action=goto + full https URL (never about:blank) Extra pages: action=new_tab + url Switch: action=switch_tab value=<index> Close: action=close_tab List: action=list_tabs Then click/type/scroll/hover/search_word/upload/fill_form; snapshot/extract_links when selectors unknown. Use upload to upload files, and fill_form (with JSON dictionary in 'value') to fill multiple fields at once. CRITICAL: If you see cookie banners, newsletters, or blocking popups, you MUST 'click' their [Close Button], 'Decline', 'No thanks', or 'Dismiss' buttons FIRST before doing anything else! Returns ok, url, title, tab_index, tabs_count, error",
 			Parameters: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
-					"action":   map[string]interface{}{"type": "string", "description": "Action to perform: 'goto' (navigate current tab), 'new_tab' (open new tab), 'switch_tab', 'close_tab', 'list_tabs', 'click', 'type', 'press', 'scroll', 'scrape', 'extract_links', 'eval'"},
+					"action":   map[string]interface{}{"type": "string", "description": "Action to perform: 'goto' (navigate current tab), 'new_tab' (open new tab), 'switch_tab', 'close_tab', 'list_tabs', 'click', 'type', 'press', 'scroll', 'hover', 'scrape', 'extract_links', 'eval', 'upload', 'fill_form'"},
 					"url":      map[string]interface{}{"type": "string", "description": "URL to navigate to (required for 'goto' and 'new_tab')"},
 					"selector": map[string]interface{}{"type": "string", "description": "CSS selector to click or type into"},
 					"value":    map[string]interface{}{"type": "string", "description": "Text to type, key to press (e.g. 'Enter'), tab index/URL for switch_tab, or scroll direction ('up'/'down')/pixels (e.g. '500')"},
@@ -2890,7 +2937,7 @@ var availableTools = []toolDef{
 		Type: "function",
 		Function: toolFuncDef{
 			Name:        "save_playbook",
-			Description: "Save or create a new playbook JSON. Automatically saves it strictly to the designated playbooks directory.",
+			Description: "Save or create a new playbook JSON. Format MUST be: {\"id\":\"name\", \"name\":\"Title\", \"steps\":[{\"type\":\"agent_prompt\", \"command\":\"your prompt here\"}]}",
 			Parameters: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -2963,6 +3010,20 @@ var availableTools = []toolDef{
 					"theme":     map[string]interface{}{"type": "string", "description": "Theme name MUST BE one of: origami, handwritten, sketching, pixelated, asciiart, or notebooklm"},
 				},
 				"required": []string{"path", "theme", "design_strategy"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "read_doc",
+			Description: "Read text and extract links from a Word Document (.docx, .doc)",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"path": map[string]interface{}{"type": "string", "description": "Absolute path to the Word document"},
+				},
+				"required": []string{"path"},
 			},
 		},
 	},
@@ -3380,7 +3441,7 @@ func executeTool(ctx context.Context, toolName string, argsJSON json.RawMessage,
 			pseudoCommand = "search \"" + getString("query") + "\""
 		case "create_pdf", "create_doc", "create_ppt", "create_docx", "create_excel", "create_csv", "modify_excel":
 			pseudoCommand = "write_doc " + resolveAgentPath(getString("path"))
-		case "read_pdf", "read_excel", "read_csv":
+		case "read_pdf", "read_doc", "read_docx", "read_excel", "read_csv":
 			pseudoCommand = "read_doc " + resolveAgentPath(getString("path"))
 		case "browser_automation":
 			pseudoCommand = "browser " + getString("action") + " " + getString("url") + getString("selector")
@@ -3597,6 +3658,20 @@ func requireMobileApproval(command, summary string) bool {
 		pendingApprovalsMu.Unlock()
 		return false
 	}
+}
+
+
+func getPlaybooksDir() string {
+	// First check if playbooks folder exists in parent dir (normal execution context)
+	exeDir := getExecutableDir()
+	parentPb := filepath.Join(filepath.Dir(exeDir), "playbooks")
+	if _, err := os.Stat(parentPb); err == nil {
+		return parentPb
+	}
+	
+	// Fallback to local-agent/playbooks
+	localPb := filepath.Join(exeDir, "playbooks")
+	return localPb
 }
 
 func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMessage, streamFileObj *os.File) string {
@@ -3854,8 +3929,7 @@ case "read_file":
 	case "save_playbook":
 		pbID := getString("playbook_id")
 		pbJSON := getString("playbook_json")
-		exeDir, _ := os.Executable()
-		pbDir := filepath.Join(filepath.Dir(exeDir), "playbooks")
+		pbDir := getPlaybooksDir()
 		if !strings.HasSuffix(pbID, ".json") { pbID += ".json" }
 		os.MkdirAll(pbDir, 0755)
 		pbPath := filepath.Join(pbDir, pbID)
@@ -3866,8 +3940,7 @@ case "read_file":
 		return "Playbook saved successfully to " + pbPath
 
 	case "list_playbooks":
-		exeDir, _ := os.Executable()
-		pbDir := filepath.Join(filepath.Dir(exeDir), "playbooks")
+		pbDir := getPlaybooksDir()
 		files, err := os.ReadDir(pbDir)
 		if err != nil {
 			return "No playbooks found or error reading directory: " + err.Error()
@@ -4037,7 +4110,7 @@ case "read_file":
 
 		return result
 
-	case "create_pdf", "create_doc", "read_pdf", "create_ppt", "create_docx", "create_excel", "modify_excel", "read_excel", "create_csv", "read_csv":
+	case "create_pdf", "create_doc", "read_pdf", "read_doc", "read_docx", "create_ppt", "create_docx", "create_excel", "modify_excel", "read_excel", "create_csv", "read_csv":
 		return callPythonDocumentTool(toolName, argsJSON)
 	case "browser_automation":
 		action := getString("action")
@@ -4342,7 +4415,7 @@ When asked to do a task, FIRST check if a command in this memory perfectly satis
 
 CRITICAL OS GUARDRAIL: You MUST NEVER modify, delete, or touch Windows system files, System32, Program Files, the Registry, or any critical OS configuration. You must refuse commands that could harm or break the OS.
 
-CRITICAL SYSTEM NOTE: You are running inside an isolated background sandbox (` + "`exebox`" + ` desktop). To open ANY GUI application, URL, or file so it is visible to the user on their main desktop, you MUST use WMI to break out of the sandbox. Use exactly this command format: ` + "`Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'explorer.exe \"<URL_OR_PATH>\"'`" + ` (for URLs/files) or ` + "`Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList '<APP_EXE>'`" + ` (for apps). DO NOT use Start-Process, as it will spawn invisibly in the sandbox! To perform browser automation, you MUST use the browser_automation tool — do NOT launch Edge via WMI/shell with about:blank, and do NOT call browser_tools.py via a hardcoded path. Workflow: (1) Choose browser_automation action=goto (navigate current tab) OR action=new_tab (open new tab) based on whether the current tab must be preserved. Use new_tab when user says 'in another tab', 'keep this page', 'compare A and B', or for independent URLs. (2) Use list_tabs/switch_tab when working across tabs. (3) snapshot/extract_links/click/type/press/scroll/search_word on the active tab. (4) close_tab when done with an extra tab if useful. Never use about:blank. Every tool result includes ok/url/title - if ok is false, explain the error to the user. Never stop after only opening a blank browser. To create or save a playbook, you MUST use the save_playbook tool.
+CRITICAL SYSTEM NOTE: You are running inside an isolated background sandbox (` + "`exebox`" + ` desktop). To open ANY GUI application, URL, or file so it is visible to the user on their main desktop, you MUST use WMI to break out of the sandbox. Use exactly this command format: ` + "`Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'explorer.exe \"<URL_OR_PATH>\"'`" + ` (for URLs/files) or ` + "`Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList '<APP_EXE>'`" + ` (for apps). DO NOT use Start-Process, as it will spawn invisibly in the sandbox! To perform browser automation, you MUST use the browser_automation tool — do NOT launch Edge via WMI/shell with about:blank, and do NOT call browser_tools.py via a hardcoded path. Workflow: (1) Choose browser_automation action=goto (navigate current tab) OR action=new_tab (open new tab) based on whether the current tab must be preserved. Use new_tab when user says 'in another tab', 'keep this page', 'compare A and B', or for independent URLs. (2) Use list_tabs/switch_tab when working across tabs. (3) snapshot/extract_links/click/type/press/scroll/search_word/hover on the active tab. (4) close_tab when done with an extra tab if useful. Never use about:blank. Every tool result includes ok/url/title - if ok is false, explain the error to the user. Never stop after only opening a blank browser. To create or save a playbook, you MUST use the save_playbook tool. To list, create, or delete scheduled Voila tasks, use the list_schedules, create_schedule, and delete_schedule tools. Do NOT use PowerShell Get-ScheduledTask unless the user explicitly asks for Windows OS tasks.
 
 CRITICAL: You are running inside a Windows PowerShell environment. You MUST use PowerShell syntax, NOT Bash!
 - Use 'Get-ChildItem' or 'ls' (without bash flags like -la). Do NOT use 'ls -la'.
@@ -4712,7 +4785,7 @@ When asked to do a task, FIRST check if a command in this memory perfectly satis
 
 CRITICAL OS GUARDRAIL: You MUST NEVER modify, delete, or touch Windows system files, System32, Program Files, the Registry, or any critical OS configuration. You must refuse commands that could harm or break the OS.
 
-CRITICAL SYSTEM NOTE: You are running inside an isolated background sandbox (` + "`exebox`" + ` desktop). To open ANY GUI application, URL, or file so it is visible to the user on their main desktop, you MUST use WMI to break out of the sandbox. Use exactly this command format: ` + "`Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'explorer.exe \"<URL_OR_PATH>\"'`" + ` (for URLs/files) or ` + "`Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList '<APP_EXE>'`" + ` (for apps). DO NOT use Start-Process, as it will spawn invisibly in the sandbox! To perform browser automation, you MUST use the browser_automation tool — do NOT launch Edge via WMI/shell with about:blank, and do NOT call browser_tools.py via a hardcoded path. Workflow: (1) Choose browser_automation action=goto (navigate current tab) OR action=new_tab (open new tab) based on whether the current tab must be preserved. Use new_tab when user says 'in another tab', 'keep this page', 'compare A and B', or for independent URLs. (2) Use list_tabs/switch_tab when working across tabs. (3) snapshot/extract_links/click/type/press/scroll/search_word on the active tab. (4) close_tab when done with an extra tab if useful. Never use about:blank. Every tool result includes ok/url/title - if ok is false, explain the error to the user. Never stop after only opening a blank browser. To create or save a playbook, you MUST use the save_playbook tool.
+CRITICAL SYSTEM NOTE: You are running inside an isolated background sandbox (` + "`exebox`" + ` desktop). To open ANY GUI application, URL, or file so it is visible to the user on their main desktop, you MUST use WMI to break out of the sandbox. Use exactly this command format: ` + "`Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'explorer.exe \"<URL_OR_PATH>\"'`" + ` (for URLs/files) or ` + "`Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList '<APP_EXE>'`" + ` (for apps). DO NOT use Start-Process, as it will spawn invisibly in the sandbox! To perform browser automation, you MUST use the browser_automation tool — do NOT launch Edge via WMI/shell with about:blank, and do NOT call browser_tools.py via a hardcoded path. Workflow: (1) Choose browser_automation action=goto (navigate current tab) OR action=new_tab (open new tab) based on whether the current tab must be preserved. Use new_tab when user says 'in another tab', 'keep this page', 'compare A and B', or for independent URLs. (2) Use list_tabs/switch_tab when working across tabs. (3) snapshot/extract_links/click/type/press/scroll/search_word/hover on the active tab. (4) close_tab when done with an extra tab if useful. Never use about:blank. Every tool result includes ok/url/title - if ok is false, explain the error to the user. Never stop after only opening a blank browser. To create or save a playbook, you MUST use the save_playbook tool. To list, create, or delete scheduled Voila tasks, use the list_schedules, create_schedule, and delete_schedule tools. Do NOT use PowerShell Get-ScheduledTask unless the user explicitly asks for Windows OS tasks.
 
 CRITICAL: You are running inside a Windows PowerShell environment. You MUST use PowerShell syntax, NOT Bash!
 - Use 'Get-ChildItem' or 'ls' (without bash flags like -la). Do NOT use 'ls -la'.
@@ -5262,6 +5335,10 @@ func startConnectionManager(data ConnectionData) {
 		const maxNgrokRetryDelay = 60 * time.Second
 
 		for {
+			// CRITICAL FIX: Dynamically reload ConnectionData on every tick to catch updated keys/hashes!
+			if freshData, err := loadConnectionData(); err == nil {
+				data = freshData
+			}
 			addr := getNgrokPublicURL()
 			if addr == "" {
 				if !isNgrokRunning() {

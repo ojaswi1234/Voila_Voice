@@ -1,0 +1,19 @@
+﻿{
+  "id": "sys_stats_check",
+  "name": "System Statistics Check",
+  "description": "Checks CPU, Memory, and Disk usage for the system.",
+  "commands": [
+    {
+      "description": "Check CPU Load Percentage",
+      "command": "Get-WmiObject Win32_Processor | Select-Object -Property LoadPercentage"
+    },
+    {
+      "description": "Check Available and Total Memory",
+      "command": "Get-WmiObject Win32_OperatingSystem | Select-Object TotalVisibleMemorySize, FreePhysicalMemory"
+    },
+    {
+      "description": "Check Disk Space for C: drive",
+      "command": "Get-PSDrive C | Select-Object Used, Free"
+    }
+  ]
+}

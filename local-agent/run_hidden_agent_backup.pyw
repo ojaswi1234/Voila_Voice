@@ -772,7 +772,7 @@ def _show_settings_widgets():
         frame.update_idletasks()
 
         def _do():
-            res = _api_call('GET', '/verify-groq')
+            res = _api_call('POST', '/verify-groq', {'api_key': groq_key_var.get().strip(), 'model': groq_model_var.get().strip()})
             if res.get('status') == 'ok':
                 groq_status_var.set(f'✓ OK: {res.get("response","")[:30]}')
                 groq_status_lbl.config(fg='#10B981')
@@ -892,7 +892,7 @@ def _show_settings_widgets():
                 'ollama_model': ollama_model_var.get().strip(),
                 'action': 'save'
             })
-            res = _api_call('GET', '/verify-ollama')
+            res = _api_call('POST', '/verify-ollama', {'base_url': ollama_url_var.get().strip(), 'model': ollama_model_var.get().strip(), 'api_key': ollama_key_var.get().strip()})
             if res.get('status') == 'ok':
                 ollama_status_var.set(f'✓ OK: {res.get("response","")[:30]}')
                 ollama_status_lbl.config(fg='#10B981')

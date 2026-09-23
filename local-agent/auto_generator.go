@@ -292,20 +292,42 @@ func tryGroqConfig(ctx context.Context, apiKey string, body []byte) (string, err
 
 
 type CachedModels struct {
-	Timestamp time.Time `json:"timestamp"`
-	Models    []string  `json:"models"`
+	Timestamp  time.Time `json:"timestamp"`
+	Models     []string  `json:"models"`
+	APIKeyHash string    `json:"api_key_hash"` // Hash of the API key used to generate this cache
+}
+
+// hashAPIKey returns a short hash of the API key to scope caches to a specific key
+func hashAPIKey(apiKey string) string {
+	h := make([]byte, 0)
+	for i, c := range apiKey {
+		h = append(h, byte(int(c)^i))
+	}
+	result := ""
+	for _, b := range h {
+		result += fmt.Sprintf("%02x", b)
+	}
+	if len(result) > 16 {
+		result = result[:16]
+	}
+	return result
 }
 
 func fetchGroqModels(apiKey string) []string {
 	configDir := getConfigDir()
 	cachePath := filepath.Join(configDir, "groq_models_cache.json")
+	keyHash := hashAPIKey(apiKey)
 	
-	// Check cache first (valid for 24h)
+	// Check cache first (valid for 24h AND only if same API key was used)
 	if data, err := os.ReadFile(cachePath); err == nil {
 		var cache CachedModels
 		if json.Unmarshal(data, &cache) == nil {
-			if time.Since(cache.Timestamp) < 24*time.Hour {
+			if time.Since(cache.Timestamp) < 24*time.Hour && cache.APIKeyHash == keyHash {
 				return cache.Models
+			}
+			// If key changed, delete old cache to force re-validation
+			if cache.APIKeyHash != keyHash {
+				os.Remove(cachePath)
 			}
 		}
 	}
@@ -329,44 +351,44 @@ func fetchGroqModels(apiKey string) []string {
 		allModels = append(allModels, m.ID)
 	}
 
-	// Test models concurrently
+	// DO NOT probe models with live API calls - this burns through rate limits on fresh keys.
+	// Instead, use a curated whitelist of known-working Groq models that support tool calling.
+	// The actual model availability is already confirmed by the /models endpoint returning them.
 	var validModels []string
-	var mu sync.Mutex
-	var wg sync.WaitGroup
-	
-	payloadBytes := []byte(`{"model":"", "messages":[{"role":"user", "content":"Hi"}], "tools":[{"type":"function","function":{"name":"test","description":"test","parameters":{"type":"object","properties":{}}}}], "max_tokens":10}`)
-	
+	knownToolModels := map[string]bool{
+		"llama-3.3-70b-versatile":    true,
+		"llama-3.1-70b-versatile":    true,
+		"llama-3.1-8b-instant":       true,
+		"llama3-70b-8192":            true,
+		"llama3-8b-8192":             true,
+		"mixtral-8x7b-32768":         true,
+		"gemma2-9b-it":               true,
+		"openai/gpt-oss-120b":        true,
+		"openai/gpt-oss-20b":         true,
+		"qwen/qwen3.8-27b":           true,
+		"groq/compound":              true,
+	}
 	for _, modelID := range allModels {
-		// Hardcoded explicit blacklist
 		mLower := strings.ToLower(modelID)
-		if strings.Contains(mLower, "safeguard") || strings.Contains(mLower, "safegaurd") {
+		// Skip models that cannot do tool calling
+		if strings.Contains(mLower, "safeguard") || strings.Contains(mLower, "guard") ||
+			strings.Contains(mLower, "whisper") || strings.Contains(mLower, "tts") {
 			continue
 		}
-
-		wg.Add(1)
-		go func(mID string) {
-			defer wg.Done()
-			
-			// Replace model ID in payload
-			payload := strings.Replace(string(payloadBytes), `"model":""`, fmt.Sprintf(`"model":"%s"`, mID), 1)
-			
-			testReq, _ := http.NewRequest("POST", "https://api.groq.com/openai/v1/chat/completions", bytes.NewBuffer([]byte(payload)))
-			testReq.Header.Set("Authorization", "Bearer "+apiKey)
-			testReq.Header.Set("Content-Type", "application/json")
-			testClient := &http.Client{Timeout: 10 * time.Second}
-			testResp, testErr := testClient.Do(testReq)
-			
-			if testErr == nil {
-				defer testResp.Body.Close()
-				if testResp.StatusCode == 200 {
-					mu.Lock()
-					validModels = append(validModels, fmt.Sprintf("%q", mID))
-					mu.Unlock()
-				}
-			}
-		}(modelID)
+		if knownToolModels[modelID] {
+			validModels = append(validModels, fmt.Sprintf("%q", modelID))
+		}
 	}
-	wg.Wait()
+	// If whitelist yields nothing (new API added new models), fall back to full list minus blacklist
+	if len(validModels) == 0 {
+		for _, modelID := range allModels {
+			mLower := strings.ToLower(modelID)
+			if !strings.Contains(mLower, "safeguard") && !strings.Contains(mLower, "guard") &&
+				!strings.Contains(mLower, "whisper") && !strings.Contains(mLower, "tts") {
+				validModels = append(validModels, fmt.Sprintf("%q", modelID))
+			}
+		}
+	}
 	
 	if len(validModels) > 0 {
 		cache := CachedModels{Timestamp: time.Now(), Models: validModels}

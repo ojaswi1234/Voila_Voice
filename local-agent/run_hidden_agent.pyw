@@ -935,7 +935,7 @@ def _show_settings_widgets():
         frame.update_idletasks()
 
         def _do():
-            res = _api_call('GET', '/verify-groq')
+            res = _api_call('POST', '/verify-groq', {'api_key': groq_key_var.get().strip(), 'model': groq_model_var.get().strip()})
             if res.get('status') == 'ok':
                 groq_status_var.set(f'✓ OK: {res.get("response","")[:30]}')
                 groq_status_lbl.config(fg='#10B981')
@@ -1055,7 +1055,7 @@ def _show_settings_widgets():
                 'ollama_model': ollama_model_var.get().strip(),
                 'action': 'save'
             })
-            res = _api_call('GET', '/verify-ollama')
+            res = _api_call('POST', '/verify-ollama', {'base_url': ollama_url_var.get().strip(), 'model': ollama_model_var.get().strip(), 'api_key': ollama_key_var.get().strip()})
             if res.get('status') == 'ok':
                 ollama_status_var.set(f'✓ OK: {res.get("response","")[:30]}')
                 ollama_status_lbl.config(fg='#10B981')
@@ -1848,7 +1848,7 @@ def animation_loop():
                     canvas.itemconfig(radar_arc, state="normal")
                 # Spin radar
                 canvas.itemconfig(radar_arc, start=(anim_frame * -8) % 360)
-            elif visual_state == "BROWSE":
+            elif visual_state == "BROWSER":
                 target_text = "Browsing"
                 target_color = '#f97316'
                 target_outline = '#c2410c'
@@ -1970,6 +1970,12 @@ def reset_to_idle():
 def parse_line(line):
     global ai_state, mobile_clients, glow_timer, current_mode, backend_status
 
+    if ("[DEBUG_LIFECYCLE:" in line and "THINKING PHASE STARTED" in line) or ("[executeOllamaCommand] iter=" in line) or ("[executeGroqCommand] iter=" in line):
+        if glow_timer: root.after_cancel(glow_timer)
+        ai_state = "THINKING"
+        return
+
+
     if not line.startswith("STATUS:"):
         # Non-STATUS lines: use keyword sniffing ONLY as a soft hint, not authoritative
         l = line.lower()
@@ -1982,6 +1988,7 @@ def parse_line(line):
 
     # ── Authoritative STATUS: protocol ──────────────────────────────────────
     if "STATUS: GRAPHIFY" in line:
+        if glow_timer: root.after_cancel(glow_timer)
         ai_state = "GRAPHIFY"
         return
         
@@ -2066,9 +2073,10 @@ def parse_line(line):
         return
 
     if "STATUS: TOOL:" in line:
+        if glow_timer: root.after_cancel(glow_timer)
         tool = line.split("STATUS: TOOL:")[1].strip().lower()
         if "web_research" in tool:
-            ai_state = "RESEARCH"
+            ai_state = "SEARCH"
         elif "browser_automation" in tool or "browse" in tool:
             ai_state = "BROWSER"
         elif "web_search" in tool or "search" in tool:

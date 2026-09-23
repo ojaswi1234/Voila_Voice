@@ -28,9 +28,21 @@ def read_pdf(kwargs):
         text = []
         with open(path, 'rb') as f:
             reader = PyPDF2.PdfReader(f)
-            for page in reader.pages:
+            for page_num, page in enumerate(reader.pages):
                 extracted = page.extract_text()
                 if extracted: text.append(extracted)
+                
+                # Extract embedded hyperlinks
+                try:
+                    if '/Annots' in page:
+                        for annot in page['/Annots']:
+                            obj = annot.get_object()
+                            if obj.get('/Subtype') == '/Link':
+                                if '/A' in obj and '/URI' in obj['/A']:
+                                    uri = obj['/A']['/URI']
+                                    text.append(f"[Embedded Link: {uri}]")
+                except Exception:
+                    pass
         return "\n".join(text) if text else "No text found in PDF."
     except Exception as e:
         return f"Error reading PDF: {e}"
@@ -1193,6 +1205,35 @@ def create_docx(kwargs):
     return f"Successfully created Word Document (DOCX) at {path}"
 
 
+
+def read_docx(kwargs):
+    try:
+        import docx
+    except ImportError:
+        return "Error: python-docx not installed. Run: pip install python-docx"
+    path = kwargs.get('path')
+    if not path: return "Error: path is required"
+    try:
+        doc = docx.Document(path)
+        text = []
+        for p in doc.paragraphs:
+            if p.text:
+                text.append(p.text)
+        
+        # Extract hyperlinks from docx
+        try:
+            rels = doc.part.rels
+            for rel in rels.values():
+                if "hyperlink" in rel.reltype:
+                    text.append(f"[Embedded Link: {rel.target_ref}]")
+        except Exception:
+            pass
+            
+        return "\n".join(text) if text else "No text found in DOCX."
+    except Exception as e:
+        return f"Error reading DOCX: {e}"
+
+
 def main():
     try:
         input_data = sys.stdin.read()
@@ -1201,9 +1242,10 @@ def main():
             sys.exit(1)
         req = json.loads(input_data)
         action = req.get("action"); kwargs = req.get("kwargs", {})
+
         actions = {
             "read_csv": read_csv, "create_csv": create_csv, "read_excel": read_excel, "create_excel": create_excel, "modify_excel": modify_excel,
-            "read_pdf": read_pdf, "create_pdf": create_pdf, "create_doc": create_doc, "create_ppt": create_ppt, "create_docx": create_docx
+            "read_pdf": read_pdf, "read_docx": read_docx, "read_doc": read_docx, "create_pdf": create_pdf, "create_doc": create_doc, "create_ppt": create_ppt, "create_docx": create_docx
         }
         if action not in actions:
             print(f"Error: Unknown action '{action}'")

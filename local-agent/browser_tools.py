@@ -101,6 +101,21 @@ def _page(browser):
         _active_tab_index = len(pages) - 1
     return pages[_active_tab_index]
 
+
+def _get_loc(page, sel):
+    loc = _get_loc(page, sel)
+    try:
+        if loc.count() > 0: return loc
+    except Exception:
+        pass
+    for frame in page.frames:
+        try:
+            floc = frame.locator(sel).first
+            if floc.count() > 0: return floc
+        except Exception:
+            pass
+    return loc
+
 def _handle(browser, args):
     global _active_tab_index
     action = (args.get("action") or "").strip().lower()
@@ -120,17 +135,43 @@ def _handle(browser, args):
         if action == "click":
             sel = args.get("selector")
             if not sel: return _err(action, "selector required", page)
-            page.locator(sel).first.click(timeout=20000)
+            loc = _get_loc(page, sel)
+            try:
+                loc.scroll_into_view_if_needed(timeout=3000)
+                loc.click(timeout=5000)
+            except Exception as e:
+                # Fallback to forced click if obscured by sticky headers/modals
+                try: loc.click(force=True, timeout=2000)
+                except Exception: raise e
             return _ok(action, page, selector=sel)
         if action == "type":
             sel, val = args.get("selector"), args.get("value")
             if not sel or val is None: return _err(action, "selector and value required", page)
-            page.locator(sel).first.fill(str(val), timeout=20000)
+            loc = _get_loc(page, sel)
+            try:
+                loc.scroll_into_view_if_needed(timeout=3000)
+                try:
+                    tag = loc.evaluate("el => el.tagName.toLowerCase()")
+                    if tag == "select":
+                        loc.select_option(label=str(val), timeout=5000)
+                    elif tag == "input" and loc.evaluate("el => el.type.toLowerCase()") in ("checkbox", "radio"):
+                        if str(val).lower() in ("true", "1", "yes", "on"): loc.check(timeout=5000)
+                        else: loc.uncheck(timeout=5000)
+                    else:
+                        loc.fill(str(val), timeout=5000)
+                except Exception:
+                    loc.fill(str(val), timeout=5000)
+            except Exception as e:
+                try: loc.fill(str(val), force=True, timeout=2000)
+                except Exception: raise e
             return _ok(action, page, selector=sel)
         if action == "press":
             val, sel = args.get("value") or args.get("key"), args.get("selector")
             if not val: return _err(action, "value (key) required", page)
-            if sel: page.locator(sel).first.press(val, timeout=10000)
+            if sel: 
+                loc = _get_loc(page, sel)
+                loc.scroll_into_view_if_needed(timeout=2000)
+                loc.press(val, timeout=5000)
             else: page.keyboard.press(val)
             return _ok(action, page, key=val)
         if action == "scroll":
@@ -141,14 +182,35 @@ def _handle(browser, args):
                 try: page.evaluate(f"window.scrollBy(0,{int(val)})")
                 except Exception: page.evaluate("window.scrollBy(0,window.innerHeight)")
             return _ok(action, page)
+        if action == "hover":
+            sel = args.get("selector")
+            if not sel: return _err(action, "selector required", page)
+            loc = _get_loc(page, sel)
+            loc.scroll_into_view_if_needed(timeout=3000)
+            loc.hover(timeout=5000)
+            return _ok(action, page, selector=sel)
+
         if action == "search_word":
             val = args.get("value")
             if not val: return _err(action, "value (search term) required", page)
-            count = page.locator(f"text={val}").count()
+            
+            # Recursive search across main page and frames
+            loc = page.locator(f"text={val}")
+            count = loc.count()
             if count > 0:
-                page.locator(f"text={val}").first.scroll_into_view_if_needed()
-                return _ok(action, page, message=f"Found {count} occurrences, scrolled to first.")
-            return _ok(action, page, message="Word not found")
+                loc.first.scroll_into_view_if_needed()
+                return _ok(action, page, message=f"Found {count} occurrences in main frame, scrolled to first.")
+            
+            for i, frame in enumerate(page.frames):
+                floc = frame.locator(f"text={val}")
+                try:
+                    fcount = floc.count()
+                    if fcount > 0:
+                        floc.first.scroll_into_view_if_needed()
+                        return _ok(action, page, message=f"Found {fcount} occurrences in iframe {i}, scrolled to first.")
+                except Exception: pass
+                
+            return _ok(action, page, message="Word not found anywhere on the page or in iframes")
         if action == "new_tab":
             url = (args.get("url") or "").strip()
             if not url or url.lower() in ("about:blank", "blank"):
@@ -195,13 +257,153 @@ def _handle(browser, args):
             sel = args.get("selector")
             if sel: return _ok(action, page, texts=page.locator(sel).all_inner_texts()[:50])
             return _ok(action, page, text=(page.inner_text("body") or "")[:8000])
-        if action in ("snapshot", "extract_links"):
-            links = page.evaluate("""() => Array.from(document.querySelectorAll('a,button,input,[role=button]')).slice(0,300).map(el => {
-              const text=(el.innerText||el.value||el.getAttribute('aria-label')||'').trim().slice(0,120);
-              let sel=el.id?'#'+el.id:el.tagName.toLowerCase();
-              return {type:el.tagName.toLowerCase(), text, selector:sel};
-            }).filter(x=>x.text.length>0).slice(0,75)""")
-            return _ok(action, page, elements=links)
+        if action in ("snapshot", "extract_links", "extract_interactive"):
+            try: page.wait_for_timeout(1000) # Give frames & dynamic JS extra time to settle
+            except Exception: pass
+            
+            all_links = []
+            
+            # Helper JS to extract from a specific frame context, piercing Shadow DOMs
+            js_script = """() => {
+                let aiIdCounter = window._aiIdCounter || 0;
+                
+                function getAllElements(root) {
+                    let els = [];
+                    try {
+                        const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, null, false);
+                        let node;
+                        while (node = walker.nextNode()) {
+                            els.push(node);
+                            if (node.shadowRoot) els = els.concat(getAllElements(node.shadowRoot));
+                        }
+                    } catch(e) {}
+                    return els;
+                }
+                
+                const allNodes = getAllElements(document);
+                
+                // Extremely aggressive interactive element detection for modern web apps (filters, custom dropdowns, toggles)
+                const isInteractive = (el) => {
+                    const tag = el.tagName.toLowerCase();
+                    if (['a', 'button', 'input', 'textarea', 'select', 'summary', 'label'].includes(tag)) return true;
+                    if (el.isContentEditable) return true;
+                    const role = el.getAttribute('role');
+                    if (role && ['button', 'link', 'menuitem', 'tab', 'option', 'combobox', 'switch', 'checkbox', 'radio', 'treeitem'].includes(role)) return true;
+                    if (el.hasAttribute('tabindex') && el.getAttribute('tabindex') !== '-1') return true;
+                    const cls = (el.className || '').toString().toLowerCase();
+                    if (cls.includes('btn') || cls.includes('button') || cls.includes('toggle') || cls.includes('filter') || cls.includes('dropdown')) {
+                        // Only include custom classes if they have click listeners or cursor: pointer
+                        const style = window.getComputedStyle(el);
+                        if (style.cursor === 'pointer') return true;
+                    }
+                    return false;
+                };
+                
+                const elements = allNodes.filter(isInteractive);
+                
+                return elements.filter(el => {
+                    const rect = el.getBoundingClientRect();
+                    const style = window.getComputedStyle(el);
+                    return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.opacity !== '0' && style.display !== 'none';
+                }).slice(0, 300).map(el => {
+                    let text = (el.innerText || el.value || el.placeholder || el.getAttribute('aria-label') || el.getAttribute('title') || '').trim();
+                    if (!text && el.tagName === 'INPUT' && el.type === 'submit') { text = "Submit"; }
+                    if (!text && el.tagName === 'INPUT' && el.type === 'text') { text = "Text Input"; }
+                    if (!text && el.tagName === 'INPUT' && el.type === 'password') { text = "Password"; }
+                    if (!text && el.tagName === 'SELECT') { text = "Dropdown Selection"; }
+                    if (!text && el.tagName === 'TEXTAREA') { text = "Text Area"; }
+                    
+                    // Fallback for unlabeled popup close buttons (often just SVGs or X icons in divs)
+                    if (!text) {
+                        const html = el.innerHTML.toLowerCase();
+                        const cls = (el.className || '').toString().toLowerCase();
+                        const idStr = (el.id || '').toLowerCase();
+                        if (cls.includes('close') || idStr.includes('close') || html.includes('close')) {
+                            text = "[Close Button]";
+                        } else if (html.includes('<svg') || html.includes('<img')) {
+                            if (cls.includes('search') || idStr.includes('search')) text = "[Search Icon]";
+                            else if (cls.includes('menu') || idStr.includes('menu')) text = "[Menu Icon]";
+                            else text = "[Unlabeled Icon Button]";
+                        } else if (el.getAttribute('role') === 'button' || el.tagName === 'BUTTON') {
+                            text = "[Unlabeled Button]";
+                        }
+                    }
+                    
+                    text = text.replace(/\s+/g, ' ').slice(0, 120);
+                    
+                    let sel = '';
+                    if (el.id && /^[A-Za-z][A-Za-z0-9_-]*$/.test(el.id)) {
+                        sel = '#' + el.id;
+                    } else {
+                        if (!el.hasAttribute('data-ai-id')) {
+                            aiIdCounter++;
+                            el.setAttribute('data-ai-id', 'ai-btn-' + aiIdCounter);
+                        }
+                        sel = '[data-ai-id="' + el.getAttribute('data-ai-id') + '"]';
+                    }
+                    window._aiIdCounter = aiIdCounter;
+                    
+                    return { type: el.tagName.toLowerCase(), text: text, selector: sel };
+                }).filter(x => x.text.length > 0 || ['input', 'textarea', 'select'].includes(x.type)).slice(0, 100);
+            }"""
+
+            # Extract from main page and all iframes
+            for frame in page.frames:
+                try:
+                    frame_links = frame.evaluate(js_script)
+                    if frame_links:
+                        all_links.extend(frame_links)
+                except Exception:
+                    continue # Ignore cross-origin frame access errors if playwright fails to inject
+            
+            # Deduplicate and cap to prevent token explosion
+            seen_selectors = set()
+            unique_links = []
+            for link in all_links:
+                if link['selector'] not in seen_selectors:
+                    seen_selectors.add(link['selector'])
+                    unique_links.append(link)
+            
+            return _ok(action, page, elements=unique_links[:150])
+        if action == "upload":
+            sel, val = args.get("selector"), args.get("value")
+            if not sel or not val: return _err(action, "selector and value (file path) required", page)
+            loc = _get_loc(page, sel)
+            try:
+                import os
+                if not os.path.exists(val): return _err(action, f"File does not exist: {val}", page)
+                loc.scroll_into_view_if_needed(timeout=3000)
+                loc.set_input_files(val, timeout=5000)
+                return _ok(action, page, message=f"Uploaded {val}")
+            except Exception as e:
+                return _err(action, str(e), page)
+        if action == "fill_form":
+            import json
+            val = args.get("value")
+            if isinstance(val, str):
+                try: val = json.loads(val)
+                except Exception: return _err(action, "value must be valid JSON dictionary for fill_form", page)
+            if not isinstance(val, dict): return _err(action, "value must be a dictionary", page)
+            
+            results = {}
+            for sel, text_val in val.items():
+                try:
+                    loc = _get_loc(page, sel)
+                    loc.scroll_into_view_if_needed(timeout=2000)
+                    try:
+                        tag = loc.evaluate("el => el.tagName.toLowerCase()")
+                        if tag == "select": loc.select_option(label=str(text_val), timeout=3000)
+                        elif tag == "input" and loc.evaluate("el => el.type.toLowerCase()") in ("checkbox", "radio"):
+                            if str(text_val).lower() in ("true", "1", "yes", "on"): loc.check(timeout=3000)
+                            else: loc.uncheck(timeout=3000)
+                        else:
+                            loc.fill(str(text_val), timeout=3000)
+                    except Exception:
+                        loc.fill(str(text_val), timeout=3000)
+                    results[sel] = "OK"
+                except Exception as e:
+                    results[sel] = str(e)
+            return _ok(action, page, results=results)
         if action == "eval":
             expr = args.get("value")
             if not expr: return _err(action, "value required", page)

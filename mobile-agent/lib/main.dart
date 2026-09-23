@@ -2612,6 +2612,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   }
 
   Future<void> _speak(String text) async {
+    if (_isAiSpeaking) return; // Prevent overlapping TTS
     if (!_willTalk || text.isEmpty) return;
     
     if (mounted) {
@@ -2733,6 +2734,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
 
   // T1.3 Natural summary TTS using lightweight high-quality fallback
   Future<void> _speakSummary(String text, {bool isCritical = false}) async {
+    if (_isAiSpeaking) return; // Prevent overlapping TTS
     if (!isCritical && _isQuietHoursActive()) { debugPrint('Quiet hours active, suppressing summary.'); return; }
     if (!_willTalk || text.isEmpty) return;
     
@@ -2783,12 +2785,14 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF1A1A1F),
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (context) => SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text('Settings', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
@@ -2876,6 +2880,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
               ),
             ],
           ),
+          ),
         ),
       ),
     );
@@ -2904,12 +2909,14 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF1A1A1F),
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (context) => SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
@@ -2946,6 +2953,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                   );
                 }),
             ],
+          ),
           ),
         ),
       ),
