@@ -10,15 +10,18 @@ def create_overlay():
     root.config(bg="white")
     
     # Optional: Make click-through
+    hwnd = 0
+    import ctypes
+    root.update_idletasks() # ensure window exists
     try:
-        import ctypes
-        from ctypes import wintypes
         hwnd = ctypes.windll.user32.GetParent(root.winfo_id())
+        if not hwnd:
+            hwnd = root.winfo_id()
         # WS_EX_LAYERED | WS_EX_TRANSPARENT
         style = ctypes.windll.user32.GetWindowLongW(hwnd, -20)
         ctypes.windll.user32.SetWindowLongW(hwnd, -20, style | 0x00080000 | 0x00000020)
     except Exception:
-        pass
+        hwnd = root.winfo_id()
 
     canvas = tk.Canvas(root, width=80, height=80, bg="white", highlightthickness=0)
     canvas.pack()
@@ -70,24 +73,28 @@ def create_overlay():
     import socket
     import threading
 
-    def listen_udp():
+    def listen_udp(target_hwnd):
+        import ctypes
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.bind(("127.0.0.1", 19882))
+        SWP_NOSIZE = 0x0001
+        SWP_NOACTIVATE = 0x0010
+        HWND_TOPMOST = -1
         while True:
             try:
                 data, _ = sock.recvfrom(64)
                 if data == b"HIDE":
-                    root.after(0, lambda: root.geometry(f"80x80+-100+-100"))
+                    ctypes.windll.user32.SetWindowPos(target_hwnd, HWND_TOPMOST, -9999, -9999, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE)
                     continue
                 parts = data.decode("utf-8").split(",")
                 if len(parts) == 2:
                     x, y = int(float(parts[0])), int(float(parts[1]))
                     # Offset by 16 because cx, cy = 16, 16
-                    root.after(0, lambda x=x, y=y: root.geometry(f"80x80+{x-16}+{y-16}"))
+                    ctypes.windll.user32.SetWindowPos(target_hwnd, HWND_TOPMOST, x - 16, y - 16, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE)
             except Exception:
                 pass
 
-    t = threading.Thread(target=listen_udp, daemon=True)
+    t = threading.Thread(target=listen_udp, args=(hwnd,), daemon=True)
     t.start()
     
     root.mainloop()
