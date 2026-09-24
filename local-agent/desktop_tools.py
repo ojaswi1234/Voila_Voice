@@ -15,9 +15,16 @@ desktop_bridge.py runs in Session 1 and imports the real UIA + cursor_motion
 logic. cursor_motion.py exclusively drives all pointer motion there.
 
 CLI:
-    python desktop_tools.py --action <action> [--ref e1] [--selector ...] \
-                             [--value ...] [--window ...] [--depth 8]
+    python desktop_tools.py --action <action> [--ref e1] [--selector ...] \\
+                             [--value ...] [--window ...] [--depth 8] \\
+                             [--button left|right|double] [--monitor 0]
     stdout: one JSON object
+
+Supported actions:
+    snapshot, find, invoke, click_ref, right_click, set_value, type_keys,
+    toggle, focus, select, drag_ref, move_cursor, foreground, list_windows,
+    focus_window, close_window, switch_tab, switch_window, switch_desktop,
+    scroll
 """
 import sys
 sys.stdout.reconfigure(encoding="utf-8")
@@ -34,6 +41,7 @@ if sys.platform != "win32":
     sys.exit(0)
 
 # ─── Bridge probe + auto-launch ───────────────────────────────────────────────
+_bridge_ready: bool = False   # cached so we don't re-probe on every call
 
 def _bridge_up(timeout: float = 0.5) -> bool:
     try:
@@ -61,9 +69,8 @@ def _launch_bridge() -> bool:
         result, pid = wmi.Get("Win32_Process").Create(cmd, None, process_startup)
         if result != 0:
             raise RuntimeError(f"WMI Create returned {result}")
-    except Exception as e:
+    except Exception:
         # Fallback: simple subprocess (may spawn in sandbox)
-        import subprocess
         python_exe = sys.executable.replace("python.exe", "pythonw.exe")
         subprocess.Popen(
             [python_exe, bridge_path, "--port", str(BRIDGE_PORT)],
@@ -78,9 +85,17 @@ def _launch_bridge() -> bool:
     return False
 
 def _ensure_bridge() -> bool:
+    global _bridge_ready
+    if _bridge_ready:
+        # Quick liveness re-check (cheap — just TCP connect)
+        if _bridge_up(timeout=0.2):
+            return True
+        _bridge_ready = False  # bridge died; re-launch below
     if _bridge_up():
+        _bridge_ready = True
         return True
-    return _launch_bridge()
+    _bridge_ready = _launch_bridge()
+    return _bridge_ready
 
 # ─── Proxy call ───────────────────────────────────────────────────────────────
 
@@ -91,12 +106,12 @@ def _proxy(req: dict) -> dict:
                 "message": "desktop_bridge failed to start. Check that python can run in the user session."}
     try:
         s = socket.create_connection((BRIDGE_HOST, BRIDGE_PORT), timeout=30)
+        s.settimeout(30)
         payload = json.dumps(req, ensure_ascii=False) + "\n"
         s.sendall(payload.encode("utf-8"))
 
         # Read until newline (bridge always terminates response with \n)
         data = b""
-        s.settimeout(30)
         while True:
             chunk = s.recv(65536)
             if not chunk:
@@ -107,6 +122,7 @@ def _proxy(req: dict) -> dict:
         s.close()
         return json.loads(data.decode("utf-8").strip())
     except Exception as e:
+        _bridge_ready = False  # force re-check next time
         return {"ok": False, "error": "platform", "message": f"Bridge comm error: {e}"}
 
 # ─── CLI ──────────────────────────────────────────────────────────────────────
@@ -120,16 +136,25 @@ def main():
     parser.add_argument("--window",   default="")
     parser.add_argument("--depth",    type=int, default=8)
     parser.add_argument("--timeout",  type=int, default=5000)
+    # NEW: button for right-click / double-click support
+    parser.add_argument("--button",   default="left",
+                        choices=["left", "right", "double"],
+                        help="Mouse button for click actions (default: left)")
+    # NEW: monitor / desktop index for switch_desktop
+    parser.add_argument("--monitor",  type=int, default=0,
+                        help="Virtual desktop index for switch_desktop (0-based)")
     args = parser.parse_args()
 
     req = {
-        "action":   args.action,
-        "ref":      args.ref,
-        "selector": args.selector,
-        "value":    args.value,
-        "window":   args.window or None,
-        "depth":    args.depth,
+        "action":     args.action,
+        "ref":        args.ref,
+        "selector":   args.selector,
+        "value":      args.value,
+        "window":     args.window or None,
+        "depth":      args.depth,
         "timeout_ms": args.timeout,
+        "button":     args.button,
+        "monitor":    args.monitor,
     }
 
     result = _proxy(req)

@@ -3,7 +3,7 @@
 Imported ONLY by desktop_bridge.py which runs in the user's Session 1.
 desktop_tools.py (the proxy) never imports this.
 """
-import sys, os, json, argparse
+import sys, os, json, time, ctypes
 from typing import Any
 
 # ─── Platform guard ────────────────────────────────────────────────────────────
@@ -13,6 +13,31 @@ if sys.platform != "win32":
 else:
     import uiautomation as auto
     import cursor_motion   # THE ONLY motion module
+
+    # ─── Win32 helpers for window management ──────────────────────────────────
+    _user32 = ctypes.windll.user32
+
+    def _bring_window_to_foreground(hwnd: int):
+        """Reliably bring a window to foreground, handling focus-deny quirks."""
+        if not hwnd:
+            return
+        SW_RESTORE = 9
+        # If minimized, restore it first
+        if _user32.IsIconic(hwnd):
+            _user32.ShowWindow(hwnd, SW_RESTORE)
+            time.sleep(0.05)
+        # Alt-trick: press alt to allow SetForegroundWindow to work cross-thread
+        _user32.keybd_event(0x12, 0, 0, 0)          # VK_ALT down
+        _user32.SetForegroundWindow(hwnd)
+        _user32.keybd_event(0x12, 0, 2, 0)          # VK_ALT up
+        time.sleep(0.08)
+
+    def _hwnd_from_ctrl(ctrl):
+        """Get raw HWND from a UIA control."""
+        try:
+            return ctrl.NativeWindowHandle
+        except Exception:
+            return 0
 
     # ─── Ref registry ──────────────────────────────────────────────────────────
     _ref_store: dict[str, dict] = {}
@@ -160,8 +185,9 @@ else:
                 try:
                     name = wnd.Name or ""
                     pid  = wnd.ProcessId
+                    hwnd = _hwnd_from_ctrl(wnd)
                     if name:
-                        results.append({"title": name, "pid": pid})
+                        results.append({"title": name, "pid": pid, "hwnd": hwnd})
                 except Exception:
                     pass
                 try:
@@ -204,11 +230,11 @@ else:
 
     def act_find(window, depth: int, selector: str, value: str) -> dict:
         parts = _parse_selector(selector) if selector else {}
-        
+
         # FIX: If AI mistakenly searches for a Window using selector instead of the window arg
         if not window and parts.get("role", "").lower() in ("window", "windowcontrol"):
             window = parts.get("name", "").replace("*", "")
-            
+
         snap = act_snapshot(window, depth)
         if not snap["ok"]:
             return snap
@@ -240,6 +266,15 @@ else:
         tel = cursor_motion.go(cx, cy, click=click, drag_to=drag_to, duration_ms=duration_ms)
         return None, tel
 
+    def _ensure_window_focused(window):
+        """Make sure the target window is in the foreground before acting on it."""
+        wnd = _find_window(window)
+        if wnd:
+            hwnd = _hwnd_from_ctrl(wnd)
+            if hwnd:
+                _bring_window_to_foreground(hwnd)
+        return wnd
+
     def act_move_cursor(ref: str, window) -> dict:
         wnd = _find_window(window)
         err_r, tel = _move_to_ref(ref)
@@ -250,7 +285,8 @@ else:
         return r
 
     def act_invoke(ref: str, window, timeout_ms: int) -> dict:
-        wnd = _find_window(window)
+        # FIX: Ensure the window is in foreground before invoking so focus isn't stolen silently
+        wnd = _ensure_window_focused(window)
         ctrl, err = _resolve_ref(ref)
         if err:
             return _err("invoke", err, f"ref={ref}")
@@ -261,13 +297,19 @@ else:
             ctrl.Click(simulateMove=False)
         except Exception:
             cursor_motion.go(cx, cy, click="left")
+        # Re-assert focus after invoke to prevent focus loss on certain dialogs
+        try:
+            ctrl.SetFocus()
+        except Exception:
+            pass
         r = _ok("invoke", wnd)
         r["cursor"] = tel
         r["cursor"]["moved"] = True
         return r
 
     def act_click_ref(ref: str, window, button: str = "left") -> dict:
-        wnd = _find_window(window)
+        # FIX: Bring window to foreground first to prevent defocus on click
+        wnd = _ensure_window_focused(window)
         err_r, tel = _move_to_ref(ref, click=button)
         if err_r:
             return err_r
@@ -275,8 +317,50 @@ else:
         r["cursor"] = tel
         return r
 
+    def act_right_click(ref: str, window) -> dict:
+        """Dedicated right-click action to open context menus."""
+        wnd = _ensure_window_focused(window)
+        err_r, tel = _move_to_ref(ref, click="right")
+        if err_r:
+            return err_r
+        r = _ok("right_click", wnd)
+        r["cursor"] = tel
+        return r
+
+    def act_scroll(ref: str, window, value: str) -> dict:
+        """Scroll a control. value = 'up'|'down'|'left'|'right' or an integer for wheel delta."""
+        wnd = _ensure_window_focused(window)
+        ctrl, err = _resolve_ref(ref)
+        if err:
+            return _err("scroll", err, f"ref={ref}")
+        meta = _ref_store[ref]["meta"]
+        cx, cy = _center(meta["bounds"])
+        tel = cursor_motion.go(cx, cy)
+
+        WHEEL_DELTA = 120
+        VK_NEXT    = 0x22   # Page Down
+        VK_PRIOR   = 0x21   # Page Up
+
+        try:
+            delta = int(value)
+        except (ValueError, TypeError):
+            delta = None
+
+        _user32_local = ctypes.windll.user32
+        if delta is not None:
+            # Positive = scroll up (forward), negative = scroll down
+            _user32_local.mouse_event(0x0800, 0, 0, ctypes.c_int(delta * WHEEL_DELTA), 0)
+        elif isinstance(value, str) and value.lower() in ("down", ""):
+            _user32_local.mouse_event(0x0800, 0, 0, ctypes.c_int(-3 * WHEEL_DELTA), 0)
+        elif isinstance(value, str) and value.lower() == "up":
+            _user32_local.mouse_event(0x0800, 0, 0, ctypes.c_int(3 * WHEEL_DELTA), 0)
+
+        r = _ok("scroll", wnd)
+        r["cursor"] = tel
+        return r
+
     def act_set_value(ref: str, value: str, window) -> dict:
-        wnd = _find_window(window)
+        wnd = _ensure_window_focused(window)
         ctrl, err = _resolve_ref(ref)
         if err:
             return _err("set_value", err, f"ref={ref}")
@@ -296,7 +380,7 @@ else:
         return r
 
     def act_type_keys(keys: str, ref, window) -> dict:
-        wnd = _find_window(window)
+        wnd = _ensure_window_focused(window)
         tel = {"x": 0, "y": 0, "moved": False, "duration_ms": 0, "distance_px": 0}
         if ref:
             ctrl, err = _resolve_ref(ref)
@@ -316,7 +400,7 @@ else:
         return r
 
     def act_toggle(ref: str, window) -> dict:
-        wnd = _find_window(window)
+        wnd = _ensure_window_focused(window)
         ctrl, err = _resolve_ref(ref)
         if err:
             return _err("toggle", err, f"ref={ref}")
@@ -332,7 +416,7 @@ else:
         return r
 
     def act_focus(ref: str, window) -> dict:
-        wnd = _find_window(window)
+        wnd = _ensure_window_focused(window)
         ctrl, err = _resolve_ref(ref)
         if err:
             return _err("focus", err, f"ref={ref}")
@@ -348,7 +432,7 @@ else:
         return r
 
     def act_select(ref: str, window) -> dict:
-        wnd = _find_window(window)
+        wnd = _ensure_window_focused(window)
         ctrl, err = _resolve_ref(ref)
         if err:
             return _err("select", err, f"ref={ref}")
@@ -386,6 +470,155 @@ else:
         r["cursor"] = tel
         return r
 
+    # ──────────────────────────────────────────────────────────────────────────
+    # NEW: Window / Tab / Desktop management actions
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def act_focus_window(window: str) -> dict:
+        """Bring a window to the foreground by title hint. Returns updated foreground info."""
+        wnd = _find_window(window)
+        if not wnd:
+            return _err("focus_window", "not_found", f"Window not found: {window!r}")
+        hwnd = _hwnd_from_ctrl(wnd)
+        _bring_window_to_foreground(hwnd)
+        r = _ok("focus_window", wnd)
+        r["message"] = f"Focused: {wnd.Name!r}"
+        return r
+
+    def act_close_window(window: str) -> dict:
+        """Close a window by title hint using Alt+F4."""
+        wnd = _find_window(window)
+        if not wnd:
+            return _err("close_window", "not_found", f"Window not found: {window!r}")
+        hwnd = _hwnd_from_ctrl(wnd)
+        _bring_window_to_foreground(hwnd)
+        time.sleep(0.1)
+        # WM_CLOSE = 0x0010
+        ctypes.windll.user32.PostMessageW(hwnd, 0x0010, 0, 0)
+        r = _ok("close_window", wnd)
+        r["message"] = f"Close sent to: {wnd.Name!r}"
+        return r
+
+    def act_switch_tab(direction: str = "next") -> dict:
+        """Switch browser / app tabs. direction = 'next'|'prev'|'close'|'new'."""
+        _user32_local = ctypes.windll.user32
+        # Ctrl+Tab → next, Ctrl+Shift+Tab → prev, Ctrl+W → close, Ctrl+T → new
+        VK_CONTROL = 0x11
+        VK_SHIFT   = 0x10
+        VK_TAB     = 0x09
+        VK_W       = 0x57
+        VK_T       = 0x54
+        KEYEVENTF_KEYUP = 0x0002
+
+        def _keydown(vk):  _user32_local.keybd_event(vk, 0, 0, 0)
+        def _keyup(vk):    _user32_local.keybd_event(vk, 0, KEYEVENTF_KEYUP, 0)
+
+        if direction == "next":
+            _keydown(VK_CONTROL); _keydown(VK_TAB); time.sleep(0.05); _keyup(VK_TAB); _keyup(VK_CONTROL)
+        elif direction == "prev":
+            _keydown(VK_CONTROL); _keydown(VK_SHIFT); _keydown(VK_TAB)
+            time.sleep(0.05)
+            _keyup(VK_TAB); _keyup(VK_SHIFT); _keyup(VK_CONTROL)
+        elif direction == "close":
+            _keydown(VK_CONTROL); _keydown(VK_W); time.sleep(0.05); _keyup(VK_W); _keyup(VK_CONTROL)
+        elif direction == "new":
+            _keydown(VK_CONTROL); _keydown(VK_T); time.sleep(0.05); _keyup(VK_T); _keyup(VK_CONTROL)
+        else:
+            return _err("switch_tab", "invalid_args", f"direction must be next/prev/close/new, got: {direction!r}")
+
+        time.sleep(0.15)  # let the tab switch animate
+        r = _ok("switch_tab")
+        r["message"] = f"Tab action: {direction}"
+        return r
+
+    def act_switch_window(direction: str = "next") -> dict:
+        """Cycle through open windows. direction = 'next'|'prev'."""
+        _user32_local = ctypes.windll.user32
+        VK_MENU    = 0x12   # Alt
+        VK_TAB     = 0x09
+        VK_SHIFT   = 0x10
+        KEYEVENTF_KEYUP = 0x0002
+
+        def _keydown(vk): _user32_local.keybd_event(vk, 0, 0, 0)
+        def _keyup(vk):   _user32_local.keybd_event(vk, 0, KEYEVENTF_KEYUP, 0)
+
+        if direction == "next":
+            _keydown(VK_MENU); _keydown(VK_TAB); time.sleep(0.12); _keyup(VK_TAB); _keyup(VK_MENU)
+        elif direction == "prev":
+            _keydown(VK_MENU); _keydown(VK_SHIFT); _keydown(VK_TAB)
+            time.sleep(0.12)
+            _keyup(VK_TAB); _keyup(VK_SHIFT); _keyup(VK_MENU)
+        else:
+            return _err("switch_window", "invalid_args", f"direction must be next/prev, got: {direction!r}")
+
+        time.sleep(0.2)
+        r = _ok("switch_window")
+        r["message"] = f"Window switch: {direction}"
+        return r
+
+    def act_switch_desktop(index: int = -1, direction: str = "next") -> dict:
+        """Switch Windows 10/11 virtual desktops.
+
+        If index >= 0 → switch to that specific desktop (0-based) via Win+Ctrl+Left/Right spam.
+        Otherwise direction='next'|'prev' moves one desktop.
+        """
+        _user32_local = ctypes.windll.user32
+        VK_LWIN    = 0x5B
+        VK_CONTROL = 0x11
+        VK_LEFT    = 0x25
+        VK_RIGHT   = 0x27
+        KEYEVENTF_KEYUP = 0x0002
+
+        def _keydown(vk): _user32_local.keybd_event(vk, 0, 0, 0)
+        def _keyup(vk):   _user32_local.keybd_event(vk, 0, KEYEVENTF_KEYUP, 0)
+
+        def _one_step(right: bool):
+            _keydown(VK_LWIN); _keydown(VK_CONTROL)
+            key = VK_RIGHT if right else VK_LEFT
+            _keydown(key); time.sleep(0.05); _keyup(key)
+            _keyup(VK_CONTROL); _keyup(VK_LWIN)
+            time.sleep(0.25)
+
+        if index >= 0:
+            # We don't know the current desktop index reliably without COM,
+            # so navigate by sending enough steps in one direction is unreliable.
+            # Best effort: go to desktop 0 first (spam left 20x), then right index times.
+            for _ in range(20):
+                _one_step(False)   # go far left
+            for _ in range(index):
+                _one_step(True)    # go right to target
+            r = _ok("switch_desktop")
+            r["message"] = f"Switched to desktop index {index} (best-effort)"
+        else:
+            _one_step(direction == "next")
+            r = _ok("switch_desktop")
+            r["message"] = f"Switched desktop: {direction}"
+        return r
+
+    def act_minimize_window(window: str) -> dict:
+        """Minimize a window by title hint."""
+        wnd = _find_window(window)
+        if not wnd:
+            return _err("minimize_window", "not_found", f"Window not found: {window!r}")
+        hwnd = _hwnd_from_ctrl(wnd)
+        SW_MINIMIZE = 6
+        ctypes.windll.user32.ShowWindow(hwnd, SW_MINIMIZE)
+        r = _ok("minimize_window", wnd)
+        r["message"] = f"Minimized: {wnd.Name!r}"
+        return r
+
+    def act_maximize_window(window: str) -> dict:
+        """Maximize a window by title hint."""
+        wnd = _find_window(window)
+        if not wnd:
+            return _err("maximize_window", "not_found", f"Window not found: {window!r}")
+        hwnd = _hwnd_from_ctrl(wnd)
+        SW_MAXIMIZE = 3
+        ctypes.windll.user32.ShowWindow(hwnd, SW_MAXIMIZE)
+        r = _ok("maximize_window", wnd)
+        r["message"] = f"Maximized: {wnd.Name!r}"
+        return r
+
     # ─── Router ────────────────────────────────────────────────────────────────
     def dispatch(args) -> dict:
         action   = args.action
@@ -395,36 +628,83 @@ else:
         window   = args.window or None
         depth    = min(max(1, args.depth), 15)
         timeout  = args.timeout
+        button   = getattr(args, "button", "left") or "left"
+        monitor  = getattr(args, "monitor", 0) or 0
 
-        if action == "list_windows":  return act_list_windows()
-        if action == "foreground":    return act_foreground()
-        if action == "snapshot":      return act_snapshot(window, depth)
-        if action == "find":          return act_find(window, depth, selector, value)
+        if action == "list_windows":   return act_list_windows()
+        if action == "foreground":     return act_foreground()
+        if action == "snapshot":       return act_snapshot(window, depth)
+        if action == "find":           return act_find(window, depth, selector, value)
+
         if action == "move_cursor":
             if not ref: return _err(action, "invalid_args", "ref required")
             return act_move_cursor(ref, window)
+
         if action == "invoke":
             if not ref: return _err(action, "invalid_args", "ref required")
             return act_invoke(ref, window, timeout)
+
         if action == "click_ref":
             if not ref: return _err(action, "invalid_args", "ref required")
-            return act_click_ref(ref, window)
+            return act_click_ref(ref, window, button)
+
+        if action == "right_click":
+            if not ref: return _err(action, "invalid_args", "ref required")
+            return act_right_click(ref, window)
+
+        if action == "scroll":
+            if not ref: return _err(action, "invalid_args", "ref required")
+            return act_scroll(ref, window, value)
+
         if action == "set_value":
             if not ref: return _err(action, "invalid_args", "ref required")
             return act_set_value(ref, value, window)
+
         if action == "type_keys":
             if not value: return _err(action, "invalid_args", "value (keys) required")
             return act_type_keys(value, ref or None, window)
+
         if action == "toggle":
             if not ref: return _err(action, "invalid_args", "ref required")
             return act_toggle(ref, window)
+
         if action == "focus":
             if not ref: return _err(action, "invalid_args", "ref required")
             return act_focus(ref, window)
+
         if action == "select":
             if not ref: return _err(action, "invalid_args", "ref required")
             return act_select(ref, window)
+
         if action == "drag_ref":
             if not ref or not value: return _err(action, "invalid_args", "ref and value required")
             return act_drag_ref(ref, value, window)
+
+        # ── New window/tab/desktop actions ──
+        if action == "focus_window":
+            return act_focus_window(window or value or "")
+
+        if action == "close_window":
+            return act_close_window(window or value or "")
+
+        if action == "minimize_window":
+            return act_minimize_window(window or value or "")
+
+        if action == "maximize_window":
+            return act_maximize_window(window or value or "")
+
+        if action == "switch_tab":
+            return act_switch_tab(direction=value or "next")
+
+        if action == "switch_window":
+            return act_switch_window(direction=value or "next")
+
+        if action == "switch_desktop":
+            # value can be "next"/"prev" or a number like "2"
+            try:
+                idx = int(value)
+                return act_switch_desktop(index=idx)
+            except (ValueError, TypeError):
+                return act_switch_desktop(direction=value or "next")
+
         return _err(action, "unsupported", f"Unknown action: {action!r}")

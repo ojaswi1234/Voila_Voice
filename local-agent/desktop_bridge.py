@@ -10,23 +10,35 @@ Launch via WMI from the agent (sandbox escape):
 
 Or the Go tool auto-launches it when the port is not responding.
 """
-import sys, os, json, socket, threading, argparse
+import sys, os, json, socket, threading, argparse, ctypes
 
-# Ensure cursor_motion and desktop_tools are importable from same dir
+# Ensure cursor_motion and desktop_core are importable from same dir
 _HERE = os.path.dirname(os.path.abspath(__file__))
 if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
+
+# ── Initialize COM for the MAIN thread once (STA) ──
+# Worker threads call CoInitializeEx individually but we do the main thread here.
+ctypes.windll.ole32.CoInitializeEx(None, 0x2)  # COINIT_APARTMENTTHREADED
 
 import desktop_core as dt
 
 BRIDGE_PORT = int(os.environ.get("VOILA_DESKTOP_PORT", "19881"))
 _lock = threading.Lock()   # one UIA action at a time
 
+# ── Thread-local COM state ───────────────────────────────────────────────────
+_tls = threading.local()
+
+def _com_init():
+    """Initialize COM in STA for this thread if not already done."""
+    if not getattr(_tls, "com_initialized", False):
+        ctypes.windll.ole32.CoInitializeEx(None, 0x2)
+        _tls.com_initialized = True
+
 def _handle(conn: socket.socket):
-    # Initialize COM for this thread (UIA requires STA)
-    import ctypes
-    ctypes.windll.ole32.CoInitializeEx(None, 0x2)  # COINIT_APARTMENTTHREADED
+    _com_init()
     try:
+        conn.settimeout(30)
         data = b""
         while not data.endswith(b"\n"):
             chunk = conn.recv(65536)
@@ -45,8 +57,10 @@ def _handle(conn: socket.socket):
         window   = req.get("window") or None
         depth    = int(req.get("depth", 8))
         timeout  = int(req.get("timeout_ms", 5000))
+        button   = req.get("button", "left") or "left"
+        monitor  = int(req.get("monitor", 0))
 
-        # Build a fake argparse namespace to reuse dispatch()
+        # Build a simple namespace to reuse dispatch()
         class NS:
             pass
         args = NS()
@@ -57,6 +71,8 @@ def _handle(conn: socket.socket):
         args.window   = window
         args.depth    = depth
         args.timeout  = timeout
+        args.button   = button
+        args.monitor  = monitor
 
         with _lock:
             result = dt.dispatch(args)
@@ -79,7 +95,7 @@ def _serve(port: int):
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     srv.bind(("127.0.0.1", port))
-    srv.listen(8)
+    srv.listen(16)   # increased from 8 → 16 for burst tolerance
     print(f"[desktop_bridge] Listening on 127.0.0.1:{port}", flush=True)
     while True:
         try:
