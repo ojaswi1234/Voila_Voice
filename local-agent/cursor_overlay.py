@@ -54,20 +54,20 @@ def create_overlay():
     canvas.pack()
     
     cx, cy = 16, 16
-    arrow_pts = [cx, cy, cx, cy + 24, cx + 6, cy + 19, cx + 12, cy + 30, cx + 16, cy + 28, cx + 10, cy + 17, cx + 18, cy + 17]
-    canvas.create_polygon(*arrow_pts, fill="", outline="#c084fc", width=5, joinstyle=tk.ROUND)
-    canvas.create_polygon(*arrow_pts, fill="", outline="#9333ea", width=3, joinstyle=tk.ROUND)
-    canvas.create_polygon(*arrow_pts, fill="#6b21a8", outline="#fefefe", width=1.5, joinstyle=tk.MITER)
-    px, py = cx + 22, cy + 14
-    pw, ph = 24, 14
-    canvas.create_oval(px - 1, py - 1, px + ph + 1, py + ph + 1, fill="", outline="#a855f7", width=3)
-    canvas.create_oval(px + pw - ph - 1, py - 1, px + pw + 1, py + ph + 1, fill="", outline="#a855f7", width=3)
-    canvas.create_oval(px, py, px + ph, py + ph, fill="#4c1d95", outline="#fefefe", width=1.2)
-    canvas.create_oval(px + pw - ph, py, px + pw, py + ph, fill="#4c1d95", outline="#fefefe", width=1.2)
+    arrow_pts = [cx, cy, cx, cy + 15, cx + 4, cy + 12, cx + 8, cy + 19, cx + 10, cy + 18, cx + 6, cy + 11, cx + 11, cy + 11]
+    canvas.create_polygon(*arrow_pts, fill="", outline="#c084fc", width=3, joinstyle=tk.ROUND)
+    canvas.create_polygon(*arrow_pts, fill="", outline="#9333ea", width=2, joinstyle=tk.ROUND)
+    canvas.create_polygon(*arrow_pts, fill="#6b21a8", outline="#fefefe", width=1.0, joinstyle=tk.MITER)
+    px, py = cx + 14, cy + 9
+    pw, ph = 18, 10
+    canvas.create_oval(px - 1, py - 1, px + ph + 1, py + ph + 1, fill="", outline="#a855f7", width=2)
+    canvas.create_oval(px + pw - ph - 1, py - 1, px + pw + 1, py + ph + 1, fill="", outline="#a855f7", width=2)
+    canvas.create_oval(px, py, px + ph, py + ph, fill="#4c1d95", outline="#fefefe", width=1.0)
+    canvas.create_oval(px + pw - ph, py, px + pw, py + ph, fill="#4c1d95", outline="#fefefe", width=1.0)
     canvas.create_rectangle(px + ph/2, py, px + pw - ph/2, py + ph, fill="#4c1d95", outline="")
-    canvas.create_line(px + ph/2, py, px + pw - ph/2, py, fill="#fefefe", width=1.2)
-    canvas.create_line(px + ph/2, py + ph, px + pw - ph/2, py + ph, fill="#fefefe", width=1.2)
-    canvas.create_text(px + pw/2, py + ph/2, text="AI", fill="#fefefe", font=("Segoe UI", 7, "bold"))
+    canvas.create_line(px + ph/2, py, px + pw - ph/2, py, fill="#fefefe", width=1.0)
+    canvas.create_line(px + ph/2, py + ph, px + pw - ph/2, py + ph, fill="#fefefe", width=1.0)
+    canvas.create_text(px + pw/2, py + ph/2, text="AI", fill="#fefefe", font=("Segoe UI", 6, "bold"))
 
     log("Graphics drawn. Moving off-screen natively...")
     root.geometry("80x80+-9999+-9999")
