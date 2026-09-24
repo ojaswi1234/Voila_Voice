@@ -787,14 +787,16 @@ else:
 
         def _one_step_sendinput(right: bool):
             key = VK_RIGHT if right else VK_LEFT
-            # Press Win+Ctrl+Arrow, then release all
             _send(
                 _sinput(VK_LWIN,    KEYEVENTF_EXTENDEDKEY),
                 _sinput(VK_CONTROL, KEYEVENTF_EXTENDEDKEY),
-                _sinput(key,        KEYEVENTF_EXTENDEDKEY),
+                _sinput(key,        KEYEVENTF_EXTENDEDKEY)
+            )
+            time.sleep(0.08)
+            _send(
                 _sinput(key,        KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP),
                 _sinput(VK_CONTROL, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP),
-                _sinput(VK_LWIN,    KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP),
+                _sinput(VK_LWIN,    KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP)
             )
             time.sleep(0.4)   # shell needs ~300ms to animate the transition
 
