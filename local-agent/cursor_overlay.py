@@ -1,7 +1,20 @@
 import sys
 import tkinter as tk
+import ctypes
+import socket
+import threading
+import traceback
+import time
+
+def log(msg):
+    try:
+        with open("cursor_debug.log", "a") as f:
+            f.write(f"[{time.strftime('%H:%M:%S')}] [OVERLAY] {msg}\n")
+    except Exception:
+        pass
 
 def create_overlay():
+    log("Starting overlay process...")
     root = tk.Tk()
     root.title("Voila AI Cursor")
     root.attributes("-topmost", True)
@@ -9,82 +22,54 @@ def create_overlay():
     root.overrideredirect(True)
     root.config(bg="white")
     
-    # Optional: Make click-through
     hwnd = root.winfo_id()
-    import ctypes
-    root.update_idletasks() # ensure window exists
+    log(f"Window initialized. HWND: {hwnd}")
+    
+    root.update_idletasks()
     try:
-        # WS_EX_LAYERED | WS_EX_TRANSPARENT
         style = ctypes.windll.user32.GetWindowLongW(hwnd, -20)
         ctypes.windll.user32.SetWindowLongW(hwnd, -20, style | 0x00080000 | 0x00000020)
-    except Exception:
-        pass
+        log("Applied click-through styles successfully.")
+    except Exception as e:
+        log(f"Failed to apply click-through styles: {e}")
 
     canvas = tk.Canvas(root, width=80, height=80, bg="white", highlightthickness=0)
     canvas.pack()
     
-    # Ultra-Cool Neon Purple AI Cursor Design
     cx, cy = 16, 16
-    
-    # Scaled down sleek arrow coordinates
-    arrow_pts = [
-        cx, cy,
-        cx, cy + 24,
-        cx + 6, cy + 19,
-        cx + 12, cy + 30,
-        cx + 16, cy + 28,
-        cx + 10, cy + 17,
-        cx + 18, cy + 17
-    ]
-    
-    # 1. Neon Glow Layers (Multiple outlines for a glow effect)
-    canvas.create_polygon(*arrow_pts, fill="", outline="#c084fc", width=5, joinstyle=tk.ROUND) # Soft outer purple glow
-    canvas.create_polygon(*arrow_pts, fill="", outline="#9333ea", width=3, joinstyle=tk.ROUND) # Stronger inner glow
-    
-    # 2. Main Arrow Body (Deep purple with a stark white edge for crispness)
+    arrow_pts = [cx, cy, cx, cy + 24, cx + 6, cy + 19, cx + 12, cy + 30, cx + 16, cy + 28, cx + 10, cy + 17, cx + 18, cy + 17]
+    canvas.create_polygon(*arrow_pts, fill="", outline="#c084fc", width=5, joinstyle=tk.ROUND)
+    canvas.create_polygon(*arrow_pts, fill="", outline="#9333ea", width=3, joinstyle=tk.ROUND)
     canvas.create_polygon(*arrow_pts, fill="#6b21a8", outline="#fefefe", width=1.5, joinstyle=tk.MITER)
-    
-    # 3. Floating AI Pill Badge
     px, py = cx + 22, cy + 14
     pw, ph = 24, 14
-    
-    # Pill Glow
     canvas.create_oval(px - 1, py - 1, px + ph + 1, py + ph + 1, fill="", outline="#a855f7", width=3)
     canvas.create_oval(px + pw - ph - 1, py - 1, px + pw + 1, py + ph + 1, fill="", outline="#a855f7", width=3)
-    
-    # Pill Body
     canvas.create_oval(px, py, px + ph, py + ph, fill="#4c1d95", outline="#fefefe", width=1.2)
     canvas.create_oval(px + pw - ph, py, px + pw, py + ph, fill="#4c1d95", outline="#fefefe", width=1.2)
     canvas.create_rectangle(px + ph/2, py, px + pw - ph/2, py + ph, fill="#4c1d95", outline="")
-    
-    # Redraw top/bottom edges of rectangle for clean border
     canvas.create_line(px + ph/2, py, px + pw - ph/2, py, fill="#fefefe", width=1.2)
     canvas.create_line(px + ph/2, py + ph, px + pw - ph/2, py + ph, fill="#fefefe", width=1.2)
-    
-    # AI Text
     canvas.create_text(px + pw/2, py + ph/2, text="AI", fill="#fefefe", font=("Segoe UI", 7, "bold"))
 
-    # Place window initially off-screen natively so it doesn't flash
+    log("Graphics drawn. Moving off-screen natively...")
     root.geometry("80x80+-9999+-9999")
     
-    import socket
-    import threading
-
     def listen_udp(target_hwnd):
-        import ctypes
-        import traceback
-        
+        log("UDP Thread starting...")
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             sock.bind(("127.0.0.1", 19882))
+            log("Bound to 127.0.0.1:19882 successfully.")
         except Exception as e:
-            with open("overlay_crash.log", "w") as f:
-                f.write(traceback.format_exc())
+            log(f"CRITICAL: Failed to bind UDP socket! {e}\n{traceback.format_exc()}")
             return
+            
         SWP_NOSIZE = 0x0001
         SWP_NOACTIVATE = 0x0010
         HWND_TOPMOST = -1
+        
         while True:
             try:
                 data, _ = sock.recvfrom(64)
@@ -94,14 +79,16 @@ def create_overlay():
                 parts = data.decode("utf-8").split(",")
                 if len(parts) == 2:
                     x, y = int(float(parts[0])), int(float(parts[1]))
-                    # Offset by 16 because cx, cy = 16, 16
-                    ctypes.windll.user32.SetWindowPos(target_hwnd, HWND_TOPMOST, x - 16, y - 16, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE)
-            except Exception:
-                pass
+                    res = ctypes.windll.user32.SetWindowPos(target_hwnd, HWND_TOPMOST, x - 16, y - 16, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE)
+                    if res == 0:
+                        log(f"SetWindowPos FAILED for coordinates {x}, {y}. Error: {ctypes.GetLastError()}")
+            except Exception as e:
+                log(f"UDP Loop Error: {e}")
 
     t = threading.Thread(target=listen_udp, args=(hwnd,), daemon=True)
     t.start()
     
+    log("Entering Tkinter mainloop...")
     root.mainloop()
 
 if __name__ == "__main__":

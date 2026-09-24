@@ -8,11 +8,13 @@ Now uses a Custom AI Overlay Cursor instead of hijacking the user's physical mou
 import os, sys, math, time, random, ctypes, socket, subprocess
 
 # ─── Debug logging ────────────────────────────────────────────────────────────
-_DEBUG = os.environ.get("VOILA_CURSOR_DEBUG", "0") == "1"
-
 def _log(msg: str):
-    if _DEBUG:
-        print(f"[cursor_motion] {msg}", file=sys.stderr, flush=True)
+    try:
+        with open("cursor_debug.log", "a") as f:
+            import time
+            f.write(f"[{time.strftime('%H:%M:%S')}] [MOTION] {msg}\n")
+    except:
+        pass
 
 # ─── Overlay Launcher & Socket ────────────────────────────────────────────────
 _overlay_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -25,6 +27,17 @@ def _ensure_overlay():
             return  # still running
         else:
             _log("Overlay process died, restarting...")
+
+    try:
+        # aggressively kill any zombie overlays that might be hoarding the UDP port
+        out = subprocess.check_output("netstat -ano | findstr :19882", shell=True, text=True)
+        for line in out.splitlines():
+            if "UDP" in line and ":19882" in line:
+                pid = line.strip().split()[-1]
+                if pid.isdigit() and int(pid) > 0:
+                    subprocess.run(["taskkill", "/F", "/PID", pid], capture_output=True)
+    except Exception:
+        pass
 
     try:
         here = os.path.dirname(os.path.abspath(__file__))
@@ -44,8 +57,9 @@ def _set_cursor_pos(x: int, y: int):
     _ensure_overlay()
     try:
         _overlay_sock.sendto(f"{int(x)},{int(y)}".encode("utf-8"), ("127.0.0.1", 19882))
-    except Exception:
-        pass
+        _log(f"Sent UDP packet: {int(x)},{int(y)}")
+    except Exception as e:
+        _log(f"UDP Send Error: {e}")
     global _current_ai_x, _current_ai_y
     _current_ai_x, _current_ai_y = int(x), int(y)
 
