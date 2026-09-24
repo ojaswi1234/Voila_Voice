@@ -537,10 +537,10 @@ else:
         tel = cursor_motion.go(cx, cy, click="left")
         
         def _escape_sendkeys(text: str) -> str:
-            # uiautomation SendKeys special chars: +, ^, %, ~, {, }, (, )
+            # uiautomation uses { } for special keys. To type literal { or }, enclose them in {}.
             res = ""
             for c in text:
-                if c in "+^%~{}()":
+                if c in "{}()":
                     res += f"{{{c}}}"
                 else:
                     res += c
@@ -550,7 +550,7 @@ else:
             ctrl.SetValue(value)
         except Exception:
             try:
-                ctrl.SendKeys("^{a}", waitTime=0.05)
+                ctrl.SendKeys("{Ctrl}a{Delete}", waitTime=0.05)
                 ctrl.SendKeys(_escape_sendkeys(value), waitTime=0)
             except Exception as e:
                 return _err("set_value", "unsupported", str(e))
