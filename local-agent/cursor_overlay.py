@@ -10,18 +10,15 @@ def create_overlay():
     root.config(bg="white")
     
     # Optional: Make click-through
-    hwnd = 0
+    hwnd = root.winfo_id()
     import ctypes
     root.update_idletasks() # ensure window exists
     try:
-        hwnd = ctypes.windll.user32.GetParent(root.winfo_id())
-        if not hwnd:
-            hwnd = root.winfo_id()
         # WS_EX_LAYERED | WS_EX_TRANSPARENT
         style = ctypes.windll.user32.GetWindowLongW(hwnd, -20)
         ctypes.windll.user32.SetWindowLongW(hwnd, -20, style | 0x00080000 | 0x00000020)
     except Exception:
-        hwnd = root.winfo_id()
+        pass
 
     canvas = tk.Canvas(root, width=80, height=80, bg="white", highlightthickness=0)
     canvas.pack()
@@ -78,9 +75,15 @@ def create_overlay():
 
     def listen_udp(target_hwnd):
         import ctypes
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        sock.bind(("127.0.0.1", 19882))
+        import traceback
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.bind(("127.0.0.1", 19882))
+        except Exception as e:
+            with open("overlay_crash.log", "w") as f:
+                f.write(traceback.format_exc())
+            return
         SWP_NOSIZE = 0x0001
         SWP_NOACTIVATE = 0x0010
         HWND_TOPMOST = -1
@@ -94,7 +97,7 @@ def create_overlay():
                 if len(parts) == 2:
                     x, y = int(float(parts[0])), int(float(parts[1]))
                     # Offset by 16 because cx, cy = 16, 16
-                    ctypes.windll.user32.SetWindowPos(target_hwnd, HWND_TOPMOST, x - 16, y - 16, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE | 0x0040)
+                    ctypes.windll.user32.SetWindowPos(target_hwnd, HWND_TOPMOST, x - 16, y - 16, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE)
             except Exception:
                 pass
 
