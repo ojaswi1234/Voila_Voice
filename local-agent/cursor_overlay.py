@@ -64,11 +64,8 @@ def create_overlay():
     # AI Text
     canvas.create_text(px + pw/2, py + ph/2, text="AI", fill="#fefefe", font=("Segoe UI", 7, "bold"))
 
-    # Force Windows DWM to composite the window by placing it on-screen first
-    root.geometry("80x80+0+0")
-    # Make it fully invisible until the first movement coordinate is received
-    root.attributes("-alpha", 0.0)
-    root.update()
+    # Place window initially off-screen natively so it doesn't flash
+    root.geometry("80x80+-9999+-9999")
     
     import socket
     import threading
@@ -76,7 +73,6 @@ def create_overlay():
     def listen_udp(target_hwnd):
         import ctypes
         import traceback
-        _is_hidden = True
         
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -97,9 +93,6 @@ def create_overlay():
                     continue
                 parts = data.decode("utf-8").split(",")
                 if len(parts) == 2:
-                    if _is_hidden:
-                        _is_hidden = False
-                        root.after(0, lambda: root.attributes("-alpha", 1.0))
                     x, y = int(float(parts[0])), int(float(parts[1]))
                     # Offset by 16 because cx, cy = 16, 16
                     ctypes.windll.user32.SetWindowPos(target_hwnd, HWND_TOPMOST, x - 16, y - 16, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE)
