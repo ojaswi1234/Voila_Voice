@@ -16,17 +16,21 @@ def _log(msg: str):
 
 # ─── Overlay Launcher & Socket ────────────────────────────────────────────────
 _overlay_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-_overlay_launched = False
+_overlay_proc = None
 
 def _ensure_overlay():
-    global _overlay_launched
-    if _overlay_launched: return
-    _overlay_launched = True
+    global _overlay_proc
+    if _overlay_proc is not None:
+        if _overlay_proc.poll() is None:
+            return  # still running
+        else:
+            _log("Overlay process died, restarting...")
+
     try:
         here = os.path.dirname(os.path.abspath(__file__))
         overlay_path = os.path.join(here, "cursor_overlay.py")
         python_exe = sys.executable.replace("python.exe", "pythonw.exe")
-        subprocess.Popen([python_exe, overlay_path], creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP)
+        _overlay_proc = subprocess.Popen([python_exe, overlay_path], creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP)
     except Exception as e:
         _log(f"Failed to launch overlay: {e}")
 
@@ -37,6 +41,7 @@ _user32 = ctypes.windll.user32
 
 def _set_cursor_pos(x: int, y: int):
     """Move the AI overlay cursor without moving the physical mouse."""
+    _ensure_overlay()
     try:
         _overlay_sock.sendto(f"{int(x)},{int(y)}".encode("utf-8"), ("127.0.0.1", 19882))
     except Exception:

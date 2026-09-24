@@ -76,6 +76,7 @@ def create_overlay():
     def listen_udp(target_hwnd):
         import ctypes
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         sock.bind(("127.0.0.1", 19882))
         SWP_NOSIZE = 0x0001
         SWP_NOACTIVATE = 0x0010
