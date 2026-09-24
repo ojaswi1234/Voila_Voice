@@ -174,6 +174,25 @@ else:
             fg = auto.GetForegroundControl()
             return fg if fg else auto.GetRootControl()
 
+        # ── Special: Taskbar ─────────────────────────────────────────────────────
+        tb_hint = title_hint.strip().lower()
+        if tb_hint in ("taskbar", "tray", "system tray", "system_tray"):
+            try:
+                tb_ctrl = auto.WindowControl(ClassName="Shell_TrayWnd")
+                if tb_ctrl and tb_ctrl.Exists(0, 0):
+                    return tb_ctrl
+            except Exception:
+                pass
+            # Fallback Win32
+            tb_hwnd = _user32.FindWindowW("Shell_TrayWnd", None)
+            if tb_hwnd:
+                try:
+                    ctrl = auto.ControlFromHandle(tb_hwnd)
+                    if ctrl:
+                        return ctrl
+                except Exception:
+                    pass
+
         # ── Special: Start Menu ──────────────────────────────────────────────────
         if _is_start_menu_hint(title_hint):
             sm_hwnd = _find_start_menu_hwnd()
@@ -314,12 +333,18 @@ else:
         _ref_counter = 0
 
         is_start = _is_start_menu_hint(window or "")
+        is_taskbar = (window or "").strip().lower() in ("taskbar", "tray", "system tray", "system_tray")
         if is_start:
             # Make sure the Start Menu is the active foreground window before walking
             sm_hwnd = _find_start_menu_hwnd()
             if sm_hwnd:
                 _bring_window_to_foreground(sm_hwnd)
                 time.sleep(0.3)   # let it fully render / rise to top
+        elif is_taskbar:
+            tb_hwnd = _user32.FindWindowW("Shell_TrayWnd", None)
+            if tb_hwnd:
+                _bring_window_to_foreground(tb_hwnd)
+                time.sleep(0.2)
 
         wnd = _find_window(window)
         if not wnd:
