@@ -4246,6 +4246,24 @@ case "read_file":
 		if runtime.GOOS == "windows" {
 			dtCmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 		}
+		// Forward Graphify agent env vars so desktop_tools → cursor_motion
+		// routes to the correct per-agent overlay and bridge.
+		// These vars are only set inside Graphify node goroutines; in single-agent
+		// mode they don't exist, so the env inherits defaults (port 19882 / 19881).
+		dtEnv := os.Environ()
+		if agentPort := os.Getenv("VOILA_AGENT_PORT"); agentPort != "" {
+			dtEnv = append(dtEnv, "VOILA_AGENT_PORT="+agentPort)
+		}
+		if agentName := os.Getenv("VOILA_AGENT_NAME"); agentName != "" {
+			dtEnv = append(dtEnv, "VOILA_AGENT_NAME="+agentName)
+		}
+		if agentIdx := os.Getenv("VOILA_AGENT_INDEX"); agentIdx != "" {
+			dtEnv = append(dtEnv, "VOILA_AGENT_INDEX="+agentIdx)
+		}
+		if desktopPort := os.Getenv("VOILA_DESKTOP_PORT"); desktopPort != "" {
+			dtEnv = append(dtEnv, "VOILA_DESKTOP_PORT="+desktopPort)
+		}
+		dtCmd.Env = dtEnv
 		dtOut, dtErr := dtCmd.CombinedOutput()
 		dtRes := string(dtOut)
 		if dtErr != nil { dtRes += "\n(Error: " + dtErr.Error() + ")" }

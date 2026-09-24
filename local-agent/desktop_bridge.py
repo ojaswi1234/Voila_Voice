@@ -34,7 +34,31 @@ except Exception:
 import desktop_core as dt
 
 BRIDGE_PORT = int(os.environ.get("VOILA_DESKTOP_PORT", "19881"))
-_lock = threading.Lock()   # one UIA action at a time
+_lock = threading.Lock()   # one UIA action at a time (per-process)
+
+# ── Cross-process Global UIA Mutex (Graphify multi-agent anti-choking) ────────
+# When multiple bridge instances run simultaneously (one per Graphify agent),
+# they must take turns calling the Windows UIA COM layer to avoid COM deadlocks.
+# This Named Mutex is shared across ALL bridge processes on the same machine.
+# In single-agent mode (VOILA_AGENT_INDEX not set), this code path is skipped.
+_IS_GRAPHIFY_AGENT = os.environ.get("VOILA_AGENT_INDEX") is not None
+
+_global_uia_mutex = None
+if _IS_GRAPHIFY_AGENT:
+    try:
+        _global_uia_mutex = ctypes.windll.kernel32.CreateMutexW(None, False, "VoilaGlobalUIAMutex")
+    except Exception:
+        _global_uia_mutex = None  # graceful degradation
+
+def _acquire_global_uia():
+    """Acquire the cross-process UIA mutex. No-op in single-agent mode."""
+    if _global_uia_mutex:
+        ctypes.windll.kernel32.WaitForSingleObject(_global_uia_mutex, 15000)  # 15s timeout
+
+def _release_global_uia():
+    """Release the cross-process UIA mutex. No-op in single-agent mode."""
+    if _global_uia_mutex:
+        ctypes.windll.kernel32.ReleaseMutex(_global_uia_mutex)
 
 # ── Thread-local COM state ───────────────────────────────────────────────────
 _tls = threading.local()
@@ -84,8 +108,12 @@ def _handle(conn: socket.socket):
         args.button   = button
         args.monitor  = monitor
 
-        with _lock:
-            result = dt.dispatch(args)
+        _acquire_global_uia()
+        try:
+            with _lock:
+                result = dt.dispatch(args)
+        finally:
+            _release_global_uia()
 
         resp = json.dumps(result, ensure_ascii=False) + "\n"
         conn.sendall(resp.encode("utf-8"))

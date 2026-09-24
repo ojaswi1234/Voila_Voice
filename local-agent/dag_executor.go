@@ -20,8 +20,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 )
 
 type GraphNode struct {
@@ -41,6 +45,136 @@ var (
 	liveStateMu sync.Mutex
 	currentLiveState LiveState
 )
+
+// =====================================================================
+// Graphify Multi-Agent Identity & Anti-Choking
+// =====================================================================
+
+const maxVisualAgents = 5
+
+// graphifyDesktopMu ensures only ONE agent drives the desktop at a time.
+// This prevents Windows UIA COM from receiving simultaneous calls.
+var graphifyDesktopMu sync.Mutex
+
+// graphifyOllamaSem limits concurrent Ollama calls during a Graphify run to 2.
+var graphifyOllamaSem = make(chan struct{}, 2)
+
+// agentOverlaysMu guards the overlay process map
+var agentOverlaysMu sync.Mutex
+var agentOverlays = map[string]*exec.Cmd{}
+
+// agentNames is the pool of country-themed human names for agents
+var agentNames = []string{
+	"Arjun", "Priya", "Vikram", "Kavya", "Rohan",
+	"Yuki", "Kenji", "Aiko", "Hiroshi", "Sakura",
+	"Ivan", "Natasha", "Dmitri", "Sonya", "Alexei",
+	"Jake", "Emma", "Tyler", "Maya", "Logan",
+	"Jiwoo", "Minho", "Sora", "Hyun", "Yuna",
+	"Felix", "Mia", "Klaus", "Anna", "Max",
+	"Lucas", "Bianca", "Rafael", "Camila", "Pedro",
+}
+
+// agentColors is indexed by agentIndex % len(agentColors)
+// Each entry: [fill, outline, glow]
+var agentColors = [][3]string{
+	{"#6b21a8", "#c084fc", "#9333ea"}, // purple (default)
+	{"#1e3a5f", "#60a5fa", "#3b82f6"}, // blue
+	{"#14532d", "#86efac", "#22c55e"}, // green
+	{"#7c2d12", "#fdba74", "#f97316"}, // orange
+	{"#831843", "#f9a8d4", "#ec4899"}, // pink
+	{"#1e1b4b", "#a5b4fc", "#6366f1"}, // indigo
+	{"#422006", "#fde68a", "#f59e0b"}, // amber
+}
+
+// Staggered startup positions so cursors don't pile on top of each other
+var agentStartPositions = [][2]int{
+	{150, 150},   // top-left
+	{1730, 150},  // top-right (assumes ~1920 wide)
+	{940, 540},   // center
+	{150, 930},   // bottom-left
+	{1730, 930},  // bottom-right
+}
+
+func launchAgentOverlay(nodeID string, agentIndex int, name, colorFill, colorOutline, colorGlow string) {
+	if agentIndex >= maxVisualAgents {
+		return // headless mode
+	}
+	port := 19882 + agentIndex
+	portStr := strconv.Itoa(port)
+
+	exePath, _ := os.Executable()
+	dir := filepath.Dir(exePath)
+	overlayScript := filepath.Join(dir, "cursor_overlay.py")
+	if _, err := os.Stat(overlayScript); os.IsNotExist(err) {
+		// try cwd
+		cwd, _ := os.Getwd()
+		overlayScript = filepath.Join(cwd, "cursor_overlay.py")
+	}
+
+	// Kill any existing overlay on this port first
+	agentOverlaysMu.Lock()
+	if old, ok := agentOverlays[nodeID]; ok && old != nil {
+		old.Process.Kill()
+	}
+	agentOverlaysMu.Unlock()
+
+	cmd := exec.Command("pythonw", overlayScript,
+		"--port", portStr,
+		"--name", name,
+		"--color-fill", colorFill,
+		"--color-outline", colorOutline,
+		"--color-glow", colorGlow,
+	)
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	if err := cmd.Start(); err != nil {
+		fmt.Printf("STATUS: SYSTEM_MSG:[%s] overlay launch failed: %v\n", name, err)
+		os.Stdout.Sync()
+		return
+	}
+	agentOverlaysMu.Lock()
+	agentOverlays[nodeID] = cmd
+	agentOverlaysMu.Unlock()
+
+	// Also launch a dedicated desktop bridge for this agent
+	bridgePort := 19881
+	if agentIndex > 0 {
+		bridgePort = 19885 + agentIndex // 19886, 19887...
+	}
+	go launchAgentBridge(name, bridgePort, agentIndex, portStr)
+}
+
+func launchAgentBridge(name string, bridgePort, agentIndex int, overlayPortStr string) {
+	// Only launch secondary bridges (index > 0); index 0 reuses the existing bridge
+	if agentIndex == 0 {
+		return
+	}
+	exePath, _ := os.Executable()
+	dir := filepath.Dir(exePath)
+	bridgeScript := filepath.Join(dir, "desktop_bridge.py")
+	if _, err := os.Stat(bridgeScript); os.IsNotExist(err) {
+		cwd, _ := os.Getwd()
+		bridgeScript = filepath.Join(cwd, "desktop_bridge.py")
+	}
+	cmd := exec.Command("python", bridgeScript, "--port", strconv.Itoa(bridgePort))
+	cmd.Env = append(os.Environ(),
+		"VOILA_DESKTOP_PORT="+strconv.Itoa(bridgePort),
+		"VOILA_AGENT_PORT="+overlayPortStr,
+	)
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	cmd.Start()
+}
+
+func killAgentOverlay(nodeID string) {
+	agentOverlaysMu.Lock()
+	defer agentOverlaysMu.Unlock()
+	if cmd, ok := agentOverlays[nodeID]; ok && cmd != nil {
+		if cmd.Process != nil {
+			cmd.Process.Kill()
+		}
+		delete(agentOverlays, nodeID)
+	}
+}
+
 
 func initLiveState(nodes []GraphNode, edges [][]string) {
 	liveStateMu.Lock()
@@ -263,7 +397,7 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 			}
 		}
 
-		for _, nid := range ready {
+		for idx, nid := range ready {
 			running[nid] = true
 			runCount[nid]++
 			
@@ -271,14 +405,39 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 			myRevisions := append([]string(nil), revisions[nid]...)
 			myRunCount := runCount[nid]
 			
-			go func(nodeID string, history []string, myRevs []string, rCount int) {
+			// Assign a stable agent index based on node position in nodes array
+			agentIdx := 0
+			for i, n := range state.Nodes {
+				if n.ID == nid { agentIdx = i; break }
+			}
+			_ = idx
+			
+			// Pick identity
+			agentName := agentNames[agentIdx % len(agentNames)]
+			agentColor := agentColors[agentIdx % len(agentColors)]
+			
+			// Launch visual overlay (non-blocking)
+			launchAgentOverlay(nid, agentIdx, agentName, agentColor[0], agentColor[1], agentColor[2])
+			
+			agentPort := 19882 + agentIdx
+			agentBridgePort := 19881
+			if agentIdx > 0 { agentBridgePort = 19885 + agentIdx }
+			
+			go func(nodeID string, history []string, myRevs []string, rCount int, aName string, aIdx int, aPort int, aBridgePort int) {
 				n := nodeMap[nodeID]
 				
 				updateLiveNode(nodeID, "running")
-				appendLiveLog(fmt.Sprintf("[%s] Node execution started...", n.Role))
+				appendLiveLog(fmt.Sprintf("[%s/%s] Node execution started...", n.Role, aName))
 
 				fmt.Printf("STATUS: TEAM_NODE_START:%s\n", n.Role)
 				os.Stdout.Sync()
+				
+				// Set env vars so desktop_tools.py routes to this agent's cursor overlay and bridge
+				os.Setenv("VOILA_AGENT_PORT", strconv.Itoa(aPort))
+				os.Setenv("VOILA_DESKTOP_PORT", strconv.Itoa(aBridgePort))
+				os.Setenv("VOILA_AGENT_NAME", aName)
+				os.Setenv("VOILA_AGENT_INDEX", strconv.Itoa(aIdx))
+
 
 				promptBuilder := strings.Builder{}
 				promptBuilder.WriteString(fmt.Sprintf("You are %s. %s\n\n", n.Role, n.Prompt))
@@ -381,15 +540,15 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 						if len(om) > 0 { fallbackOllama = strings.Trim(om[0], "\"") }
 						fmt.Printf("STATUS: SYSTEM_MSG:Node %s Groq exhausted, falling back to Ollama %s...\n", nodeID, fallbackOllama)
 						os.Stdout.Sync()
-						ollamaSemaphore <- struct{}{}
+						graphifyOllamaSem <- struct{}{}
 						nodeOut, nodeErr = executeOllamaCommand(ctx, finalCommand, connData.OllamaBaseURL, fallbackOllama, connData.OllamaAPIKey, nil, taskID, "")
 						if nodeErr != nil && connData.OllamaSecondaryAPIKey != "" {
 							nodeOut, nodeErr = executeOllamaCommand(ctx, finalCommand, connData.OllamaBaseURL, fallbackOllama, connData.OllamaSecondaryAPIKey, nil, taskID, "")
 						}
-						<-ollamaSemaphore
+						<-graphifyOllamaSem
 					}
 				} else {
-					ollamaSemaphore <- struct{}{}
+					graphifyOllamaSem <- struct{}{}
 					nodeOut, nodeErr = executeOllamaCommand(ctx, finalCommand, connData.OllamaBaseURL, actualModel, connData.OllamaAPIKey, nil, taskID, "")
 					
 					// Edge Case: Model doesn't support tools
@@ -414,7 +573,7 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 						os.Stdout.Sync()
 						nodeOut, nodeErr = executeOllamaCommand(ctx, finalCommand, connData.OllamaBaseURL, actualModel, connData.OllamaSecondaryAPIKey, nil, taskID, "")
 					}
-					<-ollamaSemaphore
+					<-graphifyOllamaSem
 					
 					// If Ollama completely fails, fallback to Groq
 					if nodeErr != nil {
@@ -443,6 +602,7 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 					completed[nodeID] = true
 					running[nodeID] = false
 					cond.Broadcast()
+					killAgentOverlay(nodeID)
 					return
 				}
 
@@ -456,6 +616,7 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 				outputs[nodeID] = nodeOut
 				completed[nodeID] = true
 				updateLiveNode(nodeID, "completed")
+				killAgentOverlay(nodeID)
 				
 				isReject := false
 				// 🚀 SPEEDUP: Early-Exit Consensus
@@ -527,7 +688,7 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 				
 				running[nodeID] = false
 				cond.Broadcast()
-			}(nid, myTranscript, myRevisions, myRunCount)
+			}(nid, myTranscript, myRevisions, myRunCount, agentName, agentIdx, agentPort, agentBridgePort)
 		}
 		mu.Unlock()
 	}

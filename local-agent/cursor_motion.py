@@ -20,6 +20,10 @@ def _log(msg: str):
 _overlay_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 _overlay_proc = None
 
+# In Graphify multi-agent mode, VOILA_AGENT_PORT is set per-agent by dag_executor.go.
+# In single-agent mode (default), this is 19882 — no change to existing behavior.
+_OVERLAY_PORT: int = int(os.environ.get("VOILA_AGENT_PORT", "19882"))
+
 def _ensure_overlay():
     global _overlay_proc
     if _overlay_proc is not None:
@@ -30,9 +34,9 @@ def _ensure_overlay():
 
     try:
         # aggressively kill any zombie overlays that might be hoarding the UDP port
-        out = subprocess.check_output("netstat -ano | findstr :19882", shell=True, text=True)
+        out = subprocess.check_output("netstat -ano | findstr :" + str(_OVERLAY_PORT), shell=True, text=True)
         for line in out.splitlines():
-            if "UDP" in line and ":19882" in line:
+            if "UDP" in line and (":" + str(_OVERLAY_PORT)) in line:
                 pid = line.strip().split()[-1]
                 if pid.isdigit() and int(pid) > 0:
                     subprocess.run(["taskkill", "/F", "/PID", pid], capture_output=True)
@@ -56,7 +60,7 @@ def _set_cursor_pos(x: int, y: int):
     """Move the AI overlay cursor without moving the physical mouse."""
     _ensure_overlay()
     try:
-        _overlay_sock.sendto(f"{int(x)},{int(y)}".encode("utf-8"), ("127.0.0.1", 19882))
+        _overlay_sock.sendto(f"{int(x)},{int(y)}".encode("utf-8"), ("127.0.0.1", _OVERLAY_PORT))
         _log(f"Sent UDP packet: {int(x)},{int(y)}")
     except Exception as e:
         _log(f"UDP Send Error: {e}")
@@ -175,7 +179,7 @@ def _do_click(kind: str, cx: int, cy: int):
         
     _user32.SetCursorPos(int(orig_x), int(orig_y))
     # Pulse the overlay to show click
-    try: _overlay_sock.sendto(b"HIDE", ("127.0.0.1", 19882))
+    try: _overlay_sock.sendto(b"HIDE", ("127.0.0.1", _OVERLAY_PORT))
     except: pass
     time.sleep(0.05)
     _set_cursor_pos(cx, cy)
