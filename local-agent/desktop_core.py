@@ -14,6 +14,9 @@ else:
     import uiautomation as auto
     import cursor_motion   # THE ONLY motion module
 
+    # Reduce default 10s timeout to 1s so missing elements don't hang the bridge
+    auto.SetGlobalSearchTimeout(1.0)
+
     # ─── Win32 helpers for window management ──────────────────────────────────
     _user32 = ctypes.windll.user32
 
@@ -411,16 +414,25 @@ else:
             return _err("invoke", err, f"ref={ref}")
         meta = _ref_store[ref]["meta"]
         cx, cy = _center(meta["bounds"])
-        tel = cursor_motion.go(cx, cy)
+        
         try:
-            ctrl.Click(simulateMove=False)
+            # Prefer native UIA Invoke Pattern (doesn't move mouse at all)
+            invoke_pat = ctrl.GetInvokePattern()
+            if invoke_pat:
+                tel = cursor_motion.go(cx, cy)
+                invoke_pat.Invoke()
+            else:
+                raise NotImplementedError()
         except Exception:
-            cursor_motion.go(cx, cy, click="left")
+            # Fallback to our own safe click that restores physical cursor
+            tel = cursor_motion.go(cx, cy, click="left")
+            
         # Re-assert focus after invoke to prevent focus loss on certain dialogs
         try:
             ctrl.SetFocus()
         except Exception:
             pass
+            
         r = _ok("invoke", wnd)
         r["cursor"] = tel
         r["cursor"]["moved"] = True
@@ -466,13 +478,25 @@ else:
             delta = None
 
         _user32_local = ctypes.windll.user32
-        if delta is not None:
-            # Positive = scroll up (forward), negative = scroll down
-            _user32_local.mouse_event(0x0800, 0, 0, ctypes.c_int(delta * WHEEL_DELTA), 0)
-        elif isinstance(value, str) and value.lower() in ("down", ""):
-            _user32_local.mouse_event(0x0800, 0, 0, ctypes.c_int(-3 * WHEEL_DELTA), 0)
-        elif isinstance(value, str) and value.lower() == "up":
-            _user32_local.mouse_event(0x0800, 0, 0, ctypes.c_int(3 * WHEEL_DELTA), 0)
+        
+        # We MUST teleport the physical cursor to the target element to scroll it,
+        # otherwise Windows scrolls whatever is under the user's physical mouse!
+        pt = ctypes.wintypes.POINT()
+        _user32_local.GetCursorPos(ctypes.byref(pt))
+        orig_x, orig_y = pt.x, pt.y
+        _user32_local.SetCursorPos(int(cx), int(cy))
+        time.sleep(0.05)
+
+        try:
+            if delta is not None:
+                # Positive = scroll up (forward), negative = scroll down
+                _user32_local.mouse_event(0x0800, 0, 0, ctypes.c_int(delta * WHEEL_DELTA), 0)
+            elif isinstance(value, str) and value.lower() in ("down", ""):
+                _user32_local.mouse_event(0x0800, 0, 0, ctypes.c_int(-3 * WHEEL_DELTA), 0)
+            elif isinstance(value, str) and value.lower() == "up":
+                _user32_local.mouse_event(0x0800, 0, 0, ctypes.c_int(3 * WHEEL_DELTA), 0)
+        finally:
+            _user32_local.SetCursorPos(int(orig_x), int(orig_y))
 
         r = _ok("scroll", wnd)
         r["cursor"] = tel
@@ -486,12 +510,23 @@ else:
         meta = _ref_store[ref]["meta"]
         cx, cy = _center(meta["bounds"])
         tel = cursor_motion.go(cx, cy, click="left")
+        
+        def _escape_sendkeys(text: str) -> str:
+            # uiautomation SendKeys special chars: +, ^, %, ~, {, }, (, )
+            res = ""
+            for c in text:
+                if c in "+^%~{}()":
+                    res += f"{{{c}}}"
+                else:
+                    res += c
+            return res
+
         try:
             ctrl.SetValue(value)
         except Exception:
             try:
-                ctrl.SendKeys("^a", waitTime=0.05)
-                ctrl.SendKeys(value, waitTime=0)
+                ctrl.SendKeys("^{a}", waitTime=0.05)
+                ctrl.SendKeys(_escape_sendkeys(value), waitTime=0)
             except Exception as e:
                 return _err("set_value", "unsupported", str(e))
         r = _ok("set_value", wnd)

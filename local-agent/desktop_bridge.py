@@ -21,6 +21,16 @@ if _HERE not in sys.path:
 # Worker threads call CoInitializeEx individually but we do the main thread here.
 ctypes.windll.ole32.CoInitializeEx(None, 0x2)  # COINIT_APARTMENTTHREADED
 
+# ── Force DPI Awareness ──
+# Ensures UIA coordinates match physical screen coordinates on scaled displays (>100% DPI).
+try:
+    ctypes.windll.shcore.SetProcessDpiAwareness(2) # PROCESS_PER_MONITOR_DPI_AWARE
+except Exception:
+    try:
+        ctypes.windll.user32.SetProcessDPIAware()
+    except Exception:
+        pass
+
 import desktop_core as dt
 
 BRIDGE_PORT = int(os.environ.get("VOILA_DESKTOP_PORT", "19881"))
