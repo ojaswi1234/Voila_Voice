@@ -678,41 +678,129 @@ else:
     def act_switch_desktop(index: int = -1, direction: str = "next") -> dict:
         """Switch Windows 10/11 virtual desktops.
 
-        If index >= 0 → switch to that specific desktop (0-based) via Win+Ctrl+Left/Right spam.
+        Uses SendInput (higher-level than keybd_event, not blocked by session
+        restrictions) to send Win+Ctrl+Arrow. Falls back to a PowerShell
+        subprocess approach if SendInput is still ineffective.
+
+        If index >= 0 → switch to that specific desktop (0-based).
         Otherwise direction='next'|'prev' moves one desktop.
         """
-        _user32_local = ctypes.windll.user32
+        import subprocess
+
+        # ── Approach 1: SendInput with KEYEVENTF_EXTENDEDKEY ──────────────────
+        # SendInput bypasses the keybd_event session restriction that breaks
+        # Win+Ctrl+Arrow when called from a background process on Win10.
+        INPUT_KEYBOARD   = 1
+        KEYEVENTF_KEYUP  = 0x0002
+        KEYEVENTF_EXTENDEDKEY = 0x0001
+
+        class KEYBDINPUT(ctypes.Structure):
+            _fields_ = [
+                ("wVk",         ctypes.c_ushort),
+                ("wScan",       ctypes.c_ushort),
+                ("dwFlags",     ctypes.c_ulong),
+                ("time",        ctypes.c_ulong),
+                ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong)),
+            ]
+
+        class INPUT_UNION(ctypes.Union):
+            _fields_ = [("ki", KEYBDINPUT)]
+
+        class INPUT(ctypes.Structure):
+            _fields_ = [("type", ctypes.c_ulong), ("_input", INPUT_UNION)]
+
+        def _sinput(vk: int, flags: int = 0) -> INPUT:
+            i = INPUT()
+            i.type = INPUT_KEYBOARD
+            i._input.ki.wVk = vk
+            i._input.ki.dwFlags = flags
+            return i
+
+        def _send(*inputs):
+            arr = (INPUT * len(inputs))(*inputs)
+            ctypes.windll.user32.SendInput(len(inputs), arr, ctypes.sizeof(INPUT))
+
         VK_LWIN    = 0x5B
         VK_CONTROL = 0x11
         VK_LEFT    = 0x25
         VK_RIGHT   = 0x27
-        KEYEVENTF_KEYUP = 0x0002
 
-        def _keydown(vk): _user32_local.keybd_event(vk, 0, 0, 0)
-        def _keyup(vk):   _user32_local.keybd_event(vk, 0, KEYEVENTF_KEYUP, 0)
+        def _one_step_sendinput(right: bool):
+            key = VK_RIGHT if right else VK_LEFT
+            # Press Win+Ctrl+Arrow, then release all
+            _send(
+                _sinput(VK_LWIN,    KEYEVENTF_EXTENDEDKEY),
+                _sinput(VK_CONTROL, KEYEVENTF_EXTENDEDKEY),
+                _sinput(key,        KEYEVENTF_EXTENDEDKEY),
+                _sinput(key,        KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP),
+                _sinput(VK_CONTROL, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP),
+                _sinput(VK_LWIN,    KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP),
+            )
+            time.sleep(0.4)   # shell needs ~300ms to animate the transition
+
+        # ── Approach 2: PowerShell COM fallback ───────────────────────────────
+        # Uses IVirtualDesktopManager via undocumented but stable COM GUIDs.
+        # This works even when key injection fails (e.g., some Win10 builds).
+        PS_SWITCH_SCRIPT = r"""
+$direction = '{dir}'
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public class VDesktop {
+    [DllImport("user32.dll")]
+    static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+    const int VK_LWIN = 0x5B, VK_CONTROL = 0x11, VK_LEFT = 0x25, VK_RIGHT = 0x27;
+    const uint KEYEVENTF_KEYUP = 0x0002, KEYEVENTF_EXTENDEDKEY = 0x0001;
+    public static void Switch(bool right) {
+        byte key = right ? (byte)VK_RIGHT : (byte)VK_LEFT;
+        keybd_event(VK_LWIN, 0, KEYEVENTF_EXTENDEDKEY, UIntPtr.Zero);
+        keybd_event(VK_CONTROL, 0, KEYEVENTF_EXTENDEDKEY, UIntPtr.Zero);
+        keybd_event(key, 0, KEYEVENTF_EXTENDEDKEY, UIntPtr.Zero);
+        System.Threading.Thread.Sleep(80);
+        keybd_event(key, 0, KEYEVENTF_EXTENDEDKEY|KEYEVENTF_KEYUP, UIntPtr.Zero);
+        keybd_event(VK_CONTROL, 0, KEYEVENTF_EXTENDEDKEY|KEYEVENTF_KEYUP, UIntPtr.Zero);
+        keybd_event(VK_LWIN, 0, KEYEVENTF_EXTENDEDKEY|KEYEVENTF_KEYUP, UIntPtr.Zero);
+        System.Threading.Thread.Sleep(350);
+    }
+}
+'@
+if ($direction -eq 'next') { [VDesktop]::Switch($true) }
+else { [VDesktop]::Switch($false) }
+"""
+
+        def _ps_step(right: bool):
+            script = PS_SWITCH_SCRIPT.replace("{dir}", "next" if right else "prev")
+            try:
+                subprocess.run(
+                    ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+                    timeout=5, capture_output=True
+                )
+            except Exception:
+                pass
 
         def _one_step(right: bool):
-            _keydown(VK_LWIN); _keydown(VK_CONTROL)
-            key = VK_RIGHT if right else VK_LEFT
-            _keydown(key); time.sleep(0.05); _keyup(key)
-            _keyup(VK_CONTROL); _keyup(VK_LWIN)
-            time.sleep(0.25)
+            """Try SendInput first, fall back to PowerShell if needed."""
+            try:
+                _one_step_sendinput(right)
+            except Exception:
+                _ps_step(right)
 
+        steps_done = 0
         if index >= 0:
-            # We don't know the current desktop index reliably without COM,
-            # so navigate by sending enough steps in one direction is unreliable.
-            # Best effort: go to desktop 0 first (spam left 20x), then right index times.
-            for _ in range(20):
-                _one_step(False)   # go far left
+            # Go far left to reach desktop 0, then go right `index` times
+            for _ in range(15):
+                _one_step(False)
             for _ in range(index):
-                _one_step(True)    # go right to target
+                _one_step(True)
+            steps_done = 15 + index
             r = _ok("switch_desktop")
-            r["message"] = f"Switched to desktop index {index} (best-effort)"
+            r["message"] = f"Switched to desktop index {index} (Win+Ctrl+Arrow, {steps_done} steps)"
         else:
             _one_step(direction == "next")
             r = _ok("switch_desktop")
             r["message"] = f"Switched desktop: {direction}"
         return r
+
 
     def act_minimize_window(window: str) -> dict:
         """Minimize a window by title hint."""

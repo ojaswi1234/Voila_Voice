@@ -4249,7 +4249,22 @@ case "read_file":
 		dtOut, dtErr := dtCmd.CombinedOutput()
 		dtRes := string(dtOut)
 		if dtErr != nil { dtRes += "\n(Error: " + dtErr.Error() + ")" }
-		if len(dtRes) > 12000 { dtRes = dtRes[:12000] + "\n... (truncated)" }
+		// Smart truncation: if the result is a snapshot JSON with lots of elements,
+		// trim the elements array to prevent context-length 500 errors from Ollama.
+		if len(dtRes) > 6000 {
+			var parsed map[string]interface{}
+			if jerr := json.Unmarshal([]byte(strings.TrimSpace(dtRes)), &parsed); jerr == nil {
+				if elems, ok := parsed["elements"].([]interface{}); ok && len(elems) > 60 {
+					parsed["elements"] = elems[:60]
+					parsed["count"] = 60
+					parsed["_truncated"] = true
+					if compact, cerr := json.Marshal(parsed); cerr == nil {
+						dtRes = string(compact)
+					}
+				}
+			}
+		}
+		if len(dtRes) > 8000 { dtRes = dtRes[:8000] + "\n... (truncated)" }
 		return dtRes
 	case "list_schedules":
 		schedules, err := loadSchedules()
