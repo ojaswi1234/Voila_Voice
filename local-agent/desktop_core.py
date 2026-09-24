@@ -112,23 +112,118 @@ else:
         except Exception:
             pass
 
-    # ─── Window helpers ────────────────────────────────────────────────────────
+    # ─── Start Menu / shell special-window detector ─────────────────────────────
+    # Win10 Start Menu class names (vary by build)
+    _START_MENU_CLASSES_WIN10 = (
+        "DV2ControlHost",        # Pre-Win10-1809
+        "Windows.UI.Core.CoreWindow",  # UWP-hosted start (1809+)
+        "ImmersiveLauncher",     # Edge-case
+    )
+    # Win11 Start Menu is Windows.UI.Core.CoreWindow owned by StartMenuExperienceHost
+    # The UIA ClassName exposed is the same, but name/process differ.
+
+    def _find_start_menu_hwnd() -> int:
+        """Return the HWND of the Start Menu if it is currently visible, else 0."""
+        u32 = _user32
+        # Win10: DV2ControlHost is the classic Start Panel
+        hwnd = u32.FindWindowW("DV2ControlHost", None)
+        if hwnd and u32.IsWindowVisible(hwnd):
+            return hwnd
+        # Win10/11: Look for a visible CoreWindow whose title is "Start" (case-insensitive)
+        buf = ctypes.create_unicode_buffer(256)
+        def _enum_cb(hwnd, _):
+            cls_buf = ctypes.create_unicode_buffer(128)
+            u32.GetClassNameW(hwnd, cls_buf, 128)
+            cls = cls_buf.value
+            if "CoreWindow" in cls or "ImmersiveLauncher" in cls:
+                u32.GetWindowTextW(hwnd, buf, 256)
+                if "start" in buf.value.lower() and u32.IsWindowVisible(hwnd):
+                    _start_hwnds.append(hwnd)
+            return True
+        _start_hwnds: list[int] = []
+        EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_size_t, ctypes.c_size_t)
+        u32.EnumWindows(EnumWindowsProc(_enum_cb), 0)
+        if _start_hwnds:
+            return _start_hwnds[0]
+        # Win10 1903+ Start menu is inside ApplicationFrameWindow — check foreground
+        fg_hwnd = u32.GetForegroundWindow()
+        if fg_hwnd:
+            cls_buf2 = ctypes.create_unicode_buffer(128)
+            u32.GetClassNameW(fg_hwnd, cls_buf2, 128)
+            if any(c in cls_buf2.value for c in ("DV2", "CoreWindow", "ImmersiveLauncher")):
+                return fg_hwnd
+        return 0
+
+    _START_HINTS = frozenset({"start", "start menu", "startmenu", "start_menu"})
+
+    def _is_start_menu_hint(hint: str) -> bool:
+        return hint.strip().lower() in _START_HINTS
+
     def _find_window(title_hint):
+        """Find a top-level window.
+
+        Special cases:
+        - No hint → foreground window (not desktop root, which has no children)
+        - "start" / "start menu" → OS-aware Start Menu detection via Win32 + UIA
+        - Regular hint → walk UIA siblings (with foreground fallback if title missing)
+        """
         if not title_hint:
             fg = auto.GetForegroundControl()
             return fg if fg else auto.GetRootControl()
+
+        # ── Special: Start Menu ──────────────────────────────────────────────────
+        if _is_start_menu_hint(title_hint):
+            sm_hwnd = _find_start_menu_hwnd()
+            if sm_hwnd:
+                try:
+                    ctrl = auto.ControlFromHandle(sm_hwnd)
+                    if ctrl:
+                        return ctrl
+                except Exception:
+                    pass
+            # Fallback: foreground is probably the Start Menu when it's open
+            fg = auto.GetForegroundControl()
+            if fg and "start" in (fg.Name or "").lower():
+                return fg
+            # Last resort: walk root for any window with "Start" in name
+            wnd = auto.GetRootControl().GetFirstChildControl()
+            while wnd:
+                try:
+                    if "start" in (wnd.Name or "").lower():
+                        return wnd
+                except Exception:
+                    pass
+                try:
+                    wnd = wnd.GetNextSiblingControl()
+                except Exception:
+                    break
+            # Nothing found but Start Menu is open — return foreground anyway
+            return auto.GetForegroundControl() or auto.GetRootControl()
+
+        # ── General: walk root children ──────────────────────────────────────────
         wnd = auto.GetRootControl().GetFirstChildControl()
+        best = None
         while wnd:
             try:
-                if title_hint.lower() in (wnd.Name or "").lower():
-                    return wnd
+                wname = (wnd.Name or "").lower()
+                if title_hint.lower() in wname:
+                    # Prefer exact matches; otherwise keep first match
+                    if best is None:
+                        best = wnd
+                    if wname == title_hint.lower():
+                        return wnd   # exact match → done
             except Exception:
                 pass
             try:
                 wnd = wnd.GetNextSiblingControl()
             except Exception:
                 break
-        return auto.GetRootControl()
+        if best:
+            return best
+        # Fallback: return foreground (better than returning dead desktop root)
+        fg = auto.GetForegroundControl()
+        return fg if fg else auto.GetRootControl()
+
 
     def _window_info(wnd) -> dict:
         try:
@@ -214,6 +309,15 @@ else:
         global _ref_store, _ref_counter
         _ref_store.clear()
         _ref_counter = 0
+
+        is_start = _is_start_menu_hint(window or "")
+        if is_start:
+            # Make sure the Start Menu is the active foreground window before walking
+            sm_hwnd = _find_start_menu_hwnd()
+            if sm_hwnd:
+                _bring_window_to_foreground(sm_hwnd)
+                time.sleep(0.3)   # let it fully render / rise to top
+
         wnd = _find_window(window)
         if not wnd:
             return _err("snapshot", "not_found", f"Window not found: {window!r}")
@@ -223,10 +327,25 @@ else:
             _walk(wnd, 0, depth, nodes, count)
         except Exception as e:
             return _err("snapshot", "tree_unavailable", str(e))
+
+        # If we got no elements (e.g. Start Menu tree invisible from wrong root),
+        # try once more from the foreground control
+        if len(nodes) == 0 and is_start:
+            fg = auto.GetForegroundControl()
+            if fg:
+                _ref_store.clear()
+                _ref_counter = 0
+                try:
+                    _walk(fg, 0, depth, nodes, count)
+                    wnd = fg
+                except Exception:
+                    pass
+
         r = _ok("snapshot", wnd)
         r["elements"] = nodes
         r["count"] = len(nodes)
         return r
+
 
     def act_find(window, depth: int, selector: str, value: str) -> dict:
         parts = _parse_selector(selector) if selector else {}
@@ -619,6 +738,52 @@ else:
         r["message"] = f"Maximized: {wnd.Name!r}"
         return r
 
+    def act_open_start_menu(depth: int = 6) -> dict:
+        """Open the Windows Start Menu and return a snapshot of its contents.
+
+        Works on Win10 (Build 19041+) and Win11.
+        Uses VK_LWIN to toggle the Start Menu open, waits for it to become
+        the foreground window, then snapshots its UIA tree.
+        """
+        VK_LWIN = 0x5B
+        KEYEVENTF_KEYUP = 0x0002
+        u32 = _user32
+
+        # Check if Start Menu is already open (has an HWND)
+        already_open = bool(_find_start_menu_hwnd())
+        if not already_open:
+            u32.keybd_event(VK_LWIN, 0, 0, 0)
+            time.sleep(0.05)
+            u32.keybd_event(VK_LWIN, 0, KEYEVENTF_KEYUP, 0)
+
+        # Wait up to 2.5s for the Start Menu HWND to appear and become foreground
+        sm_hwnd = 0
+        for _ in range(25):
+            time.sleep(0.1)
+            sm_hwnd = _find_start_menu_hwnd()
+            if sm_hwnd:
+                break
+
+        if not sm_hwnd:
+            # Last attempt: maybe the foreground IS the start menu
+            fg = auto.GetForegroundControl()
+            if fg and "start" in (fg.Name or "").lower():
+                sm_hwnd = _hwnd_from_ctrl(fg)
+
+        if not sm_hwnd:
+            return _err("open_start_menu", "not_found",
+                        "Start Menu did not open — HWND not found after 2.5s")
+
+        # Ensure it's truly foreground (z-order fix)
+        _bring_window_to_foreground(sm_hwnd)
+        time.sleep(0.3)
+
+        # Snapshot the Start Menu
+        snap = act_snapshot("start", depth)
+        snap["action"] = "open_start_menu"
+        snap["message"] = f"Start Menu opened and snapshotted — hwnd={sm_hwnd}"
+        return snap
+
     # ─── Router ────────────────────────────────────────────────────────────────
     def dispatch(args) -> dict:
         action   = args.action
@@ -635,6 +800,9 @@ else:
         if action == "foreground":     return act_foreground()
         if action == "snapshot":       return act_snapshot(window, depth)
         if action == "find":           return act_find(window, depth, selector, value)
+
+        if action == "open_start_menu" or action == "snapshot_start_menu":
+            return act_open_start_menu(depth)
 
         if action == "move_cursor":
             if not ref: return _err(action, "invalid_args", "ref required")
@@ -708,3 +876,4 @@ else:
                 return act_switch_desktop(direction=value or "next")
 
         return _err(action, "unsupported", f"Unknown action: {action!r}")
+

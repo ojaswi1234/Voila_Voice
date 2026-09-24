@@ -2948,7 +2948,7 @@ var availableTools = []toolDef{
 			Parameters: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
-					"action":     map[string]interface{}{"type": "string", "description": "list_windows|foreground|snapshot|find|move_cursor|invoke|click_ref|right_click|scroll|set_value|type_keys|toggle|focus|select|drag_ref|focus_window|close_window|minimize_window|maximize_window|switch_tab|switch_window|switch_desktop"},
+					"action":     map[string]interface{}{"type": "string", "description": "list_windows|foreground|snapshot|find|move_cursor|invoke|click_ref|right_click|scroll|set_value|type_keys|toggle|focus|select|drag_ref|focus_window|close_window|minimize_window|maximize_window|switch_tab|switch_window|switch_desktop|open_start_menu (opens Start Menu AND returns snapshot — use this instead of manually pressing Win key + snapshot)"},
 					"ref":        map[string]interface{}{"type": "string", "description": "Element ref from last snapshot/find (e.g. e1)"},
 					"selector":   map[string]interface{}{"type": "string", "description": "Filter: role=Button;name=Save OR name=Open OR automation_id=..."},
 					"value":      map[string]interface{}{"type": "string", "description": "Text to type / keys to send / drag destination x,y / scroll direction (up|down) / switch_tab direction (next|prev|close|new) / switch_window direction (next|prev) / switch_desktop direction (next|prev) or index number"},
