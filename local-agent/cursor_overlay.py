@@ -22,13 +22,30 @@ def create_overlay():
     root.overrideredirect(True)
     root.config(bg="white")
     
-    hwnd = root.winfo_id()
-    log(f"Window initialized. HWND: {hwnd}")
-    
+    # Get true top-level HWND safely for 64-bit Windows
     root.update_idletasks()
+    hwnd = int(root.frame(), 16)
+    
+    from ctypes import wintypes
+    user32 = ctypes.windll.user32
+    
+    # Define 64-bit safe signatures
+    if sys.maxsize > 2**32:
+        user32.GetWindowLongPtrW.restype = ctypes.c_void_p
+        user32.GetWindowLongPtrW.argtypes = [wintypes.HWND, ctypes.c_int]
+        user32.SetWindowLongPtrW.restype = ctypes.c_void_p
+        user32.SetWindowLongPtrW.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_void_p]
+        GetWindowLong = user32.GetWindowLongPtrW
+        SetWindowLong = user32.SetWindowLongPtrW
+    else:
+        GetWindowLong = user32.GetWindowLongW
+        SetWindowLong = user32.SetWindowLongW
+
+    log(f"Window initialized. True HWND: {hwnd}")
+    
     try:
-        style = ctypes.windll.user32.GetWindowLongW(hwnd, -20)
-        ctypes.windll.user32.SetWindowLongW(hwnd, -20, style | 0x00080000 | 0x00000020)
+        style = GetWindowLong(hwnd, -20)
+        SetWindowLong(hwnd, -20, style | 0x00080000 | 0x00000020)
         log("Applied click-through styles successfully.")
     except Exception as e:
         log(f"Failed to apply click-through styles: {e}")
@@ -66,6 +83,10 @@ def create_overlay():
             log(f"CRITICAL: Failed to bind UDP socket! {e}\n{traceback.format_exc()}")
             return
             
+        from ctypes import wintypes
+        user32 = ctypes.windll.user32
+        user32.SetWindowPos.argtypes = [wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, wintypes.UINT]
+            
         SWP_NOSIZE = 0x0001
         SWP_NOACTIVATE = 0x0010
         HWND_TOPMOST = -1
@@ -74,12 +95,12 @@ def create_overlay():
             try:
                 data, _ = sock.recvfrom(64)
                 if data == b"HIDE":
-                    ctypes.windll.user32.SetWindowPos(target_hwnd, HWND_TOPMOST, -9999, -9999, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE)
+                    user32.SetWindowPos(target_hwnd, HWND_TOPMOST, -9999, -9999, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE)
                     continue
                 parts = data.decode("utf-8").split(",")
                 if len(parts) == 2:
                     x, y = int(float(parts[0])), int(float(parts[1]))
-                    res = ctypes.windll.user32.SetWindowPos(target_hwnd, HWND_TOPMOST, x - 16, y - 16, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE)
+                    res = user32.SetWindowPos(target_hwnd, HWND_TOPMOST, x - 16, y - 16, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE)
                     if res == 0:
                         log(f"SetWindowPos FAILED for coordinates {x}, {y}. Error: {ctypes.GetLastError()}")
             except Exception as e:
