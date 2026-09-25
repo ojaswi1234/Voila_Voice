@@ -60,8 +60,8 @@ else:
         try:
             _ = ctrl.GetRuntimeId()
             return ctrl, None
-        except Exception:
-            return None, "ref_stale"
+        except Exception as e:
+            return None, f"ref_stale_exc_{e}"
 
     # ─── Tree walker ───────────────────────────────────────────────────────────
     MAX_NODES = 300
@@ -73,23 +73,35 @@ else:
                       "w": rect.width(), "h": rect.height()}
         except Exception:
             bounds = {"x": 0, "y": 0, "w": 0, "h": 0}
+            
+        role = ctrl.ControlTypeName
+        name = ctrl.Name or ""
+        
+        # Fast exit for invisible/zero-size non-containers
+        is_container = role in ("PaneControl", "GroupControl", "WindowControl", "CustomControl")
+        if bounds["w"] <= 0 and bounds["h"] <= 0 and not is_container and not name:
+            return {
+                "role": role, "name": name, "automation_id": "",
+                "value": "", "states": [], "bounds": bounds,
+            }
+
         states = []
         try:
-            if not ctrl.IsEnabled:
-                states.append("disabled")
-            if ctrl.HasKeyboardFocus:
-                states.append("focused")
-        except Exception:
-            pass
+            if not ctrl.IsEnabled: states.append("disabled")
+            if ctrl.HasKeyboardFocus: states.append("focused")
+        except Exception: pass
+        
         value = ""
-        try:
-            if hasattr(ctrl, "Value"):
-                value = ctrl.Value or ""
-        except Exception:
-            pass
+        # Only query Value if it's a type that normally has one, to save COM calls
+        if role in ("EditControl", "TextControl", "DocumentControl", "ComboBoxControl", "SpinnerControl"):
+            try:
+                if hasattr(ctrl, "Value"):
+                    value = ctrl.Value or ""
+            except Exception: pass
+            
         return {
-            "role": ctrl.ControlTypeName,
-            "name": ctrl.Name or "",
+            "role": role,
+            "name": name,
             "automation_id": ctrl.AutomationId or "",
             "value": value,
             "states": states,
@@ -99,14 +111,30 @@ else:
     def _walk(ctrl, depth: int, max_depth: int, nodes: list, count: list):
         if count[0] >= MAX_NODES or depth > max_depth or not ctrl:
             return
+            
+        try:
+            role = ctrl.ControlTypeName
+        except:
+            return
+            
         meta = _ctrl_meta(ctrl)
         b = meta["bounds"]
-        if b["w"] > 0 or b["h"] > 0 or meta["name"]:
+        is_container = meta["role"] in ("PaneControl", "GroupControl", "WindowControl", "CustomControl", "ScrollBarControl", "TitleBarControl", "MenuBarControl")
+        has_content = bool(meta["name"] or meta["value"] or meta["automation_id"])
+        
+        # Heuristic: if it's a zero-size container with no content, skip it
+        if b["w"] <= 0 and b["h"] <= 0 and is_container and not has_content:
+            is_useful = False
+        else:
+            is_useful = not is_container or has_content
+        
+        if (b["w"] > 0 or b["h"] > 0 or meta["name"]) and is_useful:
             ref = _new_ref(ctrl, meta)
             node = {"ref": ref}
             node.update(meta)
             nodes.append(node)
             count[0] += 1
+            
         try:
             child = ctrl.GetFirstChildControl()
             while child and count[0] < MAX_NODES:
@@ -128,35 +156,29 @@ else:
     def _find_start_menu_hwnd() -> int:
         """Return the HWND of the Start Menu if it is currently visible, else 0."""
         u32 = _user32
-        # Win10: DV2ControlHost is the classic Start Panel
         hwnd = u32.FindWindowW("DV2ControlHost", None)
         if hwnd and u32.IsWindowVisible(hwnd):
             return hwnd
-        # Win10/11: Look for a visible CoreWindow whose title is "Start" (case-insensitive)
+            
         buf = ctypes.create_unicode_buffer(256)
-        def _enum_cb(hwnd, _):
-            cls_buf = ctypes.create_unicode_buffer(128)
-            u32.GetClassNameW(hwnd, cls_buf, 128)
-            cls = cls_buf.value
-            if "CoreWindow" in cls or "ImmersiveLauncher" in cls:
-                u32.GetWindowTextW(hwnd, buf, 256)
-                if "start" in buf.value.lower() and u32.IsWindowVisible(hwnd):
-                    _start_hwnds.append(hwnd)
-            return True
         _start_hwnds: list[int] = []
+        def _enum_cb(h, _):
+            if u32.IsWindowVisible(h):
+                u32.GetWindowTextW(h, buf, 256)
+                if buf.value.lower() == "start":
+                    _start_hwnds.append(h)
+            return True
         EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_size_t, ctypes.c_size_t)
         u32.EnumWindows(EnumWindowsProc(_enum_cb), 0)
-        if _start_hwnds:
-            return _start_hwnds[0]
-        # Win10 1903+ Start menu is inside ApplicationFrameWindow — check foreground
+        
+        if _start_hwnds: return _start_hwnds[0]
+        
         fg_hwnd = u32.GetForegroundWindow()
         if fg_hwnd:
-            cls_buf2 = ctypes.create_unicode_buffer(128)
-            u32.GetClassNameW(fg_hwnd, cls_buf2, 128)
-            if any(c in cls_buf2.value for c in ("DV2", "CoreWindow", "ImmersiveLauncher")):
+            u32.GetWindowTextW(fg_hwnd, buf, 256)
+            if buf.value.lower() == "start":
                 return fg_hwnd
         return 0
-
     _START_HINTS = frozenset({"start", "start menu", "startmenu", "start_menu"})
 
     def _is_start_menu_hint(hint: str) -> bool:
@@ -166,80 +188,94 @@ else:
         """Find a top-level window.
 
         Special cases:
-        - No hint → foreground window (not desktop root, which has no children)
-        - "start" / "start menu" → OS-aware Start Menu detection via Win32 + UIA
-        - Regular hint → walk UIA siblings (with foreground fallback if title missing)
+        - No hint -> foreground window
+        - "desktop" -> root desktop
+        - "start" / "start menu" -> OS-aware Start Menu detection
+        - Regular hint -> walk UIA siblings
         """
         if not title_hint:
             fg = auto.GetForegroundControl()
             return fg if fg else auto.GetRootControl()
+            
+        if title_hint.lower() == "desktop" or title_hint.lower() == "root":
+            return auto.GetRootControl()
 
-        # ── Special: Taskbar ─────────────────────────────────────────────────────
+        # Special: Taskbar
         tb_hint = title_hint.strip().lower()
         if tb_hint in ("taskbar", "tray", "system tray", "system_tray"):
             try:
                 tb_ctrl = auto.WindowControl(ClassName="Shell_TrayWnd")
                 if tb_ctrl and tb_ctrl.Exists(0, 0):
                     return tb_ctrl
-            except Exception:
-                pass
-            # Fallback Win32
+            except Exception: pass
             tb_hwnd = _user32.FindWindowW("Shell_TrayWnd", None)
             if tb_hwnd:
                 try:
                     ctrl = auto.ControlFromHandle(tb_hwnd)
-                    if ctrl:
-                        return ctrl
-                except Exception:
-                    pass
+                    if ctrl: return ctrl
+                except Exception: pass
 
-        # ── Special: Start Menu ──────────────────────────────────────────────────
+        # Special: Start Menu
         if _is_start_menu_hint(title_hint):
             sm_hwnd = _find_start_menu_hwnd()
             if sm_hwnd:
                 try:
                     ctrl = auto.ControlFromHandle(sm_hwnd)
-                    if ctrl:
-                        return ctrl
-                except Exception:
-                    pass
-            # Fallback: foreground is probably the Start Menu when it's open
+                    if ctrl: return ctrl
+                except Exception: pass
             fg = auto.GetForegroundControl()
             if fg and "start" in (fg.Name or "").lower():
                 return fg
-            # Last resort: walk root for any window with "Start" in name
-            wnd = auto.GetRootControl().GetFirstChildControl()
-            while wnd:
-                try:
-                    if "start" in (wnd.Name or "").lower():
-                        return wnd
-                except Exception:
-                    pass
-                try:
-                    wnd = wnd.GetNextSiblingControl()
-                except Exception:
-                    break
-            # Nothing found but Start Menu is open — return foreground anyway
-            return auto.GetForegroundControl() or auto.GetRootControl()
+            return auto.GetRootControl()
 
-        # ── General: walk root children ──────────────────────────────────────────
+        # General: walk root children
         wnd = auto.GetRootControl().GetFirstChildControl()
         best = None
         while wnd:
             try:
+                hwnd = _hwnd_from_ctrl(wnd)
+                if not _user32.IsWindowVisible(hwnd):
+                    wnd = wnd.GetNextSiblingControl()
+                    continue
+                    
                 wname = (wnd.Name or "").lower()
                 if title_hint.lower() in wname:
-                    # Prefer exact matches; otherwise keep first match
                     if best is None:
                         best = wnd
                     if wname == title_hint.lower():
-                        return wnd   # exact match → done
-            except Exception:
-                pass
+                        return wnd
+            except Exception: pass
+            try: wnd = wnd.GetNextSiblingControl()
+            except Exception: break
+            
+        if best:
+            return best
+        return auto.GetForegroundControl() or auto.GetRootControl()
+
+        # General: walk root children
+        if title_hint.lower() == "desktop":
+            return auto.GetRootControl()
+            
+        wnd = auto.GetRootControl().GetFirstChildControl()
+        best = None
+        while wnd:
             try:
-                wnd = wnd.GetNextSiblingControl()
-            except Exception:
-                break
+                hwnd = _hwnd_from_ctrl(wnd)
+                if not _user32.IsWindowVisible(hwnd):
+                    wnd = wnd.GetNextSiblingControl()
+                    continue
+                    
+                wname = (wnd.Name or "").lower()
+                if title_hint.lower() in wname:
+                    if best is None:
+                        best = wnd
+                    if wname == title_hint.lower():
+                        return wnd
+            except Exception: pass
+            
+            try: wnd = wnd.GetNextSiblingControl()
+            except Exception: break
+            
         if best:
             return best
         # Fallback: return foreground (better than returning dead desktop root)
@@ -303,7 +339,7 @@ else:
                     name = wnd.Name or ""
                     pid  = wnd.ProcessId
                     hwnd = _hwnd_from_ctrl(wnd)
-                    if name:
+                    if name and _user32.IsWindowVisible(hwnd):
                         results.append({"title": name, "pid": pid, "hwnd": hwnd})
                 except Exception:
                     pass
@@ -317,7 +353,6 @@ else:
         r["windows"] = results
         r["count"] = len(results)
         return r
-
     def act_foreground() -> dict:
         try:
             wnd = auto.GetForegroundControl()
@@ -335,11 +370,10 @@ else:
         is_start = _is_start_menu_hint(window or "")
         is_taskbar = (window or "").strip().lower() in ("taskbar", "tray", "system tray", "system_tray")
         if is_start:
-            # Make sure the Start Menu is the active foreground window before walking
             sm_hwnd = _find_start_menu_hwnd()
             if sm_hwnd:
                 _bring_window_to_foreground(sm_hwnd)
-                time.sleep(0.3)   # let it fully render / rise to top
+                time.sleep(0.3)
         elif is_taskbar:
             tb_hwnd = _user32.FindWindowW("Shell_TrayWnd", None)
             if tb_hwnd:
@@ -349,6 +383,7 @@ else:
         wnd = _find_window(window)
         if not wnd:
             return _err("snapshot", "not_found", f"Window not found: {window!r}")
+            
         nodes: list = []
         count = [0]
         try:
@@ -356,8 +391,6 @@ else:
         except Exception as e:
             return _err("snapshot", "tree_unavailable", str(e))
 
-        # If we got no elements (e.g. Start Menu tree invisible from wrong root),
-        # try once more from the foreground control
         if len(nodes) == 0 and is_start:
             fg = auto.GetForegroundControl()
             if fg:
@@ -366,19 +399,22 @@ else:
                 try:
                     _walk(fg, 0, depth, nodes, count)
                     wnd = fg
-                except Exception:
-                    pass
+                except Exception: pass
 
         r = _ok("snapshot", wnd)
         r["elements"] = nodes
         r["count"] = len(nodes)
+        
+        # Inject helpful context for the AI
+        if not window:
+            r["message"] = f"Captured FOREGROUND window only. To see other apps, use list_windows. To see desktop or taskbar, use --window 'desktop' or 'taskbar'."
+            
         return r
 
 
     def act_find(window, depth: int, selector: str, value: str) -> dict:
         parts = _parse_selector(selector) if selector else {}
 
-        # FIX: If AI mistakenly searches for a Window using selector instead of the window arg
         if not window and parts.get("role", "").lower() in ("window", "windowcontrol"):
             window = parts.get("name", "").replace("*", "")
 
@@ -399,6 +435,19 @@ else:
                 node = {"ref": ref}
                 node.update(meta)
                 matches.append(node)
+                
+        # Auto-fallback to desktop if not found in foreground
+        if not matches and not window:
+            snap2 = act_snapshot("desktop", depth)
+            if snap2["ok"]:
+                for ref, entry in list(_ref_store.items()):
+                    meta = entry["meta"]
+                    if _matches_selector(meta, parts):
+                        node = {"ref": ref}
+                        node.update(meta)
+                        matches.append(node)
+                wnd = _find_window("desktop")
+                
         r = _ok("find", wnd)
         r["elements"] = matches
         r["count"] = len(matches)
@@ -408,8 +457,32 @@ else:
         ctrl, err = _resolve_ref(ref)
         if err:
             return _err("move", err, f"ref={ref}"), {}
-        meta = _ref_store[ref]["meta"]
-        cx, cy = _center(meta["bounds"])
+        
+        # 1. Scroll into view if possible
+        try:
+            # Some UI frameworks scroll to the element automatically when SetFocus is called
+            ctrl.SetFocus()
+        except Exception: pass
+            
+        # LIVE UPDATE: UI might have scrolled, moved, or resized since the snapshot!
+        meta = _ctrl_meta(ctrl)
+
+        cx, cy = None, None
+        try:
+            pt = ctrl.GetClickablePoint()
+            if pt: cx, cy = int(pt[0]), int(pt[1])
+        except Exception: pass
+
+        if cx is None: cx, cy = _center(meta["bounds"])
+            
+        # CLAMP to screen bounds to prevent hanging on off-screen coordinates
+        import ctypes
+        w = ctypes.windll.user32.GetSystemMetrics(78) or ctypes.windll.user32.GetSystemMetrics(0)
+        h = ctypes.windll.user32.GetSystemMetrics(79) or ctypes.windll.user32.GetSystemMetrics(1)
+        
+        cx = max(0, min(cx, w - 1))
+        cy = max(0, min(cy, h - 1))
+            
         tel = cursor_motion.go(cx, cy, click=click, drag_to=drag_to, duration_ms=duration_ms)
         return None, tel
 
@@ -424,6 +497,23 @@ else:
 
     def act_move_cursor(ref: str, window) -> dict:
         wnd = _find_window(window)
+        import ctypes
+        w = ctypes.windll.user32.GetSystemMetrics(78) or ctypes.windll.user32.GetSystemMetrics(0)
+        h = ctypes.windll.user32.GetSystemMetrics(79) or ctypes.windll.user32.GetSystemMetrics(1)
+        
+        if "," in ref:
+            try:
+                parts = ref.split(",")
+                cx, cy = int(parts[0].strip()), int(parts[1].strip())
+                cx = max(0, min(cx, w - 1))
+                cy = max(0, min(cy, h - 1))
+                tel = cursor_motion.go(cx, cy)
+                r = _ok("move_cursor", wnd)
+                r["cursor"] = tel
+                return r
+            except Exception as e:
+                return _err("move_cursor", "invalid_args", f"Invalid coords: {ref}")
+        
         err_r, tel = _move_to_ref(ref)
         if err_r:
             return err_r
@@ -437,8 +527,20 @@ else:
         ctrl, err = _resolve_ref(ref)
         if err:
             return _err("invoke", err, f"ref={ref}")
-        meta = _ref_store[ref]["meta"]
-        cx, cy = _center(meta["bounds"])
+        # Live update at exact millisecond
+        meta = _ctrl_meta(ctrl)
+
+        cx, cy = None, None
+
+        try:
+
+            pt = ctrl.GetClickablePoint()
+
+            if pt: cx, cy = int(pt[0]), int(pt[1])
+
+        except Exception: pass
+
+        if cx is None: cx, cy = _center(meta["bounds"])
         
         try:
             # Prefer native UIA Invoke Pattern (doesn't move mouse at all)
@@ -463,9 +565,26 @@ else:
         r["cursor"]["moved"] = True
         return r
 
-    def act_click_ref(ref: str, window, button: str = "left") -> dict:
-        # FIX: Bring window to foreground first to prevent defocus on click
-        wnd = _ensure_window_focused(window)
+    def act_click_ref(ref: str, window, button: str) -> dict:
+        wnd = _find_window(window)
+        
+        import ctypes
+        w = ctypes.windll.user32.GetSystemMetrics(78) or ctypes.windll.user32.GetSystemMetrics(0)
+        h = ctypes.windll.user32.GetSystemMetrics(79) or ctypes.windll.user32.GetSystemMetrics(1)
+        
+        if "," in ref:
+            try:
+                parts = ref.split(",")
+                cx, cy = int(parts[0].strip()), int(parts[1].strip())
+                cx = max(0, min(cx, w - 1))
+                cy = max(0, min(cy, h - 1))
+                tel = cursor_motion.go(cx, cy, click=button)
+                r = _ok("click_ref", wnd)
+                r["cursor"] = tel
+                return r
+            except Exception as e:
+                return _err("click_ref", "invalid_args", f"Invalid coords: {ref}")
+                
         err_r, tel = _move_to_ref(ref, click=button)
         if err_r:
             return err_r
@@ -489,8 +608,20 @@ else:
         ctrl, err = _resolve_ref(ref)
         if err:
             return _err("scroll", err, f"ref={ref}")
-        meta = _ref_store[ref]["meta"]
-        cx, cy = _center(meta["bounds"])
+        # Live update at exact millisecond
+        meta = _ctrl_meta(ctrl)
+
+        cx, cy = None, None
+
+        try:
+
+            pt = ctrl.GetClickablePoint()
+
+            if pt: cx, cy = int(pt[0]), int(pt[1])
+
+        except Exception: pass
+
+        if cx is None: cx, cy = _center(meta["bounds"])
         tel = cursor_motion.go(cx, cy)
 
         WHEEL_DELTA = 120
@@ -532,8 +663,20 @@ else:
         ctrl, err = _resolve_ref(ref)
         if err:
             return _err("set_value", err, f"ref={ref}")
-        meta = _ref_store[ref]["meta"]
-        cx, cy = _center(meta["bounds"])
+        # Live update at exact millisecond
+        meta = _ctrl_meta(ctrl)
+
+        cx, cy = None, None
+
+        try:
+
+            pt = ctrl.GetClickablePoint()
+
+            if pt: cx, cy = int(pt[0]), int(pt[1])
+
+        except Exception: pass
+
+        if cx is None: cx, cy = _center(meta["bounds"])
         tel = cursor_motion.go(cx, cy, click="left")
         
         def _escape_sendkeys(text: str) -> str:
@@ -565,8 +708,19 @@ else:
             ctrl, err = _resolve_ref(ref)
             if err:
                 return _err("type_keys", err, f"ref={ref}")
-            meta = _ref_store[ref]["meta"]
-            cx, cy = _center(meta["bounds"])
+            meta = _ctrl_meta(ctrl)
+
+            cx, cy = None, None
+
+            try:
+
+                pt = ctrl.GetClickablePoint()
+
+                if pt: cx, cy = int(pt[0]), int(pt[1])
+
+            except Exception: pass
+
+            if cx is None: cx, cy = _center(meta["bounds"])
             tel = cursor_motion.go(cx, cy, click="left")
             try:
                 ctrl.SendKeys(keys, waitTime=0)
@@ -583,8 +737,20 @@ else:
         ctrl, err = _resolve_ref(ref)
         if err:
             return _err("toggle", err, f"ref={ref}")
-        meta = _ref_store[ref]["meta"]
-        cx, cy = _center(meta["bounds"])
+        # Live update at exact millisecond
+        meta = _ctrl_meta(ctrl)
+
+        cx, cy = None, None
+
+        try:
+
+            pt = ctrl.GetClickablePoint()
+
+            if pt: cx, cy = int(pt[0]), int(pt[1])
+
+        except Exception: pass
+
+        if cx is None: cx, cy = _center(meta["bounds"])
         tel = cursor_motion.go(cx, cy, click="left")
         try:
             ctrl.Toggle()
@@ -599,8 +765,20 @@ else:
         ctrl, err = _resolve_ref(ref)
         if err:
             return _err("focus", err, f"ref={ref}")
-        meta = _ref_store[ref]["meta"]
-        cx, cy = _center(meta["bounds"])
+        # Live update at exact millisecond
+        meta = _ctrl_meta(ctrl)
+
+        cx, cy = None, None
+
+        try:
+
+            pt = ctrl.GetClickablePoint()
+
+            if pt: cx, cy = int(pt[0]), int(pt[1])
+
+        except Exception: pass
+
+        if cx is None: cx, cy = _center(meta["bounds"])
         tel = cursor_motion.go(cx, cy, click="left")
         try:
             ctrl.SetFocus()
@@ -615,8 +793,20 @@ else:
         ctrl, err = _resolve_ref(ref)
         if err:
             return _err("select", err, f"ref={ref}")
-        meta = _ref_store[ref]["meta"]
-        cx, cy = _center(meta["bounds"])
+        # Live update at exact millisecond
+        meta = _ctrl_meta(ctrl)
+
+        cx, cy = None, None
+
+        try:
+
+            pt = ctrl.GetClickablePoint()
+
+            if pt: cx, cy = int(pt[0]), int(pt[1])
+
+        except Exception: pass
+
+        if cx is None: cx, cy = _center(meta["bounds"])
         tel = cursor_motion.go(cx, cy, click="left")
         try:
             ctrl.Select()
@@ -628,11 +818,36 @@ else:
 
     def act_drag_ref(ref: str, value: str, window) -> dict:
         wnd = _find_window(window)
-        ctrl, err = _resolve_ref(ref)
-        if err:
-            return _err("drag_ref", err, f"ref={ref}")
-        meta = _ref_store[ref]["meta"]
-        sx, sy = _center(meta["bounds"])
+        
+        import ctypes
+        w = ctypes.windll.user32.GetSystemMetrics(78) or ctypes.windll.user32.GetSystemMetrics(0)
+        h = ctypes.windll.user32.GetSystemMetrics(79) or ctypes.windll.user32.GetSystemMetrics(1)
+        
+        # Source coords
+        if "," in ref:
+            try:
+                parts = ref.split(",")
+                sx, sy = int(parts[0].strip()), int(parts[1].strip())
+            except:
+                return _err("drag_ref", "invalid_args", f"Invalid source coords: {ref}")
+        else:
+            ctrl, err = _resolve_ref(ref)
+            if err:
+                return _err("drag_ref", err, f"ref={ref}")
+            try: ctrl.SetFocus()
+            except Exception: pass
+            meta = _ctrl_meta(ctrl)
+            sx, sy = None, None
+            try:
+                pt = ctrl.GetClickablePoint()
+                if pt: sx, sy = int(pt[0]), int(pt[1])
+            except Exception: pass
+            if sx is None: sx, sy = _center(meta["bounds"])
+            
+        sx = max(0, min(sx, w - 1))
+        sy = max(0, min(sy, h - 1))
+            
+        # Dest coords
         if value and "," in value:
             try:
                 parts = value.split(",")
@@ -640,10 +855,24 @@ else:
             except Exception:
                 return _err("drag_ref", "invalid_args", f"drag value must be 'x,y': {value!r}")
         elif value and value in _ref_store:
-            dest_meta = _ref_store[value]["meta"]
-            drag_dest = _center(dest_meta["bounds"])
+            dest_ctrl = _ref_store[value]["ctrl"]
+            try: dest_ctrl.SetFocus()
+            except Exception: pass
+            dest_meta = _ctrl_meta(dest_ctrl)
+            dx, dy = None, None
+            try:
+                pt = dest_ctrl.GetClickablePoint()
+                if pt: dx, dy = int(pt[0]), int(pt[1])
+            except Exception: pass
+            if dx is None: dx, dy = _center(dest_meta["bounds"])
+            drag_dest = (dx, dy)
         else:
             return _err("drag_ref", "invalid_args", f"drag value unresolvable: {value!r}")
+            
+        dx = max(0, min(drag_dest[0], w - 1))
+        dy = max(0, min(drag_dest[1], h - 1))
+        drag_dest = (dx, dy)
+            
         tel = cursor_motion.go(sx, sy, drag_to=drag_dest)
         r = _ok("drag_ref", wnd)
         r["cursor"] = tel
@@ -654,14 +883,82 @@ else:
     # ──────────────────────────────────────────────────────────────────────────
 
     def act_focus_window(window: str) -> dict:
-        """Bring a window to the foreground by title hint. Returns updated foreground info."""
+        """Bring a window to the foreground by visually clicking it in Task View."""
         wnd = _find_window(window)
         if not wnd:
             return _err("focus_window", "not_found", f"Window not found: {window!r}")
+            
+        target_name = wnd.Name or ""
+        
+        # 1. Open Task View (Win+Tab)
+        INPUT_KEYBOARD = 1
+        KEYEVENTF_KEYUP = 0x0002
+        KEYEVENTF_EXTENDEDKEY = 0x0001
+        class KEYBDINPUT(ctypes.Structure): _fields_ = [("wVk", ctypes.c_ushort), ("wScan", ctypes.c_ushort), ("dwFlags", ctypes.c_ulong), ("time", ctypes.c_ulong), ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong))]
+        class INPUT_UNION(ctypes.Union): _fields_ = [("ki", KEYBDINPUT)]
+        class INPUT(ctypes.Structure): _fields_ = [("type", ctypes.c_ulong), ("_input", INPUT_UNION)]
+        def _sinput(vk: int, flags: int = 0) -> INPUT:
+            i = INPUT(); i.type = INPUT_KEYBOARD; i._input.ki.wVk = vk; i._input.ki.dwFlags = flags; return i
+        def _send(*inputs):
+            arr = (INPUT * len(inputs))(*inputs)
+            ctypes.windll.user32.SendInput(len(inputs), arr, ctypes.sizeof(INPUT))
+            
+        VK_LWIN = 0x5B
+        VK_TAB = 0x09
+        VK_ESCAPE = 0x1B
+        
+        _send(_sinput(VK_LWIN, KEYEVENTF_EXTENDEDKEY), _sinput(VK_TAB, KEYEVENTF_EXTENDEDKEY))
+        time.sleep(0.12)
+        _send(_sinput(VK_TAB, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP), _sinput(VK_LWIN, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP))
+        time.sleep(1.2) # Wait for Task View to animate
+
+        # 2. Find the Window thumbnail in Task View
+        target_lower = target_name.lower()
+        ctrl = None
+        def find_window(node):
+            if node.Name and target_lower in node.Name.lower():
+                return node
+            child = node.GetFirstChildControl()
+            while child:
+                res = find_window(child)
+                if res: return res
+                child = child.GetNextSiblingControl()
+            return None
+            
+        try:
+            ctrl = find_window(auto.GetRootControl())
+        except:
+            pass
+        
+        if ctrl:
+            pt = None
+            try: pt = ctrl.GetClickablePoint()
+            except: pass
+            if pt:
+                cx, cy = int(pt[0]), int(pt[1])
+                tel = cursor_motion.go(cx, cy, click="left")
+                r = _ok("focus_window", wnd)
+                r["cursor"] = tel
+                r["message"] = f"Visually clicked {target_name!r} in Task View"
+                return r
+            else:
+                rect = ctrl.BoundingRectangle
+                cx, cy = rect.left + rect.width()//2, rect.top + rect.height()//2
+                tel = cursor_motion.go(cx, cy, click="left")
+                r = _ok("focus_window", wnd)
+                r["cursor"] = tel
+                r["message"] = f"Visually clicked {target_name!r} (bounds) in Task View"
+                return r
+                
+        # Fallback: couldn't find it in Task View, close Task View and use Win32 API
+        _send(_sinput(VK_ESCAPE))
+        time.sleep(0.1)
+        _send(_sinput(VK_ESCAPE, KEYEVENTF_KEYUP))
+        
         hwnd = _hwnd_from_ctrl(wnd)
         _bring_window_to_foreground(hwnd)
         r = _ok("focus_window", wnd)
-        r["message"] = f"Focused: {wnd.Name!r}"
+        r["message"] = f"Focused: {wnd.Name!r} (fallback Win32)"
         return r
 
     def act_close_window(window: str) -> dict:
@@ -712,27 +1009,49 @@ else:
 
     def act_switch_window(direction: str = "next") -> dict:
         """Cycle through open windows. direction = 'next'|'prev'."""
-        _user32_local = ctypes.windll.user32
-        VK_MENU    = 0x12   # Alt
-        VK_TAB     = 0x09
-        VK_SHIFT   = 0x10
+        INPUT_KEYBOARD = 1
         KEYEVENTF_KEYUP = 0x0002
-
-        def _keydown(vk): _user32_local.keybd_event(vk, 0, 0, 0)
-        def _keyup(vk):   _user32_local.keybd_event(vk, 0, KEYEVENTF_KEYUP, 0)
-
+        KEYEVENTF_EXTENDEDKEY = 0x0001
+        
+        class KEYBDINPUT(ctypes.Structure):
+            _fields_ = [
+                ("wVk", ctypes.c_ushort),
+                ("wScan", ctypes.c_ushort),
+                ("dwFlags", ctypes.c_ulong),
+                ("time", ctypes.c_ulong),
+                ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong)),
+            ]
+        class INPUT_UNION(ctypes.Union):
+            _fields_ = [("ki", KEYBDINPUT)]
+        class INPUT(ctypes.Structure):
+            _fields_ = [("type", ctypes.c_ulong), ("_input", INPUT_UNION)]
+            
+        def _sinput(vk: int, flags: int = 0) -> INPUT:
+            i = INPUT()
+            i.type = INPUT_KEYBOARD
+            i._input.ki.wVk = vk
+            i._input.ki.dwFlags = flags
+            return i
+            
+        def _send(*inputs):
+            arr = (INPUT * len(inputs))(*inputs)
+            ctypes.windll.user32.SendInput(len(inputs), arr, ctypes.sizeof(INPUT))
+            
+        VK_MENU = 0x12   # Alt
+        VK_TAB = 0x09
+        VK_SHIFT = 0x10
+        
         if direction == "next":
-            _keydown(VK_MENU); _keydown(VK_TAB); time.sleep(0.12); _keyup(VK_TAB); _keyup(VK_MENU)
-        elif direction == "prev":
-            _keydown(VK_MENU); _keydown(VK_SHIFT); _keydown(VK_TAB)
+            _send(_sinput(VK_MENU), _sinput(VK_TAB))
             time.sleep(0.12)
-            _keyup(VK_TAB); _keyup(VK_SHIFT); _keyup(VK_MENU)
-        else:
-            return _err("switch_window", "invalid_args", f"direction must be next/prev, got: {direction!r}")
-
-        time.sleep(0.2)
+            _send(_sinput(VK_TAB, KEYEVENTF_KEYUP), _sinput(VK_MENU, KEYEVENTF_KEYUP))
+        elif direction == "prev":
+            _send(_sinput(VK_MENU), _sinput(VK_SHIFT), _sinput(VK_TAB))
+            time.sleep(0.12)
+            _send(_sinput(VK_TAB, KEYEVENTF_KEYUP), _sinput(VK_SHIFT, KEYEVENTF_KEYUP), _sinput(VK_MENU, KEYEVENTF_KEYUP))
+            
         r = _ok("switch_window")
-        r["message"] = f"Window switch: {direction}"
+        r["message"] = f"Switched window: {direction} (via Alt+Tab SendInput)"
         return r
 
     def act_switch_desktop(index: int = -1, direction: str = "next") -> dict:
@@ -784,6 +1103,7 @@ else:
         VK_CONTROL = 0x11
         VK_LEFT    = 0x25
         VK_RIGHT   = 0x27
+        VK_TAB     = 0x09
 
         def _one_step_sendinput(right: bool):
             key = VK_RIGHT if right else VK_LEFT
@@ -846,6 +1166,75 @@ else { [VDesktop]::Switch($false) }
                 _one_step_sendinput(right)
             except Exception:
                 _ps_step(right)
+
+        if direction == "task_view" or direction == "taskview":
+            _send(
+                _sinput(VK_LWIN, KEYEVENTF_EXTENDEDKEY),
+                _sinput(VK_TAB, KEYEVENTF_EXTENDEDKEY)
+            )
+            time.sleep(0.12)
+            _send(
+                _sinput(VK_TAB, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP),
+                _sinput(VK_LWIN, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP)
+            )
+            r = _ok("switch_desktop")
+            r["message"] = "Opened Task View (Win+Tab)"
+            return r
+
+        # Visual click strategy for virtual desktops
+        if index >= 0:
+            # 1. Open Task View
+            _send(_sinput(VK_LWIN, KEYEVENTF_EXTENDEDKEY), _sinput(VK_TAB, KEYEVENTF_EXTENDEDKEY))
+            time.sleep(0.12)
+            _send(_sinput(VK_TAB, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP), _sinput(VK_LWIN, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP))
+            time.sleep(1.2) # Wait for Task View to animate
+
+            # 2. Find the Desktop button
+            target_name = f"Desktop {index + 1}".lower()
+            
+            ctrl = None
+            def find_desktop(node):
+                if node.Name and target_name in node.Name.lower():
+                    return node
+                child = node.GetFirstChildControl()
+                while child:
+                    res = find_desktop(child)
+                    if res: return res
+                    child = child.GetNextSiblingControl()
+                return None
+                
+            try:
+                ctrl = find_desktop(auto.GetRootControl())
+            except:
+                pass
+            
+            if ctrl:
+                pt = None
+                try: pt = ctrl.GetClickablePoint()
+                except: pass
+                if pt:
+                    cx, cy = int(pt[0]), int(pt[1])
+                    tel = cursor_motion.go(cx, cy, click="left")
+                    r = _ok("switch_desktop")
+                    r["cursor"] = tel
+                    r["message"] = f"Visually clicked {target_name} in Task View"
+                    return r
+                else:
+                    # Fallback to bounds
+                    rect = ctrl.BoundingRectangle
+                    cx, cy = rect.left + rect.width()//2, rect.top + rect.height()//2
+                    tel = cursor_motion.go(cx, cy, click="left")
+                    r = _ok("switch_desktop")
+                    r["cursor"] = tel
+                    r["message"] = f"Visually clicked {target_name} (bounds) in Task View"
+                    return r
+            else:
+                # If not found, press Esc to close Task View
+                VK_ESCAPE = 0x1B
+                _send(_sinput(VK_ESCAPE))
+                time.sleep(0.1)
+                _send(_sinput(VK_ESCAPE, KEYEVENTF_KEYUP))
+                return _err("switch_desktop", "not_found", f"{target_name} not found in Task View")
 
         steps_done = 0
         if index >= 0:

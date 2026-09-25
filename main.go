@@ -2101,7 +2101,7 @@ func main() {
 		if adminSecret != "" && phrase == adminSecret {
 			log.Printf("Clear data approved via admin secret")
 			backend.clearAllDevices()
-			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			json.NewEncoder(w).Encode(map[string]string{"status": "ok", "message": "All devices cleared"})
 			return
 		}
@@ -2134,7 +2134,7 @@ func main() {
 		backend.clearAllDevices()
 		log.Printf("Backend data cleared by client with valid security phrase (%d devices removed)", count)
 		
-		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "message": "All devices cleared"})
 	})
 
@@ -2216,7 +2216,7 @@ func main() {
 		go backend.broadcastDevices()
 	}
 
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	json.NewEncoder(w).Encode(map[string]string{
 		"status":    "ok",
 		"device_id": d.ID,
@@ -2262,14 +2262,14 @@ http.HandleFunc("/heartbeat", func(w http.ResponseWriter, r *http.Request) {
 		go backend.broadcastDevices()
 	}
 
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 })
 
 // Health check endpoint for Render keep-alive
 http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 	// Fast response - don't mark stale devices here to avoid blocking
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	
 	backend.mu.RLock()
@@ -2289,7 +2289,7 @@ http.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
 	// Mark stale devices before serving status
 	backend.markStaleDevices()
 	
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	backend.mu.RLock()
 	
 	// Build online devices list for mobile app

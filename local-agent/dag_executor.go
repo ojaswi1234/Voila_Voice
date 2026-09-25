@@ -26,6 +26,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 )
 
 type GraphNode struct {
@@ -276,6 +277,13 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 	}
 
 	initLiveState(state.Nodes, state.Edges)
+	// SPAWN ALL VISUAL OVERLAYS IMMEDIATELY SO THEY APPEAR ON SCREEN
+	for i, n := range state.Nodes {
+		agentName := agentNames[i % len(agentNames)]
+		agentColor := agentColors[i % len(agentColors)]
+		launchAgentOverlay(n.ID, i, agentName, agentColor[0], agentColor[1], agentColor[2])
+	}
+
 	if len(state.Nodes) == 0 {
 		return "Graph is empty", nil
 	}
@@ -414,10 +422,8 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 			
 			// Pick identity
 			agentName := agentNames[agentIdx % len(agentNames)]
-			agentColor := agentColors[agentIdx % len(agentColors)]
+			// agentColor := agentColors[agentIdx % len(agentColors)]
 			
-			// Launch visual overlay (non-blocking)
-			launchAgentOverlay(nid, agentIdx, agentName, agentColor[0], agentColor[1], agentColor[2])
 			
 			agentPort := 19882 + agentIdx
 			agentBridgePort := 19881
@@ -425,6 +431,7 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 			
 			go func(nodeID string, history []string, myRevs []string, rCount int, aName string, aIdx int, aPort int, aBridgePort int) {
 				n := nodeMap[nodeID]
+				nodeStart := time.Now()
 				
 				updateLiveNode(nodeID, "running")
 				appendLiveLog(fmt.Sprintf("[%s/%s] Node execution started...", n.Role, aName))
@@ -513,14 +520,9 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 					
 					// Edge Case: Model doesn't support tools
 					if nodeErr != nil && (strings.Contains(strings.ToLower(nodeErr.Error()), "tool") || strings.Contains(strings.ToLower(nodeErr.Error()), "support") || strings.Contains(strings.ToLower(nodeErr.Error()), "parse")) {
-						fallbackGroq := "llama-3.1-70b-versatile"
-						gm := fetchGroqModels(connData.GroqAPIKey)
-						for _, m := range gm {
-							cleanM := strings.Trim(m, "\"")
-							if cleanM != actualModel {
-								fallbackGroq = cleanM
-								break
-							}
+						fallbackGroq := connData.GroqModel
+						if fallbackGroq == "" {
+							fallbackGroq = "llama-3.1-70b-versatile"
 						}
 						fmt.Printf("STATUS: SYSTEM_MSG:Node %s model %s lacks tool support, dynamically switching to %s...\n", nodeID, actualModel, fallbackGroq)
 						os.Stdout.Sync()
@@ -535,9 +537,10 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 					}
 					// If Groq completely fails, fallback to Ollama
 					if nodeErr != nil {
-						fallbackOllama := "llama3.1:latest"
-						om := fetchOllamaModels(connData.OllamaBaseURL, connData.OllamaAPIKey)
-						if len(om) > 0 { fallbackOllama = strings.Trim(om[0], "\"") }
+						fallbackOllama := connData.OllamaModel
+						if fallbackOllama == "" {
+							fallbackOllama = "gemma4:31b"
+						}
 						fmt.Printf("STATUS: SYSTEM_MSG:Node %s Groq exhausted, falling back to Ollama %s...\n", nodeID, fallbackOllama)
 						os.Stdout.Sync()
 						graphifyOllamaSem <- struct{}{}
@@ -553,14 +556,9 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 					
 					// Edge Case: Model doesn't support tools
 					if nodeErr != nil && (strings.Contains(strings.ToLower(nodeErr.Error()), "tool") || strings.Contains(strings.ToLower(nodeErr.Error()), "support") || strings.Contains(strings.ToLower(nodeErr.Error()), "parse")) {
-						fallbackOllama := "llama3.1:latest"
-						om := fetchOllamaModels(connData.OllamaBaseURL, connData.OllamaAPIKey)
-						for _, m := range om {
-							cleanM := strings.Trim(m, "\"")
-							if cleanM != actualModel {
-								fallbackOllama = cleanM
-								break
-							}
+						fallbackOllama := connData.OllamaModel
+						if fallbackOllama == "" {
+							fallbackOllama = "gemma4:31b"
 						}
 						fmt.Printf("STATUS: SYSTEM_MSG:Node %s model %s lacks tool support, dynamically switching to %s...\n", nodeID, actualModel, fallbackOllama)
 						os.Stdout.Sync()
@@ -577,9 +575,10 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 					
 					// If Ollama completely fails, fallback to Groq
 					if nodeErr != nil {
-						fallbackGroq := "llama3-8b-8192"
-						gm := fetchGroqModels(connData.GroqAPIKey)
-						if len(gm) > 0 { fallbackGroq = strings.Trim(gm[0], "\"") }
+						fallbackGroq := connData.GroqModel
+						if fallbackGroq == "" {
+							fallbackGroq = "llama3-8b-8192"
+						}
 						fmt.Printf("STATUS: SYSTEM_MSG:Node %s Ollama exhausted, falling back to Groq %s...\n", nodeID, fallbackGroq)
 						os.Stdout.Sync()
 						nodeOut, nodeErr = executeGroqCommand(ctx, finalCommand, connData.GroqAPIKey, fallbackGroq, "dag-internal", nil, taskID, "")
@@ -596,6 +595,11 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 					updateLiveNode(nodeID, "error")
 					appendLiveLog(fmt.Sprintf("[%s] ERROR: All API providers failed. Node crashed: %v", n.Role, nodeErr))
 					
+										latencyMs := time.Since(nodeStart).Milliseconds()
+					fmt.Printf("STATUS: LATENCY_MS:%d\n", latencyMs)
+					fmt.Printf("STATUS: CMD_DONE:FAILED\n")
+					os.Stdout.Sync()
+					
 					// 🚀 SPEEDUP/ROBUSTNESS: Do not crash the entire DAG. 
 					// Mark as completed with an error string so downstream nodes can adapt or bypass it.
 					outputs[nodeID] = fmt.Sprintf("[CRITICAL ERROR: The AI provider crashed while generating this node's output. Error: %v]", nodeErr)
@@ -606,6 +610,11 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 					return
 				}
 
+								latencyMs := time.Since(nodeStart).Milliseconds()
+				fmt.Printf("STATUS: LATENCY_MS:%d\n", latencyMs)
+				fmt.Printf("STATUS: CMD_DONE:SUCCESS\n")
+				os.Stdout.Sync()
+				
 				// Format the chat output nicely
 				cleanOut := strings.TrimSpace(nodeOut)
 				if len(cleanOut) > 500 {

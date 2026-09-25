@@ -208,6 +208,7 @@ func initDebugLog() {
 	}
 	debugLog = log.New(f, "", log.Ldate|log.Ltime|log.Lmicroseconds)
 	debugLog.Printf("=== VOILA STARTED PID=%d ===", os.Getpid())
+	log.SetOutput(f)
 }
 
 func init() {
@@ -230,7 +231,7 @@ func initResilienceManager() {
 	}
 
 	resilienceManager = NewResilienceManager(config)
-	log.Printf("Network resilience manager initialized with %d transport layers", len(resilienceManager.transportStack.transports))
+	// silenced
 
 	// Start health check goroutine
 	go func() {
@@ -316,51 +317,49 @@ var (
 // ASCII Art
 const (
 	logoArt = `
-                              
-  Ã¢â€“â€žÃ¢â€“â€žÃ¢â€“â€ž              Ã¢â€“â€žÃ¢â€“â€ž       
- Ã¢â€“Ë†Ã¢â€“â‚¬Ã¢â€“Ë†Ã¢â€“Ë†  Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“â‚¬Ã¢â€“â‚¬        Ã¢â€“Ë†Ã¢â€“Ë†      
-   Ã¢â€“Ë†Ã¢â€“Ë†  Ã¢â€“Ë†Ã¢â€“Ë†       Ã¢â€“â‚¬Ã¢â€“â‚¬ Ã¢â€“Ë†Ã¢â€“Ë†      
-   Ã¢â€“Ë†Ã¢â€“Ë†  Ã¢â€“Ë†Ã¢â€“Ë† Ã¢â€“â€žÃ¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“â€ž Ã¢â€“Ë†Ã¢â€“Ë† Ã¢â€“Ë†Ã¢â€“Ë† Ã¢â€“â€žÃ¢â€“â‚¬Ã¢â€“â‚¬Ã¢â€“Ë†Ã¢â€“â€ž
-   Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“â€ž Ã¢â€“Ë†Ã¢â€“Ë† Ã¢â€“Ë†Ã¢â€“Ë† Ã¢â€“Ë†Ã¢â€“Ë† Ã¢â€“Ë†Ã¢â€“Ë† Ã¢â€“Ë†Ã¢â€“Ë† Ã¢â€“â€žÃ¢â€“Ë†Ã¢â€“â‚¬Ã¢â€“Ë†Ã¢â€“Ë†
-    Ã¢â€“â‚¬Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“â‚¬ Ã¢â€“â‚¬Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“Ë†Ã¢â€“â‚¬Ã¢â€“â€žÃ¢â€“Ë†Ã¢â€“Ë†Ã¢â€“â€žÃ¢â€“Ë†Ã¢â€“Ë†Ã¢â€“â€žÃ¢â€“â‚¬Ã¢â€“Ë†Ã¢â€“â€žÃ¢â€“Ë†Ã¢â€“Ë†
-                           
-                           
-        Ã¢Å¡Â¡ ZERO TRUST Ã¢â‚¬Â¢ SECURE Ã¢â‚¬Â¢ FAST Ã¢Å¡Â¡
+██╗   ██╗              ██╗██╗        
+██║   ██║  ██████╗     ██║██║        
+██║   ██║  ██╔═══██╗    ██║██║       
+╚██████╔╝  ██║   ██║██████║██║█████╗ 
+ ╚████╔╝   ╚██████╔╝╚════██║██║╚════╝
+  ╚═══╝     ╚═════╝      ╚═╝╚═╝      
+                                     
+       ━ ZERO TRUST ━ SECURE ━ FAST ━
 `
 
 	connectedArt = `
-   Ã¢â€¢â€Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢â€”
-   Ã¢â€¢â€˜    Ã¢Å“â€œ CONNECTION ESTABLISHED              Ã¢â€¢â€˜
-   Ã¢â€¢â€˜    Ã¢â€”Â READY TO EXECUTE COMMANDS          Ã¢â€¢â€˜
-   Ã¢â€¢Å¡Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+╭──────────────────────────────────────────╮
+│    🟢 CONNECTION ESTABLISHED             │ 
+│    ⚡ READY TO EXECUTE COMMANDS          │ 
+╰──────────────────────────────────────────╯
 `
 
 	menuArt = `
-Ã¢â€¢â€Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢â€”
-Ã¢â€¢â€˜              VOILA - LOCAL AGENT MENU             Ã¢â€¢â€˜
-Ã¢â€¢Å¡Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+╭──────────────────────────────────────────╮
+│                 MAIN MENU                │
+╰──────────────────────────────────────────╯
 `
 
-	separatorLine = "Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â"
+	separatorLine = "───────────────────────────────────────────────────────────────────────"
 
 	footerArt = `
-    Ã¢â€¢â€Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢â€”
-    Ã¢â€¢â€˜  Voice-to-CLI Remote Execution System     Ã¢â€¢â€˜
-    Ã¢â€¢â€˜  Zero Trust | Multi-Device | Secure        Ã¢â€¢â€˜
-    Ã¢â€¢â€˜  v1.0.0 | Ã¢Å¡Â¡ Fast | Ã°Å¸â€â€™ Secure              Ã¢â€¢â€˜
-    Ã¢â€¢Å¡Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+╭──────────────────────────────────────────────────────╮
+│  Voice-to-CLI Remote Execution System                │
+│  Zero Trust | Multi-Device | Secure                  │
+│  v1.0.0 | ⚡ Fast | 🔒 Secure                        │  
+╰──────────────────────────────────────────────────────╯
 `
 
 	statusOnline = `
-   Ã¢â€¢â€Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢â€”
-   Ã¢â€¢â€˜  Ã¢â€”Â ONLINE - CONNECTED - LISTENING:8088  Ã¢â€¢â€˜
-   Ã¢â€¢Å¡Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+╭──────────────────────────────────────────────────────╮
+│  🟢 ONLINE - CONNECTED - LISTENING:8088              │ 
+╰──────────────────────────────────────────────────────╯
 `
 
 	statusOffline = `
-   Ã¢â€¢â€Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢â€”
-   Ã¢â€¢â€˜  Ã¢â€”â€¹ OFFLINE - DISCONNECTED - STOPPED     Ã¢â€¢â€˜
-   Ã¢â€¢Å¡Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+╭──────────────────────────────────────────────────────╮
+│  🔴 OFFLINE - WAITING FOR CONNECTION                 │ 
+╰──────────────────────────────────────────────────────╯
 `
 
 	arrowsArt = `
@@ -401,6 +400,30 @@ const (
 )
 
 // Connection data
+
+type LogEntry struct {
+	Category string
+	Message  string
+	Time     time.Time
+}
+
+var (
+	sysLogMu sync.Mutex
+	sysLogs  []LogEntry
+)
+
+func addSysLog(category, msg string) {
+	sysLogMu.Lock()
+	defer sysLogMu.Unlock()
+	sysLogs = append(sysLogs, LogEntry{Category: category, Message: msg, Time: time.Now()})
+	if len(sysLogs) > 100 {
+		sysLogs = sysLogs[1:] // keep last 100
+	}
+	if debugLog != nil {
+		debugLog.Printf("[%s] %s", category, msg)
+	}
+}
+
 type ConnectionData struct {
 	BackendURL        string `json:"backend_url"`
 	DeviceID          string `json:"device_id"`
@@ -825,7 +848,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyCtrlC, tea.KeyEsc:
 			if m.state == "menu" {
 				return m, tea.Quit
-			} else if m.state == "security_phrase_input" {
+			} else if m.state == "system_logs" {
+				m.state = "menu"
+			} else if m.state == "security_phrase_input" || m.state == "ngrok_token_input" {
 				m.state = "menu"
 				m.currentInput = ""
 				m.messages = []string{}
@@ -851,12 +876,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selectedOption = (m.selectedOption + 1) % menuSize
 			}
 		case tea.KeyBackspace:
-			if len(m.currentInput) > 0 && (m.state == "setup" || m.state == "security_phrase_input" || m.state == "circuit_reset_input") {
+			if len(m.currentInput) > 0 && (m.state == "setup" || m.state == "security_phrase_input" || m.state == "circuit_reset_input" || m.state == "ngrok_token_input") {
 				m.currentInput = m.currentInput[:len(m.currentInput)-1]
 			}
 		case tea.KeyCtrlV:
 			// Handle clipboard paste
-			if m.state == "setup" || m.state == "security_phrase_input" || m.state == "circuit_reset_input" {
+			if m.state == "setup" || m.state == "security_phrase_input" || m.state == "circuit_reset_input" || m.state == "ngrok_token_input" {
 				// Try to get clipboard content
 				cmd := exec.Command("powershell", "-Command", "Get-Clipboard")
 				output, err := cmd.Output()
@@ -866,7 +891,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		default:
-			if (m.state == "setup" || m.state == "security_phrase_input" || m.state == "circuit_reset_input") && len(msg.String()) >= 1 {
+			if (m.state == "setup" || m.state == "security_phrase_input" || m.state == "circuit_reset_input" || m.state == "ngrok_token_input") && len(msg.String()) >= 1 {
 				m.currentInput += msg.String()
 			}
 		}
@@ -954,7 +979,7 @@ func (m model) handleEnter() (model, tea.Cmd) {
 			m.isLoading = true
 			return m, m.testConnection()
 		}
-	} else if m.state == "security_phrase_input" {
+	} else if m.state == "security_phrase_input" || m.state == "ngrok_token_input" {
 		// User submitted security phrase
 		phrase := m.currentInput
 		m.state = "menu"
@@ -975,14 +1000,19 @@ func (m model) handleEnter() (model, tea.Cmd) {
 		// Handle disconnected state menu (3 options)
 		if !m.connectionData.Connected {
 			switch m.selectedOption {
-			case 0: // Setup Connection
+						case 0: // Setup Connection
 				m.state = "setup"
 				m.inputStep = 0
 				m.currentInput = ""
 				m.messages = []string{}
 			case 1: // Start Ngrok
 				return m, m.startNgrok()
-			case 2: // Exit
+			case 2: // Configure Ngrok Token
+				m.state = "ngrok_token_input"
+				m.currentInput = ""
+				m.messages = []string{}
+				return m, nil
+			case 3: // Exit
 				return m, tea.Quit
 			}
 			return m, nil
@@ -1002,7 +1032,7 @@ func (m model) handleEnter() (model, tea.Cmd) {
 					return m, m.startServer()
 				}
 			}
-		case 1: // Delete Connection
+				case 1: // Delete Connection
 			m.connectionData = ConnectionData{}
 			m.state = "setup"
 			m.inputStep = 0
@@ -1010,21 +1040,27 @@ func (m model) handleEnter() (model, tea.Cmd) {
 			m.messages = []string{warningStyle.Render("Connection deleted")}
 		case 2: // Start Ngrok
 			return m, m.startNgrok()
-		case 3: // Clear Backend Data
+		case 3: // Configure Ngrok Token
+			m.state = "ngrok_token_input"
+			m.currentInput = ""
+			m.messages = []string{}
+			return m, nil
+		case 4: // Clear Backend Data
 			m.state = "security_phrase_input"
 			m.currentInput = ""
 			m.messages = []string{warningStyle.Render("Enter security phrase to clear backend data:")}
 			return m, nil
-		case 4: // Reset Circuit Breaker
+		case 5: // Reset Circuit Breaker
 			m.state = "circuit_reset_input"
 			m.currentInput = ""
 			m.messages = []string{warningStyle.Render("Enter security phrase to reset circuit breaker:")}
 			return m, nil
-		case 5: // Clear Local Data
+		case 6: // Clear Local Data
 			return m, m.clearLocalData()
-		case 6: // View Status
-			m.status = fmt.Sprintf("Status: %s | Connected: %v | Circuit: %v", m.status, m.connectionData.Connected, isCircuitOpen())
-		case 7: // Exit
+				case 7: // View System Logs
+			m.state = "system_logs"
+			return m, nil
+case 8: // Exit
 			if m.serverRunning {
 				return m, m.stopServer()
 			}
@@ -1129,6 +1165,71 @@ func (m model) clearLocalData() tea.Cmd {
 	}
 }
 
+
+func (m model) saveNgrokToken(token string) tea.Cmd {
+	return func() tea.Msg {
+		os.Setenv("NGROK_AUTHTOKEN", token)
+		ngrokPath, err := getNgrokExecutable()
+		if err != nil { return errorMsg{"Ngrok not found"} }
+		cmd := exec.Command(ngrokPath, "config", "add-authtoken", token)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return errorMsg{fmt.Sprintf("Failed: %v ( %s )", err, string(out))}
+		}
+		return successMsg{"Ngrok authtoken successfully configured!"}
+	}
+}
+
+
+func (m model) systemLogsView() string {
+	var content strings.Builder
+	content.WriteString(titleStyle.Render("System Message Viewer"))
+	content.WriteString("\n")
+	content.WriteString(separatorStyle.Render(strings.Repeat("-", 70)))
+	content.WriteString("\n")
+	
+	sysLogMu.Lock()
+	if len(sysLogs) == 0 {
+		content.WriteString(subtitleStyle.Render("No messages recorded yet."))
+		content.WriteString("\n")
+	} else {
+		// Show last 20 logs
+		start := 0
+		if len(sysLogs) > 20 {
+			start = len(sysLogs) - 20
+		}
+		for _, l := range sysLogs[start:] {
+			catColor := "6"
+			if l.Category == "Ngrok" { catColor = "5" }
+			if l.Category == "Polling" { catColor = "3" }
+			if l.Category == "Backend" { catColor = "2" }
+			
+			catStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(catColor)).Bold(true)
+			timeStr := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Render(l.Time.Format("15:04:05"))
+			
+			content.WriteString(fmt.Sprintf("%s %s %s\n", timeStr, catStyle.Render("["+l.Category+"]"), l.Message))
+		}
+	}
+	sysLogMu.Unlock()
+	
+	content.WriteString("\n")
+	content.WriteString(separatorStyle.Render(strings.Repeat("-", 70)))
+	content.WriteString("\n")
+	content.WriteString(subtitleStyle.Render("Press Esc to return to menu"))
+	return content.String()
+}
+
+func (m model) ngrokTokenInputView() string {
+	var content strings.Builder
+	content.WriteString(titleStyle.Render("Configure Ngrok Authtoken"))
+	content.WriteString("\n\n")
+	content.WriteString(subtitleStyle.Render("Paste your authtoken from dashboard.ngrok.com"))
+	content.WriteString("\n\n")
+	content.WriteString(fmt.Sprintf("Token: %s", inputStyle.Render(m.currentInput+"_")))
+	content.WriteString("\n\n")
+	content.WriteString(subtitleStyle.Render("Press Enter to submit, Esc to cancel, Ctrl+V to paste."))
+	return content.String()
+}
+
 func (m model) startNgrok() tea.Cmd {
 	return func() tea.Msg {
 		if isNgrokRunning() {
@@ -1152,6 +1253,10 @@ func (m model) View() string {
 		content = m.connectedView()
 	case "menu":
 		content = m.menuView()
+	case "system_logs":
+		content = m.systemLogsView()
+	case "ngrok_token_input":
+		content = m.ngrokTokenInputView()
 	case "security_phrase_input":
 		content = m.securityPhraseInputView()
 	case "circuit_reset_input":
@@ -1245,103 +1350,71 @@ func (m model) connectedView() string {
 func (m model) menuView() string {
 	var content strings.Builder
 
-	content.WriteString(asciiArtStyle.Render(logoArt))
-	content.WriteString("\n\n")
-	content.WriteString(asciiArtStyle.Render(menuArt))
-	content.WriteString("\n\n")
-
-	// Status indicator
-	if m.serverRunning {
-		content.WriteString(successStyle.Render(statusOnline))
-	} else {
-		content.WriteString(errorStyle.Render(statusOffline))
-	}
+	// Add header
+	content.WriteString(titleStyle.Render("Voila Voice Agent"))
 	content.WriteString("\n\n")
 
-	// Connection progress - only show if connected
-	if m.connectionData.Connected {
-		content.WriteString(successStyle.Render(progressBarConnected))
-		content.WriteString("\n\n")
+	// Render messages if any
+	if len(m.messages) > 0 {
+		for _, msg := range m.messages {
+			content.WriteString(msg)
+			content.WriteString("\n")
+		}
+		content.WriteString("\n")
 	}
 
 	content.WriteString(statusStyle.Render(fmt.Sprintf("Status: %s", m.status)))
-
-	// Show background service status
-	if isBackgroundServiceRunning() {
-		content.WriteString("\n\n")
-		content.WriteString(successStyle.Render("Ã¢â€”Â Background service running"))
-	}
-
-	// Show connection status message
-	if !m.connectionData.Connected {
-		content.WriteString("\n\n")
-		content.WriteString(warningStyle.Render("Ã¢Å¡Â  No connection configured"))
-	}
-
-	content.WriteString("\n\n")
+	content.WriteString("\n")
 	content.WriteString(separatorStyle.Render(separatorLine))
 	content.WriteString("\n\n")
 
-	// Dynamic menu options based on connection state
 	var options []string
 	if m.connectionData.Connected {
 		options = []string{
-			"Ã¢ÂÂ¯  Stop/Start Service",
-			"Ã°Å¸â€”â€˜  Delete Connection",
-			"Ã°Å¸Å’Â Start Ngrok",
-			"Ã°Å¸Â§Â¹ Clear Backend Data",
-			"Ã¢Å¡Â¡ Reset Circuit Breaker",
-			"Ã°Å¸â€™Â¾ Clear Local Data",
-			"Ã°Å¸â€œÅ  View Status",
-			"Ã°Å¸Å¡Âª Exit",
+			"⏯️  Stop/Start Service",
+			"🗑️  Delete Connection",
+			"🌐 Start Ngrok",
+			"🔑 Configure Ngrok Token",
+			"🔥 Clear Backend Data",
+			"⚡ Reset Circuit Breaker",
+			"🧹 Clear Local Data",
+			fmt.Sprintf("📊 View System Logs (%d)", len(sysLogs)),
+			"❌ Exit",
 		}
 
 		if isBackgroundServiceRunning() {
 			options = []string{
-				"Ã¢ÂÂ¯  Stop Background Service",
-				"Ã°Å¸â€”â€˜  Delete Connection",
-				"Ã°Å¸Å’Â Start Ngrok",
-				"Ã°Å¸Â§Â¹ Clear Backend Data",
-				"Ã¢Å¡Â¡ Reset Circuit Breaker",
-				"Ã°Å¸â€™Â¾ Clear Local Data",
-				"Ã°Å¸â€œÅ  View Status",
-				"Ã°Å¸Å¡Âª Exit",
+				"⏯️  Stop Background Service",
+				"🗑️  Delete Connection",
+				"🌐 Start Ngrok",
+				"🔑 Configure Ngrok Token",
+				"🔥 Clear Backend Data",
+				"⚡ Reset Circuit Breaker",
+				"🧹 Clear Local Data",
+				fmt.Sprintf("📊 View System Logs (%d)", len(sysLogs)),
+				"❌ Exit",
 			}
 		}
 	} else {
 		// Not connected - show setup-only options
 		options = []string{
-			"Ã°Å¸â€Â§ Setup Connection",
-			"Ã°Å¸Å’Â Start Ngrok",
-			"Ã°Å¸Å¡Âª Exit",
+			"🔗 Setup Connection",
+			"🌐 Start Ngrok",
+			"🔑 Configure Ngrok Token",
+			"❌ Exit",
 		}
 	}
 
 	for i, option := range options {
-		prefix := " "
-		if i == m.selectedOption {
-			prefix = "Ã¢â€ â€™"
-			content.WriteString(activeButtonStyle.Render(prefix + " " + option))
+		if m.selectedOption == i {
+			content.WriteString(activeButtonStyle.Render(">> "+option) + "\n")
 		} else {
-			content.WriteString(buttonStyle.Render(prefix + " " + option))
-		}
-		content.WriteString("\n")
-	}
-
-	content.WriteString("\n\n")
-	content.WriteString(subtitleStyle.Render(arrowsArt))
-
-	if len(m.messages) > 0 {
-		content.WriteString("\n\n")
-		content.WriteString(separatorStyle.Render(separatorLine))
-		content.WriteString("\n\n")
-		for _, msg := range m.messages {
-			content.WriteString(msg + "\n")
+			content.WriteString(menuStyle.Render("   "+option) + "\n")
 		}
 	}
 
-	content.WriteString("\n\n")
-	content.WriteString(subtitleStyle.Render(footerArt))
+	content.WriteString("\n")
+	content.WriteString(subtitleStyle.Render("Use arrow keys to navigate, Enter to select"))
 
 	return content.String()
 }
@@ -1522,7 +1595,7 @@ func configureNgrokAuthtoken(ngrokPath string) error {
 		return fmt.Errorf("failed to configure authtoken: %s, output: %s", err, string(output))
 	}
 
-	log.Println("Ngrok authtoken configured successfully")
+	addSysLog("Ngrok", "Ngrok authtoken configured successfully")
 	return nil
 }
 
@@ -1532,11 +1605,11 @@ func startNgrok() error {
 		return fmt.Errorf("ngrok not found: %w", err)
 	}
 
-	log.Printf("Using ngrok at: %s", ngrokPath)
+	addSysLog("Ngrok", fmt.Sprintf("Using ngrok at: %s", ngrokPath))
 
 	// Check if ngrok is already running
 	if isNgrokRunning() {
-		log.Println("Ngrok is already running")
+		addSysLog("Ngrok", "Ngrok is already running")
 		return nil
 	}
 
@@ -1559,7 +1632,7 @@ func startNgrok() error {
 		return fmt.Errorf("failed to start ngrok: %w", err)
 	}
 
-	log.Println("Ngrok started in background")
+	addSysLog("Ngrok", "Ngrok started in background")
 	return nil
 }
 
@@ -2102,7 +2175,7 @@ if ($LASTEXITCODE -ne 0) {
 				}
 				
 				fmt.Println("STATUS: GRAPHIFY")
-				os.Stdout.Sync()
+				if !isTUIMode { os.Stdout.Sync() }
 
 				jobID := fmt.Sprintf("job-graphify-%x", time.Now().UnixNano()%0xFFFF)
 				jobRegistryMu.Lock()
@@ -2122,7 +2195,7 @@ if ($LASTEXITCODE -ne 0) {
 				jobRegistryMu.Unlock()
 
 				fmt.Println("STATUS: IDLE")
-				os.Stdout.Sync()
+				if !isTUIMode { os.Stdout.Sync() }
 
 				cmdMu.Lock()
 				currentCancel = nil
@@ -2164,7 +2237,7 @@ if ($LASTEXITCODE -ne 0) {
 				}
 
 				fmt.Println("STATUS: IDLE")
-				os.Stdout.Sync()
+				if !isTUIMode { os.Stdout.Sync() }
 			}()
 
 			return
@@ -2258,12 +2331,12 @@ if ($LASTEXITCODE -ne 0) {
 			}()
 
 			fmt.Printf("STATUS: MODE:%s\n", effectiveMode)
-			os.Stdout.Sync()
+			if !isTUIMode { os.Stdout.Sync() }
 
 			switch effectiveMode {
 			case "GROQ":
 				fmt.Println("STATUS: RUNNING")
-				os.Stdout.Sync()
+				if !isTUIMode { os.Stdout.Sync() }
 				m := modelName
 				if m == "" {
 					m = connData.GroqModel
@@ -2273,11 +2346,11 @@ if ($LASTEXITCODE -ne 0) {
 				}
 				output, err = executeGroqCommand(ctx, command, connData.GroqAPIKey, m, clientID, nil, taskID, conversationID)
 				fmt.Println("STATUS: IDLE")
-				os.Stdout.Sync()
+				if !isTUIMode { os.Stdout.Sync() }
 				newConvID = conversationID
 			case "OLLAMA":
 				fmt.Println("STATUS: RUNNING")
-				os.Stdout.Sync()
+				if !isTUIMode { os.Stdout.Sync() }
 				ollamaModel := connData.OllamaModel
 				if ollamaModel == "" {
 					ollamaModel = "gemma4:31b"
@@ -2286,7 +2359,7 @@ if ($LASTEXITCODE -ne 0) {
 				output, err = executeOllamaCommand(ctx, command, connData.OllamaBaseURL, ollamaModel, connData.OllamaAPIKey, nil, taskID, conversationID)
 				<-ollamaSemaphore
 				fmt.Println("STATUS: IDLE")
-				os.Stdout.Sync()
+				if !isTUIMode { os.Stdout.Sync() }
 				newConvID = conversationID
 			default:
 				// LOCAL / AGENT / SHELL Ã¢â‚¬â€ use agy or powershell
@@ -2295,13 +2368,13 @@ if ($LASTEXITCODE -ne 0) {
 
 			latencyMs := time.Since(startTime).Milliseconds()
 			fmt.Printf("STATUS: LATENCY_MS:%d\n", latencyMs)
-			os.Stdout.Sync()
+			if !isTUIMode { os.Stdout.Sync() }
 			if err == nil {
 				fmt.Printf("STATUS: CMD_DONE:SUCCESS\n")
 			} else {
 				fmt.Printf("STATUS: CMD_DONE:FAILED\n")
 			}
-			os.Stdout.Sync()
+			if !isTUIMode { os.Stdout.Sync() }
 
 			// Post the result back to backend
 			backendURL := strings.TrimRight(connData.BackendURL, "/") + "/webhook/result"
@@ -2415,7 +2488,7 @@ if ($LASTEXITCODE -ne 0) {
 	}
 
 	serverRunning = true
-	log.Println("Local agent server starting on :8088")
+	addSysLog("Server", "Local agent server starting on :8088")
 	if err := server.ListenAndServe(); err != nil {
 		log.Printf("HTTP Server error: %v", err)
 	}
@@ -2644,7 +2717,7 @@ func executeCommand(ctx context.Context, command string, mode string, conversati
 		fmt.Println("------------------------------------------------")
 
 		fmt.Println("STATUS: RUNNING")
-		os.Stdout.Sync()
+		if !isTUIMode { os.Stdout.Sync() }
 
 		cmdMu.Lock()
 		currentConvID = conversationID
@@ -2659,7 +2732,7 @@ func executeCommand(ctx context.Context, command string, mode string, conversati
 		cmdMu.Unlock()
 
 		fmt.Println("STATUS: IDLE")
-		os.Stdout.Sync()
+		if !isTUIMode { os.Stdout.Sync() }
 
 		outStr := strings.TrimSpace(string(outBytes))
 
@@ -2700,7 +2773,7 @@ func executeCommand(ctx context.Context, command string, mode string, conversati
 		
 		if isDangerous {
 			fmt.Printf("STATUS: WAITING_APPROVAL\n")
-			os.Stdout.Sync()
+			if !isTUIMode { os.Stdout.Sync() }
 			if !requireMobileApproval(command, "Raw Shell execution of: "+command) {
 				return "ERROR: Command was denied by user or timed out waiting for mobile approval.", "", fmt.Errorf("user denied")
 			}
@@ -2725,7 +2798,7 @@ func executeCommand(ctx context.Context, command string, mode string, conversati
 	cmd.Stderr = io.MultiWriter(&stderr, os.Stderr)
 
 	fmt.Println("STATUS: RUNNING")
-	os.Stdout.Sync() // Force flush to ensure real-time delivery to Python widget
+	if !isTUIMode { os.Stdout.Sync() } // Force flush to ensure real-time delivery to Python widget
 
 	cmdMu.Lock()
 	currentCmd = cmd
@@ -2740,7 +2813,7 @@ func executeCommand(ctx context.Context, command string, mode string, conversati
 	cmdMu.Unlock()
 
 	fmt.Println("STATUS: IDLE")
-	os.Stdout.Sync() // Force flush to ensure real-time delivery to Python widget
+	if !isTUIMode { os.Stdout.Sync() } // Force flush to ensure real-time delivery to Python widget
 
 	outStr := stdout.String()
 	errStr := stderr.String()
@@ -3705,7 +3778,7 @@ func getPlaybooksDir() string {
 func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMessage, streamFileObj *os.File) string {
 	// Emit status so Python face knows which tool is running
 	fmt.Printf("STATUS: TOOL:%s\n", toolName)
-	os.Stdout.Sync()
+	if !isTUIMode { os.Stdout.Sync() }
 
 	var args map[string]interface{}
 	if err := json.Unmarshal(argsJSON, &args); err != nil {
@@ -4070,7 +4143,7 @@ case "read_file":
 		
 		if isDangerous {
 			fmt.Printf("STATUS: WAITING_APPROVAL\n")
-			os.Stdout.Sync()
+			if !isTUIMode { os.Stdout.Sync() }
 			if !requireMobileApproval(actualCommand, "Terminal execution of: "+actualCommand) {
 				return "ERROR: Command was denied by user or timed out waiting for mobile approval."
 			}
@@ -4210,7 +4283,7 @@ case "read_file":
 			}
 			if isDangerous {
 				fmt.Printf("STATUS: WAITING_APPROVAL\n")
-				os.Stdout.Sync()
+				if !isTUIMode { os.Stdout.Sync() }
 				if !requireMobileApproval(value, "Desktop automation typing of: "+value) {
 					return "ERROR: Command was denied by user or timed out waiting for mobile approval."
 				}
@@ -5438,6 +5511,7 @@ func generateDeviceFingerprint() string {
 }
 
 
+var isTUIMode bool
 var connectionManagerRunning bool
 var connectionManagerMu sync.Mutex
 
@@ -5466,13 +5540,13 @@ func startConnectionManager(data ConnectionData) {
 			addr := getNgrokPublicURL()
 			if addr == "" {
 				if !isNgrokRunning() {
-					log.Println("Ngrok not running, attempting to start...")
+					addSysLog("Ngrok", "Attempting operation...")
 					if err := startNgrok(); err != nil {
 						ngrokRetryCount++
-						log.Printf("Failed to start ngrok (attempt %d/%d): %v", ngrokRetryCount, maxNgrokRetries, err)
+						addSysLog("Ngrok", "Attempting operation...")
 
 						if ngrokRetryCount >= maxNgrokRetries {
-							log.Printf("Max ngrok retry attempts reached, giving up for now")
+							addSysLog("Ngrok", "Max ngrok retry attempts reached, giving up for now")
 							ngrokRetryCount = 0
 							ngrokRetryDelay = 5 * time.Second // Reset delay
 							time.Sleep(30 * time.Second)      // Wait longer before trying again
@@ -5492,7 +5566,7 @@ func startConnectionManager(data ConnectionData) {
 					addr = getNgrokPublicURL()
 				}
 				if addr == "" {
-					log.Println("ngrok URL not available yet (is ngrok running?)")
+					addSysLog("Ngrok", "ngrok URL not available yet (is ngrok running?)")
 				}
 			}
 
@@ -5500,14 +5574,14 @@ func startConnectionManager(data ConnectionData) {
 				// If address changed or we haven't registered yet, register!
 				if addr != lastRegisteredAddr {
 					if err := registerWithBackend(data, addr); err != nil {
-						log.Printf("register error: %v", err)
+						addSysLog("Backend", fmt.Sprintf("register error: %v", err))
 					} else {
 						lastRegisteredAddr = addr
 					}
 				} else {
 					// We are registered, so send a heartbeat to keep the session alive
 					if err := sendHeartbeat(data, addr); err != nil {
-						log.Printf("heartbeat error: %v", err)
+						addSysLog("Backend", fmt.Sprintf("heartbeat error: %v", err))
 						// CRITICAL FIX: If heartbeat fails (e.g., backend restarted and wiped memory),
 						// we MUST clear lastRegisteredAddr to force a full re-registration on the next loop!
 						lastRegisteredAddr = ""
@@ -5544,10 +5618,10 @@ func startConnectionManager(data ConnectionData) {
 					}
 					json.NewDecoder(resp.Body).Decode(&healthData)
 					resp.Body.Close()
-					log.Printf("Presence: Backend OK, Mobile clients: %d", healthData.MobileClients)
-					fmt.Printf("STATUS: BACKEND:ONLINE\n")
-					fmt.Printf("STATUS: MOBILE_CLIENTS:%d\n", healthData.MobileClients)
-					os.Stdout.Sync()
+					addSysLog("Polling", fmt.Sprintf("Presence: Backend OK, Mobile clients: %d", healthData.MobileClients))
+					if !isTUIMode { fmt.Printf("STATUS: BACKEND:ONLINE\n") }
+					if !isTUIMode { fmt.Printf("STATUS: MOBILE_CLIENTS:%d\n", healthData.MobileClients) }
+					if !isTUIMode { os.Stdout.Sync() }
 					continue
 				}
 				if err == nil {
@@ -5555,10 +5629,10 @@ func startConnectionManager(data ConnectionData) {
 				}
 			}
 			
-			log.Printf("Presence: Backend unreachable")
-			fmt.Printf("STATUS: BACKEND:OFFLINE\n")
-			fmt.Printf("STATUS: MOBILE_CLIENTS:0\n")
-			os.Stdout.Sync()
+			addSysLog("Polling", "Presence: Backend unreachable")
+			if !isTUIMode { fmt.Printf("STATUS: BACKEND:OFFLINE\n") }
+			if !isTUIMode { fmt.Printf("STATUS: MOBILE_CLIENTS:0\n") }
+			if !isTUIMode { os.Stdout.Sync() }
 		}
 	}()
 }
@@ -5752,6 +5826,8 @@ func handleLocalMockExecution(w http.ResponseWriter, r *http.Request, command st
 }
 
 func main() {
+	os.Setenv("PYTHONUTF8", "1")
+	os.Setenv("PYTHONIOENCODING", "utf-8")
 	initZeroOrphanJobObject()
 	initDebugLog()
 
@@ -5786,14 +5862,15 @@ func main() {
 		return
 	}
 
+	isTUIMode = true
 	// Check if background service is already running
 	backgroundRunning := isBackgroundServiceRunning()
 	if backgroundRunning {
-		log.Println("Background service already running. Launching TUI in management mode...")
+		addSysLog("System", "Background service already running. Launching TUI in management mode...")
 		// Load connection data for backend access
 		data, err := loadConnectionData()
 		if err != nil {
-			log.Printf("Warning: Could not load connection data: %v", err)
+			addSysLog("System", fmt.Sprintf("Warning: Could not load connection data: %v", err))
 			data = ConnectionData{}
 		}
 		// Launch in menu mode to manage background service
@@ -5819,7 +5896,7 @@ func main() {
 	// Try to load existing connection
 	data, err := loadConnectionData()
 	if err == nil && data.Connected && data.SecurityPhrase != "" {
-		log.Printf("Auto-connecting with backend: %s", data.BackendURL)
+		addSysLog("System", fmt.Sprintf("Auto-connecting with backend: %s", data.BackendURL))
 		// Auto-connect if connection exists and security phrase is set
 		initialModel := model{
 			state:          "connected",

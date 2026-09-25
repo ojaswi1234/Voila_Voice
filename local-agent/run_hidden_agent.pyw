@@ -6,6 +6,8 @@ import threading
 import sys
 import time
 import math
+import os
+_popup_pos_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "popup_pos.txt")
 import random
 
 import ctypes
@@ -395,6 +397,11 @@ def stop_move(e):
     if dashboard_active or dashboard_transition_in_progress:
         return
     root.x, root.y = None, None
+    try:
+        with open(_popup_pos_path, "w") as f:
+            f.write(f"{root.winfo_x()},{root.winfo_y()}")
+    except:
+        pass
 
 def do_move(e):
     if dashboard_active or dashboard_transition_in_progress:
@@ -1892,20 +1899,11 @@ def animation_loop():
                   target_outline = '#7c3aed'
                   show_dots = True
                   canvas.itemconfig(sun_glow3, state="hidden")
-                  canvas.itemconfig(sun_glow2, state="hidden")
-                  canvas.itemconfig(sun_glow1, state="hidden")
-                  canvas.itemconfig(core_bg, state="hidden")
-                  canvas.itemconfig(core_arc1, state="hidden")
-                  canvas.itemconfig(core_arc2, state="hidden")
-                  canvas.itemconfig(core_arc3, state="hidden")
-                  canvas.itemconfig(term_prompt, state="hidden")
-                  canvas.itemconfig(file_icon, state="hidden")
-                  canvas.itemconfig(radar_arc, state="hidden")
                   canvas.itemconfig(browser_box, state="hidden")
                   canvas.itemconfig(browser_line, state="hidden")
-                  canvas.itemconfig(desktop_cursor_arrow, state="normal")
-                  canvas.itemconfig(desktop_cursor_dot, state="normal")
-                  canvas.itemconfig(desktop_cursor_label, state="normal")
+                  canvas.itemconfig(desktop_cursor_arrow, state="hidden")
+                  canvas.itemconfig(desktop_cursor_dot, state="hidden")
+                  canvas.itemconfig(desktop_cursor_label, state="hidden")
             elif visual_state == "BASH":
                 target_text = "Bash"
                 target_color = '#34d399'
@@ -2005,6 +2003,34 @@ def reset_to_idle():
         ai_state = "IDLE"
         update_expression()
 
+def trigger_black_hole():
+    hole_id = canvas.create_oval(cx, cy, cx, cy, fill="black", outline="#a78bfa", width=2)
+    def animate_hole(frame=0):
+        if frame < 20:
+            r = frame * 2
+            canvas.coords(hole_id, cx-r, cy-r, cx+r, cy+r)
+            root.after(20, animate_hole, frame+1)
+        elif frame < 40:
+            root.after(20, animate_hole, frame+1)
+        elif frame < 60:
+            r = (60 - frame) * 2
+            canvas.coords(hole_id, cx-r, cy-r, cx+r, cy+r)
+            root.after(20, animate_hole, frame+1)
+        else:
+            canvas.delete(hole_id)
+    animate_hole()
+
+def send_cursor_home():
+    try:
+        import socket
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        x = root.winfo_x() + 40
+        y = root.winfo_y() + 32
+        sock.sendto(f"HOME,{x},{y}".encode(), ("127.0.0.1", 19882))
+        trigger_black_hole()
+    except Exception:
+        pass
+
 def parse_line(line):
     global ai_state, mobile_clients, glow_timer, current_mode, backend_status
 
@@ -2054,7 +2080,14 @@ def parse_line(line):
 
     if "STATUS: IDLE" in line:
         if glow_timer: root.after_cancel(glow_timer)
+        send_cursor_home()
         glow_timer = root.after(1500, reset_to_idle)
+        return
+
+    if "STATUS: FORCE_IDLE" in line:
+        if glow_timer: root.after_cancel(glow_timer)
+        send_cursor_home()
+        reset_to_idle()
         return
 
     if "STATUS: FORCE_IDLE" in line:
@@ -2564,6 +2597,14 @@ def _draw_teams_section(dc, w, h):
     dc.tag_bind('btn_add_team', '<Button-1>', on_new_team)
 
 # Write initial prompt file if not exists
-export_graphify_prompt()
+def write_initial_pos():
+    try:
+        with open(_popup_pos_path, "w") as f:
+            f.write(f"{root.winfo_x()},{root.winfo_y()}")
+    except:
+        pass
+    root.after(5000, write_initial_pos)
 
+export_graphify_prompt()
+root.after(100, write_initial_pos)
 root.mainloop()

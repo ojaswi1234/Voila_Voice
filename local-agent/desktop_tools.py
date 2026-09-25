@@ -31,6 +31,12 @@ sys.stdout.reconfigure(encoding="utf-8")
 
 import os, json, socket, subprocess, time, argparse
 
+try:
+    with open("desktop_tools.log", "a") as f:
+        f.write(f"[{time.strftime('%H:%M:%S')}] ARGS: {sys.argv}\n")
+except:
+    pass
+
 BRIDGE_PORT = int(os.environ.get("VOILA_DESKTOP_PORT", "19881"))
 BRIDGE_HOST = "127.0.0.1"
 
@@ -160,6 +166,7 @@ def main():
     result = _proxy(req)
     with open("desktop_tools_req.log", "a", encoding="utf-8") as f:
         f.write(f"REQ: {json.dumps(req)}\nRES: {json.dumps(result, ensure_ascii=False)}\n\n")
+    if 'cursor' in result: del result['cursor']
     print(json.dumps(result, ensure_ascii=False))
 
 if __name__ == "__main__":

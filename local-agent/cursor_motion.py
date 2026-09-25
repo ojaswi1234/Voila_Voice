@@ -25,29 +25,34 @@ _overlay_proc = None
 _OVERLAY_PORT: int = int(os.environ.get("VOILA_AGENT_PORT", "19882"))
 
 def _ensure_overlay():
+    if "VOILA_AGENT_INDEX" in os.environ:
+        return # Managed strictly by Go backend in Graphify mode
+    
     global _overlay_proc
     if _overlay_proc is not None:
         if _overlay_proc.poll() is None:
             return  # still running
-        else:
-            _log("Overlay process died, restarting...")
 
+    # Check if ANY overlay is already listening on our UDP port
     try:
-        # aggressively kill any zombie overlays that might be hoarding the UDP port
         out = subprocess.check_output("netstat -ano | findstr :" + str(_OVERLAY_PORT), shell=True, text=True)
         for line in out.splitlines():
             if "UDP" in line and (":" + str(_OVERLAY_PORT)) in line:
-                pid = line.strip().split()[-1]
-                if pid.isdigit() and int(pid) > 0:
-                    subprocess.run(["taskkill", "/F", "/PID", pid], capture_output=True)
+                # An overlay is already running and listening! Do NOT kill it.
+                return
     except Exception:
         pass
 
+    # No overlay is listening. We must spawn one.
     try:
         here = os.path.dirname(os.path.abspath(__file__))
         overlay_path = os.path.join(here, "cursor_overlay.py")
         python_exe = sys.executable.replace("python.exe", "pythonw.exe")
         _overlay_proc = subprocess.Popen([python_exe, overlay_path], creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP)
+        
+        # Wait a moment for it to bind before we start firing UDP packets at it
+        import time
+        time.sleep(0.4)
     except Exception as e:
         _log(f"Failed to launch overlay: {e}")
 
@@ -159,6 +164,7 @@ def _do_click(kind: str, cx: int, cy: int):
 
     orig_x, orig_y = _get_cursor_pos()
     _user32.SetCursorPos(int(cx), int(cy))
+    time.sleep(0.04) # CRITICAL: Let OS and apps process physical mouse movement before clicking
 
     if kind == "left":
         _mouse_event(MOUSEEVENTF_LEFTDOWN)
@@ -176,7 +182,8 @@ def _do_click(kind: str, cx: int, cy: int):
         _mouse_event(MOUSEEVENTF_LEFTDOWN)
         time.sleep(down_ms / 1000)
         _mouse_event(MOUSEEVENTF_LEFTUP)
-        
+
+    time.sleep(0.04) # CRITICAL: Let apps register the click before teleporting physical mouse away
     _user32.SetCursorPos(int(orig_x), int(orig_y))
     # Pulse the overlay to show click
     try: _overlay_sock.sendto(b"HIDE", ("127.0.0.1", _OVERLAY_PORT))
@@ -186,9 +193,32 @@ def _do_click(kind: str, cx: int, cy: int):
 
 # ─── Public API ───────────────────────────────────────────────────────────────
 
-def get_pos() -> tuple[int, int]:
+def get_pos(trigger_spawn=False) -> tuple[int, int]:
+    global _current_ai_x, _current_ai_y
     if _current_ai_x is not None and _current_ai_y is not None:
         return _current_ai_x, _current_ai_y
+    
+    # Initialize from VoilaAIPopup face if available
+    try:
+        import os
+        pos_file = os.path.join(os.path.dirname(__file__), "popup_pos.txt")
+        if os.path.exists(pos_file):
+            with open(pos_file, "r") as f:
+                parts = f.read().split(",")
+                if len(parts) == 2:
+                    cx = int(parts[0]) + 40
+                    cy = int(parts[1]) + 32
+                    if trigger_spawn:
+                        _log(f"Triggering SPAWN at {cx},{cy}")
+                        import time
+                        _overlay_sock.sendto(f"SPAWN,{cx},{cy}".encode(), ("127.0.0.1", _OVERLAY_PORT))
+                        time.sleep(0.5) # Wait for spawn animation
+                    
+                    _current_ai_x, _current_ai_y = int(cx), int(cy)
+                    return int(cx), int(cy)
+    except Exception as e:
+        _log(f"Failed to read popup_pos: {e}")
+        
     return _get_cursor_pos()
 
 def set_goal(
@@ -206,7 +236,7 @@ def set_goal(
     _goal_duration_ms = duration_ms
 
 def move_to_goal() -> dict:
-    sx, sy = get_pos()
+    sx, sy = get_pos(trigger_spawn=True)
     gx, gy = _goal_x, _goal_y
     dist = math.hypot(gx - sx, gy - sy)
 
