@@ -52,7 +52,7 @@ def _ensure_overlay():
         
         # Wait a moment for it to bind before we start firing UDP packets at it
         import time
-        time.sleep(0.4)
+        time.sleep(1.5)
     except Exception as e:
         _log(f"Failed to launch overlay: {e}")
 
@@ -201,14 +201,17 @@ def get_pos(trigger_spawn=False) -> tuple[int, int]:
     # Initialize from VoilaAIPopup face if available
     try:
         import os
-        pos_file = os.path.join(os.path.dirname(__file__), "popup_pos.txt")
+        pos_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "popup_pos.txt")
+        _log(f"Reading pos_file: {pos_file} (exists: {os.path.exists(pos_file)})")
         if os.path.exists(pos_file):
             with open(pos_file, "r") as f:
                 parts = f.read().split(",")
+                _log(f"pos_file contents: {parts}")
                 if len(parts) == 2:
                     cx = int(parts[0]) + 40
                     cy = int(parts[1]) + 32
                     if trigger_spawn:
+                        _ensure_overlay()
                         _log(f"Triggering SPAWN at {cx},{cy}")
                         import time
                         _overlay_sock.sendto(f"SPAWN,{cx},{cy}".encode(), ("127.0.0.1", _OVERLAY_PORT))
