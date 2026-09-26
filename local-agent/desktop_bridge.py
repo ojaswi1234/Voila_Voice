@@ -90,6 +90,20 @@ def _worker():
 
             class NS: pass
             args = NS()
+            if action == "RESET_CURSOR":
+                try:
+                    import cursor_motion
+                    cursor_motion._current_ai_x = None
+                    cursor_motion._current_ai_y = None
+                    resp = json.dumps({"ok": True, "action": "RESET_CURSOR", "error": None}) + "\n"
+                    conn.sendall(resp.encode("utf-8"))
+                except Exception as e:
+                    pass
+                finally:
+                    try: conn.close()
+                    except: pass
+                continue
+
             args.action   = action
             args.ref      = ref
             args.selector = selector

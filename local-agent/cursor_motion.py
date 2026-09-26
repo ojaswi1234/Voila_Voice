@@ -24,11 +24,15 @@ _overlay_proc = None
 # In single-agent mode (default), this is 19882 — no change to existing behavior.
 _OVERLAY_PORT: int = int(os.environ.get("VOILA_AGENT_PORT", "19882"))
 
+_overlay_is_running = False
 def _ensure_overlay():
     if "VOILA_AGENT_INDEX" in os.environ:
         return # Managed strictly by Go backend in Graphify mode
     
-    global _overlay_proc
+    global _overlay_proc, _overlay_is_running
+    if _overlay_is_running:
+        return
+        
     if _overlay_proc is not None:
         if _overlay_proc.poll() is None:
             return  # still running
@@ -39,6 +43,7 @@ def _ensure_overlay():
         for line in out.splitlines():
             if "UDP" in line and (":" + str(_OVERLAY_PORT)) in line:
                 # An overlay is already running and listening! Do NOT kill it.
+                _overlay_is_running = True
                 return
     except Exception:
         pass
@@ -201,7 +206,8 @@ def get_pos(trigger_spawn=False) -> tuple[int, int]:
     # Initialize from VoilaAIPopup face if available
     try:
         import os
-        pos_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "popup_pos.txt")
+        here = os.path.dirname(os.path.abspath(__file__))
+        pos_file = os.path.join(here, "popup_pos.txt")
         _log(f"Reading pos_file: {pos_file} (exists: {os.path.exists(pos_file)})")
         if os.path.exists(pos_file):
             with open(pos_file, "r") as f:
@@ -212,6 +218,8 @@ def get_pos(trigger_spawn=False) -> tuple[int, int]:
                     cy = int(parts[1]) + 32
                     if trigger_spawn:
                         _ensure_overlay()
+                        with open(os.path.join(here, "cursor_is_out.txt"), "w") as out_f:
+                            out_f.write("1")
                         _log(f"Triggering SPAWN at {cx},{cy}")
                         import time
                         _overlay_sock.sendto(f"SPAWN,{cx},{cy}".encode(), ("127.0.0.1", _OVERLAY_PORT))
