@@ -487,7 +487,8 @@ usage_stats = {
     "session_start": time.time(),
     "last_command_time": 0,
     "peak_commands_per_min": 0,
-    "timeline_data": []  # Store performance timeline data
+    "timeline_data": [],  # Store performance timeline data
+    "tools_used": {}      # Tool tracking
 }
 current_section = "Dashboard"  # Current active section
 heatmap_cache = None
@@ -1440,6 +1441,11 @@ def _draw_analytics_section(dc, w, h):
         # Inner hole
         dc.create_oval(left_x + 50, donut_y + 50, left_x + 90, donut_y + 90, fill='#0F1115', outline='')
         dc.create_text(left_x + 70, donut_y + 70, text=f"{success_rate}%", fill='#E5E7EB', font=('Segoe UI', 10, 'bold'), anchor='center')
+    else:
+        # Grey placeholder donut
+        dc.create_arc(left_x + 30, donut_y + 30, left_x + 110, donut_y + 110, start=0, extent=359.9, fill='#2A2D35', outline='')
+        dc.create_oval(left_x + 50, donut_y + 50, left_x + 90, donut_y + 90, fill='#0F1115', outline='')
+        dc.create_text(left_x + 70, donut_y + 70, text="0%", fill='#9CA3AF', font=('Segoe UI', 10, 'bold'), anchor='center')
     
     # ---------------------------------------------------------
     # RIGHT COLUMN: CARDS & STATS
@@ -2207,6 +2213,10 @@ def parse_line(line):
     if "STATUS: TOOL:" in line:
         if glow_timer: root.after_cancel(glow_timer)
         tool = line.split("STATUS: TOOL:")[1].strip().lower()
+        if "tools_used" not in usage_stats:
+            usage_stats["tools_used"] = {}
+        usage_stats["tools_used"][tool] = usage_stats["tools_used"].get(tool, 0) + 1
+        
         if "web_research" in tool:
             ai_state = "SEARCH"
         elif "browser_automation" in tool or "browse" in tool:
@@ -2243,12 +2253,19 @@ def read_output():
 
 def _drain_line_queue():
     """UI thread: drain up to 20 queued lines per tick to stay responsive."""
+    did_process_status = False
     for _ in range(20):
         try:
             line = _line_queue.get_nowait()
+            if "STATUS:" in line:
+                did_process_status = True
             parse_line(line)
         except _queue.Empty:
             break
+            
+    if did_process_status and dashboard_active and current_section == 'Analytics':
+        refresh_dashboard_content()
+        
     root.after(50, _drain_line_queue)  # Poll every 50ms
 
 # Resource monitoring background thread removed to drop overhead
