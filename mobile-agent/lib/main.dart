@@ -418,9 +418,9 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       }
 
       if (message.data['type'] == 'approval_required' && message.data['job_id'] != null) {
-        _speakSummary("Approval required for dangerous action: " + (message.data['summary'] ?? "Unknown"), isCritical: true);
+        _speakSummary("Security permission required: " + (message.data['summary'] ?? "Unknown"), isCritical: true);
         if (mounted) {
-          _showApprovalDialog(message.data['job_id']!, message.data['summary'] ?? "Unknown");
+          _showApprovalDialog(message.data);
         }
       }
     });
@@ -3671,26 +3671,77 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     );
   }
 
-  Future<void> _showApprovalDialog(String jobId, String summary) async {
+  Future<void> _showApprovalDialog(Map<String, dynamic> data) async {
+    final jobId = data['job_id'] ?? '';
+    final riskLevel = data['risk_level'] ?? 'high';
+    final actionType = data['action_type'] ?? 'unknown';
+    final summary = data['summary'] ?? 'Unknown action';
+    final detail = data['detail'] ?? summary;
+    final reason = data['reason'] ?? 'Flagged by security policy';
+    final windowTitle = data['window'] ?? '';
+    final controlName = data['control_name'] ?? '';
+
+    Color riskColor = Colors.orangeAccent;
+    if (riskLevel.toString().toLowerCase() == 'critical') {
+      riskColor = Colors.redAccent;
+    } else if (riskLevel.toString().toLowerCase() == 'medium') {
+      riskColor = Colors.yellowAccent;
+    }
+
+    String targetText = windowTitle;
+    if (controlName.isNotEmpty) targetText += ' > $controlName';
+    if (targetText.isEmpty) targetText = 'N/A';
+
     bool? approved = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (BuildContext context) {
         return AlertDialog(
           backgroundColor: const Color(0xFF1E1E24),
-          title: const Text('Approval Required', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-          content: Text(
-            'A dangerous action requires your approval:\n\n$summary',
-            style: const TextStyle(color: Colors.white70),
+          title: Row(
+            children: const [
+              Icon(Icons.security, color: Colors.white),
+              SizedBox(width: 10),
+              Expanded(child: Text('Security Permission', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18))),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                RichText(text: TextSpan(children: [
+                  const TextSpan(text: 'Risk Level: ', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold)),
+                  TextSpan(text: riskLevel.toString().toUpperCase(), style: TextStyle(color: riskColor, fontWeight: FontWeight.bold)),
+                ])),
+                const SizedBox(height: 8),
+                RichText(text: TextSpan(children: [
+                  const TextSpan(text: 'Action: ', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold)),
+                  TextSpan(text: actionType, style: const TextStyle(color: Colors.white)),
+                ])),
+                const SizedBox(height: 8),
+                RichText(text: TextSpan(children: [
+                  const TextSpan(text: 'Target: ', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold)),
+                  TextSpan(text: targetText, style: const TextStyle(color: Colors.white)),
+                ])),
+                const SizedBox(height: 12),
+                const Text('Why blocked:', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold)),
+                Text(reason, style: const TextStyle(color: Colors.white)),
+                const SizedBox(height: 12),
+                const Text('Detail:', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold)),
+                Text(detail, style: const TextStyle(color: Colors.white54, fontSize: 12)),
+              ],
+            ),
           ),
           actions: <Widget>[
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Deny', style: TextStyle(color: Colors.redAccent)),
+              child: const Text('DENY', style: TextStyle(color: Colors.white70)),
             ),
-            TextButton(
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: riskColor.withOpacity(0.2)),
               onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Allow', style: TextStyle(color: Colors.greenAccent)),
+              child: Text('ALLOW ONCE', style: TextStyle(color: riskColor, fontWeight: FontWeight.bold)),
             ),
           ],
         );

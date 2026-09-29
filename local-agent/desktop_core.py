@@ -1293,6 +1293,41 @@ else { [VDesktop]::Switch($false) }
         snap["message"] = f"Start Menu opened and snapshotted — hwnd={sm_hwnd}"
         return snap
 
+    def _enforce_policy(action: str, window_hint: str, value: str) -> dict | None:
+        """Reads security_rules.json to enforce Defense-In-Depth gating."""
+        try:
+            import json, os, re
+            here = os.path.dirname(os.path.abspath(__file__))
+            rules_path = os.path.join(here, "security_rules.json")
+            if not os.path.exists(rules_path):
+                return None
+            with open(rules_path, "r", encoding="utf-8") as f:
+                rules = json.load(f)
+            
+            d_rules = rules.get("desktop", {})
+            allow_actions = d_rules.get("allow_actions", [])
+            if action.lower() in [a.lower() for a in allow_actions]:
+                return None
+                
+            win_hint_lower = (window_hint or "").lower()
+            for pw in d_rules.get("protected_windows", []):
+                if pw["title_fragment"].lower() in win_hint_lower:
+                    return {"ok": False, "error": "policy_blocked", "reason": pw["reason"]}
+                    
+            if action.lower() in ("type_keys", "set_value"):
+                val_lower = (value or "").lower()
+                for tp in d_rules.get("type_keys_patterns", []):
+                    pat = tp["pattern"]
+                    if (".*" in pat or "^" in pat):
+                        if re.search(pat, val_lower, re.IGNORECASE):
+                            return {"ok": False, "error": "policy_blocked", "reason": tp["reason"]}
+                    elif pat.lower() in val_lower:
+                        return {"ok": False, "error": "policy_blocked", "reason": tp["reason"]}
+                        
+            return None
+        except Exception as e:
+            return None # Fail open on JSON parse error so we don't break the agent, main.go handles hard gates anyway.
+
     # ─── Router ────────────────────────────────────────────────────────────────
     def dispatch(args) -> dict:
         action   = args.action
@@ -1304,6 +1339,11 @@ else { [VDesktop]::Switch($false) }
         timeout  = args.timeout
         button   = getattr(args, "button", "left") or "left"
         monitor  = getattr(args, "monitor", 0) or 0
+
+        # Defense-in-depth policy check
+        policy_violation = _enforce_policy(action, window, value)
+        if policy_violation:
+            return policy_violation
 
         if action == "list_windows":   return act_list_windows()
         if action == "foreground":     return act_foreground()

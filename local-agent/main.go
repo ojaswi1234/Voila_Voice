@@ -138,6 +138,11 @@ func resolveAgentPath(p string) string {
 }
 
 var (
+	bridgeEnabled       = false
+	bridgeFailCount     = 0
+	bridgeCircuitOpen   = false
+	bridgeWindowStart   time.Time
+
 	localMockCount int
 	localMockMu    sync.Mutex
 )
@@ -2915,6 +2920,26 @@ var availableTools = []toolDef{
 	{
 		Type: "function",
 		Function: toolFuncDef{
+			Name: "browser_desktop_bridge",
+			Description: "Optional collaboration bridge. OFF by default. Use ONLY when user explicitly asks to combine browser+desktop or to click stubborn browser popups with the real cursor. Workflow: action=enable_session -> action=guided_click -> browser_guide computes coordinates -> desktop clicks -> verify. Never invent coordinates. If bridge_circuit_open, fall back to browser_automation or desktop_automation alone.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"action":      map[string]interface{}{"type": "string", "description": "enable_session | disable_session | status | guided_click | guided_close_popup"},
+					"selector":    map[string]interface{}{"type": "string", "description": "CSS selector to guide the click"},
+					"value":       map[string]interface{}{"type": "string", "description": "Fallback text for resolve_text"},
+					"bridge_mode": map[string]interface{}{"type": "boolean", "description": "Must be true OR session already enabled"},
+					"verify":      map[string]interface{}{"type": "boolean", "description": "Verify after click (default true)"},
+					"button":      map[string]interface{}{"type": "string", "description": "left, right, double"},
+					"timeout_ms":  map[string]interface{}{"type": "integer", "description": "Timeout in ms"},
+				},
+				"required": []string{"action"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
 			Name:        "web_research",
 			Description: "Search the web. Highly token-efficient for simple lookups. If a result requires deep scraping or interaction, you can follow up with browser_automation.",
 			Parameters: map[string]interface{}{
@@ -3723,43 +3748,21 @@ func cleanupTerminalSession() {
 		terminalPid = ""
 	}
 }
+// requireMobileApproval is a backward-compatible shim.
+// All new call sites use requireSecurityApproval (security_policy.go) directly
+// for richer popup context. This shim converts old-style calls to the new API.
 func requireMobileApproval(command, summary string) bool {
-	connData, err := loadConnectionData()
-	if err != nil { return false }
-	
-	reqID := fmt.Sprintf("req-%x", time.Now().UnixNano()%0xFFFF)
-	ch := make(chan bool, 1)
-	
-	pendingApprovalsMu.Lock()
-	pendingApprovals[reqID] = ch
-	pendingApprovalsMu.Unlock()
-	
-	backendURL := strings.TrimRight(connData.BackendURL, "/") + "/webhook/approval_request"
-	backendURL = strings.Replace(backendURL, "wss://", "https://", 1)
-	backendURL = strings.Replace(backendURL, "ws://", "http://", 1)
-	
-	payload, _ := json.Marshal(map[string]string{
-		"device_id": connData.DeviceID,
-		"secret_hash": hashPhrase(connData.SecurityPhrase, connData.DeviceID),
-		"job_id": reqID,
-		"summary": summary,
-	})
-	
-	go func() {
-		client := &http.Client{Timeout: 10 * time.Second}
-		client.Post(backendURL, "application/json", bytes.NewBuffer(payload))
-	}()
-	
-	select {
-	case approved := <-ch:
-		return approved
-	case <-time.After(45 * time.Second):
-		pendingApprovalsMu.Lock()
-		delete(pendingApprovals, reqID)
-		pendingApprovalsMu.Unlock()
-		return false
+	decision := PolicyDecision{
+		Level:      PolicyApprove,
+		RiskLevel:  "high",
+		Summary:    truncate(summary, 80),
+		Reason:     summary,
+		ActionType: "terminal",
 	}
+	return requireSecurityApproval(decision, command, "run_terminal", "", "")
 }
+
+
 
 
 func getPlaybooksDir() string {
@@ -4213,7 +4216,117 @@ case "read_file":
 
 	case "create_pdf", "create_doc", "read_pdf", "read_doc", "read_docx", "create_ppt", "create_docx", "create_excel", "modify_excel", "read_excel", "create_csv", "read_csv":
 		return callPythonDocumentTool(toolName, argsJSON)
-	case "browser_automation":
+		case "browser_desktop_bridge":
+		action := getString("action")
+		selector := getString("selector")
+		value := getString("value")
+		button := getString("button")
+		if button == "" {
+			button = "left"
+		}
+		
+		verify := true
+		if v, ok := args["verify"].(bool); ok {
+			verify = v
+		}
+
+		bridgeMode := false
+		if bm, ok := args["bridge_mode"].(bool); ok {
+			bridgeMode = bm
+		}
+
+		if action == "enable_session" {
+			bridgeEnabled = true
+			return `{"ok":true, "bridge_enabled":true, "message":"Bridge mode enabled for this session."}`
+		}
+		if action == "disable_session" {
+			bridgeEnabled = false
+			return `{"ok":true, "bridge_enabled":false, "message":"Bridge mode disabled."}`
+		}
+		if action == "status" {
+			return fmt.Sprintf(`{"ok":true, "bridge_enabled":%t, "circuit_open":%t, "fail_count":%d}`, bridgeEnabled, bridgeCircuitOpen, bridgeFailCount)
+		}
+
+		if !bridgeEnabled && !bridgeMode {
+			return `{"ok":false, "error":"bridge_disabled", "message":"Bridge is off by default. User must explicitly request browser+desktop collaboration. Call action=enable_session first if requested, or pass bridge_mode=true."}`
+		}
+
+		if isCircuitOpen() {
+			return `{"ok":false, "error":"auth_circuit_open", "message":"Global auth circuit is open. Execution blocked."}`
+		}
+
+		if bridgeCircuitOpen {
+			// Check window (10 mins)
+			if time.Since(bridgeWindowStart) > 10*time.Minute {
+				bridgeCircuitOpen = false
+				bridgeFailCount = 0
+			} else {
+				return `{"ok":false, "error":"bridge_circuit_open", "message":"Bridge circuit tripped due to repeated failures. Use standard tools instead."}`
+			}
+		}
+
+		if action == "guided_click" || action == "guided_close_popup" {
+			// Security Gate for Desktop Click
+			secDecision := EvaluateDesktopAction("click_ref", "", selector, value, "Edge", selector, "", "")
+			if secDecision.Level == PolicyDeny {
+				writeAuditLog(AuditEntry{Timestamp: time.Now().UTC().Format(time.RFC3339), Tool: "browser_desktop_bridge", Action: action, Level: "deny", Risk: secDecision.RiskLevel, Decision: "auto_deny", Summary: secDecision.Summary, Window: "Edge", ControlName: selector, MatchedRule: secDecision.MatchedRule})
+				return `{"ok":false,"error":"policy_blocked","reason":"` + secDecision.Reason + `"}`
+			}
+			if secDecision.Level == PolicyApprove {
+				fmt.Printf("STATUS: WAITING_APPROVAL\n")
+				if !isTUIMode { os.Stdout.Sync() }
+				detail := fmt.Sprintf("Bridge %s | Selector: %s | Value: %s", action, selector, truncate(value, 100))
+				if !requireSecurityApproval(secDecision, detail, "browser_desktop_bridge", "Edge", selector) {
+					return `{"ok":false,"error":"permission_denied","reason":"` + secDecision.Reason + `","agent_note":"` + permissionDeniedNote(secDecision, detail) + `"}`
+				}
+			}
+
+			fmt.Printf("STATUS: RUNNING\n")
+			exeDir2, _ := os.Executable()
+			bridgeScript := filepath.Join(filepath.Dir(exeDir2), "bridge_constructor.py")
+			if _, err := os.Stat(bridgeScript); os.IsNotExist(err) {
+				bridgeScript = filepath.Join(currentWorkingDir, "bridge_constructor.py")
+				if _, err := os.Stat(bridgeScript); os.IsNotExist(err) {
+					bridgeScript = filepath.Join(currentWorkingDir, "local-agent", "bridge_constructor.py")
+				}
+			}
+
+			argsArr := []string{bridgeScript, "--action", action}
+			if selector != "" {
+				argsArr = append(argsArr, "--selector", selector)
+			}
+			if value != "" {
+				argsArr = append(argsArr, "--value", value)
+			}
+			if !verify {
+				argsArr = append(argsArr, "--verify", "false")
+			}
+			argsArr = append(argsArr, "--button", button)
+
+			cmd := exec.Command("python", argsArr...)
+			out, err := cmd.CombinedOutput()
+			outStr := string(out)
+
+			// Circuit breaker tracking
+			if err != nil || strings.Contains(outStr, `"ok": false`) || strings.Contains(outStr, `"ok":false`) {
+				bridgeFailCount++
+				if bridgeFailCount == 1 {
+					bridgeWindowStart = time.Now()
+				}
+				if bridgeFailCount >= 5 && time.Since(bridgeWindowStart) < 10*time.Minute {
+					bridgeCircuitOpen = true
+					writeAuditLog(AuditEntry{Timestamp: time.Now().UTC().Format(time.RFC3339), Tool: "browser_desktop_bridge", Action: "circuit_trip", Level: "info", Summary: "Bridge circuit opened"})
+				}
+			}
+
+			if err != nil {
+				return "error: bridge_constructor failed: " + err.Error() + "\nOutput:\n" + outStr
+			}
+			return outStr
+		}
+		return `{"ok":false, "error":"unknown_action"}`
+
+case "browser_automation":
 		action := getString("action")
 		url := getString("url")
 		selector := getString("selector")
@@ -4257,38 +4370,23 @@ case "read_file":
 		value    := getString("value")
 		window   := getString("window")
 
-		// 🛡️ HARD GUARDRAILS TO PROTECT THE USER SYSTEM 🛡️
-		// Ensure desktop_automation cannot be used to bypass terminal guardrails via type_keys
-		if action == "type_keys" || action == "set_value" {
-			valLower := strings.ToLower(value)
-			dangerousPatterns := []string{
-				"format-volume", "clear-disk", "diskpart",
-				"format c:", "format d:", 
-				"set-itemproperty hklm:", "set-itemproperty hkcu:",
-				"remove-itemproperty hklm:", "remove-itemproperty hkcu:",
-				"net user", "net localgroup",
-				"vssadmin delete shadows", "wbadmin delete",
-				"bcdedit /set", "takeown /f c:\\",
-				"icacls c:\\",
-				"remove-computer", "stop-computer", "restart-computer",
-				"disable-netadapter",
-				"rm -rf", "git push", "-recurse -force",
+		// ── Security Policy: gate ALL desktop side-effect actions ────────────────
+		{
+			desktopDecision := EvaluateDesktopAction(action, ref, selector, value, window, selector, "", "")
+			if desktopDecision.Level == PolicyDeny {
+				writeAuditLog(AuditEntry{Timestamp: time.Now().UTC().Format(time.RFC3339), Tool: "desktop_automation", Action: action, Level: "deny", Risk: desktopDecision.RiskLevel, Decision: "auto_deny", Summary: desktopDecision.Summary, Window: window, ControlName: selector, MatchedRule: desktopDecision.MatchedRule})
+				return `{"ok":false,"error":"policy_blocked","reason":"` + desktopDecision.Reason + `"}`
 			}
-			isDangerous := false
-			for _, p := range dangerousPatterns {
-				if strings.Contains(valLower, p) {
-					isDangerous = true
-					break
-				}
-			}
-			if isDangerous {
+			if desktopDecision.Level == PolicyApprove {
 				fmt.Printf("STATUS: WAITING_APPROVAL\n")
 				if !isTUIMode { os.Stdout.Sync() }
-				if !requireMobileApproval(value, "Desktop automation typing of: "+value) {
-					return "ERROR: Command was denied by user or timed out waiting for mobile approval."
+				detail := fmt.Sprintf("Action: %s | Window: %s | Selector: %s | Value: %s", action, window, selector, truncate(value, 100))
+				if !requireSecurityApproval(desktopDecision, detail, "desktop_automation", window, selector) {
+					return `{"ok":false,"error":"permission_denied","reason":"` + desktopDecision.Reason + `","agent_note":"` + permissionDeniedNote(desktopDecision, detail) + `"}`
 				}
 			}
 		}
+
 
 		depthStr   := getString("depth")
 		timeoutStr := getString("timeout_ms")
