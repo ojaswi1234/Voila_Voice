@@ -95,6 +95,13 @@ def _worker():
                     import cursor_motion
                     cursor_motion._current_ai_x = None
                     cursor_motion._current_ai_y = None
+                    # Also wipe the persistence file so next get_pos() starts fresh
+                    try:
+                        cursor_pos_file = os.path.join(_HERE, "cursor_pos.txt")
+                        if os.path.exists(cursor_pos_file):
+                            os.remove(cursor_pos_file)
+                    except Exception:
+                        pass
                     resp = json.dumps({"ok": True, "action": "RESET_CURSOR", "error": None}) + "\n"
                     conn.sendall(resp.encode("utf-8"))
                 except Exception as e:
@@ -103,6 +110,7 @@ def _worker():
                     try: conn.close()
                     except: pass
                 continue
+
 
             args.action   = action
             args.ref      = ref

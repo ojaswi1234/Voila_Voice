@@ -14,8 +14,8 @@ else:
     import uiautomation as auto
     import cursor_motion   # THE ONLY motion module
 
-    # Reduce default 10s timeout to 1s so missing elements don't hang the bridge
-    auto.SetGlobalSearchTimeout(1.0)
+    # Increase timeout to 3s to handle slower UI rendering and reduce false negatives
+    auto.SetGlobalSearchTimeout(3.0)
 
     # ─── Win32 helpers for window management ──────────────────────────────────
     _user32 = ctypes.windll.user32
@@ -251,36 +251,6 @@ else:
         if best:
             return best
         return auto.GetForegroundControl() or auto.GetRootControl()
-
-        # General: walk root children
-        if title_hint.lower() == "desktop":
-            return auto.GetRootControl()
-            
-        wnd = auto.GetRootControl().GetFirstChildControl()
-        best = None
-        while wnd:
-            try:
-                hwnd = _hwnd_from_ctrl(wnd)
-                if not _user32.IsWindowVisible(hwnd):
-                    wnd = wnd.GetNextSiblingControl()
-                    continue
-                    
-                wname = (wnd.Name or "").lower()
-                if title_hint.lower() in wname:
-                    if best is None:
-                        best = wnd
-                    if wname == title_hint.lower():
-                        return wnd
-            except Exception: pass
-            
-            try: wnd = wnd.GetNextSiblingControl()
-            except Exception: break
-            
-        if best:
-            return best
-        # Fallback: return foreground (better than returning dead desktop root)
-        fg = auto.GetForegroundControl()
-        return fg if fg else auto.GetRootControl()
 
 
     def _window_info(wnd) -> dict:

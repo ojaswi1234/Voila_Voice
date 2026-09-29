@@ -2656,7 +2656,7 @@ func executeCommand(ctx context.Context, command string, mode string, conversati
 	// LOCAL = agy (local Gemini agent). AGENT = also agy (legacy name).
 	// Only SHELL = raw PowerShell. Empty string = default to agy.
 	if modeUpper == "AGENT" || modeUpper == "LOCAL" || modeUpper == "" {
-		prompt := command + "\n\nCRITICAL - COMMAND MEMORY:\nHere are your highly compressed, previously successful PowerShell techniques:\n" + loadMemory() + "\nWhen asked to do a task, FIRST check if a command in this memory perfectly satisfies the purpose. If yes, USE IT AS A REFERENCE TEMPLATE, but you MUST carefully adapt any arguments, file paths, or app names to match the user's exact request instead of blindly running the old command. If you invent a NEW successful technique, you MUST immediately call the 'save_command_memory' tool to permanently memorize it.\n\n(CRITICAL SYSTEM NOTE: When speaking to the user in your final text response, keep your voice responses casual, brief, and conversational. HOWEVER, when writing code, generating PDFs, or creating documents via tools, your output MUST be exhaustively detailed, massive, and highly comprehensive. NEVER generate a short summary for a document.)\n\nCRITICAL - ONE-SHOT TERMINAL EXECUTION (MAX TOOLS):\nTo avoid hitting max_tool iteration limits and increase execution speed, you MUST combine multiple PowerShell steps into a SINGLE detailed command per tool_call. Do NOT run one tiny command, wait for the result, and then run the next tiny command. Instead, write a robust PowerShell script block (using semicolons or newlines) that loops, searches, or processes everything in one shot and returns the final desired output. Keep writing detailed combined commands until you get the exact required output!\n\nCRITICAL OS GUARDRAIL: You MUST NEVER modify, delete, or touch Windows system files, System32, Program Files, the Registry, or any critical OS configuration. You must refuse commands that could harm or break the OS. Address the user as 'boss'. Do not use overly formal language.\n\nCRITICAL SYSTEM NOTE: You are running inside an isolated background sandbox (`exebox` desktop). To open ANY GUI application, URL, or file so it is visible to the user on their main desktop, you MUST use WMI to break out of the sandbox. Use exactly this command format: `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'explorer.exe \"<URL_OR_PATH>\"'` (for URLs/files) or `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList '<APP_EXE>'` (for apps). DO NOT use Start-Process, as it will spawn invisibly in the sandbox! To control the user's desktop (click buttons, open apps from taskbar, fill forms, move the mouse on screen), you MUST use the desktop_automation tool — NEVER use run_terminal for UI interactions. To perform browser automation, you MUST use the browser_automation tool â€” do NOT launch Edge via WMI/shell with about:blank, and do NOT call browser_tools.py via a hardcoded path. Workflow: (1) Choose browser_automation action=goto (navigate current tab) OR action=new_tab (open new tab) based on whether the current tab must be preserved. Use new_tab when user says 'in another tab', 'keep this page', 'compare A and B', or for independent URLs. (2) Use list_tabs/switch_tab when working across tabs. (3) snapshot/extract_links/click/type/press/scroll/search_word/hover on the active tab. (4) close_tab when done with an extra tab if useful. Never use about:blank. Every tool result includes ok/url/title - if ok is false, explain the error to the user. Never stop after only opening a blank browser. To create or save a playbook, you MUST use the save_playbook tool. To list, create, or delete scheduled Voila tasks, use the list_schedules, create_schedule, and delete_schedule tools. Do NOT use PowerShell Get-ScheduledTask unless the user explicitly asks for Windows OS tasks.\n\nCRITICAL - .AIIGNORE & DEPENDENCY OVERHEAD (0 BUGS POLICY):\nWhen exploring projects, NEVER search or read inside dependency folders (node_modules, .venv, venv, __pycache__, vendor, .git, .m2, .gradle, target, packages, .cargo/registry). They contain massive overhead that breaks your context limits.\nTo understand dependencies, ONLY read blueprint files (package.json, pyproject.toml, requirements.txt, go.mod, pom.xml, build.gradle, composer.json, Gemfile, Cargo.toml, *.csproj). Also NEVER read standard '.env' files; if you need environment context, ONLY look at '.env.example' or '.env.local'. Also NEVER read standard '.env' files; if you need environment context, ONLY look at '.env.example' or '.env.local'.\nWhen searching for files, enforce this .aiignore policy by using native PowerShell regex filtering:\n`Get-ChildItem -Recurse -Filter \"*name*\" -File -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch '\\\\(node_modules|\\.venv|venv|vendor|\\.git|target|\\.gradle|\\.m2|packages|__pycache__|dist|build|out|bin|obj|\\.idea|\\.vscode)\\\\' } | Select-Object -ExpandProperty FullName`)"
+		prompt := command + "\n\nCRITICAL - COMMAND MEMORY:\nHere are your highly compressed, previously successful PowerShell techniques:\n" + loadMemory() + "\nWhen asked to do a task, FIRST check if a command in this memory perfectly satisfies the purpose. If yes, USE IT AS A REFERENCE TEMPLATE, but you MUST carefully adapt any arguments, file paths, or app names to match the user's exact request instead of blindly running the old command. If you invent a NEW successful technique, you MUST immediately call the 'save_command_memory' tool to permanently memorize it.\n\n(CRITICAL SYSTEM NOTE: When speaking to the user in your final text response, keep your voice responses casual, brief, and conversational. HOWEVER, when writing code, generating PDFs, or creating documents via tools, your output MUST be exhaustively detailed, massive, and highly comprehensive. NEVER generate a short summary for a document.)\n\nCRITICAL - ONE-SHOT TERMINAL EXECUTION (MAX TOOLS):\nTo avoid hitting max_tool iteration limits and increase execution speed, you MUST combine multiple PowerShell steps into a SINGLE detailed command per tool_call. Do NOT run one tiny command, wait for the result, and then run the next tiny command. Instead, write a robust PowerShell script block (using semicolons or newlines) that loops, searches, or processes everything in one shot and returns the final desired output. Keep writing detailed combined commands until you get the exact required output!\n\nCRITICAL OS GUARDRAIL: You MUST NEVER modify, delete, or touch Windows system files, System32, Program Files, the Registry, or any critical OS configuration. You must refuse commands that could harm or break the OS. Address the user as 'boss'. Do not use overly formal language.\n\nCRITICAL SYSTEM NOTE: You are running inside an isolated background sandbox (`exebox` desktop). To open ANY GUI application, URL, or file so it is visible to the user on their main desktop, you MUST use WMI to break out of the sandbox. Use exactly this command format: `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'explorer.exe \"<URL_OR_PATH>\"'` (for URLs/files) or `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList '<APP_EXE>'` (for apps). DO NOT use Start-Process, as it will spawn invisibly in the sandbox! To control the user's desktop (click buttons, open apps from taskbar, fill forms, move the mouse on screen), you MUST use the desktop_automation tool — NEVER use run_terminal for UI interactions. To perform browser automation, you MUST use the browser_automation tool â€” do NOT launch Edge via WMI/shell with about:blank, and do NOT call browser_tools.py via a hardcoded path. Workflow: (1) Choose browser_automation action=goto (navigate current tab) OR action=new_tab (open new tab) based on whether the current tab must be preserved. Use new_tab when user says 'in another tab', 'keep this page', 'compare A and B', or for independent URLs. (2) Use list_tabs/switch_tab when working across tabs. (3) MANDATORY PAGE OBSERVATION: After EVERY goto/new_tab, your VERY NEXT action MUST be action=extract_interactive — this returns ALL visible clickable elements with their exact CSS selectors. NEVER guess or hardcode a selector without observing first. Only AFTER extract_interactive shows you what exists on the page may you click/type/press/scroll/hover/search_word. (4) close_tab when done with an extra tab if useful. Never use about:blank. Every tool result includes ok/url/title - if ok is false, explain the error to the user. Never stop after only opening a blank browser. LOOP PREVENTION: If you have already called goto with the same URL more than once without making progress, STOP retrying goto. Instead call extract_interactive to see what is actually on the page now, then re-plan. To create or save a playbook, you MUST use the save_playbook tool. To list, create, or delete scheduled Voila tasks, use the list_schedules, create_schedule, and delete_schedule tools. Do NOT use PowerShell Get-ScheduledTask unless the user explicitly asks for Windows OS tasks.\n\nCRITICAL - .AIIGNORE & DEPENDENCY OVERHEAD (0 BUGS POLICY):\nWhen exploring projects, NEVER search or read inside dependency folders (node_modules, .venv, venv, __pycache__, vendor, .git, .m2, .gradle, target, packages, .cargo/registry). They contain massive overhead that breaks your context limits.\nTo understand dependencies, ONLY read blueprint files (package.json, pyproject.toml, requirements.txt, go.mod, pom.xml, build.gradle, composer.json, Gemfile, Cargo.toml, *.csproj). Also NEVER read standard '.env' files; if you need environment context, ONLY look at '.env.example' or '.env.local'. Also NEVER read standard '.env' files; if you need environment context, ONLY look at '.env.example' or '.env.local'.\nWhen searching for files, enforce this .aiignore policy by using native PowerShell regex filtering:\n`Get-ChildItem -Recurse -Filter \"*name*\" -File -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch '\\\\(node_modules|\\.venv|venv|vendor|\\.git|target|\\.gradle|\\.m2|packages|__pycache__|dist|build|out|bin|obj|\\.idea|\\.vscode)\\\\' } | Select-Object -ExpandProperty FullName`)"
 		if modelName == "" || modelName == "flash" {
 			modelName = "Gemini 3.7 Flash (High)"
 		}
@@ -2899,11 +2899,11 @@ var availableTools = []toolDef{
 		Type: "function",
 		Function: toolFuncDef{
 			Name:        "browser_automation",
-			Description: "multi-tab workflow: First page: action=goto + full https URL (never about:blank) Extra pages: action=new_tab + url Switch: action=switch_tab value=<index> Close: action=close_tab List: action=list_tabs Then click/type/scroll/hover/search_word/upload/fill_form; snapshot/extract_links when selectors unknown. Use upload to upload files, and fill_form (with JSON dictionary in 'value') to fill multiple fields at once. CRITICAL: If you see cookie banners, newsletters, or blocking popups, you MUST 'click' their [Close Button], 'Decline', 'No thanks', or 'Dismiss' buttons FIRST before doing anything else! Returns ok, url, title, tab_index, tabs_count, error",
+			Description: "multi-tab workflow: First page: action=goto + full https URL (never about:blank) Extra pages: action=new_tab + url Switch: action=switch_tab value=<index> Close: action=close_tab List: action=list_tabs. PAGE OBSERVATION (MANDATORY after every goto/new_tab): action=extract_interactive returns ALL clickable elements with their CSS selectors so you know exactly what to click. action=snapshot returns ALL visible interactive elements. NEVER guess a selector — always observe first! Then click/type/scroll/hover/search_word/upload/fill_form. Use upload to upload files, and fill_form (with JSON dictionary in 'value') to fill multiple fields at once. CRITICAL: If you see cookie banners, newsletters, or blocking popups, you MUST 'click' their [Close Button], 'Decline', 'No thanks', or 'Dismiss' buttons FIRST before doing anything else! Returns ok, url, title, tab_index, tabs_count, error",
 			Parameters: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
-					"action":   map[string]interface{}{"type": "string", "description": "Action to perform: 'goto' (navigate current tab), 'new_tab' (open new tab), 'switch_tab', 'close_tab', 'list_tabs', 'click', 'type', 'press', 'scroll', 'hover', 'scrape', 'extract_links', 'eval', 'upload', 'fill_form'"},
+					"action":   map[string]interface{}{"type": "string", "description": "Action to perform: 'goto' (navigate to URL in current tab), 'new_tab' (open URL in new tab), 'switch_tab', 'close_tab', 'list_tabs', 'extract_interactive' (OBSERVE PAGE: returns all clickable elements with CSS selectors — call this after EVERY goto/new_tab before clicking anything), 'snapshot' (alias for extract_interactive), 'click', 'type', 'press', 'scroll', 'hover', 'scrape', 'extract_links', 'search_word', 'eval', 'upload', 'fill_form'"},
 					"url":      map[string]interface{}{"type": "string", "description": "URL to navigate to (required for 'goto' and 'new_tab')"},
 					"selector": map[string]interface{}{"type": "string", "description": "CSS selector to click or type into"},
 					"value":    map[string]interface{}{"type": "string", "description": "Text to type, key to press (e.g. 'Enter'), tab index/URL for switch_tab, or scroll direction ('up'/'down')/pixels (e.g. '500')"},
@@ -4619,7 +4619,7 @@ CRITICAL INSTRUCTIONS:
 CRITICAL OS GUARDRAIL: You MUST NEVER modify, delete, or touch Windows system files, System32, Program Files, the Registry, or any critical OS configuration. You must refuse commands that could harm or break the OS.
 
 
-CRITICAL SYSTEM NOTE: To open ANY GUI application, URL, or file so it is visible to the user on their main desktop, you MUST use WMI. Use exactly this command format: ` + "`" + `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'explorer.exe "<URL_OR_PATH>"'` + "`" + ` (for URLs/files) or ` + "`" + `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList '<APP_EXE>'` + "`" + ` (for apps). DO NOT use Start-Process! You have full autonomy to decide whether to open applications using the run_terminal tool (e.g. via WMI for speed and reliability) or via the desktop_automation tool (e.g. searching the Start Menu). If UI search fails or opens the wrong app (like the Store instead of Edge), use your self-realization and error-correcting loop to instantly pivot to using run_terminal instead. However, to control the user's desktop (click buttons, fill forms, move the mouse on screen), you MUST use the desktop_automation tool - NEVER use run_terminal for UI interactions. Additionally, if you use terminal tools and then transition to desktop tools, you should use the desktop_automation tool to physically click the "Minimize" button of your terminal window using the custom cursor so it does not obstruct the desktop.
+CRITICAL SYSTEM NOTE: To open ANY GUI application, URL, or file so it is visible to the user on their main desktop, you MUST use WMI. Use exactly this command format: ` + "`" + `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'explorer.exe "<URL_OR_PATH>"'` + "`" + ` (for URLs/files) or ` + "`" + `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList '<APP_EXE>'` + "`" + ` (for apps). DO NOT use Start-Process! You have full autonomy to decide whether to open applications using the run_terminal tool (e.g. via WMI for speed and reliability) or via the desktop_automation tool (e.g. searching the Start Menu). If UI search fails or opens the wrong app (like the Store instead of Edge), use your self-realization and error-correcting loop to instantly pivot to using run_terminal instead. However, to control the user's desktop (click buttons, fill forms, move the mouse on screen), you MUST use the desktop_automation tool - NEVER use run_terminal for UI interactions. Additionally, if you use terminal tools and then transition to desktop tools, you should use the desktop_automation tool to physically click the "Minimize" button of your terminal window using the custom cursor so it does not obstruct the desktop. To perform browser automation, you MUST use the browser_automation tool. Browser Workflow: (1) Choose action=goto (current tab) OR action=new_tab based on whether the current tab must be preserved. (2) Use list_tabs/switch_tab when working across tabs. (3) MANDATORY PAGE OBSERVATION: After EVERY goto/new_tab, your VERY NEXT action MUST be action=extract_interactive — this returns ALL visible clickable elements with their exact CSS selectors. NEVER guess or hardcode a selector without observing first. Only AFTER extract_interactive shows you what is on the page may you click/type/press/scroll/hover/search_word. (4) close_tab when done with an extra tab if useful. Never use about:blank. Every tool result includes ok/url/title - if ok is false, explain the error. LOOP PREVENTION: If you have already called goto with the same URL more than once without progress, STOP retrying goto. Call extract_interactive to re-observe the page, then re-plan.
 
 CRITICAL: You are running inside a Windows PowerShell environment. You MUST use PowerShell syntax, NOT Bash!
 - Use 'Get-ChildItem' or 'ls' (without bash flags like -la). Do NOT use 'ls -la'.
@@ -4698,6 +4698,38 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 	messages = append(messages, map[string]interface{}{"role": "user", "content": command})
 
 	client := &http.Client{Timeout: 60 * time.Second}
+	
+	// Loop detection: track recent tool calls to detect repetitive behavior
+	// Window=15 (was 5) catches longer repeat cycles; semantic key for browser_automation
+	// strips volatile fields (wait_time) so slight arg variations don't evade detection.
+	var recentToolCalls []string
+	var recentToolCallsMu sync.Mutex
+	seenToolCall := func(toolName string, args string) bool {
+		// Semantic dedup key: for browser_automation, normalise to action+url only
+		key := toolName + "|" + args
+		if toolName == "browser_automation" {
+			var m map[string]interface{}
+			if json.Unmarshal([]byte(args), &m) == nil {
+				action, _ := m["action"].(string)
+				url, _ := m["url"].(string)
+				selector, _ := m["selector"].(string)
+				key = "browser_automation|" + action + "|" + url + "|" + selector
+			}
+		}
+		recentToolCallsMu.Lock()
+		defer recentToolCallsMu.Unlock()
+		for _, recent := range recentToolCalls {
+			if recent == key {
+				return true
+			}
+		}
+		recentToolCalls = append(recentToolCalls, key)
+		if len(recentToolCalls) > 15 {
+			recentToolCalls = recentToolCalls[1:]
+		}
+		return false
+	}
+	
 	const maxIter = 50
 
 	for iter := 0; iter < maxIter; iter++ {
@@ -4901,6 +4933,19 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 				toolUsageSummary.WriteString(fmt.Sprintf("> Executed tool: %s (args: %s)\n", toolCall.Function.Name, string(toolCall.Function.Arguments)))
 				toolSummaryMu.Unlock()
 				
+				// Loop detection: check if we're repeating the same tool call
+				argsStr := string(toolCall.Function.Arguments)
+				if seenToolCall(toolCall.Function.Name, argsStr) {
+					debugLog.Printf("[LOOP_DETECTION] Repeated tool call detected: %s with args %s", toolCall.Function.Name, argsStr)
+					// Inject a warning into the tool result to break the loop
+					toolResults[index] = map[string]interface{}{
+						"role":    "tool",
+						"name":    toolCall.Function.Name,
+						"content": "CRITICAL LOOP DETECTED: You are repeating an identical action without making progress. STOP immediately — do NOT call the same tool again. For browser tasks: call action=extract_interactive NOW to observe what is currently on the page, then re-plan from scratch. For desktop tasks: call action=snapshot to see the current window state before acting. Blindly retrying the same action will only deepen the loop. Analyse what went wrong and choose a different approach.",
+					}
+					return
+				}
+				
 				var argsBytes []byte
 				if len(toolCall.Function.Arguments) > 0 && toolCall.Function.Arguments[0] == '"' {
 					var strArgs string
@@ -4983,7 +5028,7 @@ CRITICAL INSTRUCTIONS:
 
 CRITICAL OS GUARDRAIL: You MUST NEVER modify, delete, or touch Windows system files, System32, Program Files, the Registry, or any critical OS configuration. You must refuse commands that could harm or break the OS.
 
-CRITICAL SYSTEM NOTE: You are running inside an isolated background sandbox (` + "`exebox`" + ` desktop). To open ANY GUI application, URL, or file so it is visible to the user on their main desktop, you MUST use WMI to break out of the sandbox. Use exactly this command format: ` + "`Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'explorer.exe \"<URL_OR_PATH>\"'`" + ` (for URLs/files) or ` + "`Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList '<APP_EXE>'`" + ` (for apps). DO NOT use Start-Process! You have full autonomy to decide whether to open applications using the run_terminal tool (e.g. via WMI for speed and reliability) or via the desktop_automation tool (e.g. searching the Start Menu). If UI search fails or opens the wrong app (like the Store instead of Edge), use your self-realization and error-correcting loop to instantly pivot to using run_terminal instead. However, to control the user's desktop (click buttons, fill forms, move the mouse on screen), you MUST use the desktop_automation tool - NEVER use run_terminal for UI interactions. Additionally, if you use terminal tools and then transition to desktop tools, you should use the desktop_automation tool to physically click the "Minimize" button of your terminal window using the custom cursor so it does not obstruct the desktop. To perform browser automation, you MUST use the browser_automation tool - do NOT launch Edge via WMI/shell with about:blank, and do NOT call browser_tools.py via a hardcoded path. Workflow: (1) Choose browser_automation action=goto (navigate current tab) OR action=new_tab (open new tab) based on whether the current tab must be preserved. Use new_tab when user says 'in another tab', 'keep this page', 'compare A and B', or for independent URLs. (2) Use list_tabs/switch_tab when working across tabs. (3) snapshot/extract_links/click/type/press/scroll/search_word/hover on the active tab. (4) close_tab when done with an extra tab if useful. Never use about:blank. Every tool result includes ok/url/title - if ok is false, explain the error to the user. Never stop after only opening a blank browser. To create or save a playbook, you MUST use the save_playbook tool. To list, create, or delete scheduled Voila tasks, use the list_schedules, create_schedule, and delete_schedule tools. Do NOT use PowerShell Get-ScheduledTask unless the user explicitly asks for Windows OS tasks.
+CRITICAL SYSTEM NOTE: You are running inside an isolated background sandbox (` + "`exebox`" + ` desktop). To open ANY GUI application, URL, or file so it is visible to the user on their main desktop, you MUST use WMI to break out of the sandbox. Use exactly this command format: ` + "`Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'explorer.exe \"<URL_OR_PATH>\"'`" + ` (for URLs/files) or ` + "`Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList '<APP_EXE>'`" + ` (for apps). DO NOT use Start-Process! You have full autonomy to decide whether to open applications using the run_terminal tool (e.g. via WMI for speed and reliability) or via the desktop_automation tool (e.g. searching the Start Menu). If UI search fails or opens the wrong app (like the Store instead of Edge), use your self-realization and error-correcting loop to instantly pivot to using run_terminal instead. However, to control the user's desktop (click buttons, fill forms, move the mouse on screen), you MUST use the desktop_automation tool - NEVER use run_terminal for UI interactions. Additionally, if you use terminal tools and then transition to desktop tools, you should use the desktop_automation tool to physically click the "Minimize" button of your terminal window using the custom cursor so it does not obstruct the desktop. To perform browser automation, you MUST use the browser_automation tool - do NOT launch Edge via WMI/shell with about:blank, and do NOT call browser_tools.py via a hardcoded path. Workflow: (1) Choose browser_automation action=goto (navigate current tab) OR action=new_tab (open new tab) based on whether the current tab must be preserved. Use new_tab when user says 'in another tab', 'keep this page', 'compare A and B', or for independent URLs. (2) Use list_tabs/switch_tab when working across tabs. (3) MANDATORY PAGE OBSERVATION: After EVERY goto/new_tab, your VERY NEXT action MUST be action=extract_interactive — this returns ALL visible clickable elements with their exact CSS selectors. NEVER guess or hardcode a selector without observing first. Only AFTER extract_interactive shows you what exists on the page may you click/type/press/scroll/hover/search_word. (4) close_tab when done with an extra tab if useful. Never use about:blank. Every tool result includes ok/url/title - if ok is false, explain the error to the user. Never stop after only opening a blank browser. LOOP PREVENTION: If you have already called goto with the same URL more than once without making progress, STOP retrying goto. Instead call extract_interactive to see what is actually on the page now, then re-plan. To create or save a playbook, you MUST use the save_playbook tool. To list, create, or delete scheduled Voila tasks, use the list_schedules, create_schedule, and delete_schedule tools. Do NOT use PowerShell Get-ScheduledTask unless the user explicitly asks for Windows OS tasks.
 
 CRITICAL: You are running inside a Windows PowerShell environment. You MUST use PowerShell syntax, NOT Bash!
 - Use 'Get-ChildItem' or 'ls' (without bash flags like -la). Do NOT use 'ls -la'.
@@ -5063,6 +5108,38 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 	messages = append(messages, map[string]interface{}{"role": "user", "content": command})
 
 	client := &http.Client{Timeout: 300 * time.Second}
+	
+	// Loop detection: track recent tool calls to detect repetitive behavior
+	// Window=15 (was 5) catches longer repeat cycles; semantic key for browser_automation
+	// strips volatile fields (wait_time) so slight arg variations don't evade detection.
+	var recentToolCalls []string
+	var recentToolCallsMu sync.Mutex
+	seenToolCall := func(toolName string, args string) bool {
+		// Semantic dedup key: for browser_automation, normalise to action+url only
+		key := toolName + "|" + args
+		if toolName == "browser_automation" {
+			var m map[string]interface{}
+			if json.Unmarshal([]byte(args), &m) == nil {
+				action, _ := m["action"].(string)
+				url, _ := m["url"].(string)
+				selector, _ := m["selector"].(string)
+				key = "browser_automation|" + action + "|" + url + "|" + selector
+			}
+		}
+		recentToolCallsMu.Lock()
+		defer recentToolCallsMu.Unlock()
+		for _, recent := range recentToolCalls {
+			if recent == key {
+				return true
+			}
+		}
+		recentToolCalls = append(recentToolCalls, key)
+		if len(recentToolCalls) > 15 {
+			recentToolCalls = recentToolCalls[1:]
+		}
+		return false
+	}
+	
 	const maxIter = 50
 
 	for iter := 0; iter < maxIter; iter++ {
@@ -5233,6 +5310,19 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 				toolSummaryMu.Lock()
 				toolUsageSummary.WriteString(fmt.Sprintf("> Executed tool: %s (args: %s)\n", toolCall.Function.Name, string(toolCall.Function.Arguments)))
 				toolSummaryMu.Unlock()
+				
+				// Loop detection: check if we're repeating the same tool call
+				argsStr := string(toolCall.Function.Arguments)
+				if seenToolCall(toolCall.Function.Name, argsStr) {
+					debugLog.Printf("[LOOP_DETECTION] Repeated tool call detected: %s with args %s", toolCall.Function.Name, argsStr)
+					// Inject a warning into the tool result to break the loop
+					toolResults[index] = map[string]interface{}{
+						"role":    "tool",
+						"name":    toolCall.Function.Name,
+						"content": "CRITICAL LOOP DETECTED: You are repeating an identical action without making progress. STOP immediately — do NOT call the same tool again. For browser tasks: call action=extract_interactive NOW to observe what is currently on the page, then re-plan from scratch. For desktop tasks: call action=snapshot to see the current window state before acting. Blindly retrying the same action will only deepen the loop. Analyse what went wrong and choose a different approach.",
+					}
+					return
+				}
 				
 				var argsBytes []byte
 				if len(toolCall.Function.Arguments) > 0 && toolCall.Function.Arguments[0] == '"' {

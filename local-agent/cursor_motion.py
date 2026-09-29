@@ -76,6 +76,14 @@ def _set_cursor_pos(x: int, y: int):
         _log(f"UDP Send Error: {e}")
     global _current_ai_x, _current_ai_y
     _current_ai_x, _current_ai_y = int(x), int(y)
+    # Persist position to file so it survives bridge restarts (Fix 3: seesaw prevention)
+    try:
+        here = os.path.dirname(os.path.abspath(__file__))
+        with open(os.path.join(here, "cursor_pos.txt"), "w") as _f:
+            _f.write(f"{int(x)},{int(y)}")
+    except Exception:
+        pass
+
 
 def _get_cursor_pos() -> tuple[int, int]:
     """Return physical mouse position (used as starting point if AI cursor hasn't moved)."""
@@ -202,35 +210,55 @@ def get_pos(trigger_spawn=False) -> tuple[int, int]:
     global _current_ai_x, _current_ai_y
     if _current_ai_x is not None and _current_ai_y is not None:
         return _current_ai_x, _current_ai_y
-    
-    # Initialize from VoilaAIPopup face if available
+
+    here = os.path.dirname(os.path.abspath(__file__))
+
+    # Priority 1: cursor_pos.txt — the last ACTUAL AI cursor position.
+    # This file is written by _set_cursor_pos on every move, so it is the
+    # most accurate record of where the cursor truly is (Fix 3: seesaw prevention).
+    # popup_pos.txt only stores the Voila face-widget position (bottom taskbar area),
+    # NOT the last cursor position — reading it as a cursor start produces the seesaw.
     try:
-        import os
-        here = os.path.dirname(os.path.abspath(__file__))
+        cursor_pos_file = os.path.join(here, "cursor_pos.txt")
+        if os.path.exists(cursor_pos_file):
+            with open(cursor_pos_file, "r") as f:
+                parts = f.read().strip().split(",")
+            if len(parts) == 2:
+                cx, cy = int(parts[0]), int(parts[1])
+                _log(f"Restored position from cursor_pos.txt: {cx},{cy}")
+                _current_ai_x, _current_ai_y = cx, cy
+                return cx, cy
+    except Exception as e:
+        _log(f"Failed to read cursor_pos.txt: {e}")
+
+    # Priority 2: popup_pos.txt — used only on very first ever launch (no prior cursor history).
+    # Spawn animation is only triggered on first-time init, not on bridge-restart recovery.
+    try:
         pos_file = os.path.join(here, "popup_pos.txt")
         _log(f"Reading pos_file: {pos_file} (exists: {os.path.exists(pos_file)})")
         if os.path.exists(pos_file):
             with open(pos_file, "r") as f:
                 parts = f.read().split(",")
-                _log(f"pos_file contents: {parts}")
-                if len(parts) == 2:
-                    cx = int(parts[0]) + 40
-                    cy = int(parts[1]) + 32
-                    if trigger_spawn:
-                        _ensure_overlay()
-                        with open(os.path.join(here, "cursor_is_out.txt"), "w") as out_f:
-                            out_f.write("1")
-                        _log(f"Triggering SPAWN at {cx},{cy}")
-                        import time
-                        _overlay_sock.sendto(f"SPAWN,{cx},{cy}".encode(), ("127.0.0.1", _OVERLAY_PORT))
-                        time.sleep(0.5) # Wait for spawn animation
-                    
-                    _current_ai_x, _current_ai_y = int(cx), int(cy)
-                    return int(cx), int(cy)
+            _log(f"pos_file contents: {parts}")
+            if len(parts) == 2:
+                cx = int(parts[0]) + 40
+                cy = int(parts[1]) + 32
+                if trigger_spawn:
+                    _ensure_overlay()
+                    with open(os.path.join(here, "cursor_is_out.txt"), "w") as out_f:
+                        out_f.write("1")
+                    _log(f"Triggering SPAWN at {cx},{cy}")
+                    import time
+                    _overlay_sock.sendto(f"SPAWN,{cx},{cy}".encode(), ("127.0.0.1", _OVERLAY_PORT))
+                    time.sleep(0.5) # Wait for spawn animation
+
+                _current_ai_x, _current_ai_y = int(cx), int(cy)
+                return int(cx), int(cy)
     except Exception as e:
         _log(f"Failed to read popup_pos: {e}")
-        
+
     return _get_cursor_pos()
+
 
 def set_goal(
     x: int, y: int,

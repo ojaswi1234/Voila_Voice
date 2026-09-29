@@ -103,7 +103,7 @@ def _page(browser):
 
 
 def _get_loc(page, sel):
-    loc = _get_loc(page, sel)
+    loc = page.locator(sel)
     try:
         if loc.count() > 0: return loc
     except Exception:
