@@ -15,10 +15,10 @@
 ### High-Level Network Topology
 ```mermaid
 flowchart LR
-    User[📱 Mobile App] -- Voice/Text --> Relay((☁️ Go Cloud Relay))
-    Relay -- WSS Tunnel --> Ngrok[🚇 Ngrok]
-    Ngrok -- Local Port --> Agent[💻 Local Agent]
-    Agent -- Tools --> UI[🖱️ Desktop OS]
+    User[ Mobile App] -- Voice/Text --> Relay(( Go Cloud Relay))
+    Relay -- WSS Tunnel --> Ngrok[ Ngrok]
+    Ngrok -- Local Port --> Agent[ Local Agent]
+    Agent -- Tools --> UI[ Desktop OS]
 ```
 
 ---
@@ -64,12 +64,12 @@ Giving AI agents raw access to your terminal and mouse is dangerous. **Aegis** i
 flowchart TD
     Req[Tool Payload] --> Static{Static Guardrails}
     Static -- Safe --> Markov{Markov Chain Analysis}
-    Static -- Dangerous Regex --> Cache[❌ Block & Cache Hash]
+    Static -- Dangerous Regex --> Cache[ Block & Cache Hash]
     
     Markov -- P > 0.05 --> ZScore{Welford's Z-Score}
     Markov -- Improbable Sequence --> Cache
     
-    ZScore -- Standard Dev < 4.0 --> Exec[✅ Execute OS Command]
+    ZScore -- Standard Dev < 4.0 --> Exec[ Execute OS Command]
     ZScore -- Statistical Anomaly --> Cache
 ```
 - **Static Guardrails**: Blocks malicious paths (`System32`) and sensitive windows (`Password`, `Bank`).
