@@ -6,6 +6,7 @@ mouse for desktop_automation purposes.
 Now uses a Custom AI Overlay Cursor instead of hijacking the user's physical mouse.
 """
 import os, sys, math, time, random, ctypes, socket, subprocess
+import desktop_lock
 
 try:
     ctypes.windll.shcore.SetProcessDpiAwareness(2)
