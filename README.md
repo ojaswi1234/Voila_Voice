@@ -1,5 +1,5 @@
 <div align="center">
-  <h1>? Voila: Your Floating AI CLI Assistant</h1>
+  <h1>✨ Voila: Your Floating AI CLI Assistant</h1>
   <p><i>A Zero-Trust, Voice-Controlled Remote Execution System with Multi-Agent Swarm & ML Security.</i></p>
 </div>
 
@@ -9,21 +9,21 @@
   <img src="assets/voila_arch.jpg" alt="Voila Architecture Sketch" width="700"/>
 </div>
 
-## ?? What is Voila?
+## 🚀 What is Voila?
 **Voila** is an interactive, animated AI agent that floats elegantly on your desktop. She listens to your voice commands via a mobile app, instantly translates them into code, and executes them securely on your local machine using an end-to-end encrypted zero-trust pipeline.
 
 ### High-Level Network Topology
 ```mermaid
 flowchart LR
-    User[?? Mobile App] -- Voice/Text --> Relay((?? Go Cloud Relay))
-    Relay -- WSS Tunnel --> Ngrok[?? Ngrok]
-    Ngrok -- Local Port --> Agent[?? Local Agent]
-    Agent -- Tools --> UI[??? Desktop OS]
+    User[📱 Mobile App] -- Voice/Text --> Relay((☁️ Go Cloud Relay))
+    Relay -- WSS Tunnel --> Ngrok[🚇 Ngrok]
+    Ngrok -- Local Port --> Agent[💻 Local Agent]
+    Agent -- Tools --> UI[🖱️ Desktop OS]
 ```
 
 ---
 
-## ?? Graphify: Multi-Agent Swarm Architecture
+## 🐝 Graphify: Multi-Agent Swarm Architecture
 Graphify mode allows Voila to split complex commands into a Directed Acyclic Graph (DAG) and spawn multiple independent AI agents to accomplish them simultaneously.
 
 <div align="center">
@@ -52,7 +52,7 @@ sequenceDiagram
 
 ---
 
-## ??? Aegis: ML Security & Monitoring Firewall
+## 🛡️ Aegis: ML Security & Monitoring Firewall
 Giving AI agents raw access to your terminal and mouse is dangerous. **Aegis** is our independent, machine-learning-based security module that monitors every single action locally without relying on external LLM APIs.
 
 <div align="center">
@@ -64,12 +64,12 @@ Giving AI agents raw access to your terminal and mouse is dangerous. **Aegis** i
 flowchart TD
     Req[Tool Payload] --> Static{Static Guardrails}
     Static -- Safe --> Markov{Markov Chain Analysis}
-    Static -- Dangerous Regex --> Cache[? Block & Cache Hash]
+    Static -- Dangerous Regex --> Cache[❌ Block & Cache Hash]
     
     Markov -- P > 0.05 --> ZScore{Welford's Z-Score}
     Markov -- Improbable Sequence --> Cache
     
-    ZScore -- Standard Dev < 4.0 --> Exec[? Execute OS Command]
+    ZScore -- Standard Dev < 4.0 --> Exec[✅ Execute OS Command]
     ZScore -- Statistical Anomaly --> Cache
 ```
 - **Static Guardrails**: Blocks malicious paths (`System32`) and sensitive windows (`Password`, `Bank`).
@@ -78,7 +78,7 @@ flowchart TD
 
 ---
 
-## ? Quick Start Guide
+## ⚡ Quick Start Guide
 
 ### 1. Configure `.env` (Project Root)
 ```env
@@ -104,5 +104,5 @@ cd mobile-agent
 flutter build apk --dart-define=BACKEND_URL=wss://your-backend.onrender.com/ws
 ```
 
-## ?? License & Contributing
+## 🤝 License & Contributing
 MIT License. We are actively looking for contributors specialized in **Agentic AI** and **Pentesting**. Open a PR to help build the ultimate local AI assistant!
