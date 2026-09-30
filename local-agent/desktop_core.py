@@ -707,7 +707,6 @@ else:
         else:
             auto.SendKeys(keys)
         if "{ENTER}" in keys.upper():
-            import time
             time.sleep(0.8)
         r = _ok("type_keys", wnd)
         r["cursor"] = tel
@@ -864,9 +863,13 @@ else:
 
     def act_focus_window(window: str) -> dict:
         """Bring a window to the foreground by visually clicking it in Task View."""
-        wnd = _find_window(window)
+        wnd = None
+        for _ in range(20):
+            wnd = _find_window(window)
+            if wnd: break
+            time.sleep(0.25)
         if not wnd:
-            return _err("focus_window", "not_found", f"Window not found: {window!r}")
+            return _err("focus_window", "not_found", f"Window not found: {window!r} (after 5s)")
             
         target_name = wnd.Name or ""
         
@@ -964,6 +967,7 @@ else:
         VK_CONTROL = 0x11
         VK_SHIFT   = 0x10
         VK_TAB     = 0x09
+        VK_D       = 0x44
         VK_W       = 0x57
         VK_T       = 0x54
         KEYEVENTF_KEYUP = 0x0002
@@ -1037,158 +1041,53 @@ else:
         return r
 
     def act_switch_desktop(index: int = -1, direction: str = "next") -> dict:
-        """Switch Windows 10/11 virtual desktops.
-
-        Uses SendInput (higher-level than keybd_event, not blocked by session
-        restrictions) to send Win+Ctrl+Arrow. Falls back to a PowerShell
-        subprocess approach if SendInput is still ineffective.
-
-        If index >= 0 → switch to that specific desktop (0-based).
-        Otherwise direction='next'|'prev' moves one desktop.
-        """
-        import subprocess
-
-        # ── Approach 1: SendInput with KEYEVENTF_EXTENDEDKEY ──────────────────
-        # SendInput bypasses the keybd_event session restriction that breaks
-        # Win+Ctrl+Arrow when called from a background process on Win10.
-        INPUT_KEYBOARD   = 1
-        KEYEVENTF_KEYUP  = 0x0002
+        """Switch Windows 10/11 virtual desktops using Task View (Win+Tab) and UIAutomation."""
+        
+        # 1. Open Task View (Win+Tab)
+        INPUT_KEYBOARD = 1
+        KEYEVENTF_KEYUP = 0x0002
         KEYEVENTF_EXTENDEDKEY = 0x0001
-
-        class KEYBDINPUT(ctypes.Structure):
-            _fields_ = [
-                ("wVk",         ctypes.c_ushort),
-                ("wScan",       ctypes.c_ushort),
-                ("dwFlags",     ctypes.c_ulong),
-                ("time",        ctypes.c_ulong),
-                ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong)),
-            ]
-
-        class INPUT_UNION(ctypes.Union):
-            _fields_ = [("ki", KEYBDINPUT)]
-
-        class INPUT(ctypes.Structure):
-            _fields_ = [("type", ctypes.c_ulong), ("_input", INPUT_UNION)]
-
+        class KEYBDINPUT(ctypes.Structure): _fields_ = [("wVk", ctypes.c_ushort), ("wScan", ctypes.c_ushort), ("dwFlags", ctypes.c_ulong), ("time", ctypes.c_ulong), ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong))]
+        class INPUT_UNION(ctypes.Union): _fields_ = [("ki", KEYBDINPUT)]
+        class INPUT(ctypes.Structure): _fields_ = [("type", ctypes.c_ulong), ("_input", INPUT_UNION)]
         def _sinput(vk: int, flags: int = 0) -> INPUT:
-            i = INPUT()
-            i.type = INPUT_KEYBOARD
-            i._input.ki.wVk = vk
-            i._input.ki.dwFlags = flags
-            return i
-
+            i = INPUT(); i.type = INPUT_KEYBOARD; i._input.ki.wVk = vk; i._input.ki.dwFlags = flags; return i
         def _send(*inputs):
             arr = (INPUT * len(inputs))(*inputs)
             ctypes.windll.user32.SendInput(len(inputs), arr, ctypes.sizeof(INPUT))
-
-        VK_LWIN    = 0x5B
-        VK_CONTROL = 0x11
-        VK_LEFT    = 0x25
-        VK_RIGHT   = 0x27
-        VK_TAB     = 0x09
-
-        def _one_step_sendinput(right: bool):
-            key = VK_RIGHT if right else VK_LEFT
-            _send(
-                _sinput(VK_LWIN,    KEYEVENTF_EXTENDEDKEY),
-                _sinput(VK_CONTROL, KEYEVENTF_EXTENDEDKEY),
-                _sinput(key,        KEYEVENTF_EXTENDEDKEY)
-            )
-            time.sleep(0.08)
-            _send(
-                _sinput(key,        KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP),
-                _sinput(VK_CONTROL, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP),
-                _sinput(VK_LWIN,    KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP)
-            )
-            time.sleep(0.4)   # shell needs ~300ms to animate the transition
-
-        # ── Approach 2: PowerShell COM fallback ───────────────────────────────
-        # Uses IVirtualDesktopManager via undocumented but stable COM GUIDs.
-        # This works even when key injection fails (e.g., some Win10 builds).
-        PS_SWITCH_SCRIPT = r"""
-$direction = '{dir}'
-Add-Type -TypeDefinition @'
-using System;
-using System.Runtime.InteropServices;
-public class VDesktop {
-    [DllImport("user32.dll")]
-    static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
-    const int VK_LWIN = 0x5B, VK_CONTROL = 0x11, VK_LEFT = 0x25, VK_RIGHT = 0x27;
-    const uint KEYEVENTF_KEYUP = 0x0002, KEYEVENTF_EXTENDEDKEY = 0x0001;
-    public static void Switch(bool right) {
-        byte key = right ? (byte)VK_RIGHT : (byte)VK_LEFT;
-        keybd_event(VK_LWIN, 0, KEYEVENTF_EXTENDEDKEY, UIntPtr.Zero);
-        keybd_event(VK_CONTROL, 0, KEYEVENTF_EXTENDEDKEY, UIntPtr.Zero);
-        keybd_event(key, 0, KEYEVENTF_EXTENDEDKEY, UIntPtr.Zero);
-        System.Threading.Thread.Sleep(80);
-        keybd_event(key, 0, KEYEVENTF_EXTENDEDKEY|KEYEVENTF_KEYUP, UIntPtr.Zero);
-        keybd_event(VK_CONTROL, 0, KEYEVENTF_EXTENDEDKEY|KEYEVENTF_KEYUP, UIntPtr.Zero);
-        keybd_event(VK_LWIN, 0, KEYEVENTF_EXTENDEDKEY|KEYEVENTF_KEYUP, UIntPtr.Zero);
-        System.Threading.Thread.Sleep(350);
-    }
-}
-'@
-if ($direction -eq 'next') { [VDesktop]::Switch($true) }
-else { [VDesktop]::Switch($false) }
-"""
-
-        def _ps_step(right: bool):
-            script = PS_SWITCH_SCRIPT.replace("{dir}", "next" if right else "prev")
-            try:
-                subprocess.run(
-                    ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
-                    timeout=5, capture_output=True
-                )
-            except Exception:
-                pass
-
-        def _one_step(right: bool):
-            """Try SendInput first, fall back to PowerShell if needed."""
-            try:
-                _one_step_sendinput(right)
-            except Exception:
-                _ps_step(right)
-
-        if direction == "task_view" or direction == "taskview":
-            _send(
-                _sinput(VK_LWIN, KEYEVENTF_EXTENDEDKEY),
-                _sinput(VK_TAB, KEYEVENTF_EXTENDEDKEY)
-            )
-            time.sleep(0.12)
-            _send(
-                _sinput(VK_TAB, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP),
-                _sinput(VK_LWIN, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP)
-            )
-            r = _ok("switch_desktop")
-            r["message"] = "Opened Task View (Win+Tab)"
-            return r
-
-        # Visual click strategy for virtual desktops
-        if index >= 0:
-            # 1. Open Task View
-            _send(_sinput(VK_LWIN, KEYEVENTF_EXTENDEDKEY), _sinput(VK_TAB, KEYEVENTF_EXTENDEDKEY))
-            time.sleep(0.12)
-            _send(_sinput(VK_TAB, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP), _sinput(VK_LWIN, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP))
-            time.sleep(1.2) # Wait for Task View to animate
-
-            # 2. Find the Desktop button
-            target_name = f"Desktop {index + 1}".lower()
             
+        VK_LWIN = 0x5B
+        VK_TAB = 0x09
+        VK_ESCAPE = 0x1B
+        
+        _send(_sinput(VK_LWIN, KEYEVENTF_EXTENDEDKEY), _sinput(VK_TAB, KEYEVENTF_EXTENDEDKEY))
+        time.sleep(0.12)
+        _send(_sinput(VK_TAB, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP), _sinput(VK_LWIN, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP))
+        time.sleep(1.2) # Wait for Task View
+        
+        # 2. Find target desktop button
+        target_names = []
+        if direction == "new":
+            target_names = ["new desktop"]
+        elif index > 0: # 1-indexed for UIA
+            target_names = [f"desktop {index}"]
+        elif direction == "next":
+            # For next/prev, we try to just use keyboard navigation
+            pass
+            
+        if target_names:
             ctrl = None
-            def find_desktop(node):
-                if node.Name and target_name in node.Name.lower():
-                    return node
+            def find_btn(node):
+                if node.Name and node.Name.lower() in target_names: return node
                 child = node.GetFirstChildControl()
                 while child:
-                    res = find_desktop(child)
+                    res = find_btn(child)
                     if res: return res
                     child = child.GetNextSiblingControl()
                 return None
-                
             try:
-                ctrl = find_desktop(auto.GetRootControl())
-            except:
-                pass
+                ctrl = find_btn(auto.GetRootControl())
+            except: pass
             
             if ctrl:
                 pt = None
@@ -1197,45 +1096,37 @@ else { [VDesktop]::Switch($false) }
                 if pt:
                     cx, cy = int(pt[0]), int(pt[1])
                     with desktop_lock.UIALock_Suspend():
-                        tel = cursor_motion.go(cx, cy, click="left")
-                    r = _ok("switch_desktop")
-                    r["cursor"] = tel
-                    r["message"] = f"Visually clicked {target_name} in Task View"
-                    return r
-                else:
-                    # Fallback to bounds
-                    rect = ctrl.BoundingRectangle
-                    cx, cy = rect.left + rect.width()//2, rect.top + rect.height()//2
-                    with desktop_lock.UIALock_Suspend():
-                        tel = cursor_motion.go(cx, cy, click="left")
-                    r = _ok("switch_desktop")
-                    r["cursor"] = tel
-                    r["message"] = f"Visually clicked {target_name} (bounds) in Task View"
-                    return r
-            else:
-                # If not found, press Esc to close Task View
-                VK_ESCAPE = 0x1B
-                _send(_sinput(VK_ESCAPE))
-                time.sleep(0.1)
-                _send(_sinput(VK_ESCAPE, KEYEVENTF_KEYUP))
-                return _err("switch_desktop", "not_found", f"{target_name} not found in Task View")
-
-        steps_done = 0
-        if index >= 0:
-            # Go far left to reach desktop 0, then go right `index` times
-            for _ in range(15):
-                _one_step(False)
-            for _ in range(index):
-                _one_step(True)
-            steps_done = 15 + index
-            r = _ok("switch_desktop")
-            r["message"] = f"Switched to desktop index {index} (Win+Ctrl+Arrow, {steps_done} steps)"
+                        cursor_motion.go(cx, cy, click="left")
+                    return _ok("switch_desktop", {"message": f"Clicked desktop button via Task View: {target_names[0]}"})
+        
+        # 3. Fallback: Keyboard Navigation in Task View
+        VK_RIGHT = 0x27
+        VK_LEFT = 0x25
+        VK_ENTER = 0x0D
+        
+        # Depending on Windows version, focus might be weird. Just press TAB multiple times.
+        if direction == "new":
+            # Tab to 'New Desktop' and press Enter (usually Shift+Tab a few times or Tab)
+            # Actually, Ctrl+Win+D works IN Task View more reliably sometimes, 
+            # but let's just use the UIA approach mostly. If UIA failed, we are in trouble.
+            pass
+            
+        # If all else fails, attempt the hotkey AGAIN but slower
+        _send(_sinput(VK_ESCAPE, KEYEVENTF_KEYUP))
+        time.sleep(0.3)
+        VK_CONTROL = 0x11
+        VK_D = 0x44
+        if direction == "new":
+            _send(_sinput(VK_LWIN, KEYEVENTF_EXTENDEDKEY), _sinput(VK_CONTROL, 0), _sinput(VK_D, 0))
+            time.sleep(0.1)
+            _send(_sinput(VK_D, KEYEVENTF_KEYUP), _sinput(VK_CONTROL, KEYEVENTF_KEYUP), _sinput(VK_LWIN, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP))
         else:
-            _one_step(direction == "next")
-            r = _ok("switch_desktop")
-            r["message"] = f"Switched desktop: {direction}"
-        return r
-
+            key = VK_RIGHT if direction == "next" else VK_LEFT
+            _send(_sinput(VK_LWIN, KEYEVENTF_EXTENDEDKEY), _sinput(VK_CONTROL, 0), _sinput(key, KEYEVENTF_EXTENDEDKEY))
+            time.sleep(0.1)
+            _send(_sinput(key, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP), _sinput(VK_CONTROL, KEYEVENTF_KEYUP), _sinput(VK_LWIN, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP))
+            
+        return _ok("switch_desktop", {"message": f"Attempted hotkey fallback for {direction}"})
 
     def act_minimize_window(window: str) -> dict:
         """Minimize a window by title hint."""
@@ -1294,7 +1185,6 @@ else { [VDesktop]::Switch($false) }
                 sm_hwnd = _hwnd_from_ctrl(fg)
 
         if not sm_hwnd:
-            import time
             time.sleep(0.5)
             r = _ok("open_start_menu")
             r["message"] = "Start menu assumed open (HWND not strictly verified)"
