@@ -31,12 +31,6 @@ sys.stdout.reconfigure(encoding="utf-8")
 
 import os, json, socket, subprocess, time, argparse
 
-try:
-    with open("desktop_tools.log", "a") as f:
-        f.write(f"[{time.strftime('%H:%M:%S')}] ARGS: {sys.argv}\n")
-except:
-    pass
-
 BRIDGE_PORT = int(os.environ.get("VOILA_DESKTOP_PORT", "19881"))
 BRIDGE_HOST = "127.0.0.1"
 
@@ -107,6 +101,7 @@ def _ensure_bridge() -> bool:
 
 def _proxy(req: dict) -> dict:
     """Send req to bridge and return parsed response dict."""
+    global _bridge_ready
     if not _ensure_bridge():
         return {"ok": False, "error": "platform",
                 "message": "desktop_bridge failed to start. Check that python can run in the user session."}
@@ -126,12 +121,28 @@ def _proxy(req: dict) -> dict:
             if b"\n" in data:
                 break
         s.close()
-        return json.loads(data.decode("utf-8").strip())
+        
+        decoded = data.decode("utf-8").strip()
+        if not decoded:
+            return {"ok": False, "error": "platform", "message": "Bridge crashed or returned empty response."}
+        return json.loads(decoded)
+    except json.JSONDecodeError as je:
+        _bridge_ready = False
+        return {"ok": False, "error": "platform", "message": f"Bridge JSON error: {je}. Raw: {decoded[:200]}"}
     except Exception as e:
         _bridge_ready = False  # force re-check next time
         return {"ok": False, "error": "platform", "message": f"Bridge comm error: {e}"}
 
 # ─── CLI ──────────────────────────────────────────────────────────────────────
+
+
+try:
+    import sys
+    sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+    from aegis.aegis_core import AegisMonitor
+    aegis_monitor = AegisMonitor(os.path.join(os.path.dirname(os.path.abspath(__file__)), "aegis", "data"))
+except Exception as e:
+    aegis_monitor = None
 
 def main():
     parser = argparse.ArgumentParser(description="Voila desktop automation proxy")
@@ -144,12 +155,19 @@ def main():
     parser.add_argument("--timeout",  type=int, default=5000)
     # NEW: button for right-click / double-click support
     parser.add_argument("--button",   default="left",
-                        choices=["left", "right", "double"],
                         help="Mouse button for click actions (default: left)")
     # NEW: monitor / desktop index for switch_desktop
     parser.add_argument("--monitor",  type=int, default=0,
                         help="Virtual desktop index for switch_desktop (0-based)")
     args = parser.parse_args()
+
+    
+    if aegis_monitor:
+        payload = args.value or args.ref or args.selector
+        is_safe, reason = aegis_monitor.verify_action(args.action, payload, args.window)
+        if not is_safe:
+            print(json.dumps({"ok": False, "error": "security_blocked", "message": f"AEGIS SECURITY BLOCK: {reason}"}))
+            return
 
     req = {
         "action":     args.action,
@@ -164,8 +182,6 @@ def main():
     }
 
     result = _proxy(req)
-    with open("desktop_tools_req.log", "a", encoding="utf-8") as f:
-        f.write(f"REQ: {json.dumps(req)}\nRES: {json.dumps(result, ensure_ascii=False)}\n\n")
     if 'cursor' in result: del result['cursor']
     print(json.dumps(result, ensure_ascii=False))
 

@@ -7,6 +7,11 @@ Now uses a Custom AI Overlay Cursor instead of hijacking the user's physical mou
 """
 import os, sys, math, time, random, ctypes, socket, subprocess
 
+try:
+    ctypes.windll.shcore.SetProcessDpiAwareness(2)
+except Exception:
+    pass
+
 # ─── Debug logging ────────────────────────────────────────────────────────────
 def _log(msg: str):
     try:
@@ -79,7 +84,7 @@ def _set_cursor_pos(x: int, y: int):
     # Persist position to file so it survives bridge restarts (Fix 3: seesaw prevention)
     try:
         here = os.path.dirname(os.path.abspath(__file__))
-        with open(os.path.join(here, "cursor_pos.txt"), "w") as _f:
+        with open(os.path.join(here, f"cursor_pos_{_OVERLAY_PORT}.txt"), "w") as _f:
             _f.write(f"{int(x)},{int(y)}")
     except Exception:
         pass
@@ -153,25 +158,37 @@ def _build_path(x0: float, y0: float, x1: float, y1: float, steps: int) -> list[
     path: list[tuple[int, int]] = []
     for i in range(steps + 1):
         t_raw = i / steps
-        if t_raw < 0.85:
-            t = _min_jerk(t_raw / 0.85) * 0.85
-        else:
-            t = 0.85 + _ease_inout((t_raw - 0.85) / 0.15) * 0.15
+        t = _min_jerk(t_raw)
 
         bx, by = _bezier_point(t, (x0, y0), cp1, cp2, (over_x, over_y))
         nx = bx + random.gauss(0, 0.4)
         ny = by + random.gauss(0, 0.4)
         path.append((int(round(nx)), int(round(ny))))
 
-    path.append((int(round(x1)), int(round(y1))))
+    if overshoot > 0.5:
+        back_steps = max(3, int(overshoot))
+        for j in range(1, back_steps + 1):
+            p = j / back_steps
+            rt = 1.0 - (1.0 - p) ** 2  # Quadratic ease-out for soft spring settlement
+            rx = over_x + (x1 - over_x) * rt
+            ry = over_y + (y1 - over_y) * rt
+            path.append((int(round(rx)), int(round(ry))))
+    else:
+        path.append((int(round(x1)), int(round(y1))))
     return path
 
 # ─── Click helpers ────────────────────────────────────────────────────────────
 
 def _do_click(kind: str, cx: int, cy: int):
-    """Perform a click at AI position by instantly teleporting the real cursor, clicking, and restoring."""
-    hover_ms = random.uniform(30, 120)
-    time.sleep(hover_ms / 1000)
+
+    desktop_lock.acquire_mouse()
+    try:
+        """Perform a click at AI position by instantly teleporting the real cursor, clicking, and restoring."""
+        hover_ms = random.uniform(30, 120)
+        time.sleep(hover_ms / 1000)
+    
+    finally:
+        desktop_lock.release_mouse()
 
     down_ms = random.uniform(30, 80)
 
@@ -219,7 +236,7 @@ def get_pos(trigger_spawn=False) -> tuple[int, int]:
     # popup_pos.txt only stores the Voila face-widget position (bottom taskbar area),
     # NOT the last cursor position — reading it as a cursor start produces the seesaw.
     try:
-        cursor_pos_file = os.path.join(here, "cursor_pos.txt")
+        cursor_pos_file = os.path.join(here, f"cursor_pos_{_OVERLAY_PORT}.txt")
         if os.path.exists(cursor_pos_file):
             with open(cursor_pos_file, "r") as f:
                 parts = f.read().strip().split(",")
@@ -318,7 +335,9 @@ def move_to_goal() -> dict:
             
         _set_cursor_pos(dx2, dy2)
         _user32.SetCursorPos(int(dx2), int(dy2))
+        time.sleep(0.02)
         _mouse_event(MOUSEEVENTF_LEFTUP)
+        time.sleep(0.04) # CRITICAL: Let OS register the drop before teleporting away
         _user32.SetCursorPos(int(orig_x), int(orig_y))
 
     elif _goal_click is not None:

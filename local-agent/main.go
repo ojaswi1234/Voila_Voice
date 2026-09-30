@@ -3017,7 +3017,7 @@ var availableTools = []toolDef{
 						"description": "Content to write into the file",
 					},
 				},
-				"required": []string{"path", "content", "theme", "design_strategy"},
+				"required": []string{"path", "content"},
 			},
 		},
 	},
@@ -3183,7 +3183,7 @@ var availableTools = []toolDef{
 - "Corporate Legal Contract": Enforces heavily numbered lists (1.1, 1.2), bolded definitions, and rigid section breaks.
 - "Modern Product Requirement Document (PRD)": Uses markdown-style headers, deep feature tables, and user story blocks.`},
 				},
-				"required": []string{"path", "content", "theme", "design_strategy"},
+				"required": []string{"path", "content"},
 			},
 		},
 	},
@@ -3788,6 +3788,21 @@ func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMes
 		return "error: failed to parse tool arguments: " + err.Error()
 	}
 
+	// --- NEW: UNIVERSAL AEGIS MONITORING & SECURITY MODULE ---
+	// All tools are screened through the Aegis ML layer before proceeding.
+	// (Except desktop_automation, which has its own deeper integration in desktop_tools.py)
+	if toolName != "desktop_automation" {
+		aegisPayload := string(argsJSON)
+		aegisCmd := exec.Command("python", "local-agent/aegis/aegis_cli.py", "--action", toolName, "--payload", aegisPayload)
+		aegisOut, aegisErr := aegisCmd.CombinedOutput()
+		if aegisErr != nil {
+			debugLog.Printf("[AEGIS BLOCKED] Tool: %s, Error: %v, Output: %s", toolName, aegisErr, string(aegisOut))
+			return "(SECURITY BLOCK: AEGIS Module Rejected this action - " + string(aegisOut) + ")"
+		}
+	}
+	// ---------------------------------------------------------
+
+
 	// Globally resolve all 'path' parameters so files default to Desktop
 	if pathVal, exists := args["path"]; exists {
 		if pathStr, ok := pathVal.(string); ok {
@@ -4119,6 +4134,7 @@ case "read_file":
 		if actualCommand == "" {
 			return "(Error: Empty command provided)"
 		}
+
 
 		// Ã°Å¸â€ºÂ¡Ã¯Â¸Â HARD GUARDRAILS TO PROTECT THE USER SYSTEM Ã°Å¸â€ºÂ¡Ã¯Â¸Â
 		cmdLower := strings.ToLower(actualCommand)

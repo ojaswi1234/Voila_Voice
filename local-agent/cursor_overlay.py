@@ -126,8 +126,8 @@ class CursorOverlay:
             if width_inner < 0.5: width_inner = 0
 
             # Segmented tapering line
-            o = self.canvas.create_line(-100, -100, -100, -100, fill=cfg.color_outline, width=width_outer, capstyle=tk.ROUND, joinstyle=tk.ROUND)
-            i_c = self.canvas.create_line(-100, -100, -100, -100, fill=cfg.color_glow, width=width_inner, capstyle=tk.ROUND, joinstyle=tk.ROUND)
+            o = self.canvas.create_line(-99999, -99999, -99999, -99999, fill=cfg.color_outline, width=width_outer, capstyle=tk.ROUND, joinstyle=tk.ROUND)
+            i_c = self.canvas.create_line(-99999, -99999, -99999, -99999, fill=cfg.color_glow, width=width_inner, capstyle=tk.ROUND, joinstyle=tk.ROUND)
             self.trail_outer.append(o)
             self.trail_inner.append(i_c)
 
@@ -200,8 +200,8 @@ class CursorOverlay:
             try:
                 data, _ = sock.recvfrom(64)
                 if data == b"HIDE":
-                    self.target_x = -9999
-                    self.target_y = -9999
+                    self.target_x = -99999
+                    self.target_y = -99999
                     continue
                 if data.startswith(b"SPAWN,"):
                     parts = data.decode("utf-8").split(",")
@@ -249,9 +249,9 @@ class CursorOverlay:
                 self.home_progress += 0.02
                 if self.home_progress >= 1.0:
                     self.is_homing = False
-                    self.target_x = -9999
-                    self.target_y = -9999
-                    base_x, base_y = -9999, -9999
+                    self.target_x = -99999
+                    self.target_y = -99999
+                    base_x, base_y = -99999, -99999
                 else:
                     t = self.home_progress
                     if t < 0.6:
@@ -268,14 +268,14 @@ class CursorOverlay:
                         scale = 1.0 - jt
                         show_tail = False
 
-            if base_x == -9999 or base_y == -9999:
+            if base_x <= -9999 or base_y <= -9999:
                 if self.is_visible:
                     self.is_visible = False
                     self.history = []
                     for i in range(self.trail_len):
-                        self.canvas.coords(self.trail_outer[i], -100, -100, -100, -100)
-                        self.canvas.coords(self.trail_inner[i], -100, -100, -100, -100)
-                    self.move_head_to(-100, -100, 1.0, 0.0)
+                        self.canvas.coords(self.trail_outer[i], -99999, -99999, -99999, -99999)
+                        self.canvas.coords(self.trail_inner[i], -99999, -99999, -99999, -99999)
+                    self.move_head_to(-99999, -99999, 1.0, 0.0)
             else:
                 if not self.is_visible:
                     self.is_visible = True
@@ -308,13 +308,13 @@ class CursorOverlay:
                             self.canvas.coords(self.trail_outer[i], p1x, p1y, p2x, p2y)
                             self.canvas.coords(self.trail_inner[i], p1x, p1y, p2x, p2y)
                         else:
-                            self.canvas.coords(self.trail_outer[i], -100, -100, -100, -100)
-                            self.canvas.coords(self.trail_inner[i], -100, -100, -100, -100)
+                            self.canvas.coords(self.trail_outer[i], -99999, -99999, -99999, -99999)
+                            self.canvas.coords(self.trail_inner[i], -99999, -99999, -99999, -99999)
                     else:
-                        self.canvas.coords(self.trail_outer[i], -100, -100, -100, -100)
-                        self.canvas.coords(self.trail_inner[i], -100, -100, -100, -100)
-                        self.canvas.coords(self.trail_outer[i], -100, -100, -100, -100)
-                        self.canvas.coords(self.trail_inner[i], -100, -100, -100, -100)
+                        self.canvas.coords(self.trail_outer[i], -99999, -99999, -99999, -99999)
+                        self.canvas.coords(self.trail_inner[i], -99999, -99999, -99999, -99999)
+                        self.canvas.coords(self.trail_outer[i], -99999, -99999, -99999, -99999)
+                        self.canvas.coords(self.trail_inner[i], -99999, -99999, -99999, -99999)
         except Exception as e:
             log(f"Animation loop error: {e}")
 
@@ -362,8 +362,8 @@ class CursorOverlay:
         
         if scale < 0.95 or angle > 0:
             for item in self.badge_items:
-                self.canvas.coords(item, -100, -100, -100, -100)
-            self.canvas.coords(self.badge_text, -100, -100)
+                self.canvas.coords(item, -99999, -99999, -99999, -99999)
+            self.canvas.coords(self.badge_text, -99999, -99999)
         else:
             self.canvas.coords(self.badge_items[0], px - 1, py - 1, px + ph + 1, py + ph + 1)
             self.canvas.coords(self.badge_items[1], px + pw - ph - 1, py - 1, px + pw + 1, py + ph + 1)

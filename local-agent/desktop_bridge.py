@@ -32,6 +32,7 @@ except Exception:
         pass
 
 import desktop_core as dt
+import desktop_lock
 
 BRIDGE_PORT = int(os.environ.get("VOILA_DESKTOP_PORT", "19881"))
 _lock = threading.Lock()   # one UIA action at a time (per-process)
@@ -53,7 +54,8 @@ if _IS_GRAPHIFY_AGENT:
 def _acquire_global_uia():
     """Acquire the cross-process UIA mutex. No-op in single-agent mode."""
     if _global_uia_mutex:
-        ctypes.windll.kernel32.WaitForSingleObject(_global_uia_mutex, 15000)  # 15s timeout
+        # INFINITE wait (0xFFFFFFFF) - do not time out and stomp other agents during heavy UIA tree walks
+        ctypes.windll.kernel32.WaitForSingleObject(_global_uia_mutex, 0xFFFFFFFF)
 
 def _release_global_uia():
     """Release the cross-process UIA mutex. No-op in single-agent mode."""
@@ -97,7 +99,8 @@ def _worker():
                     cursor_motion._current_ai_y = None
                     # Also wipe the persistence file so next get_pos() starts fresh
                     try:
-                        cursor_pos_file = os.path.join(_HERE, "cursor_pos.txt")
+                        port = os.environ.get("VOILA_AGENT_PORT", "")
+                        cursor_pos_file = os.path.join(cursor_motion.cursor_motion._HERE, f"cursor_pos_{port}.txt" if port else "cursor_pos.txt")
                         if os.path.exists(cursor_pos_file):
                             os.remove(cursor_pos_file)
                     except Exception:
@@ -122,11 +125,8 @@ def _worker():
             args.button   = button
             args.monitor  = monitor
 
-            _acquire_global_uia()
-            try:
+            with desktop_lock.UIA_Lock():
                 result = dt.dispatch(args)
-            finally:
-                _release_global_uia()
 
             resp = json.dumps(result, ensure_ascii=False) + "\n"
             conn.sendall(resp.encode("utf-8"))

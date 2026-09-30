@@ -4,6 +4,7 @@ Imported ONLY by desktop_bridge.py which runs in the user's Session 1.
 desktop_tools.py (the proxy) never imports this.
 """
 import sys, os, json, time, ctypes
+import desktop_lock
 from typing import Any
 
 # ─── Platform guard ────────────────────────────────────────────────────────────
@@ -334,8 +335,6 @@ else:
 
     def act_snapshot(window, depth: int) -> dict:
         global _ref_store, _ref_counter
-        _ref_store.clear()
-        _ref_counter = 0
 
         is_start = _is_start_menu_hint(window or "")
         is_taskbar = (window or "").strip().lower() in ("taskbar", "tray", "system tray", "system_tray")
@@ -447,13 +446,10 @@ else:
             
         # CLAMP to screen bounds to prevent hanging on off-screen coordinates
         import ctypes
-        w = ctypes.windll.user32.GetSystemMetrics(78) or ctypes.windll.user32.GetSystemMetrics(0)
-        h = ctypes.windll.user32.GetSystemMetrics(79) or ctypes.windll.user32.GetSystemMetrics(1)
-        
-        cx = max(0, min(cx, w - 1))
-        cy = max(0, min(cy, h - 1))
+        cx, cy = _clamp_to_virtual_screen(cx, cy)
             
-        tel = cursor_motion.go(cx, cy, click=click, drag_to=drag_to, duration_ms=duration_ms)
+        with desktop_lock.UIALock_Suspend():
+            tel = cursor_motion.go(cx, cy, click=click, drag_to=drag_to, duration_ms=duration_ms)
         return None, tel
 
     def _ensure_window_focused(window):
@@ -467,17 +463,14 @@ else:
 
     def act_move_cursor(ref: str, window) -> dict:
         wnd = _find_window(window)
-        import ctypes
-        w = ctypes.windll.user32.GetSystemMetrics(78) or ctypes.windll.user32.GetSystemMetrics(0)
-        h = ctypes.windll.user32.GetSystemMetrics(79) or ctypes.windll.user32.GetSystemMetrics(1)
         
         if "," in ref:
             try:
                 parts = ref.split(",")
                 cx, cy = int(parts[0].strip()), int(parts[1].strip())
-                cx = max(0, min(cx, w - 1))
-                cy = max(0, min(cy, h - 1))
-                tel = cursor_motion.go(cx, cy)
+                cx, cy = _clamp_to_virtual_screen(cx, cy)
+                with desktop_lock.UIALock_Suspend():
+                    tel = cursor_motion.go(cx, cy)
                 r = _ok("move_cursor", wnd)
                 r["cursor"] = tel
                 return r
@@ -516,13 +509,15 @@ else:
             # Prefer native UIA Invoke Pattern (doesn't move mouse at all)
             invoke_pat = ctrl.GetInvokePattern()
             if invoke_pat:
-                tel = cursor_motion.go(cx, cy)
+                with desktop_lock.UIALock_Suspend():
+                    tel = cursor_motion.go(cx, cy)
                 invoke_pat.Invoke()
             else:
                 raise NotImplementedError()
         except Exception:
             # Fallback to our own safe click that restores physical cursor
-            tel = cursor_motion.go(cx, cy, click="left")
+            with desktop_lock.UIALock_Suspend():
+                tel = cursor_motion.go(cx, cy, click="left")
             
         # Re-assert focus after invoke to prevent focus loss on certain dialogs
         try:
@@ -538,17 +533,14 @@ else:
     def act_click_ref(ref: str, window, button: str) -> dict:
         wnd = _find_window(window)
         
-        import ctypes
-        w = ctypes.windll.user32.GetSystemMetrics(78) or ctypes.windll.user32.GetSystemMetrics(0)
-        h = ctypes.windll.user32.GetSystemMetrics(79) or ctypes.windll.user32.GetSystemMetrics(1)
         
         if "," in ref:
             try:
                 parts = ref.split(",")
                 cx, cy = int(parts[0].strip()), int(parts[1].strip())
-                cx = max(0, min(cx, w - 1))
-                cy = max(0, min(cy, h - 1))
-                tel = cursor_motion.go(cx, cy, click=button)
+                cx, cy = _clamp_to_virtual_screen(cx, cy)
+                with desktop_lock.UIALock_Suspend():
+                    tel = cursor_motion.go(cx, cy, click=button)
                 r = _ok("click_ref", wnd)
                 r["cursor"] = tel
                 return r
@@ -592,7 +584,8 @@ else:
         except Exception: pass
 
         if cx is None: cx, cy = _center(meta["bounds"])
-        tel = cursor_motion.go(cx, cy)
+        with desktop_lock.UIALock_Suspend():
+            tel = cursor_motion.go(cx, cy)
 
         WHEEL_DELTA = 120
         VK_NEXT    = 0x22   # Page Down
@@ -610,6 +603,7 @@ else:
         pt = ctypes.wintypes.POINT()
         _user32_local.GetCursorPos(ctypes.byref(pt))
         orig_x, orig_y = pt.x, pt.y
+        desktop_lock.acquire_mouse()
         _user32_local.SetCursorPos(int(cx), int(cy))
         time.sleep(0.05)
 
@@ -622,7 +616,9 @@ else:
             elif isinstance(value, str) and value.lower() == "up":
                 _user32_local.mouse_event(0x0800, 0, 0, ctypes.c_int(3 * WHEEL_DELTA), 0)
         finally:
+            time.sleep(0.05)
             _user32_local.SetCursorPos(int(orig_x), int(orig_y))
+            desktop_lock.release_mouse()
 
         r = _ok("scroll", wnd)
         r["cursor"] = tel
@@ -647,7 +643,8 @@ else:
         except Exception: pass
 
         if cx is None: cx, cy = _center(meta["bounds"])
-        tel = cursor_motion.go(cx, cy, click="left")
+        with desktop_lock.UIALock_Suspend():
+            tel = cursor_motion.go(cx, cy, click="left")
         
         def _escape_sendkeys(text: str) -> str:
             # uiautomation uses { } for special keys. To type literal { or }, enclose them in {}.
@@ -691,7 +688,8 @@ else:
             except Exception: pass
 
             if cx is None: cx, cy = _center(meta["bounds"])
-            tel = cursor_motion.go(cx, cy, click="left")
+            with desktop_lock.UIALock_Suspend():
+                tel = cursor_motion.go(cx, cy, click="left")
             try:
                 ctrl.SendKeys(keys, waitTime=0)
             except Exception:
@@ -721,7 +719,8 @@ else:
         except Exception: pass
 
         if cx is None: cx, cy = _center(meta["bounds"])
-        tel = cursor_motion.go(cx, cy, click="left")
+        with desktop_lock.UIALock_Suspend():
+            tel = cursor_motion.go(cx, cy, click="left")
         try:
             ctrl.Toggle()
         except Exception:
@@ -749,7 +748,8 @@ else:
         except Exception: pass
 
         if cx is None: cx, cy = _center(meta["bounds"])
-        tel = cursor_motion.go(cx, cy, click="left")
+        with desktop_lock.UIALock_Suspend():
+            tel = cursor_motion.go(cx, cy, click="left")
         try:
             ctrl.SetFocus()
         except Exception:
@@ -777,7 +777,8 @@ else:
         except Exception: pass
 
         if cx is None: cx, cy = _center(meta["bounds"])
-        tel = cursor_motion.go(cx, cy, click="left")
+        with desktop_lock.UIALock_Suspend():
+            tel = cursor_motion.go(cx, cy, click="left")
         try:
             ctrl.Select()
         except Exception:
@@ -789,9 +790,6 @@ else:
     def act_drag_ref(ref: str, value: str, window) -> dict:
         wnd = _find_window(window)
         
-        import ctypes
-        w = ctypes.windll.user32.GetSystemMetrics(78) or ctypes.windll.user32.GetSystemMetrics(0)
-        h = ctypes.windll.user32.GetSystemMetrics(79) or ctypes.windll.user32.GetSystemMetrics(1)
         
         # Source coords
         if "," in ref:
@@ -814,8 +812,7 @@ else:
             except Exception: pass
             if sx is None: sx, sy = _center(meta["bounds"])
             
-        sx = max(0, min(sx, w - 1))
-        sy = max(0, min(sy, h - 1))
+        sx, sy = _clamp_to_virtual_screen(sx, sy)
             
         # Dest coords
         if value and "," in value:
@@ -839,11 +836,11 @@ else:
         else:
             return _err("drag_ref", "invalid_args", f"drag value unresolvable: {value!r}")
             
-        dx = max(0, min(drag_dest[0], w - 1))
-        dy = max(0, min(drag_dest[1], h - 1))
+        dx, dy = _clamp_to_virtual_screen(drag_dest[0], drag_dest[1])
         drag_dest = (dx, dy)
             
-        tel = cursor_motion.go(sx, sy, drag_to=drag_dest)
+        with desktop_lock.UIALock_Suspend():
+            tel = cursor_motion.go(sx, sy, drag_to=drag_dest)
         r = _ok("drag_ref", wnd)
         r["cursor"] = tel
         return r
@@ -906,7 +903,8 @@ else:
             except: pass
             if pt:
                 cx, cy = int(pt[0]), int(pt[1])
-                tel = cursor_motion.go(cx, cy, click="left")
+                with desktop_lock.UIALock_Suspend():
+                    tel = cursor_motion.go(cx, cy, click="left")
                 r = _ok("focus_window", wnd)
                 r["cursor"] = tel
                 r["message"] = f"Visually clicked {target_name!r} in Task View"
@@ -914,7 +912,8 @@ else:
             else:
                 rect = ctrl.BoundingRectangle
                 cx, cy = rect.left + rect.width()//2, rect.top + rect.height()//2
-                tel = cursor_motion.go(cx, cy, click="left")
+                with desktop_lock.UIALock_Suspend():
+                    tel = cursor_motion.go(cx, cy, click="left")
                 r = _ok("focus_window", wnd)
                 r["cursor"] = tel
                 r["message"] = f"Visually clicked {target_name!r} (bounds) in Task View"
@@ -1184,7 +1183,8 @@ else { [VDesktop]::Switch($false) }
                 except: pass
                 if pt:
                     cx, cy = int(pt[0]), int(pt[1])
-                    tel = cursor_motion.go(cx, cy, click="left")
+                    with desktop_lock.UIALock_Suspend():
+                        tel = cursor_motion.go(cx, cy, click="left")
                     r = _ok("switch_desktop")
                     r["cursor"] = tel
                     r["message"] = f"Visually clicked {target_name} in Task View"
@@ -1193,7 +1193,8 @@ else { [VDesktop]::Switch($false) }
                     # Fallback to bounds
                     rect = ctrl.BoundingRectangle
                     cx, cy = rect.left + rect.width()//2, rect.top + rect.height()//2
-                    tel = cursor_motion.go(cx, cy, click="left")
+                    with desktop_lock.UIALock_Suspend():
+                        tel = cursor_motion.go(cx, cy, click="left")
                     r = _ok("switch_desktop")
                     r["cursor"] = tel
                     r["message"] = f"Visually clicked {target_name} (bounds) in Task View"
@@ -1425,4 +1426,15 @@ else { [VDesktop]::Switch($false) }
                 return act_switch_desktop(direction=value or "next")
 
         return _err(action, "unsupported", f"Unknown action: {action!r}")
+
+def _clamp_to_virtual_screen(x, y):
+    import ctypes
+    min_x = ctypes.windll.user32.GetSystemMetrics(76)
+    min_y = ctypes.windll.user32.GetSystemMetrics(77)
+    w = ctypes.windll.user32.GetSystemMetrics(78) or ctypes.windll.user32.GetSystemMetrics(0)
+    h = ctypes.windll.user32.GetSystemMetrics(79) or ctypes.windll.user32.GetSystemMetrics(1)
+    cx = max(min_x, min(x, min_x + w - 1))
+    cy = max(min_y, min(y, min_y + h - 1))
+    return cx, cy
+
 

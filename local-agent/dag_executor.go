@@ -266,8 +266,13 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 	if !state.IsCustom {
 		if err := autoGenerateGraphifyState(ctx, command, connData); err == nil {
 			// Re-read after auto generation
-			data, _ = os.ReadFile("graphify_state.json")
-			json.Unmarshal(data, &state)
+			data, err = os.ReadFile("graphify_state.json")
+			if err != nil {
+				return "", fmt.Errorf("failed to read generated graph state: %v", err)
+			}
+			if err := json.Unmarshal(data, &state); err != nil {
+				return "", fmt.Errorf("failed to parse generated graph state: %v", err)
+			}
 		} else {
 			fmt.Printf("STATUS: SYSTEM_MSG:Auto-generation failed: %v\n", err)
 			os.Stdout.Sync()
@@ -283,6 +288,13 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 		agentColor := agentColors[i % len(agentColors)]
 		launchAgentOverlay(n.ID, i, agentName, agentColor[0], agentColor[1], agentColor[2])
 	}
+
+	// Guarantee cleanup of all overlays on exit (cancel, error, or success)
+	defer func() {
+		for _, n := range state.Nodes {
+			killAgentOverlay(n.ID)
+		}
+	}()
 
 	if len(state.Nodes) == 0 {
 		return "Graph is empty", nil
@@ -630,15 +642,14 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 				isReject := false
 				// 🚀 SPEEDUP: Early-Exit Consensus
 				if strings.Contains(nodeOut, "APPROVE: ALL") {
-					mu.Lock()
 					for _, n := range state.Nodes {
 						if !completed[n.ID] {
 							completed[n.ID] = true
 							outputs[n.ID] = "Skipped due to Early-Exit Consensus"
 							updateLiveNode(n.ID, "skipped")
+							killAgentOverlay(n.ID)
 						}
 					}
-					mu.Unlock()
 					
 					appendLiveLog(fmt.Sprintf("[SYSTEM]: %s approved the entire project! Short-circuiting remaining tasks.", n.Role))
 					fmt.Printf("STATUS: SYSTEM_MSG:[%s] declared consensus. Terminating early.\n", n.Role)
@@ -711,3 +722,4 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 
 	return strings.Join(finalOutputs, "\n\n"), nil
 }
+
