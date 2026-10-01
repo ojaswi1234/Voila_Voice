@@ -1,6 +1,7 @@
 package com.voicecli.voice_cli_temp
 
 import android.content.Intent
+import android.os.Bundle
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.android.FlutterActivityLaunchConfigs.BackgroundMode
 import io.flutter.embedding.engine.FlutterEngine
@@ -10,8 +11,21 @@ class MainActivity: FlutterActivity() {
     private val CHANNEL = "com.voila/intent"
     private var methodChannel: MethodChannel? = null
 
+    override fun onCreate(savedInstanceState: Bundle?) {
+        val action = intent?.action
+        val isLauncher = action == Intent.ACTION_MAIN
+        if (!isLauncher) {
+            setTheme(R.style.TransparentTheme)
+        } else {
+            setTheme(R.style.NormalTheme)
+        }
+        super.onCreate(savedInstanceState)
+    }
+
     override fun getBackgroundMode(): BackgroundMode {
-        return BackgroundMode.transparent
+        val action = intent?.action
+        val isLauncher = action == Intent.ACTION_MAIN
+        return if (!isLauncher) BackgroundMode.transparent else BackgroundMode.opaque
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
