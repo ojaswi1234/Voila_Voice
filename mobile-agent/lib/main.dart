@@ -479,13 +479,18 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     
-    // Listen for intent changes (e.g. from onNewIntent)
+    // FIX Bug #3: This is now the PRIMARY mechanism for AssistantActivity to signal
+    // overlay mode. AssistantActivity.configureFlutterEngine invokes "onIntentChanged"
+    // with true; AssistantActivity.onDestroy invokes it with false.
     platform.setMethodCallHandler((call) async {
       if (call.method == 'onIntentChanged') {
-        final bool isAssistant = call.arguments as bool;
-        setState(() {
-          _isAssistant = isAssistant;
-        });
+        // Null-safe: call.arguments may be null if the channel is called without args
+        final bool isAssistant = (call.arguments as bool?) ?? false;
+        if (mounted) {
+          setState(() {
+            _isAssistant = isAssistant;
+          });
+        }
       }
     });
 
@@ -2234,12 +2239,22 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       drawer: _buildDrawer(),
       backgroundColor: _isAssistant ? Colors.transparent : const Color(0xFF0F0F12),
       body: _isAssistant
-        ? Align(
-            alignment: Alignment.bottomCenter,
-            child: Container(
-              width: double.infinity,
-              color: Colors.transparent, // Completely transparent container, elements inside provide their own backgrounds
-              child: _buildMainContent(colorScheme),
+        // FIX Bug #4: LayoutBuilder provides bounded constraints so the Column+Stack
+        // tree does not get an unbounded height and throw a RenderBox exception.
+        ? LayoutBuilder(
+            builder: (context, constraints) => Align(
+              alignment: Alignment.bottomCenter,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: constraints.maxHeight,
+                  maxWidth: constraints.maxWidth,
+                ),
+                child: SingleChildScrollView(
+                  reverse: true, // pin content to the bottom
+                  physics: const NeverScrollableScrollPhysics(),
+                  child: _buildMainContent(colorScheme),
+                ),
+              ),
             ),
           )
         : SafeArea(

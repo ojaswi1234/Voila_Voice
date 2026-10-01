@@ -23,5 +23,8 @@
         <item name="android:windowNoTitle">true</item>
         <item name="android:windowIsFloating">false</item>
         <item name="android:backgroundDimEnabled">false</item>
+        <!-- FIX Bug #5: Force hardware acceleration so Flutter transparent mode
+             doesn't render a black screen on OEM ROMs (Xiaomi, Realme, OPPO) -->
+        <item name="android:hardwareAccelerated">true</item>
     </style>
 </resources>

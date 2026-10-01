@@ -21,28 +21,36 @@ class VoilaVoiceInteractionSessionService : VoiceInteractionSessionService() {
 }
 
 class VoilaVoiceInteractionSession(context: Context) : VoiceInteractionSession(context) {
-    
+
     override fun onShow(args: Bundle?, showFlags: Int) {
         super.onShow(args, showFlags)
-        launchMainActivity()
+        launchAssistantActivity()
     }
 
-    override fun onHandleAssist(data: Bundle?, structure: android.app.assist.AssistStructure?, content: android.app.assist.AssistContent?) {
+    override fun onHandleAssist(
+        data: Bundle?,
+        structure: android.app.assist.AssistStructure?,
+        content: android.app.assist.AssistContent?
+    ) {
         super.onHandleAssist(data, structure, content)
-        // Removed launchMainActivity() here to prevent double-launch crashes. 
-        // onShow() is reliably called and handles the UI launch.
+        // Do NOT call launchAssistantActivity() here — onShow() is the authoritative trigger.
+        // Calling it twice causes rapid-fire Activity creation and crash.
     }
-    
-    private fun launchMainActivity() {
-        val intent = Intent(context, AssistantActivity::class.java)
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-        intent.action = Intent.ACTION_ASSIST
+
+    private fun launchAssistantActivity() {
+        val intent = Intent(context, AssistantActivity::class.java).apply {
+            // CRITICAL FIX (Bug #2): Remove FLAG_ACTIVITY_SINGLE_TOP.
+            // With singleInstance launchMode, SINGLE_TOP is redundant and prevents
+            // the Activity from fully resetting state, causing a blank overlay.
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            action = Intent.ACTION_ASSIST
+        }
         startVoiceActivity(intent)
     }
 }
 
 class VoilaRecognitionService : RecognitionService() {
-    override fun onStartListening(recognizerIntent: Intent?, listener: android.speech.RecognitionService.Callback?) {}
-    override fun onCancel(listener: android.speech.RecognitionService.Callback?) {}
-    override fun onStopListening(listener: android.speech.RecognitionService.Callback?) {}
+    override fun onStartListening(recognizerIntent: Intent?, listener: Callback?) {}
+    override fun onCancel(listener: Callback?) {}
+    override fun onStopListening(listener: Callback?) {}
 }
