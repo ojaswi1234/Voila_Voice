@@ -1626,6 +1626,9 @@ func startNgrok() error {
 
 	// Start ngrok tunnel with environment variable
 	cmd := exec.Command(ngrokPath, "http", "8088")
+	if runtime.GOOS == "windows" {
+		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	}
 
 	// Set NGROK_AUTHTOKEN environment variable for this process
 	authtoken := os.Getenv("NGROK_AUTHTOKEN")
