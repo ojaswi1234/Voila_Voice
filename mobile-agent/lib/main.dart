@@ -185,7 +185,8 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   WebSocketChannel? _channel;  // nullable â€” prevents LateInitializationError before first connect
   StreamSubscription? _wsSubscription;  // stored so we can cancel on dispose/reconnect
   StreamSubscription? _fcmRefreshSubscription;  // BUG-15 fix: FCM refresh listener cancellation
-  StreamSubscription? _fcmOpenedAppSubscription;  // FCM-02 fix
+  StreamSubscription? _fcmOpenedAppSubscription;
+  StreamSubscription? _fcmMessageSubscription;  // FCM-02 fix
 
   static const platform = MethodChannel('com.voila/intent');
   bool _showFlowchart = false;
@@ -255,7 +256,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   }
 
   void _triggerDataDeparting() {
-    setState(() => _isDataDeparting = true);
+    if (mounted) setState(() => _isDataDeparting = true);
     Future.delayed(const Duration(milliseconds: 1500), () {
       if (mounted) setState(() => _isDataDeparting = false);
     });
@@ -264,7 +265,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   void _triggerDataArriving() {
     setState(() => _isDataArriving = true);
     Future.delayed(const Duration(milliseconds: 1500), () {
-      if (mounted) setState(() => _isDataArriving = false);
+      if (mounted) if (mounted) setState(() => _isDataArriving = false);
     });
   }
   String _backendStatus = 'Checking...';
@@ -367,7 +368,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       }
     });
 
-    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+    _fcmMessageSubscription = FirebaseMessaging.onMessage.listen((RemoteMessage message) {
       RemoteNotification? notification = message.notification;
       AndroidNotification? android = message.notification?.android;
       if (notification != null && android != null) {
@@ -494,6 +495,15 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
           setState(() {
             _isAssistant = isAssistant;
           });
+          // BUGFIX: Disable FlutterBackground foreground service when in overlay mode
+          // to prevent Android system conflicts and audio focus issues.
+          if (Platform.isAndroid) {
+            if (_isAssistant) {
+              FlutterBackground.disableBackgroundExecution();
+            } else {
+              _initBackground();
+            }
+          }
         }
       }
     });
@@ -577,7 +587,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   }
   
   void _startNewConversation() {
-    setState(() {
+    if (mounted) setState(() {
       _currentConversationId = '';
       _messagesAgent.clear();
       _messagesAgent.insert(0, {'text': 'Started a new conversation.', 'isUser': false});
@@ -586,7 +596,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   }
   
   void _resumeConversation(String id, String title) {
-    setState(() {
+    if (mounted) setState(() {
       _currentConversationId = id;
       _messagesAgent.clear();
       _messagesAgent.insert(0, {'text': 'Resumed conversation: ', 'isUser': false});
@@ -725,7 +735,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     if (_previousDictationText.isNotEmpty && !_previousDictationText.endsWith(' ')) {
         _previousDictationText += ' ';
     }
-    setState(() {
+    if (mounted) setState(() {
       _isListening = true;
       _silenceWarningCount = 0;
       _currentAiSubtitle = ""; // Clear previous subtitle when starting new query
@@ -796,7 +806,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
           if (isMuteCommand) {
              _stopListening();
              flutterTts.stop();
-             setState(() {
+             if (mounted) setState(() {
                _isLiveSession = false;
                _isAiSpeaking = false;
                _controller.text = "Muted by voice command";
@@ -807,7 +817,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
           
           if (result.finalResult) {
             String finalWords = _normalizeGenZSlang(result.recognizedWords);
-            setState(() {
+            if (mounted) setState(() {
               _controller.text = _previousDictationText + finalWords;
               _isListening = false;
             });
@@ -853,13 +863,13 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
             }
           } else {
             // Partial result - update text field live
-            setState(() {
+            if (mounted) setState(() {
               _controller.text = _previousDictationText + _normalizeGenZSlang(result.recognizedWords);
             });
           }
         },
         onSoundLevelChange: (level) {
-          setState(() {
+          if (mounted) setState(() {
             _currentSoundLevel = level;
           });
         },
@@ -870,7 +880,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
         cancelOnError: true,
       );
     } catch (e) {
-      setState(() {
+      if (mounted) setState(() {
         _isListening = false;
         _isLiveSession = false;
       });
@@ -884,7 +894,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
 
   Future<void> _stopListening() async {
     await _speechToText.stop();
-    setState(() {
+    if (mounted) setState(() {
       _isListening = false;
       _isLiveSession = false;
       _currentSoundLevel = 0.0;
@@ -899,7 +909,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       };
       _channel?.sink.add(jsonEncode(message));
       
-      setState(() {
+      if (mounted) setState(() {
         _isThinking = false; _triggerDataArriving();
         _addMessage({
           'type': 'system',
@@ -916,7 +926,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     _currentDeviceName = await DeviceIdentity.getDeviceName();
     _sessionId = const Uuid().v4();
     _savedDevices = await DeviceIdentity.getSavedDevices();
-    if (mounted) setState(() {});  // BUG-10 fix
+    if (mounted) if (mounted) setState(() {});  // BUG-10 fix
   }
 
   void _connectToBackend() {
@@ -1022,7 +1032,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
               if (_devices.isEmpty) {
                 _savedDevices = {};
                 _activeDevice = '';
-                if (mounted) setState(() {});  // REMAIN-03 fix
+                if (mounted) if (mounted) setState(() {});  // REMAIN-03 fix
               }
               final onlineCount = _devices.values.where((d) => d['online'] == true).length;
               final reachableCount = _devices.values.where((d) => d['reachable'] == true).length;
@@ -1043,7 +1053,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
               } else if (payload is List) {
                  parsedData = payload;
               }
-              setState(() {  // BUG-08 fix: safe cast handles non-String JSON values
+              if (mounted) setState(() {  // BUG-08 fix: safe cast handles non-String JSON values
                 _conversations = parsedData.map((x) {
                   try {
                     return Map<String, String>.from(
@@ -1054,7 +1064,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
             } else if (jsonResponse is Map && jsonResponse['type'] == 'security_alert') {
               final alert = jsonResponse['alert'];
               if (alert != null) {
-                setState(() {
+                if (mounted) setState(() {
                   _securityAlerts.add(alert);
                 });
                 
@@ -1081,7 +1091,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
             } else if (jsonResponse is Map && jsonResponse['type'] == 'security_alerts_list') {
               final alerts = jsonResponse['alerts'];
               if (alerts is List) {
-                setState(() {
+                if (mounted) setState(() {
                   _securityAlerts = List<Map<String, dynamic>>.from(alerts);
                 });
                 
@@ -1106,7 +1116,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
               } else if (payload is List) {
                  parsedData = payload;
               }
-              setState(() {
+              if (mounted) setState(() {
                 _isFetchingModels = false;
                 _modelsList = parsedData.map((e) => e.toString()).toList();
                 if (_modelsList.isNotEmpty && _selectedModel.isEmpty) {
@@ -1117,7 +1127,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
               // Silently ignore pong responses
               return;
             } else if (jsonResponse is Map && jsonResponse['type'] == 'token_usage') {
-              setState(() {
+              if (mounted) setState(() {
                 _lastTokenUsage = Map<String, dynamic>.from(jsonResponse);
               });
               await _storage.write(
@@ -1152,7 +1162,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
               return;
             } else if (jsonResponse is Map && jsonResponse.containsKey('summary')) {
               if (jsonResponse['mode'] != 'screenshot') {
-                setState(() {
+                if (mounted) setState(() {
                   _isThinking = false; _triggerDataArriving();
                 });
               } else {
@@ -1218,7 +1228,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
               _devices = {};
               _savedDevices = {};
               DeviceIdentity.clearAllSavedDevices();
-              setState(() {});
+              if (mounted) setState(() {});
               _getDevices(); // Refresh device list
             } else if (message.contains('ERROR:')) {
               setState(() { 
@@ -1238,7 +1248,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                 'timestamp': DateTime.now().toString(),
               });
             } else {
-              setState(() { _isThinking = false; _triggerDataArriving(); });
+              if (mounted) setState(() { _isThinking = false; _triggerDataArriving(); });
               _addMessage({
                 'type': 'response',
                 'content': message,
@@ -1272,7 +1282,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
           });
         });
       }, onDone: () {
-        if (mounted) setState(() {  // BUG-11 fix
+        if (mounted) if (mounted) setState(() {  // BUG-11 fix
           _isConnected = false;
           _addMessage({
             'type': 'system',
@@ -1354,7 +1364,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
             }
           }
           
-          setState(() {
+          if (mounted) setState(() {
             _isHealthy = true;
             _localAgentConnected = activeDeviceOnline;
             _backendStatus = 'Healthy (${statusData['uptime']})';
@@ -1401,7 +1411,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   void _interceptImageForAssistant(String content) {
     if (content.startsWith('__IMAGE__:') && _isAssistant) {
       String base64Str = content.substring(10).replaceAll(RegExp(r'\s+'), '');
-      setState(() {
+      if (mounted) setState(() {
         _temporaryAssistantImage = base64Str;
       });
       _assistantImageTimer?.cancel();
@@ -1422,7 +1432,8 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     _silenceTimer?.cancel();  // BUG-03 fix: was missing, caused setState-after-dispose
     _wsSubscription?.cancel();  // REMAIN-06 fix: cancel WS stream subscription
     _fcmRefreshSubscription?.cancel();  // BUG-15 fix
-    _fcmOpenedAppSubscription?.cancel();  // FCM-02 fix
+    _fcmOpenedAppSubscription?.cancel();
+    _fcmMessageSubscription?.cancel();  // FCM-02 fix
     _healthCheckTimer?.cancel();
     _channel?.sink.close();
     _controller.dispose();
@@ -1461,7 +1472,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   void _stopCommand() {
     if (_channel != null && _isConnected) {
       _channel?.sink.add(jsonEncode({"type": "stop_command"}));
-      setState(() {
+      if (mounted) setState(() {
         _isThinking = false; _triggerDataArriving();
         _addMessage({
           'type': 'response',
@@ -1474,7 +1485,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
 
   void _fetchModels() {
     if (_channel != null && _isConnected) {
-      setState(() => _isFetchingModels = true);
+      if (mounted) setState(() => _isFetchingModels = true);
       _channel?.sink.add(jsonEncode({
         "type": "get_models",
         "device_id": _activeDevice,
@@ -1514,7 +1525,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                             title: Text(model, style: const TextStyle(color: Colors.white70)),
                             trailing: _selectedModel == model ? const Icon(Icons.check, color: Colors.greenAccent) : null,
                             onTap: () {
-                              setState(() => _selectedModel = model);
+                              if (mounted) setState(() => _selectedModel = model);
                               Navigator.pop(context);
                             },
                           );
@@ -1532,7 +1543,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   void _sendMessage() async {
     if (_controller.text.isNotEmpty) {
       if (!_isConnected) {
-        setState(() {
+        if (mounted) setState(() {
           _addMessage({
             'type': 'error',
             'content': 'Not connected to backend. Please wait for reconnection.',
@@ -1544,7 +1555,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       }
       
       if (_activeDevice.isEmpty) {
-        setState(() {
+        if (mounted) setState(() {
           _addMessage({
             'type': 'error',
             'content': 'No online desktop device selected. Please wait for devices to load or refresh.',
@@ -1563,7 +1574,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       
       // Validate that selected device is actually a desktop device
       if (!_activeDevice.startsWith('desktop-')) {
-        setState(() {
+        if (mounted) setState(() {
           _addMessage({
             'type': 'error',
             'content': 'Invalid device selected: $_activeDevice. Expected desktop- device.',
@@ -1637,7 +1648,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       debugPrint('Message: $message');
       
       _channel?.sink.add(jsonEncode(message));
-      setState(() {
+      if (mounted) setState(() {
         if (_controller.text != '__SCREENSHOT__') {
           _isThinking = true;
           _triggerDataDeparting();
@@ -1664,7 +1675,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     };
     
     _channel?.sink.add(jsonEncode(message));
-    setState(() {
+    if (mounted) setState(() {
       _activeDevice = deviceId;
       _addMessage({
         'type': 'system',
@@ -1838,7 +1849,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       };
       
       _channel?.sink.add(jsonEncode(message));
-      setState(() {
+      if (mounted) setState(() {
         _addMessage({
           'type': 'system',
           'content': 'Requesting backend data clear...',
@@ -1879,7 +1890,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                             IconButton(
                               icon: const Icon(Icons.delete_sweep, size: 18),
                               onPressed: () {
-                                setState(() {
+                                if (mounted) setState(() {
                                   _securityAlerts.clear();
                                 });
                                 setModalState(() {});
@@ -2064,7 +2075,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                   icon: const Icon(Icons.delete),
                   onPressed: () {
                     DeviceIdentity.removeSavedDevice(deviceId);
-                    setState(() {
+                    if (mounted) setState(() {
                       _savedDevices.remove(deviceId);
                     });
                     Navigator.pop(context);
@@ -2146,7 +2157,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                   _showSettingsSheet(context);
                 }),
                 _buildDrawerItem(Icons.no_photography_outlined, 'Clear Screenshots', () {
-                  setState(() {
+                  if (mounted) setState(() {
                     _messages.removeWhere((m) => (m['content'] as String? ?? '').startsWith('__IMAGE__:'));
                   });
                   Navigator.pop(context);
@@ -2545,7 +2556,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
           child: Column(
             children: [
               GestureDetector(
-                onTap: () => setState(() => _showFlowchart = !_showFlowchart),
+                if (mounted) onTap: () => setState(() => _showFlowchart = !_showFlowchart),
                 child: Container(
                   padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
                   color: Colors.transparent,
@@ -2843,7 +2854,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                 subtitle: const Text('Show scrolling text when AI speaks'),
                 value: _showSubtitles,
                 onChanged: (val) {
-                  setState(() => _showSubtitles = val);
+                  if (mounted) setState(() => _showSubtitles = val);
                   Navigator.pop(context);
                 },
                 activeColor: const Color(0xFF3DDC97),
@@ -2856,7 +2867,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                 activeColor: const Color(0xFF7C6CFF),
                 contentPadding: EdgeInsets.zero,
                 onChanged: (bool value) {
-                  setState(() => _willTalk = value);
+                  if (mounted) setState(() => _willTalk = value);
                   Navigator.pop(context);
                 },
               ),
@@ -2867,7 +2878,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                 activeColor: const Color(0xFF7C6CFF),
                 contentPadding: EdgeInsets.zero,
                 onChanged: (bool value) {
-                  setState(() => _graphifyEnabled = value);
+                  if (mounted) setState(() => _graphifyEnabled = value);
                   Navigator.pop(context);
                 },
               ),
@@ -2878,7 +2889,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                 activeColor: const Color(0xFF7C6CFF),
                 contentPadding: EdgeInsets.zero,
                 onChanged: (bool value) {
-                  setState(() => _quietHoursEnabled = value);
+                  if (mounted) setState(() => _quietHoursEnabled = value);
                   _storage.write(key: 'quiet_hours_enabled', value: value.toString());
                   Navigator.pop(context);
                 },
@@ -3036,7 +3047,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                   Expanded(
                     child: GestureDetector(
                       behavior: HitTestBehavior.opaque,
-                      onTap: () => setState(() => _currentMode = 'agent'),
+                      if (mounted) onTap: () => setState(() => _currentMode = 'agent'),
                       child: Container(
                         padding: const EdgeInsets.symmetric(vertical: 8),
                         alignment: Alignment.center,
@@ -3047,7 +3058,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                   Expanded(
                     child: GestureDetector(
                       behavior: HitTestBehavior.opaque,
-                      onTap: () => setState(() => _currentMode = 'shell'),
+                      if (mounted) onTap: () => setState(() => _currentMode = 'shell'),
                       child: Container(
                         padding: const EdgeInsets.symmetric(vertical: 8),
                         alignment: Alignment.center,
@@ -3370,7 +3381,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                             ),
                             GestureDetector(
                               onTap: () {
-                                setState(() { _showTextInput = !_showTextInput; });
+                                if (mounted) setState(() { _showTextInput = !_showTextInput; });
                               },
                               child: Container(
                                 padding: const EdgeInsets.all(12),
@@ -3432,7 +3443,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                                       ),
                                       onSubmitted: (_) {
                                         _sendMessage();
-                                        setState(() { _showTextInput = false; });
+                                        if (mounted) setState(() { _showTextInput = false; });
                                       },
                                     )
                                   : AudioVisualizer(
@@ -3460,7 +3471,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                                         if (_isLiveSession) {
                                           _stopListening();
                                           flutterTts.stop();
-                                          setState(() { _isAiSpeaking = false; _isLiveSession = false; });
+                                          if (mounted) setState(() { _isAiSpeaking = false; _isLiveSession = false; });
                                         } else {
                                           setState(() => _isLiveSession = true);
                                           _startListening();
@@ -3484,7 +3495,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                                 } else {
                                   if (_controller.text.isNotEmpty) {
                                     _sendMessage();
-                                    setState(() { _showTextInput = false; });
+                                    if (mounted) setState(() { _showTextInput = false; });
                                   } else {
                                     setState(() { _showTextInput = true; });
                                   }
@@ -3629,7 +3640,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       'job_id': _activeJobId,
       'session_token': _sessionToken,
     }));
-    setState(() {
+    if (mounted) setState(() {
       _activeJobStatus = 'cancelling';
     });
   }
@@ -3838,7 +3849,7 @@ class _CollapsibleOutputState extends State<CollapsibleOutput> {
         if (isLong)
           GestureDetector(
             onTap: () {
-              setState(() { _isExpanded = !_isExpanded; });
+              if (mounted) setState(() { _isExpanded = !_isExpanded; });
             },
             child: Container(
               margin: const EdgeInsets.only(top: 8),
@@ -3858,7 +3869,6 @@ class _CollapsibleOutputState extends State<CollapsibleOutput> {
   }
 
 }
-
 
 
 
