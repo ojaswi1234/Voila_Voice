@@ -889,6 +889,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.state == "setup" || m.state == "security_phrase_input" || m.state == "circuit_reset_input" || m.state == "ngrok_token_input" {
 				// Try to get clipboard content
 				cmd := exec.Command("powershell", "-Command", "Get-Clipboard")
+				if runtime.GOOS == "windows" {
+					cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+				}
 				output, err := cmd.Output()
 				if err == nil {
 					pastedText := strings.TrimSpace(string(output))
@@ -2179,6 +2182,9 @@ if ($LASTEXITCODE -ne 0) {
 				if errWt != nil {
 					// Fallback to legacy console if Windows Terminal is not installed
 					tuiCmd = exec.Command("cmd.exe", "/c", "start", "Voila TUI", "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", psScriptPath)
+					if runtime.GOOS == "windows" {
+						tuiCmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+					}
 					tuiCmd.Start()
 				}
 				
@@ -3646,6 +3652,9 @@ func callPythonDocumentTool(toolName string, argsJSON json.RawMessage) string {
 	payloadBytes, _ := json.Marshal(payload)
 
 	cmd := exec.Command("python", scriptPath)
+	if runtime.GOOS == "windows" {
+		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	}
 	cmd.Stdin = bytes.NewReader(payloadBytes)
 	outBytes, err := cmd.CombinedOutput()
 
@@ -3797,6 +3806,9 @@ func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMes
 	if toolName != "desktop_automation" {
 		aegisPayload := string(argsJSON)
 		aegisCmd := exec.Command("python", "local-agent/aegis/aegis_cli.py", "--action", toolName, "--payload", aegisPayload)
+		if runtime.GOOS == "windows" {
+			aegisCmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+		}
 		aegisOut, aegisErr := aegisCmd.CombinedOutput()
 		if aegisErr != nil {
 			debugLog.Printf("[AEGIS BLOCKED] Tool: %s, Error: %v, Output: %s", toolName, aegisErr, string(aegisOut))
@@ -3877,14 +3889,23 @@ func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMes
 		
 		if action == "list" || action == "list_recent" {
 			cmdObj = exec.Command("python", scriptPath, action)
+			if runtime.GOOS == "windows" {
+				cmdObj.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+			}
 		} else if action == "get" || action == "open_local" {
 			argStr := getString("template_id")
 			if action == "open_local" {
 			    argStr = getString("path")
 			}
 			cmdObj = exec.Command("python", scriptPath, action, argStr)
+			if runtime.GOOS == "windows" {
+				cmdObj.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+			}
 		} else if action == "create_from_template" {
 			cmdObj = exec.Command("python", scriptPath, "create", string(argsJSON))
+			if runtime.GOOS == "windows" {
+				cmdObj.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+			}
 			cmdObj.Env = append(os.Environ(), "VOILA_DOCS_MOCK=1") // Force mock mode for now
 		}
 		
@@ -3961,6 +3982,9 @@ func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMes
 		exeDir, _ := os.Executable()
 		scriptPath := filepath.Join(filepath.Dir(exeDir), "ddg_lite.py")
 		cmdObj := exec.Command("python", scriptPath, query)
+		if runtime.GOOS == "windows" {
+			cmdObj.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+		}
 		outBytes, err := cmdObj.CombinedOutput()
 		if err != nil {
 			return "web search failed: " + err.Error() + "\n" + string(outBytes)
@@ -4323,6 +4347,9 @@ case "read_file":
 			argsArr = append(argsArr, "--button", button)
 
 			cmd := exec.Command("python", argsArr...)
+			if runtime.GOOS == "windows" {
+				cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+			}
 			out, err := cmd.CombinedOutput()
 			outStr := string(out)
 
@@ -4371,6 +4398,9 @@ case "browser_automation":
 		}
 
 		cmdObj := exec.Command("python", cmdArgs...)
+		if runtime.GOOS == "windows" {
+			cmdObj.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+		}
 		outBytes, err := cmdObj.CombinedOutput()
 
 		res := string(outBytes)
@@ -4433,6 +4463,9 @@ case "browser_automation":
 		if monitorStr != "" { dtArgs = append(dtArgs, "--monitor", monitorStr) }
 
 		dtCmd := exec.Command("python", dtArgs...)
+		if runtime.GOOS == "windows" {
+			dtCmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+		}
 		if runtime.GOOS == "windows" {
 			dtCmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 		}
