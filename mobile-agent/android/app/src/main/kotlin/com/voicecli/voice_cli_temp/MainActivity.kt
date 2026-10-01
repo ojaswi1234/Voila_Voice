@@ -52,7 +52,8 @@ class MainActivity: FlutterActivity() {
         val newIsLauncher = newAction == Intent.ACTION_MAIN
         
         if (oldIsLauncher != newIsLauncher) {
-            recreate()
+            finish()
+            startActivity(newIntent)
             return
         }
 

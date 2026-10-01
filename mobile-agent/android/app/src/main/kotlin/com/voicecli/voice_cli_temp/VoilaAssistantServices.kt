@@ -29,7 +29,8 @@ class VoilaVoiceInteractionSession(context: Context) : VoiceInteractionSession(c
 
     override fun onHandleAssist(data: Bundle?, structure: android.app.assist.AssistStructure?, content: android.app.assist.AssistContent?) {
         super.onHandleAssist(data, structure, content)
-        launchMainActivity()
+        // Removed launchMainActivity() here to prevent double-launch crashes. 
+        // onShow() is reliably called and handles the UI launch.
     }
     
     private fun launchMainActivity() {
