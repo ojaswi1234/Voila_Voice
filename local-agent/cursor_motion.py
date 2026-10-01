@@ -34,11 +34,9 @@ _overlay_is_running = False
 def _ensure_overlay():
     import traceback
     with open("cursor_spawn_debug.log", "a") as f:
-        f.write("--- _ensure_overlay called! Stack ---
-")
+        f.write("--- _ensure_overlay called! Stack ---\n")
         traceback.print_stack(file=f)
-        f.write("-------------------------------------
-")
+        f.write("-------------------------------------\n")
     if "VOILA_AGENT_INDEX" in os.environ:
         return # Managed strictly by Go backend in Graphify mode
     
