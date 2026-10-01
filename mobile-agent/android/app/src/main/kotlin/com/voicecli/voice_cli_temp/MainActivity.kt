@@ -42,12 +42,20 @@ class MainActivity: FlutterActivity() {
         }
     }
 
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        setIntent(intent)
+    override fun onNewIntent(newIntent: Intent) {
+        val oldAction = intent?.action
+        super.onNewIntent(newIntent)
+        setIntent(newIntent)
 
-        val action = intent.action
-        val isLauncher = action == Intent.ACTION_MAIN
-        methodChannel?.invokeMethod("onIntentChanged", !isLauncher)
+        val newAction = newIntent.action
+        val oldIsLauncher = oldAction == Intent.ACTION_MAIN
+        val newIsLauncher = newAction == Intent.ACTION_MAIN
+        
+        if (oldIsLauncher != newIsLauncher) {
+            recreate()
+            return
+        }
+
+        methodChannel?.invokeMethod("onIntentChanged", !newIsLauncher)
     }
 }

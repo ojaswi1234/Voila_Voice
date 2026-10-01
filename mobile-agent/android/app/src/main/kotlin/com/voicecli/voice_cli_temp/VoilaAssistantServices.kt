@@ -21,12 +21,22 @@ class VoilaVoiceInteractionSessionService : VoiceInteractionSessionService() {
 }
 
 class VoilaVoiceInteractionSession(context: Context) : VoiceInteractionSession(context) {
+    
+    override fun onShow(args: Bundle?, showFlags: Int) {
+        super.onShow(args, showFlags)
+        launchMainActivity()
+    }
+
     override fun onHandleAssist(data: Bundle?, structure: android.app.assist.AssistStructure?, content: android.app.assist.AssistContent?) {
         super.onHandleAssist(data, structure, content)
+        launchMainActivity()
+    }
+    
+    private fun launchMainActivity() {
         val intent = Intent(context, MainActivity::class.java)
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         intent.action = Intent.ACTION_ASSIST
-        context.startActivity(intent)
+        startVoiceActivity(intent)
     }
 }
 

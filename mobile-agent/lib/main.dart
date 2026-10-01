@@ -3485,8 +3485,6 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                   ],
                 ),
               ),
-            ),
-          ),
         ],
       );
     }
