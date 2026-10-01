@@ -19,7 +19,7 @@ def _release_aegis(m):
 
 
 class StaticRules:
-DANGEROUS_CMDS = [
+    DANGEROUS_CMDS = [
         r"rm\s+-rf", r"del\s+/f", r"format\s+[a-z]:", r"drop\s+table",
         r"invoke-webrequest", r"net\s+user", r"net\s+localgroup",
         r"reg\s+add", r"reg\s+delete", r"taskkill\s+/f"

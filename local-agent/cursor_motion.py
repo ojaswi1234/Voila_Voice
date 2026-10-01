@@ -32,6 +32,13 @@ _OVERLAY_PORT: int = int(os.environ.get("VOILA_AGENT_PORT", "19882"))
 
 _overlay_is_running = False
 def _ensure_overlay():
+    import traceback
+    with open("cursor_spawn_debug.log", "a") as f:
+        f.write("--- _ensure_overlay called! Stack ---
+")
+        traceback.print_stack(file=f)
+        f.write("-------------------------------------
+")
     if "VOILA_AGENT_INDEX" in os.environ:
         return # Managed strictly by Go backend in Graphify mode
     
