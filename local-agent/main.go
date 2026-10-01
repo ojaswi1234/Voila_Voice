@@ -1566,6 +1566,9 @@ func getNgrokExecutable() (string, error) {
 	// Check if ngrok is in system PATH
 	if runtime.GOOS == "windows" {
 		cmd := exec.Command("where", "ngrok")
+		if runtime.GOOS == "windows" {
+			cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+		}
 		if output, err := cmd.Output(); err == nil {
 			paths := strings.Split(strings.TrimSpace(string(output)), "\n")
 			if len(paths) > 0 && paths[0] != "" {
@@ -1611,6 +1614,9 @@ func configureNgrokAuthtoken(ngrokPath string) error {
 
 	// Check if already configured
 	cmd := exec.Command(ngrokPath, "config", "check")
+	if runtime.GOOS == "windows" {
+		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	}
 	if _, err := cmd.CombinedOutput(); err == nil {
 		// Config exists, verify authtoken matches
 		return nil
@@ -1618,6 +1624,9 @@ func configureNgrokAuthtoken(ngrokPath string) error {
 
 	// Configure authtoken
 	cmd = exec.Command(ngrokPath, "config", "add-authtoken", authtoken)
+	if runtime.GOOS == "windows" {
+		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	}
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to configure authtoken: %s, output: %s", err, string(output))
 	}
