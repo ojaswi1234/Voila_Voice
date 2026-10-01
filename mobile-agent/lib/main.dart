@@ -3278,16 +3278,11 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
         alignment: Alignment.bottomCenter,
         children: [
           // If live, we show a translucent glassmorphic bar just like Gemini Live
-          ClipRRect(
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-              child: Container(
-                padding: const EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 24),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF13151A).withOpacity(0.75),
-                  border: Border(top: BorderSide(color: Colors.white.withOpacity(0.1))),
-                ),
+          Container(
+            padding: const EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 24),
+            decoration: const BoxDecoration(
+              color: Colors.transparent,
+            ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
