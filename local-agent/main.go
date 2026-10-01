@@ -157,6 +157,8 @@ var (
 	terminalPid       = ""
 
 	cmdMu              sync.Mutex
+	activeToolPids     []int
+	graphifyTuiPid     int
 	currentCmd         *exec.Cmd
 	currentConvID      string
 	currentCancel      context.CancelFunc
@@ -190,6 +192,23 @@ var (
 	pendingApprovalsMu sync.Mutex
 	pendingApprovals   = make(map[string]chan bool)
 )
+
+
+func registerActivePid(pid int) {
+	cmdMu.Lock()
+	defer cmdMu.Unlock()
+	activeToolPids = append(activeToolPids, pid)
+}
+func unregisterActivePid(pid int) {
+	cmdMu.Lock()
+	defer cmdMu.Unlock()
+	for i, p := range activeToolPids {
+		if p == pid {
+			activeToolPids = append(activeToolPids[:i], activeToolPids[i+1:]...)
+			break
+		}
+	}
+}
 
 type AgentTask struct {
 	TaskID  string
@@ -1689,6 +1708,18 @@ func startHTTPServer() {
 			} else {
 				currentCmd.Process.Kill()
 			}
+		}
+		for _, pid := range activeToolPids {
+			if runtime.GOOS == "windows" {
+				exec.Command("taskkill", "/F", "/T", "/PID", fmt.Sprintf("%d", pid)).Run()
+			}
+		}
+		activeToolPids = nil
+		if graphifyTuiPid != 0 {
+			if runtime.GOOS == "windows" {
+				exec.Command("taskkill", "/F", "/T", "/PID", fmt.Sprintf("%d", graphifyTuiPid)).Run()
+			}
+			graphifyTuiPid = 0
 
 			// Clean up the terminal to prevent the face from getting stuck
 			fmt.Print("\r\n\x1b[0m\x1b[?25h\x1b[?1049l\x1b[2J\x1b[H")
@@ -2186,6 +2217,11 @@ if ($LASTEXITCODE -ne 0) {
 						tuiCmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 					}
 					tuiCmd.Start()
+				}
+				if tuiCmd != nil && tuiCmd.Process != nil {
+					cmdMu.Lock()
+					graphifyTuiPid = tuiCmd.Process.Pid
+					cmdMu.Unlock()
 				}
 				
 				fmt.Println("STATUS: GRAPHIFY")
@@ -3776,6 +3812,26 @@ func getPlaybooksDir() string {
 	return localPb
 }
 
+
+func runTrackedCommand(cmd *exec.Cmd) ([]byte, error) {
+	var outBuf bytes.Buffer
+	cmd.Stdout = &outBuf
+	cmd.Stderr = &outBuf
+	
+	err := cmd.Start()
+	if err != nil {
+		return outBuf.Bytes(), err
+	}
+	
+	if cmd.Process != nil {
+		registerActivePid(cmd.Process.Pid)
+		defer unregisterActivePid(cmd.Process.Pid)
+	}
+	
+	err = cmd.Wait()
+	return outBuf.Bytes(), err
+}
+
 func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMessage, streamFileObj *os.File) string {
 	// Emit status so Python face knows which tool is running
 	fmt.Printf("STATUS: TOOL:%s\n", toolName)
@@ -3795,7 +3851,7 @@ func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMes
 		if runtime.GOOS == "windows" {
 			aegisCmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 		}
-		aegisOut, aegisErr := aegisCmd.CombinedOutput()
+		aegisOut, aegisErr := runTrackedCommand(aegisCmd)
 		if aegisErr != nil {
 			debugLog.Printf("[AEGIS BLOCKED] Tool: %s, Error: %v, Output: %s", toolName, aegisErr, string(aegisOut))
 			return "(SECURITY BLOCK: AEGIS Module Rejected this action - " + string(aegisOut) + ")"
@@ -3895,7 +3951,7 @@ func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMes
 			cmdObj.Env = append(os.Environ(), "VOILA_DOCS_MOCK=1") // Force mock mode for now
 		}
 		
-		outBytes, err := cmdObj.CombinedOutput()
+		outBytes, err := runTrackedCommand(cmdObj)
 		result := strings.TrimSpace(string(outBytes))
 		if err != nil {
 			result += "\n(Error: " + err.Error() + ")"
@@ -3971,7 +4027,7 @@ func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMes
 		if runtime.GOOS == "windows" {
 			cmdObj.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 		}
-		outBytes, err := cmdObj.CombinedOutput()
+		outBytes, err := runTrackedCommand(cmdObj)
 		if err != nil {
 			return "web search failed: " + err.Error() + "\n" + string(outBytes)
 		}
@@ -4373,7 +4429,7 @@ case "browser_automation":
 		if runtime.GOOS == "windows" {
 			cmdObj.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 		}
-		outBytes, err := cmdObj.CombinedOutput()
+		outBytes, err := runTrackedCommand(cmdObj)
 
 		res := string(outBytes)
 		if err != nil {
@@ -4459,7 +4515,7 @@ case "browser_automation":
 			dtEnv = append(dtEnv, "VOILA_DESKTOP_PORT="+desktopPort)
 		}
 		dtCmd.Env = dtEnv
-		dtOut, dtErr := dtCmd.CombinedOutput()
+		dtOut, dtErr := runTrackedCommand(dtCmd)
 		dtRes := string(dtOut)
 		if dtErr != nil { dtRes += "\n(Error: " + dtErr.Error() + ")" }
 		// Smart truncation: if the result is a snapshot JSON with lots of elements,
