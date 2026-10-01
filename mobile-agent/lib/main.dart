@@ -76,7 +76,11 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp();
+  // BUGFIX: Guard against duplicate-app exception if the engine is shared
+  // and main() is somehow re-invoked (e.g., background isolate or cold-start via AssistantActivity)
+  if (Firebase.apps.isEmpty) {
+    await Firebase.initializeApp();
+  }
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
   
   runApp(const VoiceCliApp());
@@ -1426,6 +1430,9 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     if (_isListening) {
       _speechToText.stop();
     }
+    // BUGFIX: Stop TTS on dispose to prevent audio playing after widget is destroyed
+    // and to prevent setState-after-dispose in async TTS completion callbacks.
+    flutterTts.stop();
     super.dispose();
   }
 
@@ -2239,8 +2246,9 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       drawer: _buildDrawer(),
       backgroundColor: _isAssistant ? Colors.transparent : const Color(0xFF0F0F12),
       body: _isAssistant
-        // FIX Bug #4: LayoutBuilder provides bounded constraints so the Column+Stack
-        // tree does not get an unbounded height and throw a RenderBox exception.
+        // BUGFIX: LayoutBuilder gives bounded constraints to the Column+Stack tree.
+        // SingleChildScrollView allows content to scroll if it overflows the screen
+        // (removing NeverScrollableScrollPhysics which was hiding overflow content).
         ? LayoutBuilder(
             builder: (context, constraints) => Align(
               alignment: Alignment.bottomCenter,
@@ -2250,8 +2258,6 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                   maxWidth: constraints.maxWidth,
                 ),
                 child: SingleChildScrollView(
-                  reverse: true, // pin content to the bottom
-                  physics: const NeverScrollableScrollPhysics(),
                   child: _buildMainContent(colorScheme),
                 ),
               ),
@@ -2277,7 +2283,9 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
         margin: const EdgeInsets.only(left: 16, right: 16, top: 10, bottom: 20),
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
         width: double.infinity,
-        constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.35),
+        // BUGFIX: In overlay windows, MediaQuery.size.height can return 0 or
+        // tiny values, crashing the layout. Use a fixed safe maximum instead.
+        constraints: const BoxConstraints(maxHeight: 250),
         decoration: BoxDecoration(
           color: Colors.black.withOpacity(0.85), // True glassmorphism
           borderRadius: BorderRadius.circular(40), // Pill shape

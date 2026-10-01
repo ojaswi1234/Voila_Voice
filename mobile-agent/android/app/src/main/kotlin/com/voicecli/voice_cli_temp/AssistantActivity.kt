@@ -8,36 +8,53 @@ import io.flutter.plugin.common.MethodChannel
 
 class AssistantActivity : FlutterActivity() {
     private val CHANNEL = "com.voila/intent"
+    private var channel: MethodChannel? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         setTheme(R.style.TransparentTheme)
+        // COLD-START FIX: If the user long-presses home BEFORE ever opening the
+        // app, the engine cache is empty. getOrCreate() boots the Dart VM here.
+        EngineManager.getOrCreate(this)
         super.onCreate(savedInstanceState)
     }
 
-    // CRITICAL FIX (Bug #1): Reuse the pre-warmed engine from MainActivity.
-    // This prevents a second Dart VM from being created, which causes Firebase /
-    // flutter_background / speech_to_text to crash on double-initialization.
-    override fun getCachedEngineId(): String = MainActivity.ENGINE_ID
+    override fun getCachedEngineId(): String = EngineManager.ENGINE_ID
 
-    // CRITICAL FIX: When using a cached engine, we must NOT destroy it on Activity finish,
-    // because the engine is shared with and owned by MainActivity.
+    /**
+     * CRITICAL FIX: Do NOT destroy the shared engine when the overlay closes.
+     * MainActivity owns the engine's lifecycle; we're just borrowing it.
+     */
     override fun shouldDestroyEngineWithHost(): Boolean = false
 
     override fun getBackgroundMode(): BackgroundMode = BackgroundMode.transparent
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        // Notify the already-running Dart code that this is an assistant overlay
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
-            .invokeMethod("onIntentChanged", true)
+        channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
+
+        // RACE CONDITION FIX: Use a pull-based handler so Dart calls us when IT
+        // is ready — not us pushing invokeMethod before Dart is listening.
+        channel?.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "isAssistantIntent" -> result.success(true)
+                else -> result.notImplemented()
+            }
+        }
+
+        // Also push for hot re-attachment (Dart is already running in background)
+        channel?.invokeMethod("onIntentChanged", true)
+    }
+
+    override fun onStop() {
+        // LIFECYCLE FIX: Signal Flutter BEFORE the channel tears down in onDestroy.
+        // onStop is the last safe place to send messages via the MethodChannel
+        // because the Activity is still alive and the channel is still attached.
+        channel?.invokeMethod("onIntentChanged", false)
+        super.onStop()
     }
 
     override fun onDestroy() {
-        // Notify Flutter we are leaving overlay mode so the UI can reset
-        flutterEngine?.let {
-            MethodChannel(it.dartExecutor.binaryMessenger, CHANNEL)
-                .invokeMethod("onIntentChanged", false)
-        }
+        channel = null
         super.onDestroy()
     }
 }

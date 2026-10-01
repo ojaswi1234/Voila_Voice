@@ -39,7 +39,7 @@
         <activity
             android:name=".AssistantActivity"
             android:exported="true"
-            android:launchMode="singleInstance"
+            android:launchMode="singleTop"
             android:theme="@style/TransparentTheme"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
@@ -51,6 +51,8 @@
                 android:resource="@style/TransparentTheme"/>
             <intent-filter>
                 <action android:name="android.intent.action.ASSIST"/>
+                <!-- BUGFIX: VOICE category required for startVoiceActivity() routing -->
+                <category android:name="android.intent.category.VOICE"/>
                 <category android:name="android.intent.category.DEFAULT"/>
             </intent-filter>
         </activity>
@@ -59,10 +61,10 @@
             android:value="2"/>
         <service
             android:name="id.flutter.flutter_background.FlutterBackgroundService"
-            android:permission="android.permission.BIND_JOB_SERVICE" 
+            android:permission="android.permission.BIND_JOB_SERVICE"
             android:exported="true"
             android:foregroundServiceType="dataSync"/>
-            <service
+        <service
             android:name=".VoilaVoiceInteractionService"
             android:label="Voila Assistant"
             android:permission="android.permission.BIND_VOICE_INTERACTION"
@@ -78,7 +80,11 @@
             android:name=".VoilaVoiceInteractionSessionService"
             android:permission="android.permission.BIND_VOICE_INTERACTION"
             android:exported="true" />
-            <service android:name=".VoilaRecognitionService" android:exported="true">
+        <!-- BUGFIX: Added BIND_RECOGNITION_SERVICE permission so Android 11+ accepts this service -->
+        <service
+            android:name=".VoilaRecognitionService"
+            android:permission="android.permission.BIND_RECOGNITION_SERVICE"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.speech.RecognitionService" />
                 <category android:name="android.intent.category.DEFAULT" />

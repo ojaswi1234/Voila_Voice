@@ -33,15 +33,14 @@ class VoilaVoiceInteractionSession(context: Context) : VoiceInteractionSession(c
         content: android.app.assist.AssistContent?
     ) {
         super.onHandleAssist(data, structure, content)
-        // Do NOT call launchAssistantActivity() here — onShow() is the authoritative trigger.
-        // Calling it twice causes rapid-fire Activity creation and crash.
+        // INTENTIONALLY EMPTY: onShow() is the single authoritative trigger.
+        // Calling launchAssistantActivity() here causes a double-launch crash.
     }
 
     private fun launchAssistantActivity() {
         val intent = Intent(context, AssistantActivity::class.java).apply {
-            // CRITICAL FIX (Bug #2): Remove FLAG_ACTIVITY_SINGLE_TOP.
-            // With singleInstance launchMode, SINGLE_TOP is redundant and prevents
-            // the Activity from fully resetting state, causing a blank overlay.
+            // FLAG_ACTIVITY_NEW_TASK is required for startVoiceActivity.
+            // Do NOT add SINGLE_TOP — it would skip onCreate on a paused instance.
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             action = Intent.ACTION_ASSIST
         }
