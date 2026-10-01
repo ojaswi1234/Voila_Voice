@@ -557,6 +557,10 @@ else:
             except Exception as e:
                 return _err("click_ref", "invalid_args", f"Invalid coords: {ref}")
                 
+        ctrl, _ = _resolve_ref(ref)
+        if ctrl:
+            sec_err = _check_policy(ctrl, "click_ref")
+            if sec_err: return sec_err
         err_r, tel = _move_to_ref(ref, click=button)
         if err_r:
             return err_r
@@ -565,6 +569,11 @@ else:
         return r
 
     def act_right_click(ref: str, window) -> dict:
+        ctrl, err = _resolve_ref(ref)
+        if ctrl:
+            sec_err = _check_policy(ctrl, 'right_click')
+            if sec_err: return sec_err
+
         """Dedicated right-click action to open context menus."""
         wnd = _ensure_window_focused(window)
         err_r, tel = _move_to_ref(ref, click="right")
@@ -635,6 +644,11 @@ else:
         return r
 
     def act_set_value(ref: str, value: str, window) -> dict:
+        ctrl, err = _resolve_ref(ref)
+        if ctrl:
+            sec_err = _check_policy(ctrl, 'set_value')
+            if sec_err: return sec_err
+
         wnd = _ensure_window_focused(window)
         ctrl, err = _resolve_ref(ref)
         if err:
@@ -713,6 +727,11 @@ else:
         return r
 
     def act_toggle(ref: str, window) -> dict:
+        ctrl, err = _resolve_ref(ref)
+        if ctrl:
+            sec_err = _check_policy(ctrl, 'toggle')
+            if sec_err: return sec_err
+
         wnd = _ensure_window_focused(window)
         ctrl, err = _resolve_ref(ref)
         if err:
@@ -1261,27 +1280,27 @@ else:
             return act_open_start_menu(depth)
 
         if action == "move_cursor":
-            if not ref: return _err(action, "invalid_args", "ref required")
+            if not ref: return _err(action, "ref_missing_or_stale", "ref required. call snapshot/find first.")
             return act_move_cursor(ref, window)
 
         if action == "invoke":
-            if not ref: return _err(action, "invalid_args", "ref required")
+            if not ref: return _err(action, "ref_missing_or_stale", "ref required. call snapshot/find first.")
             return act_invoke(ref, window, timeout)
 
         if action == "click_ref":
-            if not ref: return _err(action, "invalid_args", "ref required")
+            if not ref: return _err(action, "ref_missing_or_stale", "ref required. call snapshot/find first.")
             return act_click_ref(ref, window, button)
 
         if action == "right_click":
-            if not ref: return _err(action, "invalid_args", "ref required")
+            if not ref: return _err(action, "ref_missing_or_stale", "ref required. call snapshot/find first.")
             return act_right_click(ref, window)
 
         if action == "scroll":
-            if not ref: return _err(action, "invalid_args", "ref required")
+            if not ref: return _err(action, "ref_missing_or_stale", "ref required. call snapshot/find first.")
             return act_scroll(ref, window, value)
 
         if action == "set_value":
-            if not ref: return _err(action, "invalid_args", "ref required")
+            if not ref: return _err(action, "ref_missing_or_stale", "ref required. call snapshot/find first.")
             return act_set_value(ref, value, window)
 
         if action == "type_keys":
@@ -1289,15 +1308,15 @@ else:
             return act_type_keys(value, ref or None, window)
 
         if action == "toggle":
-            if not ref: return _err(action, "invalid_args", "ref required")
+            if not ref: return _err(action, "ref_missing_or_stale", "ref required. call snapshot/find first.")
             return act_toggle(ref, window)
 
         if action == "focus":
-            if not ref: return _err(action, "invalid_args", "ref required")
+            if not ref: return _err(action, "ref_missing_or_stale", "ref required. call snapshot/find first.")
             return act_focus(ref, window)
 
         if action == "select":
-            if not ref: return _err(action, "invalid_args", "ref required")
+            if not ref: return _err(action, "ref_missing_or_stale", "ref required. call snapshot/find first.")
             return act_select(ref, window)
 
         if action == "drag_ref":

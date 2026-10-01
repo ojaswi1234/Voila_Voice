@@ -1,0 +1,199 @@
+{
+  "terminal": {
+    "deny": [
+      {
+        "pattern": "format c:",
+        "reason": "Formats the Windows system drive.",
+        "risk": "critical",
+        "category": "disk_wipe"
+      },
+      {
+        "pattern": "diskpart",
+        "reason": "Diskpart can wipe partitions.",
+        "risk": "critical",
+        "category": "disk_wipe"
+      }
+    ],
+    "approve": [
+      {
+        "pattern": "format-volume",
+        "reason": "Volume format operation.",
+        "risk": "critical",
+        "category": "disk_wipe"
+      },
+      {
+        "pattern": "clear-disk",
+        "reason": "Full disk erase.",
+        "risk": "critical",
+        "category": "disk_wipe"
+      },
+      {
+        "pattern": "vssadmin delete shadows",
+        "reason": "Deletes system restore points.",
+        "risk": "critical",
+        "category": "recovery_destruction"
+      },
+      {
+        "pattern": "bcdedit /set",
+        "reason": "Boot config modification.",
+        "risk": "critical",
+        "category": "boot_config"
+      },
+      {
+        "pattern": "set-itemproperty hklm:",
+        "reason": "HKLM registry write.",
+        "risk": "high",
+        "category": "registry"
+      },
+      {
+        "pattern": "reg add hklm",
+        "reason": "HKLM registry write.",
+        "risk": "high",
+        "category": "registry"
+      },
+      {
+        "pattern": "net user",
+        "reason": "User account modification.",
+        "risk": "high",
+        "category": "account_management"
+      },
+      {
+        "pattern": "stop-computer",
+        "reason": "Shuts down this PC.",
+        "risk": "high",
+        "category": "power"
+      },
+      {
+        "pattern": "restart-computer",
+        "reason": "Restarts this PC.",
+        "risk": "high",
+        "category": "power"
+      },
+      {
+        "pattern": "iex (new-object",
+        "reason": "Downloads and executes remote code.",
+        "risk": "critical",
+        "category": "remote_exec"
+      },
+      {
+        "pattern": "-recurse -force",
+        "reason": "Recursive forced file deletion.",
+        "risk": "high",
+        "category": "file_delete"
+      },
+      {
+        "pattern": "rmdir /s",
+        "reason": "Recursive directory deletion.",
+        "risk": "high",
+        "category": "file_delete"
+      },
+      {
+        "pattern": "rd /s",
+        "reason": "Recursive directory deletion.",
+        "risk": "high",
+        "category": "file_delete"
+      },
+      {
+        "pattern": "del /s",
+        "reason": "Recursive file deletion.",
+        "risk": "high",
+        "category": "file_delete"
+      },
+      {
+        "pattern": "remove-item",
+        "reason": "PowerShell deletion command.",
+        "risk": "high",
+        "category": "file_delete"
+      }
+    ]
+  },
+  "desktop": {
+    "allow_actions": [
+      "list_windows",
+      "foreground",
+      "snapshot",
+      "find",
+      "move_cursor",
+      "focus",
+      "scroll",
+      "get_text",
+      "screenshot"
+    ],
+    "protected_windows": [
+      {
+        "title_fragment": "user account control",
+        "reason": "UAC elevation dialog.",
+        "risk": "critical"
+      },
+      {
+        "title_fragment": "registry editor",
+        "reason": "Windows registry editor.",
+        "risk": "critical"
+      },
+      {
+        "title_fragment": "windows security",
+        "reason": "Windows Security Center.",
+        "risk": "high"
+      },
+      {
+        "title_fragment": "reset this pc",
+        "reason": "Factory reset wizard.",
+        "risk": "critical"
+      }
+    ],
+    "destructive_control_keywords": [
+      {
+        "keyword": "empty recycle",
+        "risk": "high",
+        "reason": "Destructive empty recycle bin."
+      },
+      {
+        "keyword": "format volume",
+        "risk": "critical",
+        "reason": "Format volume action."
+      },
+      {
+        "keyword": "delete permanently",
+        "risk": "critical",
+        "reason": "Permanent deletion."
+      },
+      {
+        "keyword": "factory reset",
+        "risk": "high",
+        "reason": "Factory reset action."
+      },
+      {
+        "keyword": "uninstall",
+        "risk": "high",
+        "reason": "Uninstall action."
+      },
+      {
+        "keyword": "wipe",
+        "risk": "critical",
+        "reason": "Wipe action."
+      }
+    ],
+    "type_keys_patterns": [
+      {
+        "pattern": "format c:",
+        "risk": "critical",
+        "reason": "System format command typed."
+      },
+      {
+        "pattern": "diskpart",
+        "risk": "critical",
+        "reason": "Diskpart typed into UI."
+      },
+      {
+        "pattern": "net user",
+        "risk": "high",
+        "reason": "User management typed."
+      },
+      {
+        "pattern": "iex (",
+        "risk": "critical",
+        "reason": "Remote exec typed."
+      }
+    ]
+  }
+}

@@ -44,8 +44,18 @@ type PolicyDecision struct {
 	MatchedRule string // the pattern or keyword that triggered this
 }
 
+func (d PolicyDecision) IsDenied() bool {
+	return d.Level == PolicyDeny
+}
+
+func (d PolicyDecision) NeedsApproval() bool {
+	return d.Level == PolicyApprove
+}
+
+// Keep IsBlocked for backwards compatibility if needed, but make it Deny only
+// Approve MUST go through requireSecurityApproval
 func (d PolicyDecision) IsBlocked() bool {
-	return d.Level == PolicyDeny || d.Level == PolicyApprove
+	return d.Level == PolicyDeny
 }
 
 // ── Rules schema (mirrors security_rules.json) ───────────────────────────────
@@ -433,11 +443,16 @@ func embeddedFallbackRules() *securityRules {
 		{Pattern: "vssadmin delete shadows", Reason: "Deletes system restore points.", Risk: "critical", Category: "recovery_destruction"},
 		{Pattern: "bcdedit /set", Reason: "Boot config modification.", Risk: "critical", Category: "boot_config"},
 		{Pattern: "set-itemproperty hklm:", Reason: "HKLM registry write.", Risk: "high", Category: "registry"},
+		{Pattern: "reg add hklm", Reason: "HKLM registry write.", Risk: "high", Category: "registry"},
 		{Pattern: "net user", Reason: "User account modification.", Risk: "high", Category: "account_management"},
 		{Pattern: "stop-computer", Reason: "Shuts down this PC.", Risk: "high", Category: "power"},
 		{Pattern: "restart-computer", Reason: "Restarts this PC.", Risk: "high", Category: "power"},
 		{Pattern: "iex (new-object", Reason: "Downloads and executes remote code.", Risk: "critical", Category: "remote_exec"},
 		{Pattern: "-recurse -force", Reason: "Recursive forced file deletion.", Risk: "high", Category: "file_delete"},
+		{Pattern: "rmdir /s", Reason: "Recursive directory deletion.", Risk: "high", Category: "file_delete"},
+		{Pattern: "rd /s", Reason: "Recursive directory deletion.", Risk: "high", Category: "file_delete"},
+		{Pattern: "del /s", Reason: "Recursive file deletion.", Risk: "high", Category: "file_delete"},
+		{Pattern: "remove-item", Reason: "PowerShell deletion command.", Risk: "high", Category: "file_delete"},
 	}
 	r.Desktop.AllowActions = []string{
 		"list_windows", "foreground", "snapshot", "find", "move_cursor",
@@ -450,11 +465,11 @@ func embeddedFallbackRules() *securityRules {
 		{TitleFragment: "reset this pc", Reason: "Factory reset wizard.", Risk: "critical"},
 	}
 	r.Desktop.DestructiveControlKeywords = []destructiveKeyword{
-		{Keyword: "delete", Risk: "high", Reason: "Destructive delete action."},
-		{Keyword: "format", Risk: "critical", Reason: "Format action."},
-		{Keyword: "reset", Risk: "high", Reason: "Reset action."},
+		{Keyword: "empty recycle", Risk: "high", Reason: "Destructive empty recycle bin."},
+		{Keyword: "format volume", Risk: "critical", Reason: "Format volume action."},
+		{Keyword: "delete permanently", Risk: "critical", Reason: "Permanent deletion."},
+		{Keyword: "factory reset", Risk: "high", Reason: "Factory reset action."},
 		{Keyword: "uninstall", Risk: "high", Reason: "Uninstall action."},
-		{Keyword: "shutdown", Risk: "high", Reason: "Shutdown action."},
 		{Keyword: "wipe", Risk: "critical", Reason: "Wipe action."},
 	}
 	r.Desktop.TypeKeysPatterns = []typeKeysPattern{

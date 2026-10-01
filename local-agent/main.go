@@ -2762,35 +2762,21 @@ func executeCommand(ctx context.Context, command string, mode string, conversati
 		return outStr, "", nil
 
 	} else {
-		cmdLower := strings.ToLower(command)
-		dangerousPatterns := []string{
-			"format-volume", "clear-disk", "diskpart",
-			"format c:", "format d:", 
-			"set-itemproperty hklm:", "set-itemproperty hkcu:",
-			"remove-itemproperty hklm:", "remove-itemproperty hkcu:",
-			"net user", "net localgroup",
-			"vssadmin delete shadows", "wbadmin delete",
-			"bcdedit /set", "takeown /f c:\\",
-			"icacls c:\\",
-			"remove-computer", "stop-computer", "restart-computer",
-			"disable-netadapter",
-			"rm -rf", "git push", "-recurse -force",
-		}
-		
-		isDangerous := false
-		for _, p := range dangerousPatterns {
-			if strings.Contains(cmdLower, p) {
-				isDangerous = true
-				break
-			}
-		}
-		
-		if isDangerous {
+		decision := EvaluateTerminalCommand(command)
+		switch decision.Level {
+		case PolicyDeny:
+			writeAuditLog(AuditEntry{Timestamp: time.Now().UTC().Format(time.RFC3339), Tool: "raw_shell", Action: "execute", Level: "deny", Risk: decision.RiskLevel, Decision: "auto_deny", Summary: decision.Summary, MatchedRule: decision.MatchedRule})
+			return "ERROR: Command blocked by security policy: " + decision.Reason, "", fmt.Errorf("policy blocked")
+		case PolicyApprove:
+			writeAuditLog(AuditEntry{Timestamp: time.Now().UTC().Format(time.RFC3339), Tool: "raw_shell", Action: "execute", Level: "approve", Risk: decision.RiskLevel, Decision: "pending", Summary: decision.Summary, MatchedRule: decision.MatchedRule})
 			fmt.Printf("STATUS: WAITING_APPROVAL\n")
 			if !isTUIMode { os.Stdout.Sync() }
-			if !requireMobileApproval(command, "Raw Shell execution of: "+command) {
+			if !requireSecurityApproval(decision, "Raw Shell execution of: "+command, "raw_shell", "", "") {
 				return "ERROR: Command was denied by user or timed out waiting for mobile approval.", "", fmt.Errorf("user denied")
 			}
+			writeAuditLog(AuditEntry{Timestamp: time.Now().UTC().Format(time.RFC3339), Tool: "raw_shell", Action: "execute", Level: "approve", Risk: decision.RiskLevel, Decision: "user_allow", Summary: "User Approved", MatchedRule: decision.MatchedRule})
+		default:
+			// allow
 		}
 
 		if runtime.GOOS == "windows" {
@@ -4164,35 +4150,21 @@ case "read_file":
 
 
 		// Ã°Å¸â€ºÂ¡Ã¯Â¸Â HARD GUARDRAILS TO PROTECT THE USER SYSTEM Ã°Å¸â€ºÂ¡Ã¯Â¸Â
-		cmdLower := strings.ToLower(actualCommand)
-		dangerousPatterns := []string{
-			"format-volume", "clear-disk", "diskpart",
-			"format c:", "format d:", 
-			"set-itemproperty hklm:", "set-itemproperty hkcu:",
-			"remove-itemproperty hklm:", "remove-itemproperty hkcu:",
-			"net user", "net localgroup",
-			"vssadmin delete shadows", "wbadmin delete",
-			"bcdedit /set", "takeown /f c:\\",
-			"icacls c:\\",
-			"remove-computer", "stop-computer", "restart-computer",
-			"disable-netadapter",
-			"rm -rf", "git push", "-recurse -force",
-		}
-		
-		isDangerous := false
-		for _, p := range dangerousPatterns {
-			if strings.Contains(cmdLower, p) {
-				isDangerous = true
-				break
-			}
-		}
-		
-		if isDangerous {
+		decision := EvaluateTerminalCommand(actualCommand)
+		switch decision.Level {
+		case PolicyDeny:
+			writeAuditLog(AuditEntry{Timestamp: time.Now().UTC().Format(time.RFC3339), Tool: "run_terminal", Action: "execute", Level: "deny", Risk: decision.RiskLevel, Decision: "auto_deny", Summary: decision.Summary, MatchedRule: decision.MatchedRule})
+			return "ERROR: Command blocked by security policy: " + decision.Reason
+		case PolicyApprove:
+			writeAuditLog(AuditEntry{Timestamp: time.Now().UTC().Format(time.RFC3339), Tool: "run_terminal", Action: "execute", Level: "approve", Risk: decision.RiskLevel, Decision: "pending", Summary: decision.Summary, MatchedRule: decision.MatchedRule})
 			fmt.Printf("STATUS: WAITING_APPROVAL\n")
 			if !isTUIMode { os.Stdout.Sync() }
-			if !requireMobileApproval(actualCommand, "Terminal execution of: "+actualCommand) {
+			if !requireSecurityApproval(decision, "Terminal execution of: "+actualCommand, "run_terminal", "", "") {
 				return "ERROR: Command was denied by user or timed out waiting for mobile approval."
 			}
+			writeAuditLog(AuditEntry{Timestamp: time.Now().UTC().Format(time.RFC3339), Tool: "run_terminal", Action: "execute", Level: "approve", Risk: decision.RiskLevel, Decision: "user_allow", Summary: "User Approved", MatchedRule: decision.MatchedRule})
+		default:
+			// allow
 		}
 
 		debugLog.Printf("[executeTool/run_terminal] actualCommand=%q", actualCommand)

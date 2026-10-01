@@ -329,7 +329,7 @@ def _handle(browser, args):
                         }
                     }
                     
-                    text = text.replace(/\s+/g, ' ').slice(0, 120);
+                    text = text.replace(/\\s+/g, ' ').slice(0, 120);
                     
                     let sel = '';
                     if (el.id && /^[A-Za-z][A-Za-z0-9_-]*$/.test(el.id)) {
