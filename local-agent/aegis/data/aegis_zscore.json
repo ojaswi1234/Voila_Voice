@@ -1,0 +1,1 @@
+{"time_delta": {"mean": 0.0006008216312953403, "var": 2.1669849160834743e-06, "count": 35}, "payload_len_run_terminal": {"mean": 3, "var": 0.0, "count": 1}, "payload_len_click_ref": {"mean": 0.0, "var": 0.0, "count": 34}, "time_delta_test": {"mean": 10.0, "var": 0.0, "count": 1}, "payload_len_test": {"mean": 2, "var": 0.0, "count": 1}}
