@@ -1439,7 +1439,21 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _checkIntent();
+      // HIDDEN BUG FIX: Do NOT call _checkIntent() here unconditionally.
+      // The shared engine's MethodChannel handler may still be set to
+      // AssistantActivity's version (returning isAssistantIntent=true)
+      // even when we are back in MainActivity context, causing the full
+      // app to permanently render in overlay mode.
+      //
+      // Instead: the onIntentChanged push from MainActivity.onResume() (Kotlin)
+      // is the authoritative signal. We only call _checkIntent() as a fallback
+      // if we are currently NOT in assistant mode (initial boot validation).
+      if (!_isAssistant) {
+        _checkIntent();
+      }
+    } else if (state == AppLifecycleState.paused) {
+      // When the app is paused (going to background), the overlay may be
+      // taking over. Do not change _isAssistant here; wait for onIntentChanged.
     }
   }
 
