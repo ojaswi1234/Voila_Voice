@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"voila/mcp"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -84,16 +85,6 @@ func connectorsConnect(id, token string) (string, error) {
 		return "", fmt.Errorf("connector not found in catalog")
 	}
 
-	mcpPath := "mcp_servers.json"
-	var mcpServers map[string]interface{}
-	data, err := os.ReadFile(mcpPath)
-	if err == nil {
-		json.Unmarshal(data, &mcpServers)
-	} else {
-		mcpServers = make(map[string]interface{})
-	}
-
-
 	envMap := make(map[string]string)
 	if token != "" {
 		if id == "github" {
@@ -105,28 +96,51 @@ func connectorsConnect(id, token string) (string, error) {
 		}
 	}
 
-	mcpServers[id] = map[string]interface{}{
-		"command": entry.MCPCommand,
-		"args":    entry.MCPArgs,
-		"env":     envMap,
-		"enabled": true,
+	cfg, _ := mcp.LoadConfig(filepath.Join(getLocalAgentDir(), "mcp_servers.json"))
+	if cfg == nil {
+		cfg = &mcp.Config{}
 	}
 
-
-	mData, _ := json.MarshalIndent(mcpServers, "", "  ")
-	os.WriteFile(mcpPath, mData, 0644)
+	foundSrv := false
+	for i, s := range cfg.Servers {
+		if s.ID == id {
+			cfg.Servers[i].Command = entry.MCPCommand
+			cfg.Servers[i].Args = entry.MCPArgs
+			cfg.Servers[i].Env = envMap
+			cfg.Servers[i].Enabled = true
+			if cfg.Servers[i].ToolTimeout <= 0 {
+				cfg.Servers[i].ToolTimeout = 30
+			}
+			foundSrv = true
+			break
+		}
+	}
+	if !foundSrv {
+		cfg.Servers = append(cfg.Servers, mcp.ServerConfig{
+			ID:          id,
+			Command:     entry.MCPCommand,
+			Args:        entry.MCPArgs,
+			Env:         envMap,
+			Enabled:     true,
+			ToolTimeout: 30,
+		})
+	}
+	mcp.SaveConfig(filepath.Join(getLocalAgentDir(), "mcp_servers.json"), cfg)
+	if mcp.GlobalHost != nil {
+		mcp.GlobalHost.Reload(cfg)
+	}
 
 	states, _ := loadConnectorStates()
-	found := false
+	foundState := false
 	for i, s := range states {
 		if s.ID == id {
 			states[i].Enabled = true
 			states[i].ConfiguredAt = time.Now().Format(time.RFC3339)
-			found = true
+			foundState = true
 			break
 		}
 	}
-	if !found {
+	if !foundState {
 		states = append(states, ConnectorState{
 			ID:           id,
 			Enabled:      true,
@@ -140,17 +154,17 @@ func connectorsConnect(id, token string) (string, error) {
 }
 
 func connectorsDisconnect(id string) (string, error) {
-	mcpPath := "mcp_servers.json"
-	var mcpServers map[string]interface{}
-	data, err := os.ReadFile(mcpPath)
-	if err == nil {
-		if err := json.Unmarshal(data, &mcpServers); err == nil {
-			if srv, ok := mcpServers[id].(map[string]interface{}); ok {
-				srv["enabled"] = false
-				mcpServers[id] = srv
-				mData, _ := json.MarshalIndent(mcpServers, "", "  ")
-				os.WriteFile(mcpPath, mData, 0644)
+	cfg, _ := mcp.LoadConfig(filepath.Join(getLocalAgentDir(), "mcp_servers.json"))
+	if cfg != nil {
+		for i, s := range cfg.Servers {
+			if s.ID == id {
+				cfg.Servers[i].Enabled = false
+				break
 			}
+		}
+		mcp.SaveConfig(filepath.Join(getLocalAgentDir(), "mcp_servers.json"), cfg)
+		if mcp.GlobalHost != nil {
+			mcp.GlobalHost.Reload(cfg)
 		}
 	}
 
