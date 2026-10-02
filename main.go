@@ -2284,6 +2284,60 @@ http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(health)
 })
 
+
+// Proxy endpoint for mobile to fetch background tasks from a specific device
+http.HandleFunc("/proxy/", func(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Content-Type", "application/json")
+
+	// Expected path: /proxy/{device_id}/bg-tasks
+	pathParts := strings.Split(r.URL.Path, "/")
+	if len(pathParts) < 4 {
+		http.Error(w, "Invalid proxy path", http.StatusBadRequest)
+		return
+	}
+	
+	deviceID := pathParts[2]
+	endpoint := "/" + strings.Join(pathParts[3:], "/")
+
+	backend.mu.RLock()
+	device, exists := backend.devices[deviceID]
+	backend.mu.RUnlock()
+
+	if !exists || !device.Active {
+		json.NewEncoder(w).Encode(map[string]interface{}{"error": "Device offline or not found", "tasks": []interface{}{}})
+		return
+	}
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	req, err := http.NewRequest(r.Method, strings.TrimRight(device.Address, "/")+endpoint, r.Body)
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{"error": "Failed to create request", "tasks": []interface{}{}})
+		return
+	}
+	
+	for k, v := range r.Header {
+		req.Header[k] = v
+	}
+
+	if strings.Contains(device.Address, "ngrok") || strings.Contains(device.Address, "ngrok-free") {
+		req.Header.Set("ngrok-skip-browser-warning", "true")
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{"error": "Failed to reach device", "tasks": []interface{}{}})
+		return
+	}
+	defer resp.Body.Close()
+
+	for k, v := range resp.Header {
+		w.Header()[k] = v
+	}
+	w.WriteHeader(resp.StatusCode)
+	io.Copy(w, resp.Body)
+})
+
 // Status endpoint for monitoring
 http.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
 	// Mark stale devices before serving status
