@@ -2704,7 +2704,7 @@ def write_initial_pos():
 
 export_graphify_prompt()
 root.after(100, write_initial_pos)
-root.mainloop()
+
 _mcp_frame_widget = None
 
 def _hide_mcp_widgets():
@@ -2929,3 +2929,6 @@ def _show_mcp_widgets():
     # Initial render
     render_servers()
 
+
+
+root.mainloop()
