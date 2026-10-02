@@ -1885,6 +1885,37 @@ func startHTTPServer() {
 	})
 
 	// Ã¢â€â‚¬Ã¢â€â‚¬ API Key management endpoints (called by Python dashboard) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+		mux.HandleFunc("/bg-tasks", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Content-Type", "application/json")
+
+		// No strict auth required for simply viewing task IDs/status (or we can add it later)
+		bgTasksMu.RLock()
+		defer bgTasksMu.RUnlock()
+
+		type TaskResp struct {
+			ID       string `json:"id"`
+			Command  string `json:"command"`
+			Status   string `json:"status"`
+			Duration string `json:"duration"`
+		}
+
+		var active []TaskResp
+		for id, task := range bgTasks {
+			dur := time.Since(task.StartTime).Round(time.Second).String()
+			if task.Status != "running" {
+				dur = task.EndTime.Sub(task.StartTime).Round(time.Second).String()
+			}
+			active = append(active, TaskResp{
+				ID:       id,
+				Command:  task.Command,
+				Status:   task.Status,
+				Duration: dur,
+			})
+		}
+		json.NewEncoder(w).Encode(map[string]interface{}{"tasks": active})
+	})
+
 	mux.HandleFunc("/mcp-api", mcpApiHandler)
 	mux.HandleFunc("/api-keys", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
