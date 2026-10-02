@@ -2556,7 +2556,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
           child: Column(
             children: [
               GestureDetector(
-                if (mounted) onTap: () => setState(() => _showFlowchart = !_showFlowchart),
+                onTap: () { if (mounted) setState(() => _showFlowchart = !_showFlowchart); },
                 child: Container(
                   padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
                   color: Colors.transparent,
@@ -3047,7 +3047,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                   Expanded(
                     child: GestureDetector(
                       behavior: HitTestBehavior.opaque,
-                      if (mounted) onTap: () => setState(() => _currentMode = 'agent'),
+                      onTap: () { if (mounted) setState(() => _currentMode = 'agent'); },
                       child: Container(
                         padding: const EdgeInsets.symmetric(vertical: 8),
                         alignment: Alignment.center,
@@ -3058,7 +3058,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                   Expanded(
                     child: GestureDetector(
                       behavior: HitTestBehavior.opaque,
-                      if (mounted) onTap: () => setState(() => _currentMode = 'shell'),
+                      onTap: () { if (mounted) setState(() => _currentMode = 'shell'); },
                       child: Container(
                         padding: const EdgeInsets.symmetric(vertical: 8),
                         alignment: Alignment.center,
@@ -3869,7 +3869,6 @@ class _CollapsibleOutputState extends State<CollapsibleOutput> {
   }
 
 }
-
 
 
 
