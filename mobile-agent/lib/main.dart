@@ -265,7 +265,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   void _triggerDataArriving() {
     setState(() => _isDataArriving = true);
     Future.delayed(const Duration(milliseconds: 1500), () {
-      if (mounted) if (mounted) setState(() => _isDataArriving = false);
+      if (mounted) setState(() => _isDataArriving = false);
     });
   }
   String _backendStatus = 'Checking...';
@@ -926,7 +926,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     _currentDeviceName = await DeviceIdentity.getDeviceName();
     _sessionId = const Uuid().v4();
     _savedDevices = await DeviceIdentity.getSavedDevices();
-    if (mounted) if (mounted) setState(() {});  // BUG-10 fix
+    if (mounted) setState(() {});  // BUG-10 fix
   }
 
   void _connectToBackend() {
@@ -1032,7 +1032,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
               if (_devices.isEmpty) {
                 _savedDevices = {};
                 _activeDevice = '';
-                if (mounted) if (mounted) setState(() {});  // REMAIN-03 fix
+                if (mounted) setState(() {});  // REMAIN-03 fix
               }
               final onlineCount = _devices.values.where((d) => d['online'] == true).length;
               final reachableCount = _devices.values.where((d) => d['reachable'] == true).length;
@@ -1282,7 +1282,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
           });
         });
       }, onDone: () {
-        if (mounted) if (mounted) setState(() {  // BUG-11 fix
+        if (mounted) setState(() {  // BUG-11 fix
           _isConnected = false;
           _addMessage({
             'type': 'system',
