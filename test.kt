@@ -1,0 +1,1 @@
+fun test(): String { var x: String? = null; if (x == null) { x = 'hello' }; return x }
