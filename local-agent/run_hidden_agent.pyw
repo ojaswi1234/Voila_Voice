@@ -742,6 +742,20 @@ def _api_call(method, path, payload=None):
 
 import json
 
+def _ask_string(title, prompt):
+    import tkinter.simpledialog as sd
+    root.attributes('-topmost', False)
+    res = sd.askstring(title, prompt, parent=root)
+    root.attributes('-topmost', True)
+    return res
+
+def _ask_yesno(title, prompt):
+    import tkinter.messagebox as mb
+    root.attributes('-topmost', False)
+    res = mb.askyesno(title, prompt, parent=root)
+    root.attributes('-topmost', True)
+    return res
+
 def _hide_documents_widgets():
     global _documents_frame_widget
     if _documents_frame_widget:
@@ -2730,12 +2744,11 @@ def _show_mcp_widgets():
         
         def _add_server():
             # Basic prompt (could use a dialog, but simple for now)
-            import tkinter.simpledialog as sd
-            srv_id = sd.askstring("Add Server", "Server ID:", parent=frame)
+            srv_id = _ask_string("Add Server", "Server ID:")
             if not srv_id: return
-            cmd = sd.askstring("Add Server", "Command (e.g. npx):", parent=frame)
+            cmd = _ask_string("Add Server", "Command (e.g. npx):")
             if not cmd: return
-            args = sd.askstring("Add Server", "Args (e.g. -y @mcp/server-github):", parent=frame)
+            args = _ask_string("Add Server", "Args (e.g. -y @mcp/server-github):")
             _api_call('POST', '/mcp-api', {'action': 'add_server', 'id': srv_id, 'command': cmd, 'args': args or ""})
             _show_mcp_widgets()
             
@@ -2757,7 +2770,7 @@ def _show_mcp_widgets():
             canvas_s.itemconfig(inner_win, width=event.width)
         canvas_s.bind('<Configure>', on_configure)
 
-        servers = data.get('servers', [])
+        servers = data.get('servers') or []
         if not servers:
             tk.Label(inner, text="No MCP servers configured.", fg='#6B7280', bg='#0F1115').pack(pady=20)
         
@@ -2777,7 +2790,7 @@ def _show_mcp_widgets():
                 _show_mcp_widgets()
                 
             def _remove(sid=srv.get('id')):
-                if tkinter.messagebox.askyesno("Remove", f"Remove server {sid}?"):
+                if _ask_yesno("Remove", f"Remove server {sid}?"):
                     _api_call('POST', '/mcp-api', {'action': 'remove_server', 'id': sid})
                     _show_mcp_widgets()
 
@@ -2812,8 +2825,8 @@ def _show_mcp_widgets():
             canvas_s.itemconfig(inner_win, width=event.width)
         canvas_s.bind('<Configure>', on_configure)
         
-        catalog = data.get('catalog', [])
-        states = data.get('connector_states', {})
+        catalog = data.get('catalog') or []
+        states = data.get('connector_states') or {}
         
         for c in catalog:
             item = tk.Frame(inner, bg='#1A1D23', bd=1, relief='solid')
@@ -2833,8 +2846,7 @@ def _show_mcp_widgets():
             def _connect(cid=c.get('id'), auth=auth_type):
                 token = ""
                 if auth != 'none':
-                    import tkinter.simpledialog as sd
-                    token = sd.askstring("Connect", f"Enter token for {cid}:", parent=frame)
+                    token = _ask_string("Connect", f"Enter token for {cid}:")
                     if token is None: return
                 _api_call('POST', '/mcp-api', {'action': 'connect_connector', 'id': cid, 'token': token})
                 _show_mcp_widgets()
@@ -2861,10 +2873,9 @@ def _show_mcp_widgets():
         tk.Label(hdr, text='Marketplace Skills', fg='#FFFFFF', bg='#0F1115', font=('Segoe UI', 14, 'bold')).pack(side='left')
         
         def _install():
-            import tkinter.simpledialog as sd
-            sid = sd.askstring("Install", "Skill ID:", parent=frame)
+            sid = _ask_string("Install", "Skill ID:")
             if not sid: return
-            url = sd.askstring("Install", "SKILL.md URL:", parent=frame)
+            url = _ask_string("Install", "SKILL.md URL:")
             if not url: return
             _api_call('POST', '/mcp-api', {'action': 'install_skill', 'id': sid, 'source_url': url})
             _show_mcp_widgets()
@@ -2886,7 +2897,7 @@ def _show_mcp_widgets():
             canvas_s.itemconfig(inner_win, width=event.width)
         canvas_s.bind('<Configure>', on_configure)
 
-        skills = data.get('skills', [])
+        skills = data.get('skills') or []
         if not skills:
             tk.Label(inner, text="No skills installed.", fg='#6B7280', bg='#0F1115').pack(pady=20)
         
@@ -2900,7 +2911,7 @@ def _show_mcp_widgets():
             tk.Label(top, text=s.get('id', ''), fg='#FFFFFF', bg='#1A1D23', font=('Segoe UI', 11, 'bold')).pack(side='left')
             
             def _uninstall(sid=s.get('id')):
-                if tkinter.messagebox.askyesno("Uninstall", f"Uninstall skill {sid}?"):
+                if _ask_yesno("Uninstall", f"Uninstall skill {sid}?"):
                     _api_call('POST', '/mcp-api', {'action': 'uninstall_skill', 'id': sid})
                     _show_mcp_widgets()
 
