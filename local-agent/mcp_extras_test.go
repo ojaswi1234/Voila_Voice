@@ -34,6 +34,8 @@ func initTestEnv(t *testing.T) {
 		http.DefaultTransport = oldTransport
 	})
 	os.Chdir(dir)
+	os.Setenv("VOILA_AGENT_ROOT", dir)
+	t.Cleanup(func() { os.Unsetenv("VOILA_AGENT_ROOT") })
 	os.MkdirAll("skills/installed", 0755)
 	os.MkdirAll("connectors", 0755)
 }

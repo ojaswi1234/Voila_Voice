@@ -36,7 +36,7 @@ type SkillIndex struct {
 var installMutex sync.Map
 
 func loadSkillIndex() ([]InstalledSkill, error) {
-	data, err := os.ReadFile(filepath.Join("skills", "index.json"))
+	data, err := os.ReadFile(filepath.Join(getLocalAgentDir(), "skills", "index.json"))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return []InstalledSkill{}, nil
@@ -62,7 +62,7 @@ func saveSkillIndex(installed []InstalledSkill) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join("skills", "index.json"), data, 0644)
+	return os.WriteFile(filepath.Join(getLocalAgentDir(), "skills", "index.json"), data, 0644)
 }
 
 func skillsMarketSearch(query string) ([]SkillMarketItem, error) {
@@ -98,7 +98,7 @@ func skillsMarketSearch(query string) ([]SkillMarketItem, error) {
 }
 
 func logAudit(msg string) {
-	f, err := os.OpenFile("security_audit.jsonl", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(filepath.Join(getLocalAgentDir(), "security_audit.jsonl"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err == nil {
 		defer f.Close()
 		f.WriteString(fmt.Sprintf("{\"timestamp\":\"%s\",\"action\":\"marketplace\",\"details\":\"%s\"}\n", time.Now().Format(time.RFC3339), msg))
@@ -146,8 +146,8 @@ func skillsMarketInstall(id, source string) (string, error) {
 		return "", err
 	}
 
-	installDir := filepath.Join("skills", "installed", id)
-	basePath, _ := filepath.Abs(filepath.Join("skills", "installed"))
+	installDir := filepath.Join(getLocalAgentDir(), "skills", "installed", id)
+	basePath, _ := filepath.Abs(filepath.Join(getLocalAgentDir(), "skills", "installed"))
 	targetPath, _ := filepath.Abs(installDir)
 	rel, err := filepath.Rel(basePath, targetPath)
 	if err != nil || strings.HasPrefix(rel, "..") {
@@ -219,7 +219,7 @@ func skillsMarketUninstall(id string) error {
 		return err
 	}
 	
-	installDir := filepath.Join("skills", "installed", id)
+	installDir := filepath.Join(getLocalAgentDir(), "skills", "installed", id)
 	os.RemoveAll(installDir)
 	
 	logAudit(fmt.Sprintf("Uninstalled skill %s", id))

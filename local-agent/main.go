@@ -773,9 +773,28 @@ type Skill struct {
 	CommandTemplate string       `json:"command_template"`
 }
 
-func getSkillsFilePath() string {
+func getLocalAgentDir() string {
+	if testRoot := os.Getenv("VOILA_AGENT_ROOT"); testRoot != "" {
+		return testRoot
+	}
+	cwd, _ := os.Getwd()
+	// Check if we are already in local-agent
+	if _, err := os.Stat(filepath.Join(cwd, "main.go")); err == nil {
+		if _, err := os.Stat(filepath.Join(cwd, "aegis", "aegis_cli.py")); err == nil {
+			return cwd
+		}
+	}
+	// Check if we are in project root
+	if _, err := os.Stat(filepath.Join(cwd, "local-agent", "main.go")); err == nil {
+		return filepath.Join(cwd, "local-agent")
+	}
+	// Fallback to executable dir
 	exe, _ := os.Executable()
-	return filepath.Join(filepath.Dir(exe), "skills", "skills.json")
+	return filepath.Dir(exe)
+}
+
+func getSkillsFilePath() string {
+	return filepath.Join(getLocalAgentDir(), "skills", "skills.json")
 }
 
 func loadSkills() ([]Skill, error) {
@@ -3858,12 +3877,7 @@ func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMes
 	if toolName != "desktop_automation" {
 		aegisPayload := string(argsJSON)
 		
-		exePath, _ := os.Executable()
-		aegisPath := filepath.Join(filepath.Dir(exePath), "aegis", "aegis_cli.py")
-		if _, err := os.Stat(aegisPath); os.IsNotExist(err) {
-			// Fallback if running from project root
-			aegisPath = "local-agent/aegis/aegis_cli.py"
-		}
+		aegisPath := filepath.Join(getLocalAgentDir(), "aegis", "aegis_cli.py")
 		
 		aegisCmd := exec.Command("python", aegisPath, "--action", toolName, "--payload", aegisPayload)
 		if runtime.GOOS == "windows" {
@@ -4371,14 +4385,7 @@ case "read_file":
 			}
 
 			fmt.Printf("STATUS: RUNNING\n")
-			exeDir2, _ := os.Executable()
-			bridgeScript := filepath.Join(filepath.Dir(exeDir2), "bridge_constructor.py")
-			if _, err := os.Stat(bridgeScript); os.IsNotExist(err) {
-				bridgeScript = filepath.Join(currentWorkingDir, "bridge_constructor.py")
-				if _, err := os.Stat(bridgeScript); os.IsNotExist(err) {
-					bridgeScript = filepath.Join(currentWorkingDir, "local-agent", "bridge_constructor.py")
-				}
-			}
+				bridgeScript := filepath.Join(getLocalAgentDir(), "bridge_constructor.py")
 
 			argsArr := []string{bridgeScript, "--action", action}
 			if selector != "" {
@@ -4492,14 +4499,7 @@ case "browser_automation":
 		if d, err2 := strconv.Atoi(depthStr);   err2 == nil && d > 0 { depth   = d }
 		if t, err2 := strconv.Atoi(timeoutStr); err2 == nil && t > 0 { timeout = t }
 
-		exeDir2, _ := os.Executable()
-		dtScript := filepath.Join(filepath.Dir(exeDir2), "desktop_tools.py")
-		if _, err := os.Stat(dtScript); os.IsNotExist(err) {
-			dtScript = filepath.Join(currentWorkingDir, "desktop_tools.py")
-			if _, err := os.Stat(dtScript); os.IsNotExist(err) {
-				dtScript = filepath.Join(currentWorkingDir, "local-agent", "desktop_tools.py")
-			}
-		}
+		dtScript := filepath.Join(getLocalAgentDir(), "desktop_tools.py")
 		dtArgs := []string{dtScript, "--action", action, "--depth", fmt.Sprintf("%d", depth), "--timeout", fmt.Sprintf("%d", timeout)}
 		if ref      != "" { dtArgs = append(dtArgs, "--ref", ref) }
 		if selector != "" { dtArgs = append(dtArgs, "--selector", selector) }

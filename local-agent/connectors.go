@@ -26,7 +26,7 @@ type ConnectorState struct {
 
 
 func appendConnectorAudit(action, details string) {
-	f, err := os.OpenFile("security_audit.jsonl", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(filepath.Join(getLocalAgentDir(), "security_audit.jsonl"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err == nil {
 		defer f.Close()
 		f.WriteString(fmt.Sprintf("{\"timestamp\":\"%s\",\"action\":\"%s\",\"details\":\"%s\"}\n", time.Now().Format(time.RFC3339), action, details))
@@ -34,7 +34,7 @@ func appendConnectorAudit(action, details string) {
 }
 
 func loadCatalog() ([]ConnectorEntry, error) {
-	data, err := os.ReadFile(filepath.Join("connectors", "catalog.json"))
+	data, err := os.ReadFile(filepath.Join(getLocalAgentDir(), "connectors", "catalog.json"))
 	if err != nil {
 		return nil, err
 	}
@@ -46,7 +46,7 @@ func loadCatalog() ([]ConnectorEntry, error) {
 }
 
 func loadConnectorStates() ([]ConnectorState, error) {
-	data, err := os.ReadFile(filepath.Join("connectors", "connectors_state.json"))
+	data, err := os.ReadFile(filepath.Join(getLocalAgentDir(), "connectors", "connectors_state.json"))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return []ConnectorState{}, nil
@@ -65,7 +65,7 @@ func saveConnectorStates(states []ConnectorState) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join("connectors", "connectors_state.json"), data, 0644)
+	return os.WriteFile(filepath.Join(getLocalAgentDir(), "connectors", "connectors_state.json"), data, 0644)
 }
 
 func connectorsConnect(id, token string) (string, error) {

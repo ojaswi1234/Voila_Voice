@@ -238,8 +238,7 @@ func appendSecurityAudit(action, details string) {
 }
 
 func mcpServersPath() string {
-	exe, _ := os.Executable()
-	return filepath.Join(filepath.Dir(exe), "mcp_servers.json")
+	return filepath.Join(getLocalAgentDir(), "mcp_servers.json")
 }
 
 // ---------------------------------------------------------------------------
@@ -341,7 +340,7 @@ func dispatchMCPAndExtras(ctx context.Context, toolName string, argsJSON json.Ra
 		id := getString("skill_id")
 		
 		// 1. Try marketplace installed skill first
-		skillPath := filepath.Join("skills", "installed", id, "SKILL.md")
+		skillPath := filepath.Join(getLocalAgentDir(), "skills", "installed", id, "SKILL.md")
 		data, err := os.ReadFile(skillPath)
 		if err == nil {
 			appendSecurityAudit("run_skill", fmt.Sprintf("id: %s (marketplace)", id))
