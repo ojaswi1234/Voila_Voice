@@ -2742,19 +2742,6 @@ def _show_mcp_widgets():
         hdr.pack(fill='x', pady=10, padx=10)
         tk.Label(hdr, text='MCP Servers', fg='#FFFFFF', bg='#0F1115', font=('Segoe UI', 14, 'bold')).pack(side='left')
         
-        def _add_server():
-            # Basic prompt (could use a dialog, but simple for now)
-            srv_id = _ask_string("Add Server", "Server ID:")
-            if not srv_id: return
-            cmd = _ask_string("Add Server", "Command (e.g. npx):")
-            if not cmd: return
-            args = _ask_string("Add Server", "Args (e.g. -y @mcp/server-github):")
-            _api_call('POST', '/mcp-api', {'action': 'add_server', 'id': srv_id, 'command': cmd, 'args': args or ""})
-            _show_mcp_widgets()
-            
-        tk.Button(hdr, text='+ Add Server', bg='#3B82F6', fg='white', relief='flat', bd=0, 
-                  command=_add_server, font=('Segoe UI', 9, 'bold')).pack(side='right', ipadx=5, ipady=2)
-
         # Scrollable area
         canvas_s = tk.Canvas(content_frame, bg='#0F1115', highlightthickness=0)
         scrollbar = tk.Scrollbar(content_frame, orient='vertical', command=canvas_s.yview)
@@ -2770,12 +2757,68 @@ def _show_mcp_widgets():
             canvas_s.itemconfig(inner_win, width=event.width)
         canvas_s.bind('<Configure>', on_configure)
 
+        add_form_frame = tk.Frame(inner, bg='#16171C', bd=1, relief='solid')
+        
+        def _toggle_add_form():
+            if add_form_frame.winfo_ismapped():
+                add_form_frame.pack_forget()
+            else:
+                add_form_frame.pack(fill='x', padx=10, pady=10, before=list_frame)
+                
+        tk.Button(hdr, text='+ Add Server', bg='#3B82F6', fg='white', relief='flat', bd=0, 
+                  command=_toggle_add_form, font=('Segoe UI', 9, 'bold')).pack(side='right', ipadx=5, ipady=2)
+
+        # Build Add Form
+        tk.Label(add_form_frame, text="Configure New Server", bg='#16171C', fg='white', font=('Segoe UI', 10, 'bold')).pack(anchor='w', padx=10, pady=5)
+        
+        def _make_field(parent, label_text):
+            f = tk.Frame(parent, bg='#16171C')
+            f.pack(fill='x', padx=10, pady=2)
+            tk.Label(f, text=label_text, bg='#16171C', fg='#9CA3AF', width=12, anchor='w').pack(side='left')
+            ent = tk.Entry(f, bg='#2A2D35', fg='white', insertbackground='white', relief='flat')
+            ent.pack(side='left', fill='x', expand=True)
+            return ent
+            
+        id_ent = _make_field(add_form_frame, "Server ID:")
+        cmd_ent = _make_field(add_form_frame, "Command:")
+        args_ent = _make_field(add_form_frame, "Args:")
+        paths_ent = _make_field(add_form_frame, "Allowed Paths:")
+        
+        # Expandable text area for ENV
+        env_f = tk.Frame(add_form_frame, bg='#16171C')
+        env_f.pack(fill='x', padx=10, pady=2)
+        tk.Label(env_f, text="Env JSON:", bg='#16171C', fg='#9CA3AF', width=12, anchor='w').pack(side='left', anchor='n')
+        env_text = tk.Text(env_f, bg='#2A2D35', fg='white', insertbackground='white', relief='flat', height=3, width=40)
+        env_text.pack(side='left', fill='x', expand=True)
+        env_text.insert('1.0', "{}")
+        
+        def _submit_server():
+            sid = id_ent.get().strip()
+            if not sid: return
+            _api_call('POST', '/mcp-api', {
+                'action': 'add_server', 
+                'id': sid, 
+                'command': cmd_ent.get().strip(), 
+                'args': args_ent.get().strip(),
+                'env_json': env_text.get('1.0', 'end').strip(),
+                'allowed_paths': paths_ent.get().strip()
+            })
+            _show_mcp_widgets()
+            
+        btn_f = tk.Frame(add_form_frame, bg='#16171C')
+        btn_f.pack(fill='x', padx=10, pady=10)
+        tk.Button(btn_f, text="Save Server", bg='#10B981', fg='white', relief='flat', bd=0, command=_submit_server).pack(side='right')
+        tk.Button(btn_f, text="Cancel", bg='#374151', fg='white', relief='flat', bd=0, command=_toggle_add_form).pack(side='right', padx=10)
+
+        list_frame = tk.Frame(inner, bg='#0F1115')
+        list_frame.pack(fill='both', expand=True)
+
         servers = data.get('servers') or []
         if not servers:
-            tk.Label(inner, text="No MCP servers configured.", fg='#6B7280', bg='#0F1115').pack(pady=20)
+            tk.Label(list_frame, text="No MCP servers configured.", fg='#6B7280', bg='#0F1115').pack(pady=20)
         
         for srv in servers:
-            item = tk.Frame(inner, bg='#1A1D23', bd=1, relief='solid')
+            item = tk.Frame(list_frame, bg='#1A1D23', bd=1, relief='solid')
             item.pack(fill='x', padx=10, pady=5)
             
             top = tk.Frame(item, bg='#1A1D23')
@@ -2809,7 +2852,7 @@ def _show_mcp_widgets():
             
         hdr = tk.Frame(content_frame, bg='#0F1115')
         hdr.pack(fill='x', pady=10, padx=10)
-        tk.Label(hdr, text='Connectors', fg='#FFFFFF', bg='#0F1115', font=('Segoe UI', 14, 'bold')).pack(side='left')
+        tk.Label(hdr, text='Connectors & Auth Management', fg='#FFFFFF', bg='#0F1115', font=('Segoe UI', 14, 'bold')).pack(side='left')
 
         canvas_s = tk.Canvas(content_frame, bg='#0F1115', highlightthickness=0)
         scrollbar = tk.Scrollbar(content_frame, orient='vertical', command=canvas_s.yview)
@@ -2843,26 +2886,37 @@ def _show_mcp_widgets():
             auth_type = c.get('auth_type', 'none')
             tk.Label(top, text=f"[{auth_type}]", fg='#8B5CF6', bg='#1A1D23', font=('Segoe UI', 9, 'bold')).pack(side='left')
             
-            def _connect(cid=c.get('id'), auth=auth_type):
-                token = ""
-                if auth != 'none':
-                    token = _ask_string("Connect", f"Enter token for {cid}:")
-                    if token is None: return
-                _api_call('POST', '/mcp-api', {'action': 'connect_connector', 'id': cid, 'token': token})
-                _show_mcp_widgets()
-                
             def _disconnect(cid=c.get('id')):
                 _api_call('POST', '/mcp-api', {'action': 'disconnect_connector', 'id': cid})
                 _show_mcp_widgets()
 
             if is_connected:
                 tk.Button(top, text="Disconnect", bg='#EF4444', fg='white', relief='flat', bd=0, command=_disconnect).pack(side='right')
-            else:
-                tk.Button(top, text="Connect", bg='#10B981', fg='white', relief='flat', bd=0, command=_connect).pack(side='right')
                 
             bot = tk.Frame(item, bg='#1A1D23')
             bot.pack(fill='x', padx=10, pady=(0,5))
             tk.Label(bot, text=c.get('description', ''), fg='#9CA3AF', bg='#1A1D23', font=('Segoe UI', 9)).pack(side='left')
+
+            if auth_type != 'none':
+                # Inline Auth management form
+                auth_frame = tk.Frame(item, bg='#16171C', bd=1, relief='solid')
+                auth_frame.pack(fill='x', padx=10, pady=(5, 10))
+                
+                tk.Label(auth_frame, text="Credentials:", fg='#9CA3AF', bg='#16171C', font=('Segoe UI', 9)).pack(side='left', padx=10, pady=5)
+                token_entry = tk.Entry(auth_frame, bg='#2A2D35', fg='#FFFFFF', insertbackground='#FFFFFF', relief='flat', show='*')
+                token_entry.pack(side='left', fill='x', expand=True, pady=5)
+                
+                if is_connected:
+                    token_entry.insert(0, "********")
+                
+                def _save_auth(cid=c.get('id'), ent=token_entry, is_conn=is_connected):
+                    val = ent.get().strip()
+                    if val == "********" and is_conn:
+                        return # No change
+                    _api_call('POST', '/mcp-api', {'action': 'connect_connector', 'id': cid, 'token': val})
+                    _show_mcp_widgets()
+                        
+                tk.Button(auth_frame, text="Save & Connect", bg='#3B82F6', fg='white', relief='flat', bd=0, command=_save_auth).pack(side='right', padx=10, pady=5)
 
     def render_skills():
         for widget in content_frame.winfo_children():
@@ -2923,12 +2977,9 @@ def _show_mcp_widgets():
 
     # Tab Buttons
     tk.Button(tab_bar, text='Servers', bg='#1A1D23', fg='#FFFFFF', relief='flat', bd=0, font=('Segoe UI', 11), command=render_servers).pack(side='left', padx=10, pady=5)
-    tk.Button(tab_bar, text='Connectors', bg='#1A1D23', fg='#FFFFFF', relief='flat', bd=0, font=('Segoe UI', 11), command=render_connectors).pack(side='left', padx=10, pady=5)
+    tk.Button(tab_bar, text='Connectors & Auth', bg='#1A1D23', fg='#FFFFFF', relief='flat', bd=0, font=('Segoe UI', 11), command=render_connectors).pack(side='left', padx=10, pady=5)
     tk.Button(tab_bar, text='Skills', bg='#1A1D23', fg='#FFFFFF', relief='flat', bd=0, font=('Segoe UI', 11), command=render_skills).pack(side='left', padx=10, pady=5)
 
     # Initial render
     render_servers()
-
-
-
 root.mainloop()
