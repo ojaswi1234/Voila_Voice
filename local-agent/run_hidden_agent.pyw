@@ -233,6 +233,14 @@ core_arc2 = canvas.create_line(0,0, 0,0, fill='#3b82f6', width=1.5, capstyle=tk.
 core_arc3 = canvas.create_line(0,0, 0,0, fill='#0ea5e9', width=2.0, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
 
 # Special State Icons (hidden by default)
+
+# Special State Icons (hidden by default)
+mcp_diamond = canvas.create_polygon(cx, cy-12, cx+10, cy, cx, cy+12, cx-10, cy, fill="", outline="#d946ef", width=2, state="hidden")
+mcp_inner = canvas.create_polygon(cx, cy-6, cx+5, cy, cx, cy+6, cx-5, cy, fill="#d946ef", outline="", state="hidden")
+bg_center = canvas.create_oval(cx-4, cy-4, cx+4, cy+4, fill="#14b8a6", outline="", state="hidden")
+bg_orbit1 = canvas.create_oval(0, 0, 0, 0, fill="#0d9488", outline="", state="hidden")
+bg_orbit2 = canvas.create_oval(0, 0, 0, 0, fill="#0d9488", outline="", state="hidden")
+
 term_prompt = canvas.create_text(cx, cy, text=">_", fill="#10b981", font=("Consolas", 11, "bold"), state="hidden")
 file_icon = canvas.create_polygon(cx-8, cy-10, cx+4, cy-10, cx+10, cy-4, cx+10, cy+12, cx-8, cy+12, fill="", outline="#6366f1", width=2, state="hidden")
 radar_arc = canvas.create_arc(cx-22, cy-22, cx+22, cy+22, start=0, extent=60, outline="#3b82f6", fill="", width=3, style=tk.ARC, state="hidden")
@@ -244,7 +252,7 @@ desktop_cursor_dot = canvas.create_oval(cx+2, cy+6, cx+7, cy+11, fill="#a78bfa",
 desktop_cursor_label = canvas.create_text(cx+12, cy, text="AI", fill="#a78bfa", font=("Segoe UI", 7, "bold"), anchor="w", state="hidden")
 
 # Keep variables compatible with animation loop
-face_parts = (shadow1, shadow2, shadow3, sun_aura, sun_glow4, sun_glow3, sun_glow2, sun_glow1, core_bg, core_arc1, core_arc2, core_arc3, term_prompt, file_icon, radar_arc, browser_box, browser_line, desktop_cursor_arrow, desktop_cursor_dot, desktop_cursor_label)
+face_parts = (shadow1, shadow2, shadow3, sun_aura, sun_glow4, sun_glow3, sun_glow2, sun_glow1, core_bg, core_arc1, core_arc2, core_arc3, term_prompt, file_icon, radar_arc, browser_box, browser_line, desktop_cursor_arrow, desktop_cursor_dot, desktop_cursor_label, mcp_diamond, mcp_inner, bg_center, bg_orbit1, bg_orbit2)
 cloud_parts = () # Empty, we don't use a thought cloud anymore
 
 # Typography Layout
@@ -1856,6 +1864,11 @@ def animation_loop():
             canvas.itemconfig(sun_aura, state="hidden")
             canvas.itemconfig(sun_glow4, state="hidden")
             canvas.itemconfig(sun_glow3, state="hidden")
+            canvas.itemconfig(mcp_diamond, state="hidden")
+            canvas.itemconfig(mcp_inner, state="hidden")
+            canvas.itemconfig(bg_center, state="hidden")
+            canvas.itemconfig(bg_orbit1, state="hidden")
+            canvas.itemconfig(bg_orbit2, state="hidden")
             canvas.itemconfig(sun_glow2, state="hidden")
             canvas.itemconfig(sun_glow1, state="hidden")
             canvas.itemconfig(core_bg, state="hidden")
@@ -1949,6 +1962,11 @@ def animation_loop():
                 target_outline = '#0284c7'
                 show_dots = True
                 canvas.itemconfig(sun_glow3, state="hidden")
+                canvas.itemconfig(mcp_diamond, state="hidden")
+                canvas.itemconfig(mcp_inner, state="hidden")
+                canvas.itemconfig(bg_center, state="hidden")
+                canvas.itemconfig(bg_orbit1, state="hidden")
+                canvas.itemconfig(bg_orbit2, state="hidden")
                 canvas.itemconfig(sun_glow2, state="hidden")
                 canvas.itemconfig(sun_glow1, state="hidden")
                 canvas.itemconfig(core_bg, state="hidden")
@@ -1965,6 +1983,11 @@ def animation_loop():
                 target_outline = '#c2410c'
                 show_dots = True
                 canvas.itemconfig(sun_glow3, state="hidden")
+                canvas.itemconfig(mcp_diamond, state="hidden")
+                canvas.itemconfig(mcp_inner, state="hidden")
+                canvas.itemconfig(bg_center, state="hidden")
+                canvas.itemconfig(bg_orbit1, state="hidden")
+                canvas.itemconfig(bg_orbit2, state="hidden")
                 canvas.itemconfig(sun_glow2, state="hidden")
                 canvas.itemconfig(sun_glow1, state="hidden")
                 canvas.itemconfig(core_bg, state="hidden")
@@ -1985,6 +2008,11 @@ def animation_loop():
                   target_outline = '#7c3aed'
                   show_dots = True
                   canvas.itemconfig(sun_glow3, state="hidden")
+                  canvas.itemconfig(mcp_diamond, state="hidden")
+                  canvas.itemconfig(mcp_inner, state="hidden")
+                  canvas.itemconfig(bg_center, state="hidden")
+                  canvas.itemconfig(bg_orbit1, state="hidden")
+                  canvas.itemconfig(bg_orbit2, state="hidden")
                   canvas.itemconfig(browser_box, state="hidden")
                   canvas.itemconfig(browser_line, state="hidden")
                   canvas.itemconfig(desktop_cursor_arrow, state="hidden")
@@ -1996,6 +2024,11 @@ def animation_loop():
                 target_outline = '#065f46'
                 show_dots = True
                 canvas.itemconfig(sun_glow3, state="hidden")
+                canvas.itemconfig(mcp_diamond, state="hidden")
+                canvas.itemconfig(mcp_inner, state="hidden")
+                canvas.itemconfig(bg_center, state="hidden")
+                canvas.itemconfig(bg_orbit1, state="hidden")
+                canvas.itemconfig(bg_orbit2, state="hidden")
                 canvas.itemconfig(sun_glow2, state="hidden")
                 canvas.itemconfig(sun_glow1, state="hidden")
                 canvas.itemconfig(core_bg, state="hidden")
@@ -2011,6 +2044,11 @@ def animation_loop():
                 target_outline = '#3730a3'
                 show_dots = True
                 canvas.itemconfig(sun_glow3, state="hidden")
+                canvas.itemconfig(mcp_diamond, state="hidden")
+                canvas.itemconfig(mcp_inner, state="hidden")
+                canvas.itemconfig(bg_center, state="hidden")
+                canvas.itemconfig(bg_orbit1, state="hidden")
+                canvas.itemconfig(bg_orbit2, state="hidden")
                 canvas.itemconfig(sun_glow2, state="hidden")
                 canvas.itemconfig(sun_glow1, state="hidden")
                 canvas.itemconfig(core_bg, state="hidden")
@@ -2022,6 +2060,58 @@ def animation_loop():
                 bounce = math.sin(anim_frame * 0.1) * 2
                 w, h = 6 * scale, 8 * scale
                 canvas.coords(file_icon, cx-w, cy-h+bounce, cx+w/2, cy-h+bounce, cx+w+2, cy-h/2+bounce, cx+w+2, cy+h+2+bounce, cx-w, cy+h+2+bounce)
+
+            elif visual_state == "MCP":
+                target_text = "MCP Connect"
+                target_color = '#d946ef'
+                target_outline = '#a21caf'
+                show_dots = True
+                canvas.itemconfig(sun_glow3, state="hidden")
+                canvas.itemconfig(mcp_diamond, state="hidden")
+                canvas.itemconfig(mcp_inner, state="hidden")
+                canvas.itemconfig(bg_center, state="hidden")
+                canvas.itemconfig(bg_orbit1, state="hidden")
+                canvas.itemconfig(bg_orbit2, state="hidden")
+                canvas.itemconfig(sun_glow2, state="hidden")
+                canvas.itemconfig(sun_glow1, state="hidden")
+                canvas.itemconfig(core_bg, state="hidden")
+                canvas.itemconfig(core_arc1, state="hidden")
+                canvas.itemconfig(core_arc2, state="hidden")
+                canvas.itemconfig(core_arc3, state="hidden")
+                if scale > 0.5:
+                    canvas.itemconfig(mcp_diamond, state="normal")
+                    canvas.itemconfig(mcp_inner, state="normal")
+                bounce = math.sin(anim_frame * 0.15) * 2
+                canvas.coords(mcp_diamond, cx, cy-12*scale+bounce, cx+10*scale, cy+bounce, cx, cy+12*scale+bounce, cx-10*scale, cy+bounce)
+                canvas.coords(mcp_inner, cx, cy-6*scale+bounce, cx+5*scale, cy+bounce, cx, cy+6*scale+bounce, cx-5*scale, cy+bounce)
+
+            elif visual_state == "BGTASK":
+                target_text = "Background"
+                target_color = '#14b8a6'
+                target_outline = '#0f766e'
+                show_dots = True
+                canvas.itemconfig(sun_glow3, state="hidden")
+                canvas.itemconfig(mcp_diamond, state="hidden")
+                canvas.itemconfig(mcp_inner, state="hidden")
+                canvas.itemconfig(bg_center, state="hidden")
+                canvas.itemconfig(bg_orbit1, state="hidden")
+                canvas.itemconfig(bg_orbit2, state="hidden")
+                canvas.itemconfig(sun_glow2, state="hidden")
+                canvas.itemconfig(sun_glow1, state="hidden")
+                canvas.itemconfig(core_bg, state="hidden")
+                canvas.itemconfig(core_arc1, state="hidden")
+                canvas.itemconfig(core_arc2, state="hidden")
+                canvas.itemconfig(core_arc3, state="hidden")
+                if scale > 0.5:
+                    canvas.itemconfig(bg_center, state="normal")
+                    canvas.itemconfig(bg_orbit1, state="normal")
+                    canvas.itemconfig(bg_orbit2, state="normal")
+                canvas.coords(bg_center, cx-4*scale, cy-4*scale, cx+4*scale, cy+4*scale)
+                a1 = anim_frame * 0.1
+                r = 14 * scale
+                canvas.coords(bg_orbit1, cx+math.cos(a1)*r-3*scale, cy+math.sin(a1)*r-3*scale, cx+math.cos(a1)*r+3*scale, cy+math.sin(a1)*r+3*scale)
+                a2 = a1 + math.pi
+                canvas.coords(bg_orbit2, cx+math.cos(a2)*r-3*scale, cy+math.sin(a2)*r-3*scale, cx+math.cos(a2)*r+3*scale, cy+math.sin(a2)*r+3*scale)
 
             elif visual_state == "RUNNING":
                 target_text = "Processing"
@@ -2181,6 +2271,11 @@ def parse_line(line):
         reset_to_idle()
         return
 
+    if "Waiting for background task" in line:
+        if glow_timer: root.after_cancel(glow_timer)
+        ai_state = "BGTASK"
+        return
+
     if "STATUS: RUNNING" in line:
         if glow_timer: root.after_cancel(glow_timer)
         ai_state = "RUNNING"
@@ -2244,6 +2339,10 @@ def parse_line(line):
             ai_state = "SEARCH"
         elif "desktop_automation" in tool or "desktop" in tool:
             ai_state = "DESKTOP"
+        elif "check_bg_task" in tool or "bg_task" in tool:
+            ai_state = "BGTASK"
+        elif "mcp_" in tool or "github" in tool or "youtube" in tool:
+            ai_state = "MCP"
         elif "run_terminal" in tool or "terminal" in tool:
             ai_state = "BASH"
         elif "read_file" in tool or "write_file" in tool or "file" in tool:

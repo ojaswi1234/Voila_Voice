@@ -270,6 +270,8 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   }
   String _backendStatus = 'Checking...';
   Timer? _healthCheckTimer;
+  Timer? _bgTaskTimer;
+  List<dynamic> _bgTasks = [];
   int _reconnectAttempts = 0;
   Map<String, dynamic> _devices = {};
   String? _currentDeviceId;
@@ -622,6 +624,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     _initializeDeviceIdentity();
     _connectToBackend();
     _startHealthChecks();
+    _startBgTaskChecks();
     // BUG-18 fix: _initializeSpeech() removed â€” called once from initState()
 
     Future.delayed(const Duration(seconds: 1), _getDevices);
@@ -1316,6 +1319,35 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     }
   }
 
+  void _startBgTaskChecks() {
+    _bgTaskTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+      _checkBgTasks();
+    });
+    _checkBgTasks();
+  }
+
+  Future<void> _checkBgTasks() async {
+    try {
+      if (_activeDevice.isEmpty) return; // need a device to route to
+      String httpUrl = backendUrl;
+      httpUrl = httpUrl.replaceAll('ws://', 'http://');
+      httpUrl = httpUrl.replaceAll('wss://', 'https://');
+      httpUrl = httpUrl.replaceAll('/ws', '/proxy/$_activeDevice/bg-tasks'); // the backend proxy route
+      
+      final response = await http.get(Uri.parse(httpUrl)).timeout(const Duration(seconds: 5));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (mounted) {
+          setState(() {
+            _bgTasks = data['tasks'] ?? [];
+          });
+        }
+      }
+    } catch (e) {
+      // silent fail
+    }
+  }
+
   void _startHealthChecks() {
     _healthCheckTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       _checkBackendHealth();
@@ -1435,6 +1467,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     _fcmOpenedAppSubscription?.cancel();
     _fcmMessageSubscription?.cancel();  // FCM-02 fix
     _healthCheckTimer?.cancel();
+    _bgTaskTimer?.cancel();
     _channel?.sink.close();
     _controller.dispose();
     _scrollController.dispose();
@@ -2598,6 +2631,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
               
               _buildSubtitleOverlay(colorScheme, true),
               _buildJobStrip(colorScheme),
+              _buildBgTasksOverlay(),
               _buildInputArea(colorScheme),
             ],
           ),
@@ -3319,6 +3353,61 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildBgTasksOverlay() {
+    if (_bgTasks.isEmpty) return const SizedBox.shrink();
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF14B8A6).withOpacity(0.1),
+        border: Border.all(color: const Color(0xFF0F766E), width: 1),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: const [
+              Icon(Icons.memory, color: Color(0xFF14B8A6), size: 16),
+              SizedBox(width: 8),
+              Text('Active Background Tasks', style: TextStyle(color: Color(0xFF14B8A6), fontWeight: FontWeight.bold, fontSize: 12)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ..._bgTasks.map((task) {
+            final isDone = task['status'] == 'completed';
+            final isFail = task['status'] == 'failed';
+            final c = isDone ? Colors.green : (isFail ? Colors.red : const Color(0xFF14B8A6));
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 12,
+                    height: 12,
+                    child: isDone ? const Icon(Icons.check, size: 12, color: Colors.green) : 
+                           (isFail ? const Icon(Icons.close, size: 12, color: Colors.red) : 
+                            const CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF14B8A6))),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '[${task['duration']}] ${task['command']}',
+                      style: TextStyle(color: c, fontSize: 11, fontFamily: 'monospace'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
+        ],
       ),
     );
   }
