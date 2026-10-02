@@ -844,7 +844,7 @@ func addOllamaTokens(in, out int64) {
 }
 
 type model struct {
-	state          string // "setup", "connected", "menu", "loading", "security_phrase_input"
+	state          string // "setup", "connected", "menu", "loading", "security_phrase_input", "mcp_tools"
 	connectionData ConnectionData
 	inputStep      int // 0: backend, 1: device name, 2: security phrase
 	currentInput   string
@@ -854,6 +854,12 @@ type model struct {
 	isRunning      bool
 	serverRunning  bool
 	isLoading      bool
+	// MCP / Connectors / Tools page state
+	mcpTab          int    // 0=Servers 1=Connectors 2=Tools
+	mcpSubState     string // "" | "add_server" | "edit_server" | "connect_connector" | "add_tool"
+	mcpSelectedItem int
+	mcpEditBuffer   map[string]string // field -> value for inline forms
+	mcpEditField    int               // which form field is active
 }
 
 // Messages
@@ -894,6 +900,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			} else if m.state == "system_logs" {
 				m.state = "menu"
+			} else if m.state == "mcp_tools" {
+				if m.mcpSubState != "" {
+					m.mcpSubState = ""
+					m.mcpEditBuffer = nil
+					m.mcpEditField = 0
+					m.currentInput = ""
+				} else {
+					m.state = "menu"
+				}
 			} else if m.state == "security_phrase_input" || m.state == "ngrok_token_input" {
 				m.state = "menu"
 				m.currentInput = ""
@@ -904,28 +919,64 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyUp:
 			if m.state == "menu" {
 				// Calculate menu size based on connection state
-				menuSize := 8
+				menuSize := 9
 				if !m.connectionData.Connected {
 					menuSize = 3
 				}
 				m.selectedOption = (m.selectedOption - 1 + menuSize) % menuSize
+			} else if m.state == "mcp_tools" && m.mcpSubState == "" {
+				catalog, _ := loadCatalog()
+				mcpCfg, _ := mcp.LoadConfig(mcpServersPath())
+				sizes := []int{len(mcpCfg.Servers), len(catalog), 0}
+				sz := sizes[m.mcpTab]
+				if sz > 0 {
+					m.mcpSelectedItem = (m.mcpSelectedItem - 1 + sz) % sz
+				}
+			} else if m.state == "mcp_tools" && m.mcpSubState != "" {
+				numFields := mcpFormFieldCount(m.mcpSubState)
+				if numFields > 0 {
+					m.mcpEditField = (m.mcpEditField - 1 + numFields) % numFields
+					m.currentInput = mcpGetField(m.mcpEditBuffer, m.mcpSubState, m.mcpEditField)
+				}
 			}
 		case tea.KeyDown:
 			if m.state == "menu" {
 				// Calculate menu size based on connection state
-				menuSize := 8
+				menuSize := 9
 				if !m.connectionData.Connected {
 					menuSize = 3
 				}
 				m.selectedOption = (m.selectedOption + 1) % menuSize
+			} else if m.state == "mcp_tools" && m.mcpSubState == "" {
+				catalog, _ := loadCatalog()
+				mcpCfg, _ := mcp.LoadConfig(mcpServersPath())
+				sizes := []int{len(mcpCfg.Servers), len(catalog), 0}
+				sz := sizes[m.mcpTab]
+				if sz > 0 {
+					m.mcpSelectedItem = (m.mcpSelectedItem + 1) % sz
+				}
+			} else if m.state == "mcp_tools" && m.mcpSubState != "" {
+				numFields := mcpFormFieldCount(m.mcpSubState)
+				if numFields > 0 {
+					m.mcpEditField = (m.mcpEditField + 1) % numFields
+					m.currentInput = mcpGetField(m.mcpEditBuffer, m.mcpSubState, m.mcpEditField)
+				}
+			}
+		case tea.KeyTab:
+			if m.state == "mcp_tools" && m.mcpSubState == "" {
+				m.mcpTab = (m.mcpTab + 1) % 3
+				m.mcpSelectedItem = 0
 			}
 		case tea.KeyBackspace:
-			if len(m.currentInput) > 0 && (m.state == "setup" || m.state == "security_phrase_input" || m.state == "circuit_reset_input" || m.state == "ngrok_token_input") {
+			if len(m.currentInput) > 0 && (m.state == "setup" || m.state == "security_phrase_input" || m.state == "circuit_reset_input" || m.state == "ngrok_token_input" || m.state == "mcp_tools") {
 				m.currentInput = m.currentInput[:len(m.currentInput)-1]
+				if m.state == "mcp_tools" && m.mcpSubState != "" {
+					mcpSetField(m.mcpEditBuffer, m.mcpSubState, m.mcpEditField, m.currentInput)
+				}
 			}
 		case tea.KeyCtrlV:
 			// Handle clipboard paste
-			if m.state == "setup" || m.state == "security_phrase_input" || m.state == "circuit_reset_input" || m.state == "ngrok_token_input" {
+			if m.state == "setup" || m.state == "security_phrase_input" || m.state == "circuit_reset_input" || m.state == "ngrok_token_input" || m.state == "mcp_tools" {
 				// Try to get clipboard content
 				cmd := exec.Command("powershell", "-Command", "Get-Clipboard")
 				if runtime.GOOS == "windows" {
@@ -935,11 +986,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if err == nil {
 					pastedText := strings.TrimSpace(string(output))
 					m.currentInput += pastedText
+					if m.state == "mcp_tools" && m.mcpSubState != "" {
+						mcpSetField(m.mcpEditBuffer, m.mcpSubState, m.mcpEditField, m.currentInput)
+					}
 				}
 			}
 		default:
 			if (m.state == "setup" || m.state == "security_phrase_input" || m.state == "circuit_reset_input" || m.state == "ngrok_token_input") && len(msg.String()) >= 1 {
 				m.currentInput += msg.String()
+			} else if m.state == "mcp_tools" && m.mcpSubState != "" && len(msg.String()) == 1 {
+				m.currentInput += msg.String()
+				mcpSetField(m.mcpEditBuffer, m.mcpSubState, m.mcpEditField, m.currentInput)
+			} else if m.state == "mcp_tools" && m.mcpSubState == "" && len(msg.String()) == 1 {
+				newM, cmd := m.handleMCPShortcut(msg.String())
+				return newM, cmd
 			}
 		}
 	case connectionResultMsg:
@@ -1092,27 +1152,39 @@ func (m model) handleEnter() (model, tea.Cmd) {
 			m.currentInput = ""
 			m.messages = []string{}
 			return m, nil
-		case 4: // Clear Backend Data
+		case 4: // MCP Servers & Connectors
+			m.state = "mcp_tools"
+			m.mcpTab = 0
+			m.mcpSelectedItem = 0
+			m.mcpSubState = ""
+			m.mcpEditBuffer = make(map[string]string)
+			m.messages = []string{}
+			return m, nil
+		case 5: // Clear Backend Data
 			m.state = "security_phrase_input"
 			m.currentInput = ""
 			m.messages = []string{warningStyle.Render("Enter security phrase to clear backend data:")}
 			return m, nil
-		case 5: // Reset Circuit Breaker
+		case 6: // Reset Circuit Breaker
 			m.state = "circuit_reset_input"
 			m.currentInput = ""
 			m.messages = []string{warningStyle.Render("Enter security phrase to reset circuit breaker:")}
 			return m, nil
-		case 6: // Clear Local Data
+		case 7: // Clear Local Data
 			return m, m.clearLocalData()
-				case 7: // View System Logs
+		case 8: // View System Logs
 			m.state = "system_logs"
 			return m, nil
-case 8: // Exit
+		case 9: // Exit
 			if m.serverRunning {
 				return m, m.stopServer()
 			}
 			return m, tea.Quit
 		}
+	} else if m.state == "mcp_tools" {
+		newM, cmd := m.handleMCPEnter()
+		newModel := newM.(model)
+		return newModel, cmd
 	}
 	return m, nil
 }
@@ -1302,6 +1374,8 @@ func (m model) View() string {
 		content = m.menuView()
 	case "system_logs":
 		content = m.systemLogsView()
+	case "mcp_tools":
+		content = m.mcpToolsView()
 	case "ngrok_token_input":
 		content = m.ngrokTokenInputView()
 	case "security_phrase_input":
@@ -1422,6 +1496,7 @@ func (m model) menuView() string {
 			"🗑️  Delete Connection",
 			"🌐 Start Ngrok",
 			"🔑 Configure Ngrok Token",
+			"🔌 MCP Servers & Connectors",
 			"🔥 Clear Backend Data",
 			"⚡ Reset Circuit Breaker",
 			"🧹 Clear Local Data",
@@ -1435,6 +1510,7 @@ func (m model) menuView() string {
 				"🗑️  Delete Connection",
 				"🌐 Start Ngrok",
 				"🔑 Configure Ngrok Token",
+				"🔌 MCP Servers & Connectors",
 				"🔥 Clear Backend Data",
 				"⚡ Reset Circuit Breaker",
 				"🧹 Clear Local Data",
