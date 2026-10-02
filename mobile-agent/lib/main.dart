@@ -2268,25 +2268,30 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     final colorScheme = theme.colorScheme;
     
     return Scaffold(
-      drawer: _buildDrawer(),
+      // BUG FIX A: In overlay mode the Drawer wraps the entire screen in an
+      // invisible GestureDetector (to detect swipe-open gestures). This full-screen
+      // touch absorber intercepts ALL taps, making every button unclickable.
+      // Solution: disable the drawer completely when in assistant overlay mode.
+      drawer: _isAssistant ? null : _buildDrawer(),
       backgroundColor: _isAssistant ? Colors.transparent : const Color(0xFF0F0F12),
       body: _isAssistant
-        // BUGFIX: LayoutBuilder gives bounded constraints to the Column+Stack tree.
-        // SingleChildScrollView allows content to scroll if it overflows the screen
-        // (removing NeverScrollableScrollPhysics which was hiding overflow content).
-        ? LayoutBuilder(
-            builder: (context, constraints) => Align(
-              alignment: Alignment.bottomCenter,
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxHeight: constraints.maxHeight,
-                  maxWidth: constraints.maxWidth,
-                ),
-                child: SingleChildScrollView(
-                  child: _buildMainContent(colorScheme),
-                ),
+        // BUG FIX B+C: The previous LayoutBuilder+SingleChildScrollView placed
+        // content at the TOP of a full-screen scroll area, but rendered it visually
+        // at the bottom — hit-test coordinates were completely mismatched so
+        // all button taps missed their targets.
+        //
+        // Fix: Stack + Positioned(bottom:0) correctly anchors BOTH the visual
+        // rendering AND the hit-test region to the bottom of the screen.
+        // No scroll view needed — overlay content is always compact.
+        ? Stack(
+            children: [
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: _buildMainContent(colorScheme),
               ),
-            ),
+            ],
           )
         : SafeArea(
             child: Container(

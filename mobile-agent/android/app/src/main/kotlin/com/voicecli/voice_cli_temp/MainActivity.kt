@@ -12,13 +12,10 @@ class MainActivity : FlutterActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         setTheme(R.style.NormalTheme)
         EngineManager.getOrCreate(this)
-        
-        // BUGFIX (Scenario 5): Pass null to prevent Android from restoring stale Fragment
-        // state onto the fresh cached FlutterEngine if the process was killed.
-        super.onCreate(null)
-        
-        // BUGFIX (Scenario 2): configureFlutterEngine is skipped when using a cached engine.
-        // We must initialize our MethodChannel here after super.onCreate(null).
+        super.onCreate(savedInstanceState)
+
+        // configureFlutterEngine() is skipped when using a cached engine.
+        // Initialize the MethodChannel here after super.onCreate() instead.
         flutterEngine?.let { engine ->
             channel = MethodChannel(engine.dartExecutor.binaryMessenger, CHANNEL)
         }
@@ -32,6 +29,8 @@ class MainActivity : FlutterActivity() {
 
     override fun onResume() {
         super.onResume()
+        // Re-register handler every resume to reclaim ownership from AssistantActivity
+        // which may have overwritten the shared-engine handler while overlay was open.
         registerMainChannel()
     }
 
