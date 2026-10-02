@@ -2079,7 +2079,7 @@ def animation_loop():
                 canvas.itemconfig(status_text, text=display, fill=target_color)
 
     elif dashboard_active and anim_frame % 50 == 0:
-        if current_section != 'Settings':
+        if current_section not in ('Settings', 'MCP/Tools', 'Documents'):
             refresh_dashboard_content()
 
     root.after(20, animation_loop)
@@ -2146,12 +2146,12 @@ def parse_line(line):
     if "STATUS: BACKEND:ONLINE" in line:
         if backend_status != "Active":
             backend_status = "Active"
-            if dashboard_active and current_section != 'Settings': refresh_dashboard_content()
+            if dashboard_active and current_section not in ('Settings', 'MCP/Tools', 'Documents'): refresh_dashboard_content()
         return
     if "STATUS: BACKEND:OFFLINE" in line:
         if backend_status != "Offline":
             backend_status = "Offline"
-            if dashboard_active and current_section != 'Settings': refresh_dashboard_content()
+            if dashboard_active and current_section not in ('Settings', 'MCP/Tools', 'Documents'): refresh_dashboard_content()
         return
     
     if "STATUS: MOBILE_CLIENTS:" in line:
@@ -2159,7 +2159,7 @@ def parse_line(line):
         try:
             mobile_clients = int(count_str)
             update_expression()
-            if dashboard_active and current_section != 'Settings':
+            if dashboard_active and current_section not in ('Settings', 'MCP/Tools', 'Documents'):
                 refresh_dashboard_content()
         except: pass
         return
