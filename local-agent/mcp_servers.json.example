@@ -1,0 +1,1 @@
+{"servers": [{"id": "filesystem", "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "."], "env": {}, "enabled": false, "tool_timeout": 30, "allowed_paths": ["C:/Users"]}]}

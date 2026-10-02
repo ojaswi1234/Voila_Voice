@@ -1,0 +1,7 @@
+[
+  {"id": "github", "name": "GitHub", "description": "GitHub integration", "auth_type": "token", "free": true, "mcp_command": "github_mcp", "mcp_args": []},
+  {"id": "filesystem_project", "name": "FileSystem Project", "description": "Local filesystem", "auth_type": "none", "free": true, "mcp_command": "fs_mcp", "mcp_args": []},
+  {"id": "gmail", "name": "Gmail", "description": "Gmail integration", "auth_type": "oauth2", "free": true, "mcp_command": "gmail_mcp", "mcp_args": []},
+  {"id": "youtube", "name": "YouTube", "description": "YouTube integration", "auth_type": "oauth2", "free": true, "mcp_command": "youtube_mcp", "mcp_args": []},
+  {"id": "canvas_lms", "name": "Canvas LMS", "description": "Canvas LMS integration", "auth_type": "token", "free": true, "mcp_command": "canvas_mcp", "mcp_args": []}
+]

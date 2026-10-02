@@ -47,6 +47,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"voila/mcp"
 )
 
 // --- ZERO ORPHAN PROCESS MANAGEMENT ---
@@ -4717,6 +4718,10 @@ case "browser_automation":
 		return result
 
 	default:
+		// Route MCP tool calls, marketplace tools, connector tools, and MCP meta tools
+		if result, handled := dispatchMCPAndExtras(ctx, toolName, argsJSON, streamFileObj); handled {
+			return result
+		}
 		return "error: unknown tool: " + toolName
 	}
 }
@@ -4953,7 +4958,7 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 			"temperature":         0.7,
 			"max_tokens":          8192,
 			"stream":              false,
-			"tools":               availableTools,
+			"tools":               toolListForSession(),
 			"parallel_tool_calls": false, // Disable AI blindly firing multiple tools at once
 		}
 
@@ -5361,7 +5366,7 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 			"model":    modelName,
 			"messages": messages,
 			"stream":   false,
-			"tools":    availableTools,
+			"tools":    toolListForSession(),
 		}
 
 		body, err := json.Marshal(payload)
@@ -6121,6 +6126,11 @@ func main() {
 	go startScheduleTicker(context.Background())
 	// Load circuit state on startup
 	loadCircuitState()
+
+	// Initialize MCP Host — starts all enabled MCP servers from mcp_servers.json
+	// Must run before any LLM requests so toolListForSession() includes MCP tools.
+	initMCPHost()
+	defer mcp.GlobalHost.StopAll()
 
 	// Check for background mode flag
 	backgroundMode := false
