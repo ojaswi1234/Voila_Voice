@@ -1,43 +1,51 @@
-# Voila Voice - MCP, Skills & Connectors
+# Voila Voice - MCP, Skills, and Connectors
 
-This guide explains how to use the new extensible tool layers in Voila Voice.
+## 1. Model Context Protocol (MCP) Host
+Voila Voice acts as an MCP Host, allowing it to connect to any standard JSON-RPC stdio MCP server.
 
-## 1. Model Context Protocol (MCP)
+### Configuration (`mcp_servers.json`)
+Servers are configured via `mcp_servers.json` or by using the `mcp_add_server` tool.
+*   **Security (Allowlist):** For filesystem-based servers (like `@modelcontextprotocol/server-filesystem`), you **must** configure `allowed_paths`. The host will reject path arguments outside these directories.
+*   **Truncation:** Tool outputs are capped at 64KB.
 
-The MCP layer allows Voila to interact with external systems using standard JSON-RPC servers. 
+### Available Meta Tools
+*   `mcp_list_servers` / `mcp_list_tools`
+*   `mcp_add_server` / `mcp_remove_server`
+*   `mcp_enable_server` / `mcp_disable_server`
+*   `mcp_reload`
 
-### Adding an MCP Server
-You can register an MCP server in `mcp_servers.json` or by using the agent's `mcp_add_server` tool.
-The format of the JSON is:
-`+` `"id"`: Unique server name (e.g. `github`, `fs`).
-`+` `"command"`: The binary to run (e.g. `npx`, `python`).
-`+` `"args"`: Array of arguments (e.g. `["-y", "@modelcontextprotocol/server-github"]`).
-`+` `"enabled"`: Boolean.
+**Note on Graphify:** While a Graphify DAG is running, configuration mutation tools (add/remove/enable server, install skills) are blocked to prevent nodes from fighting over global state. The MCP host is a process-global singleton.
 
-When a server is enabled, its tools are exposed to the LLM with the namespace `mcp__<id>__<toolname>`.
-
-### Listing Tools
-Use the `mcp_list_tools` tool to list all dynamically loaded MCP tools, or ask the agent what tools are available.
+---
 
 ## 2. Connectors
+Connectors provide a fast, seamless way to add powerful MCP servers without manual JSON configuration. 
+Tools: `connectors_list`, `connectors_connect`, `connectors_status`, `connectors_disconnect`
 
-Connectors are pre-configured services (like Gmail, GitHub, Canvas) in `connectors/catalog.json`.
+Available Free Open-Source Connectors:
+1.  **filesystem_project**: Local filesystem access (Requires `npx`). Must specify `allowed_paths`.
+2.  **github**: GitHub integration via `@modelcontextprotocol/server-github` (Requires `npx` and a GitHub PAT).
+3.  **gmail**: Local-first Gmail integration via `@mcp-z/mcp-gmail` (Requires `npx` and Google Cloud OAuth).
+4.  **youtube**: YouTube transcript retrieval via `@umbertotancorre/youtube-mcp` (Requires `npx`).
+5.  **canvas_lms**: Canvas LMS integration via `@r-huijts/canvas-mcp` (Requires `npx` and Canvas Token).
 
-### How to use:
-1. Call `connectors_list` to see available connectors.
-2. Call `connectors_connect(id, token)` to securely authenticate. The token will be securely passed via env vars and never logged.
-3. The connector will automatically enable its corresponding MCP server.
+**Security:** Connectors securely map tokens to the required environment variables (e.g., `GITHUB_PERSONAL_ACCESS_TOKEN`). Tokens are never written to the debug logs or audit logs.
+
+---
 
 ## 3. Skills Marketplace
+The marketplace allows the agent to search GitHub for pre-vetted agent workflows (`SKILL.md` files) and install them locally.
 
-Skills are natural language agent instructions (`SKILL.md`) that guide the agent.
+Tools: `skills_market_search`, `skills_market_info`, `skills_market_install`, `skills_market_uninstall`, `skills_market_list_installed`
 
-1. **Search**: Use `skills_market_search(query)` to find skills from GitHub repositories.
-2. **Install**: Use `skills_market_install(id, source)` to download a skill. It saves into `skills/installed/<id>/SKILL.md`.
-3. **List**: Use `skills_market_list_installed()` to see what's loaded.
+*   **Quarantine:** Skills are installed to `skills/installed/<id>/SKILL.md`. Path traversal is strictly blocked.
+*   **Safety:** `skills_market_install` only downloads the markdown file. It never executes arbitrary `install.sh` scripts.
+*   **Validation:** A downloaded skill must contain a valid `# ` markdown header to be accepted.
 
-## 4. Agent Guidance: OS Tools vs MCP vs Connectors
+---
 
-- **OS Tools**: Use for native filesystem, terminal execution, and local Python scripts (fastest, most permissive).
-- **MCP**: Use for structured APIs where safety, tool schema enforcement, or community-built adapters (e.g. SQL, complex IDE extensions) are needed.
-- **Connectors**: Use exclusively for third-party cloud integrations (Gmail, GitHub) to manage authentication securely.
+## 4. Agent Guidance
+*   **Browser / Desktop OS interaction:** The native `browser_automation`, `desktop_automation`, and `run_terminal` tools are deeply integrated and remain the preferred method for OS control. Do not try to rebuild them with MCP.
+*   **External APIs / Third-Party Platforms:** Use Connectors or MCP servers to talk directly to external APIs like GitHub, Gmail, or Slack.
+*   **Policy Hook:** Destructive commands (e.g., tools with `delete`, `drop`, `remove` in their name) executed via MCP will trigger the existing `requireSecurityApproval` UI hook for user confirmation.
+*   **Audit Logging:** All MCP tool calls, skill installations, and connector auth events are logged to `security_audit.jsonl`.

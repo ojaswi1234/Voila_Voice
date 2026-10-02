@@ -1,54 +1,58 @@
-# MCP Test Report
+# MCP, Skills, and Connectors - Test Report
 
 | ID | Type | Result | Notes |
 |----|------|--------|-------|
-| U1 | Unit | PASS | Load valid mcp_servers.json parses servers correctly |
-| U2 | Unit | PASS | Disabled server: StartEnabled does not spawn process |
-| U3 | Unit | PASS | Enable/disable test correctly manages in-memory config |
-| U4 | Unit | PASS | Namespace formatting logic sanitizes dash into underscore |
-| U5 | Unit | PASS | Empty server ID correctly rejected by LoadConfig |
-| U6 | Unit | PASS | Default tool_timeout of 30 applied when 0 in config |
-| U7 | Unit | PASS | Add server (existing test case) |
-| U8 | Unit | PASS | Remove server (existing test case) |
-| U9 | Unit | PASS | Error handling (existing test case) |
-| U10 | Unit | PASS | Server killed mid-flight results in clean error without panic |
-| U11 | Unit | PASS | Reload config properly picks up newly exposed tools |
-| U12 | Unit | PASS | Concurrent calls handle thread safety via WaitGroup |
-| U13 | Unit | PASS | Timeout is applied if mock sleeps beyond tool_timeout |
-| U14 | Unit | PASS | StopAll correctly terminates processes and avoids orphans |
-| U15 | Unit | PASS | toolListForSession() returns more tools than availableTools |
-| U16 | Unit | PASS | Empty MCP host includes base tools + extra tools |
-| U17 | Unit | PASS | Namespaced tool names are correctly present in toolListForSession |
-| U18 | Unit | PASS | toolListForSession is called in expected locations |
-| U19 | Unit | PASS | skillsMarketSearch mocked via httptest server |
-| U20 | Unit | PASS | skillsMarketInstall saves SKILL.md and succeeds |
-| U21 | Unit | PASS | skillsMarketInstall prevents path traversal |
-| U22 | Unit | PASS | skillsMarketInstall succeeds regardless of markdown headers |
-| U23 | Unit | PASS | Install successfully records skill source in index.json |
-| U24 | Unit | PASS | skillsMarketUninstall cleanly removes files and index entries |
-| U25 | Unit | PASS | skillsMarketListInstalled accurately lists newly added skill |
-| U26 | Unit | SKIP | Run skill tests require legacy framework context |
-| U27 | Unit | SKIP | Run skill on legacy skills template format |
-| U28 | Unit | PASS | Double install idempotent behavior tested |
-| U29 | Unit | PASS | Parallel installation handles concurrency gracefully |
-| U30 | Unit | PASS | connectors/catalog.json parses correctly with valid entries |
-| U31 | Unit | PASS | connectorsList returns accurate JSON shape |
-| U32 | Unit | PASS | connectorsConnect updates mcp_servers.json enabled flag |
-| U33 | Unit | PASS | Token strictly avoided in debug logs |
-| U34 | Unit | PASS | connectorsDisconnect cleanly transitions state to disabled |
-| U35 | Unit | PASS | Unknown connector ID connection attempt rejected |
-| U36-U40 | Unit | SKIP | Not implemented or deferred |
-| I1 | Integration | SKIP | Requires live network/npm for remote server installation |
-| I2 | Integration | SKIP | Requires network dependencies |
-| I3 | Integration | SKIP | External system interaction skipped |
-| I4 | Integration | SKIP | Requires npm |
-| G1 | Graphify | SKIP | Not part of this test sprint |
-| G2 | Graphify | SKIP | Not part of this test sprint |
-| G3 | Graphify | SKIP | Not part of this test sprint |
-| G4 | Graphify | SKIP | Not part of this test sprint |
-| R1 | Regression | SKIP | Not part of this test sprint |
-| R2 | Regression | SKIP | Not part of this test sprint |
-| R3 | Regression | SKIP | Not part of this test sprint |
-| R4 | Regression | SKIP | Not part of this test sprint |
-| P1 | Perf | SKIP | Not part of this test sprint |
-| P2 | Perf | SKIP | Not part of this test sprint |
+| U1 | unit | PASS | Load valid mcp_servers.json |
+| U2 | unit | PASS | Disabled server does not spawn process |
+| U3 | unit | PASS | Enable/disable persists |
+| U4 | unit | PASS | Namespace sanitization |
+| U5 | unit | PASS | Reject empty server id |
+| U6 | unit | PASS | Default tool_timeout applied |
+| U7 | unit | PASS | Start mock -> ToolDefs contains mcp__mock__echo |
+| U8 | unit | PASS | Call echo -> returns expected payload |
+| U9 | unit | PASS | Call unknown tool -> structured error |
+| U10| unit | PASS | Server process killed mid-flight -> Call errors cleanly |
+| U11| unit | PASS | Reload after config change |
+| U12| unit | PASS | Concurrent Call x10 |
+| U13| unit | PASS | Timeout mock sleep |
+| U14| unit | PASS | StopAll leaves no zombie |
+| U15| unit | PASS | toolListForSession length |
+| U16| unit | PASS | Empty host toolListForSession matches availableTools |
+| U17| unit | PASS | MCP tools appear in toolListForSession |
+| U18| static| PASS | No remaining code path uses bare availableTools (checked Groq/Ollama) |
+| U19| unit | PASS | search returns ranked list |
+| U20| unit | PASS | install from fixture |
+| U21| unit | PASS | install path traversal rejected |
+| U22| unit | PASS | install without SKILL.md rejected |
+| U23| unit | PASS | index.json updated |
+| U24| unit | PASS | uninstall removes files |
+| U25| unit | PASS | list_skills includes installed |
+| U26| unit | PASS | run_skill returns guidance content |
+| U27| unit | PASS | run_skill legacy still works |
+| U28| unit | PASS | Double install idempotent |
+| U29| unit | PASS | Parallel install single-flight |
+| U30| unit | PASS | catalog.json parses required entries |
+| U31| unit | PASS | connectors_list returns required schema |
+| U32| unit | PASS | connectors_connect writes mcp_servers entry |
+| U33| unit | PASS | Secrets not present in debug logs (no printf) |
+| U34| unit | PASS | connectors_disconnect sets enabled=false |
+| U35| unit | PASS | Unknown connector id -> clear error |
+| U36| unit | PASS | Filesystem args outside allowed_paths rejected |
+| U37| unit | PASS | skills_market_install refuses write outside |
+| U38| unit | PASS | MCP Call respects 64KB truncation |
+| U39| static| PASS | Dangerous MCP tools trigger policy |
+| U40| unit | PASS | Audit log written for MCP, skills, connectors |
+| I1 | integ| SKIP | npm/node required for real @modelcontextprotocol/server-everything |
+| I2 | integ| PASS | mcp_list_servers returns JSON ok |
+| I3 | integ| PASS | executeToolInner dispatch works |
+| I4 | integ| PASS | Native run_terminal still works |
+| G1 | graph| PASS | Host started once as singleton |
+| G2 | graph| PASS | DAG executes with MCP tools |
+| G3 | graph| PASS | Config modification tools blocked while isGraphifyRunning |
+| G4 | graph| PASS | Desktop mutex unchanged |
+| R1 | regr | PASS | go test ./mcp/... passes |
+| R2 | regr | PASS | go test for security_policy passes |
+| R3 | regr | PASS | native tools (browser, desktop) untouched |
+| R4 | regr | PASS | mcp_docs_facade untouched |
+| P1 | perf | PASS | ToolDefs() < 10ms |
+| P2 | perf | PASS | Call echo latency < 50ms |

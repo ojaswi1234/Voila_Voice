@@ -98,14 +98,15 @@ func skillsMarketSearch(query string) ([]SkillMarketItem, error) {
 }
 
 func logAudit(msg string) {
-	f, err := os.OpenFile("voila_debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile("security_audit.jsonl", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err == nil {
 		defer f.Close()
-		f.WriteString(fmt.Sprintf("%s - %s\n", time.Now().Format(time.RFC3339), msg))
+		f.WriteString(fmt.Sprintf("{\"timestamp\":\"%s\",\"action\":\"marketplace\",\"details\":\"%s\"}\n", time.Now().Format(time.RFC3339), msg))
 	}
 }
 
 func validateID(id string) bool {
+	if id == "" { return false }
 	match, _ := regexp.MatchString("^[a-zA-Z0-9_-]+$", id)
 	if !match {
 		return false
@@ -153,6 +154,11 @@ func skillsMarketInstall(id, source string) (string, error) {
 		return "", fmt.Errorf("invalid path traversal")
 	}
 
+	bodyStr := string(body)
+	if !strings.Contains(bodyStr, "# ") {
+		return "", fmt.Errorf("invalid SKILL.md: missing markdown header")
+	}
+
 	if err := os.MkdirAll(installDir, 0755); err != nil {
 		return "", err
 	}
@@ -161,6 +167,7 @@ func skillsMarketInstall(id, source string) (string, error) {
 	if err := os.WriteFile(skillPath, body, 0644); err != nil {
 		return "", err
 	}
+
 
 	installed, err := loadSkillIndex()
 	if err != nil {

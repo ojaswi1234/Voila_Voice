@@ -9,8 +9,10 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"os/exec"
 	"sync"
+	"strings"
 	"time"
 )
 
@@ -84,6 +86,14 @@ func (h *Host) StartEnabled(cfg *Config) error {
 		if _, exists := h.servers[scfg.ID]; exists {
 			continue
 		}
+
+		if strings.Contains(strings.ToLower(scfg.Command), "filesystem") || strings.Contains(strings.Join(scfg.Args, " "), "server-filesystem") {
+			if len(scfg.AllowedPaths) == 0 {
+				log.Printf("MCP Server %s (filesystem) refused to start: no allowed_paths configured (fail closed)", scfg.ID)
+				continue
+			}
+		}
+
 		srv := &mcpServerProcess{
 			config:  scfg,
 			pending: make(map[int]chan JSONRPCResponse),
@@ -384,6 +394,33 @@ func (p *mcpServerProcess) callTool(ctx context.Context, namespacedName string, 
 	if len(args) > 0 {
 		if err := json.Unmarshal(args, &argsMap); err != nil {
 			return "", err
+		}
+	}
+
+	
+	// Policy Hook / Path Allowlist Enforcement
+	if len(p.config.AllowedPaths) > 0 {
+		// Basic heuristic: check all string values in arguments for path traversal outside allowed
+		for _, v := range argsMap {
+			if strVal, ok := v.(string); ok {
+				// If it looks like a path (contains / or \)
+				if strings.Contains(strVal, "/") || strings.Contains(strVal, "\\") {
+					absPath, err := filepath.Abs(strVal)
+					if err == nil {
+						allowed := false
+						for _, ap := range p.config.AllowedPaths {
+							absAllowed, _ := filepath.Abs(ap)
+							if strings.HasPrefix(absPath, absAllowed) {
+								allowed = true
+								break
+							}
+						}
+						if !allowed && filepath.IsAbs(strVal) {
+							return "", fmt.Errorf("security policy: path %s is outside allowed_paths", strVal)
+						}
+					}
+				}
+			}
 		}
 	}
 

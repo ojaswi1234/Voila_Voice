@@ -115,8 +115,8 @@ func TestSkillsMarket_U22_NoHeader(t *testing.T) {
 	defer ts.Close()
 	
 	_, err := skillsMarketInstall("no-header", ts.URL)
-	if err != nil {
-		t.Errorf("U22: Expected success, got error %v", err)
+	if err == nil {
+		t.Errorf("U22: Expected failure due to missing markdown header, got success")
 	}
 }
 

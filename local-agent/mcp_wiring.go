@@ -9,8 +9,8 @@ package main
 // Key design decisions:
 //  1. toolListForSession() merges availableTools + MCP tool defs. Both Groq and
 //     Ollama request builders should call this instead of using availableTools directly.
-//     Until main.go is updated to call toolListForSession(), the MCP tools are still
-//     routed correctly via executeToolInner (the MCP host is still started on boot).
+//     main.go has been updated to call toolListForSession(). The MCP tools are
+//     routed correctly via executeToolInner and the MCP host is started on boot.
 //  2. All new tools (mcp_*, skills_market_*, connectors_*) are added to
 //     extraTools and returned from toolListForSession().
 //  3. executeToolInner is extended via dispatchMCPAndExtras() which handles all
@@ -24,6 +24,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"voila/mcp"
 )
@@ -221,6 +222,21 @@ func emptyParams() map[string]interface{} {
 // mcpServersPath — path to mcp_servers.json
 // ---------------------------------------------------------------------------
 
+
+func appendSecurityAudit(action, details string) {
+	f, err := os.OpenFile(filepath.Join(filepath.Dir(mcpServersPath()), "security_audit.jsonl"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err == nil {
+		defer f.Close()
+		entry := map[string]string{
+			"timestamp": time.Now().Format(time.RFC3339),
+			"action":    action,
+			"details":   details,
+		}
+		b, _ := json.Marshal(entry)
+		f.WriteString(string(b) + "\n")
+	}
+}
+
 func mcpServersPath() string {
 	exe, _ := os.Executable()
 	return filepath.Join(filepath.Dir(exe), "mcp_servers.json")
@@ -294,9 +310,25 @@ func dispatchMCPAndExtras(ctx context.Context, toolName string, argsJSON json.Ra
 		return def
 	}
 
+	
 	// --- MCP tool calls (namespaced mcp__<server>__<tool>) ---
 	if strings.HasPrefix(toolName, "mcp__") {
+		// Policy hook for destructive commands
+		if strings.Contains(strings.ToLower(toolName), "delete") || strings.Contains(strings.ToLower(toolName), "drop") || strings.Contains(strings.ToLower(toolName), "remove") {
+			decision := PolicyDecision{
+				Level:      PolicyApprove,
+				RiskLevel:  "high",
+				ActionType: "mcp_call",
+				Summary:    "Destructive MCP tool call",
+			}
+			if !requireSecurityApproval(decision, string(argsJSON), toolName, "", toolName) {
+				return "error: execution denied by security policy", true
+			}
+		}
+
+		appendSecurityAudit("mcp_call", fmt.Sprintf("tool: %s, args: %s", toolName, string(argsJSON)))
 		result, err := mcp.GlobalHost.Call(ctx, toolName, argsJSON)
+
 		if err != nil {
 			return fmt.Sprintf("error calling MCP tool %s: %v", toolName, err), true
 		}
@@ -304,6 +336,21 @@ func dispatchMCPAndExtras(ctx context.Context, toolName string, argsJSON json.Ra
 	}
 
 	switch toolName {
+
+	case "run_skill":
+		id := getString("skill_id")
+		
+		// 1. Try marketplace installed skill first
+		skillPath := filepath.Join("skills", "installed", id, "SKILL.md")
+		data, err := os.ReadFile(skillPath)
+		if err == nil {
+			appendSecurityAudit("run_skill", fmt.Sprintf("id: %s (marketplace)", id))
+			return fmt.Sprintf("INSTRUCTIONS FROM SKILL %s:\n\n%s", id, string(data)), true
+		}
+		
+		// 2. If not a marketplace skill, let main.go handle it (returns false)
+		return "", false
+
 
 	// -----------------------------------------------------------------------
 	// MCP meta tools
@@ -335,6 +382,9 @@ func dispatchMCPAndExtras(ctx context.Context, toolName string, argsJSON json.Ra
 			len(mcp.GlobalHost.ListServers()), len(mcp.GlobalHost.ToolDefs())), true
 
 	case "mcp_add_server":
+		if isGraphifyRunning {
+			return "error: cannot modify config while Graphify is running", true
+		}
 		p := mcpServersPath()
 		cfg, err := mcp.LoadConfig(p)
 		if err != nil {
@@ -365,6 +415,9 @@ func dispatchMCPAndExtras(ctx context.Context, toolName string, argsJSON json.Ra
 		return fmt.Sprintf("Added server '%s'", id), true
 
 	case "mcp_remove_server":
+		if isGraphifyRunning {
+			return "error: cannot modify config while Graphify is running", true
+		}
 		p := mcpServersPath()
 		cfg, err := mcp.LoadConfig(p)
 		if err != nil {
@@ -383,6 +436,9 @@ func dispatchMCPAndExtras(ctx context.Context, toolName string, argsJSON json.Ra
 		return fmt.Sprintf("Removed server '%s'", id), true
 
 	case "mcp_enable_server":
+		if isGraphifyRunning {
+			return "error: cannot modify config while Graphify is running", true
+		}
 		p := mcpServersPath()
 		cfg, err := mcp.LoadConfig(p)
 		if err != nil {
@@ -399,6 +455,9 @@ func dispatchMCPAndExtras(ctx context.Context, toolName string, argsJSON json.Ra
 		return fmt.Sprintf("Enabled server '%s'", id), true
 
 	case "mcp_disable_server":
+		if isGraphifyRunning {
+			return "error: cannot modify config while Graphify is running", true
+		}
 		p := mcpServersPath()
 		cfg, err := mcp.LoadConfig(p)
 		if err != nil {
@@ -445,6 +504,9 @@ func dispatchMCPAndExtras(ctx context.Context, toolName string, argsJSON json.Ra
 		return string(data), true
 
 	case "skills_market_install":
+		if isGraphifyRunning {
+			return "error: cannot modify config while Graphify is running", true
+		}
 		id := getString("id")
 		source := getString("source")
 		msg, err := skillsMarketInstall(id, source)
@@ -454,6 +516,9 @@ func dispatchMCPAndExtras(ctx context.Context, toolName string, argsJSON json.Ra
 		return msg, true
 
 	case "skills_market_uninstall":
+		if isGraphifyRunning {
+			return "error: cannot modify config while Graphify is running", true
+		}
 		id := getString("id")
 		err := skillsMarketUninstall(id)
 		if err != nil {
@@ -489,6 +554,9 @@ func dispatchMCPAndExtras(ctx context.Context, toolName string, argsJSON json.Ra
 		return result, true
 
 	case "connectors_connect":
+		if isGraphifyRunning {
+			return "error: cannot modify config while Graphify is running", true
+		}
 		id := getString("id")
 		token := getString("token")
 		result, err := connectorsConnect(id, token)
@@ -498,6 +566,9 @@ func dispatchMCPAndExtras(ctx context.Context, toolName string, argsJSON json.Ra
 		return result, true
 
 	case "connectors_disconnect":
+		if isGraphifyRunning {
+			return "error: cannot modify config while Graphify is running", true
+		}
 		id := getString("id")
 		result, err := connectorsDisconnect(id)
 		if err != nil {

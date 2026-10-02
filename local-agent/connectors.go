@@ -24,6 +24,15 @@ type ConnectorState struct {
 	ConfiguredAt string `json:"configured_at"`
 }
 
+
+func appendConnectorAudit(action, details string) {
+	f, err := os.OpenFile("security_audit.jsonl", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err == nil {
+		defer f.Close()
+		f.WriteString(fmt.Sprintf("{\"timestamp\":\"%s\",\"action\":\"%s\",\"details\":\"%s\"}\n", time.Now().Format(time.RFC3339), action, details))
+	}
+}
+
 func loadCatalog() ([]ConnectorEntry, error) {
 	data, err := os.ReadFile(filepath.Join("connectors", "catalog.json"))
 	if err != nil {
@@ -84,14 +93,25 @@ func connectorsConnect(id, token string) (string, error) {
 		mcpServers = make(map[string]interface{})
 	}
 
+
+	envMap := make(map[string]string)
+	if token != "" {
+		if id == "github" {
+			envMap["GITHUB_PERSONAL_ACCESS_TOKEN"] = token
+		} else if id == "canvas_lms" {
+			envMap["CANVAS_API_TOKEN"] = token
+		} else {
+			envMap["TOKEN"] = token
+		}
+	}
+
 	mcpServers[id] = map[string]interface{}{
 		"command": entry.MCPCommand,
 		"args":    entry.MCPArgs,
-		"env": map[string]string{
-			"TOKEN": token,
-		},
+		"env":     envMap,
 		"enabled": true,
 	}
+
 
 	mData, _ := json.MarshalIndent(mcpServers, "", "  ")
 	os.WriteFile(mcpPath, mData, 0644)
@@ -115,6 +135,7 @@ func connectorsConnect(id, token string) (string, error) {
 	}
 	saveConnectorStates(states)
 
+	appendConnectorAudit("connector_connect", fmt.Sprintf("id: %s", id))
 	return "connected", nil
 }
 
@@ -175,7 +196,8 @@ func connectorsStatus(id string) (string, error) {
 	for _, s := range states {
 		if s.ID == id {
 			if s.Enabled {
-				return "connected", nil
+				appendConnectorAudit("connector_connect", fmt.Sprintf("id: %s", id))
+	return "connected", nil
 			}
 			return "disconnected", nil
 		}

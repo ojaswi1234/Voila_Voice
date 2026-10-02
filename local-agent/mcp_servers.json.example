@@ -1,1 +1,33 @@
-{"servers": [{"id": "filesystem", "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "."], "env": {}, "enabled": false, "tool_timeout": 30, "allowed_paths": ["C:/Users"]}]}
+{
+  "servers": [
+    {
+      "id": "filesystem_project",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "C:/Users"
+      ],
+      "env": {},
+      "enabled": false,
+      "tool_timeout": 30,
+      "allowed_paths": [
+        "C:/Users"
+      ]
+    },
+    {
+      "id": "github",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-github"
+      ],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "<YOUR_TOKEN_HERE>"
+      },
+      "enabled": false,
+      "tool_timeout": 30,
+      "allowed_paths": []
+    }
+  ]
+}
