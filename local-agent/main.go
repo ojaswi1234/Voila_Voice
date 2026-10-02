@@ -3162,7 +3162,7 @@ var availableTools = []toolDef{
 		Type: "function",
 		Function: toolFuncDef{
 			Name:        "run_terminal",
-			Description: "Run a PowerShell command on the local machine. A visible terminal window will open showing the command.",
+			Description: "Run a PowerShell command on the local machine. By default, it opens a visible persistent terminal and pauses until completion. If you are running a long task (e.g. npm install, docker build) that produces excessive output or might timeout, you MUST set the 'bg_mode' parameter. Set 'bg_mode' to 'BG TASK' to pause until completion but receive a smart truncated snapshot instead of full logs. Set 'bg_mode' to 'BG TASK COMORADE' to spawn the command fully in the background and immediately continue your other subtasks (use check_bg_task to retrieve logs later).",
 			Parameters: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -3170,8 +3170,30 @@ var availableTools = []toolDef{
 						"type":        "string",
 						"description": "PowerShell command to execute",
 					},
+					"bg_mode": map[string]interface{}{
+						"type": "string",
+						"enum": []string{"NONE", "BG TASK", "BG TASK COMORADE"},
+						"description": "Background execution mode for long tasks.",
+					},
 				},
 				"required": []string{"command"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "check_bg_task",
+			Description: "Check the status and get a snapshot of a background task spawned with BG TASK COMORADE.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_id": map[string]interface{}{
+						"type":        "string",
+						"description": "The background task ID",
+					},
+				},
+				"required": []string{"task_id"},
 			},
 		},
 	},
@@ -4066,6 +4088,16 @@ func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMes
 			result += "\n(Error: " + err.Error() + ")"
 		}
 		return result
+	case "check_bg_task":
+		taskID := getString("task_id")
+		if taskID == "" {
+			return "error: task_id is required"
+		}
+		res, err := getBGTaskStatus(taskID)
+		if err != nil {
+			return "error: " + err.Error()
+		}
+		return res
 	case "save_command_memory":
 		purpose := getString("purpose")
 		command := getString("command")
@@ -4304,6 +4336,22 @@ case "read_file":
 
 	case "run_terminal":
 		actualCommand := getString("command")
+		bgMode := getString("bg_mode")
+		
+		if bgMode == "BG TASK" || bgMode == "BG TASK COMORADE" {
+			debugLog.Printf("[executeTool/run_terminal] Spawning %s background task", bgMode)
+			taskID := spawnBGTask(actualCommand)
+			
+			if bgMode == "BG TASK COMORADE" {
+				return fmt.Sprintf("Command spawned in background successfully.\nTask ID: %s\nStatus: RUNNING\nUse check_bg_task to monitor its progress while you continue with other work.", taskID)
+			}
+			
+			// BG TASK mode (pause and wait)
+			fmt.Printf("STATUS: SYSTEM_MSG:Waiting for background task %s to complete...\n", taskID)
+			os.Stdout.Sync()
+			return waitForBGTask(taskID)
+		}
+		
 		// Terminal already starts in Desktop natively via startTerminalSession()
 		
 		// Fix LLM JSON escaping hallucinations where it outputs \" instead of "
