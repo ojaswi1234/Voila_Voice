@@ -3857,7 +3857,15 @@ func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMes
 	// (Except desktop_automation, which has its own deeper integration in desktop_tools.py)
 	if toolName != "desktop_automation" {
 		aegisPayload := string(argsJSON)
-		aegisCmd := exec.Command("python", "local-agent/aegis/aegis_cli.py", "--action", toolName, "--payload", aegisPayload)
+		
+		exePath, _ := os.Executable()
+		aegisPath := filepath.Join(filepath.Dir(exePath), "aegis", "aegis_cli.py")
+		if _, err := os.Stat(aegisPath); os.IsNotExist(err) {
+			// Fallback if running from project root
+			aegisPath = "local-agent/aegis/aegis_cli.py"
+		}
+		
+		aegisCmd := exec.Command("python", aegisPath, "--action", toolName, "--payload", aegisPayload)
 		if runtime.GOOS == "windows" {
 			aegisCmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 		}
