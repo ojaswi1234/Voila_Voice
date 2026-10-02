@@ -2837,9 +2837,48 @@ def _show_mcp_widgets():
                     _api_call('POST', '/mcp-api', {'action': 'remove_server', 'id': sid})
                     _show_mcp_widgets()
 
+            edit_form_frame = tk.Frame(item, bg='#16171C', bd=0)
+            cmd_ent_edit = _make_field(edit_form_frame, "Command:")
+            cmd_ent_edit.insert(0, srv.get('command', ''))
+            args_ent_edit = _make_field(edit_form_frame, "Args:")
+            args_ent_edit.insert(0, ' '.join(srv.get('args', [])))
+            paths_ent_edit = _make_field(edit_form_frame, "Allowed Paths:")
+            paths_ent_edit.insert(0, ','.join(srv.get('allowed_paths', []) or []))
+            
+            env_f_edit = tk.Frame(edit_form_frame, bg='#16171C')
+            env_f_edit.pack(fill='x', padx=10, pady=2)
+            tk.Label(env_f_edit, text="Env JSON:", bg='#16171C', fg='#9CA3AF', width=12, anchor='w').pack(side='left', anchor='n')
+            env_text_edit = tk.Text(env_f_edit, bg='#2A2D35', fg='white', insertbackground='white', relief='flat', height=3, width=40)
+            env_text_edit.pack(side='left', fill='x', expand=True)
+            import json
+            env_text_edit.insert('1.0', json.dumps(srv.get('env', {}), indent=2))
+            
+            def _submit_edit(sid=srv.get('id'), cmd_e=cmd_ent_edit, args_e=args_ent_edit, paths_e=paths_ent_edit, env_e=env_text_edit):
+                _api_call('POST', '/mcp-api', {
+                    'action': 'edit_server', 
+                    'id': sid, 
+                    'command': cmd_e.get().strip(), 
+                    'args': args_e.get().strip(),
+                    'env_json': env_e.get('1.0', 'end').strip(),
+                    'allowed_paths': paths_e.get().strip()
+                })
+                _show_mcp_widgets()
+
+            def _toggle_edit(frm=edit_form_frame):
+                if frm.winfo_ismapped():
+                    frm.pack_forget()
+                else:
+                    frm.pack(fill='x', padx=10, pady=(0,10))
+
+            btn_f_edit = tk.Frame(edit_form_frame, bg='#16171C')
+            btn_f_edit.pack(fill='x', padx=10, pady=10)
+            tk.Button(btn_f_edit, text="Save Changes", bg='#10B981', fg='white', relief='flat', bd=0, command=_submit_edit).pack(side='right')
+            tk.Button(btn_f_edit, text="Cancel", bg='#374151', fg='white', relief='flat', bd=0, command=_toggle_edit).pack(side='right', padx=10)
+
             tk.Button(top, text="Remove", bg='#EF4444', fg='white', relief='flat', bd=0, command=_remove).pack(side='right', padx=5)
+            tk.Button(top, text="Edit", bg='#3B82F6', fg='white', relief='flat', bd=0, command=_toggle_edit).pack(side='right')
             toggle_text = "Disable" if srv.get('enabled') else "Enable"
-            tk.Button(top, text=toggle_text, bg='#374151', fg='white', relief='flat', bd=0, command=_toggle).pack(side='right')
+            tk.Button(top, text=toggle_text, bg='#374151', fg='white', relief='flat', bd=0, command=_toggle).pack(side='right', padx=5)
             
             bot = tk.Frame(item, bg='#1A1D23')
             bot.pack(fill='x', padx=10, pady=(0,5))
