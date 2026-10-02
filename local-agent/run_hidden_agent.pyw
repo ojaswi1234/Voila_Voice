@@ -566,7 +566,7 @@ NAV_ITEMS = [
     ('Connections', 'Connect'),
     ('Analytics', 'Analytics'),
     ('Settings', 'Settings'),
-    
+    ('MCP/Tools', 'MCP/Tools'),
     ('Teams', 'Teams'),
 ]
 
@@ -1310,6 +1310,8 @@ def refresh_dashboard_content():
     # Always destroy settings widget frame when refreshing (navigated away)
     if current_section != 'Settings':
         _hide_settings_widgets()
+    if current_section != 'MCP/Tools':
+        _hide_mcp_widgets()
     if current_section != 'Documents':
         _hide_documents_widgets()
 
@@ -1332,6 +1334,9 @@ def refresh_dashboard_content():
         _draw_analytics_section(dash_canvas, w, h)
     elif current_section == 'Settings':
         _show_settings_widgets()
+        return
+    elif current_section == 'MCP/Tools':
+        _show_mcp_widgets()
         return
     elif current_section == 'Documents':
         _show_documents_widgets()
@@ -2686,3 +2691,230 @@ def write_initial_pos():
 export_graphify_prompt()
 root.after(100, write_initial_pos)
 root.mainloop()
+_mcp_frame_widget = None
+
+def _hide_mcp_widgets():
+    global _mcp_frame_widget
+    if _mcp_frame_widget:
+        _mcp_frame_widget.destroy()
+        _mcp_frame_widget = None
+
+def _show_mcp_widgets():
+    global _mcp_frame_widget
+    _hide_mcp_widgets()
+
+    # Fetch data
+    data = _api_call('GET', '/mcp-api')
+    if 'error' in data:
+        data = {'servers': [], 'catalog': [], 'connector_states': {}, 'skills': []}
+
+    frame = tk.Frame(dash_content, bg='#0F1115')
+    frame.place(x=0, y=0, relwidth=1.0, relheight=1.0)
+    _mcp_frame_widget = frame
+
+    # Top tab bar
+    tab_bar = tk.Frame(frame, bg='#1A1D23')
+    tab_bar.pack(fill='x')
+
+    content_frame = tk.Frame(frame, bg='#0F1115')
+    content_frame.pack(fill='both', expand=True)
+
+    def render_servers():
+        for widget in content_frame.winfo_children():
+            widget.destroy()
+        
+        # Header
+        hdr = tk.Frame(content_frame, bg='#0F1115')
+        hdr.pack(fill='x', pady=10, padx=10)
+        tk.Label(hdr, text='MCP Servers', fg='#FFFFFF', bg='#0F1115', font=('Segoe UI', 14, 'bold')).pack(side='left')
+        
+        def _add_server():
+            # Basic prompt (could use a dialog, but simple for now)
+            import tkinter.simpledialog as sd
+            srv_id = sd.askstring("Add Server", "Server ID:", parent=frame)
+            if not srv_id: return
+            cmd = sd.askstring("Add Server", "Command (e.g. npx):", parent=frame)
+            if not cmd: return
+            args = sd.askstring("Add Server", "Args (e.g. -y @mcp/server-github):", parent=frame)
+            _api_call('POST', '/mcp-api', {'action': 'add_server', 'id': srv_id, 'command': cmd, 'args': args or ""})
+            _show_mcp_widgets()
+            
+        tk.Button(hdr, text='+ Add Server', bg='#3B82F6', fg='white', relief='flat', bd=0, 
+                  command=_add_server, font=('Segoe UI', 9, 'bold')).pack(side='right', ipadx=5, ipady=2)
+
+        # Scrollable area
+        canvas_s = tk.Canvas(content_frame, bg='#0F1115', highlightthickness=0)
+        scrollbar = tk.Scrollbar(content_frame, orient='vertical', command=canvas_s.yview)
+        canvas_s.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side='right', fill='y')
+        canvas_s.pack(side='left', fill='both', expand=True)
+
+        inner = tk.Frame(canvas_s, bg='#0F1115')
+        inner_win = canvas_s.create_window((0, 0), window=inner, anchor='nw')
+
+        def on_configure(event):
+            canvas_s.configure(scrollregion=canvas_s.bbox('all'))
+            canvas_s.itemconfig(inner_win, width=event.width)
+        canvas_s.bind('<Configure>', on_configure)
+
+        servers = data.get('servers', [])
+        if not servers:
+            tk.Label(inner, text="No MCP servers configured.", fg='#6B7280', bg='#0F1115').pack(pady=20)
+        
+        for srv in servers:
+            item = tk.Frame(inner, bg='#1A1D23', bd=1, relief='solid')
+            item.pack(fill='x', padx=10, pady=5)
+            
+            top = tk.Frame(item, bg='#1A1D23')
+            top.pack(fill='x', padx=10, pady=5)
+            
+            status_color = '#10B981' if srv.get('enabled') else '#6B7280'
+            tk.Label(top, text='●', fg=status_color, bg='#1A1D23', font=('Segoe UI', 10)).pack(side='left')
+            tk.Label(top, text=srv.get('id', ''), fg='#FFFFFF', bg='#1A1D23', font=('Segoe UI', 11, 'bold')).pack(side='left', padx=5)
+            
+            def _toggle(sid=srv.get('id')):
+                _api_call('POST', '/mcp-api', {'action': 'toggle_server', 'id': sid})
+                _show_mcp_widgets()
+                
+            def _remove(sid=srv.get('id')):
+                if tkinter.messagebox.askyesno("Remove", f"Remove server {sid}?"):
+                    _api_call('POST', '/mcp-api', {'action': 'remove_server', 'id': sid})
+                    _show_mcp_widgets()
+
+            tk.Button(top, text="Remove", bg='#EF4444', fg='white', relief='flat', bd=0, command=_remove).pack(side='right', padx=5)
+            toggle_text = "Disable" if srv.get('enabled') else "Enable"
+            tk.Button(top, text=toggle_text, bg='#374151', fg='white', relief='flat', bd=0, command=_toggle).pack(side='right')
+            
+            bot = tk.Frame(item, bg='#1A1D23')
+            bot.pack(fill='x', padx=10, pady=(0,5))
+            cmd_str = srv.get('command', '') + ' ' + ' '.join(srv.get('args', []))
+            tk.Label(bot, text=cmd_str, fg='#9CA3AF', bg='#1A1D23', font=('Consolas', 9)).pack(side='left')
+
+    def render_connectors():
+        for widget in content_frame.winfo_children():
+            widget.destroy()
+            
+        hdr = tk.Frame(content_frame, bg='#0F1115')
+        hdr.pack(fill='x', pady=10, padx=10)
+        tk.Label(hdr, text='Connectors', fg='#FFFFFF', bg='#0F1115', font=('Segoe UI', 14, 'bold')).pack(side='left')
+
+        canvas_s = tk.Canvas(content_frame, bg='#0F1115', highlightthickness=0)
+        scrollbar = tk.Scrollbar(content_frame, orient='vertical', command=canvas_s.yview)
+        canvas_s.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side='right', fill='y')
+        canvas_s.pack(side='left', fill='both', expand=True)
+
+        inner = tk.Frame(canvas_s, bg='#0F1115')
+        inner_win = canvas_s.create_window((0, 0), window=inner, anchor='nw')
+
+        def on_configure(event):
+            canvas_s.configure(scrollregion=canvas_s.bbox('all'))
+            canvas_s.itemconfig(inner_win, width=event.width)
+        canvas_s.bind('<Configure>', on_configure)
+        
+        catalog = data.get('catalog', [])
+        states = data.get('connector_states', {})
+        
+        for c in catalog:
+            item = tk.Frame(inner, bg='#1A1D23', bd=1, relief='solid')
+            item.pack(fill='x', padx=10, pady=5)
+            
+            top = tk.Frame(item, bg='#1A1D23')
+            top.pack(fill='x', padx=10, pady=5)
+            
+            is_connected = states.get(c.get('id'), False)
+            status_color = '#10B981' if is_connected else '#6B7280'
+            tk.Label(top, text='●', fg=status_color, bg='#1A1D23', font=('Segoe UI', 10)).pack(side='left')
+            tk.Label(top, text=c.get('name', ''), fg='#FFFFFF', bg='#1A1D23', font=('Segoe UI', 11, 'bold')).pack(side='left', padx=5)
+            
+            auth_type = c.get('auth_type', 'none')
+            tk.Label(top, text=f"[{auth_type}]", fg='#8B5CF6', bg='#1A1D23', font=('Segoe UI', 9, 'bold')).pack(side='left')
+            
+            def _connect(cid=c.get('id'), auth=auth_type):
+                token = ""
+                if auth != 'none':
+                    import tkinter.simpledialog as sd
+                    token = sd.askstring("Connect", f"Enter token for {cid}:", parent=frame)
+                    if token is None: return
+                _api_call('POST', '/mcp-api', {'action': 'connect_connector', 'id': cid, 'token': token})
+                _show_mcp_widgets()
+                
+            def _disconnect(cid=c.get('id')):
+                _api_call('POST', '/mcp-api', {'action': 'disconnect_connector', 'id': cid})
+                _show_mcp_widgets()
+
+            if is_connected:
+                tk.Button(top, text="Disconnect", bg='#EF4444', fg='white', relief='flat', bd=0, command=_disconnect).pack(side='right')
+            else:
+                tk.Button(top, text="Connect", bg='#10B981', fg='white', relief='flat', bd=0, command=_connect).pack(side='right')
+                
+            bot = tk.Frame(item, bg='#1A1D23')
+            bot.pack(fill='x', padx=10, pady=(0,5))
+            tk.Label(bot, text=c.get('description', ''), fg='#9CA3AF', bg='#1A1D23', font=('Segoe UI', 9)).pack(side='left')
+
+    def render_skills():
+        for widget in content_frame.winfo_children():
+            widget.destroy()
+            
+        hdr = tk.Frame(content_frame, bg='#0F1115')
+        hdr.pack(fill='x', pady=10, padx=10)
+        tk.Label(hdr, text='Marketplace Skills', fg='#FFFFFF', bg='#0F1115', font=('Segoe UI', 14, 'bold')).pack(side='left')
+        
+        def _install():
+            import tkinter.simpledialog as sd
+            sid = sd.askstring("Install", "Skill ID:", parent=frame)
+            if not sid: return
+            url = sd.askstring("Install", "SKILL.md URL:", parent=frame)
+            if not url: return
+            _api_call('POST', '/mcp-api', {'action': 'install_skill', 'id': sid, 'source_url': url})
+            _show_mcp_widgets()
+            
+        tk.Button(hdr, text='+ Install from URL', bg='#3B82F6', fg='white', relief='flat', bd=0, 
+                  command=_install, font=('Segoe UI', 9, 'bold')).pack(side='right', ipadx=5, ipady=2)
+
+        canvas_s = tk.Canvas(content_frame, bg='#0F1115', highlightthickness=0)
+        scrollbar = tk.Scrollbar(content_frame, orient='vertical', command=canvas_s.yview)
+        canvas_s.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side='right', fill='y')
+        canvas_s.pack(side='left', fill='both', expand=True)
+
+        inner = tk.Frame(canvas_s, bg='#0F1115')
+        inner_win = canvas_s.create_window((0, 0), window=inner, anchor='nw')
+
+        def on_configure(event):
+            canvas_s.configure(scrollregion=canvas_s.bbox('all'))
+            canvas_s.itemconfig(inner_win, width=event.width)
+        canvas_s.bind('<Configure>', on_configure)
+
+        skills = data.get('skills', [])
+        if not skills:
+            tk.Label(inner, text="No skills installed.", fg='#6B7280', bg='#0F1115').pack(pady=20)
+        
+        for s in skills:
+            item = tk.Frame(inner, bg='#1A1D23', bd=1, relief='solid')
+            item.pack(fill='x', padx=10, pady=5)
+            
+            top = tk.Frame(item, bg='#1A1D23')
+            top.pack(fill='x', padx=10, pady=5)
+            
+            tk.Label(top, text=s.get('id', ''), fg='#FFFFFF', bg='#1A1D23', font=('Segoe UI', 11, 'bold')).pack(side='left')
+            
+            def _uninstall(sid=s.get('id')):
+                if tkinter.messagebox.askyesno("Uninstall", f"Uninstall skill {sid}?"):
+                    _api_call('POST', '/mcp-api', {'action': 'uninstall_skill', 'id': sid})
+                    _show_mcp_widgets()
+
+            tk.Button(top, text="Uninstall", bg='#EF4444', fg='white', relief='flat', bd=0, command=_uninstall).pack(side='right')
+            
+            bot = tk.Frame(item, bg='#1A1D23')
+            bot.pack(fill='x', padx=10, pady=(0,5))
+            tk.Label(bot, text=s.get('source', ''), fg='#9CA3AF', bg='#1A1D23', font=('Consolas', 9)).pack(side='left')
+
+    # Tab Buttons
+    tk.Button(tab_bar, text='Servers', bg='#1A1D23', fg='#FFFFFF', relief='flat', bd=0, font=('Segoe UI', 11), command=render_servers).pack(side='left', padx=10, pady=5)
+    tk.Button(tab_bar, text='Connectors', bg='#1A1D23', fg='#FFFFFF', relief='flat', bd=0, font=('Segoe UI', 11), command=render_connectors).pack(side='left', padx=10, pady=5)
+    tk.Button(tab_bar, text='Skills', bg='#1A1D23', fg='#FFFFFF', relief='flat', bd=0, font=('Segoe UI', 11), command=render_skills).pack(side='left', padx=10, pady=5)
+
+    # Initial render
+    render_servers()
+

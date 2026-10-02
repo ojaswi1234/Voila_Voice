@@ -1885,6 +1885,7 @@ func startHTTPServer() {
 	})
 
 	// Ã¢â€â‚¬Ã¢â€â‚¬ API Key management endpoints (called by Python dashboard) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+	mux.HandleFunc("/mcp-api", mcpApiHandler)
 	mux.HandleFunc("/api-keys", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Content-Type", "application/json")
