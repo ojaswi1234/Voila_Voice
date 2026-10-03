@@ -2299,6 +2299,9 @@ http.HandleFunc("/proxy/", func(w http.ResponseWriter, r *http.Request) {
 	
 	deviceID := pathParts[2]
 	endpoint := "/" + strings.Join(pathParts[3:], "/")
+	if r.URL.RawQuery != "" {
+		endpoint += "?" + r.URL.RawQuery
+	}
 
 	backend.mu.RLock()
 	device, exists := backend.devices[deviceID]

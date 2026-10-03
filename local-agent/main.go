@@ -2292,7 +2292,7 @@ Write-Output $base64
 					"output":      result,
 					"mode":        "screenshot",
 				})
-				http.Post(connData.BackendURL+"/webhook/result", "application/json", bytes.NewBuffer(webhookPayload))
+				if r, e := http.Post(connData.BackendURL+"/webhook/result", "application/json", bytes.NewBuffer(webhookPayload)); e == nil { r.Body.Close() }
 			}()
 			return
 		}
@@ -6375,7 +6375,7 @@ func handleLocalMockExecution(w http.ResponseWriter, r *http.Request, command st
 			"trip_circuit": tripCircuit,
 		}
 		body, _ := json.Marshal(alertPayload)
-		http.Post(connData.BackendURL+"/webhook/alert", "application/json", bytes.NewBuffer(body))
+		if r, e := http.Post(connData.BackendURL+"/webhook/alert", "application/json", bytes.NewBuffer(body)); e == nil { r.Body.Close() }
 	}()
 
 	if tripCircuit {
