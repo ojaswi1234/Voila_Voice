@@ -1913,7 +1913,7 @@ func startHTTPServer() {
 				Duration: dur,
 			})
 		}
-		json.NewEncoder(w).Encode(map[string]interface{}{"tasks": active})
+		json.NewEncoder(w).Encode(map[string]interface{}{"tasks": listBGTasks()})
 	})
 
 	mux.HandleFunc("/mcp-api", mcpApiHandler)
@@ -4369,6 +4369,14 @@ case "read_file":
 		actualCommand := getString("command")
 		bgMode := getString("bg_mode")
 		
+		// AUTO-DETECT: Force BG TASK COMORADE for known long-running commands
+		if (bgMode == "" || bgMode == "NONE") && isLongRunningCommand(actualCommand) {
+			debugLog.Printf("[run_terminal] AUTO-DETECT: long-running command detected, upgrading to BG TASK COMORADE")
+			fmt.Printf("STATUS: SYSTEM_MSG:Auto-detected long-running command — spawning as background task\n")
+			os.Stdout.Sync()
+			bgMode = "BG TASK COMORADE"
+		}
+		
 		if bgMode == "BG TASK" || bgMode == "BG TASK COMORADE" {
 			debugLog.Printf("[executeTool/run_terminal] Spawning %s background task", bgMode)
 			taskID := spawnBGTask(actualCommand)
@@ -4458,6 +4466,11 @@ case "read_file":
 		}
 
 		terminalSessionMu.Unlock()
+
+		// If the IPC loop timed out (no done file), outBytes is still nil/empty - return actionable error
+		if len(outBytes) == 0 && err == nil {
+			return "ERROR: Command timed out after 5 minutes. The command may still be running. For long-running operations (npm install, builds, downloads), use bg_mode='BG TASK COMORADE' next time to avoid blocking."
+		}
 
 		// outBytes and err are already populated by IPC logic
 
@@ -4978,6 +4991,13 @@ CRITICAL OS GUARDRAIL: You MUST NEVER modify, delete, or touch Windows system fi
 CRITICAL SYSTEM NOTE: To open ANY GUI application, URL, or file so it is visible to the user on their main desktop, you MUST use WMI. Use exactly this command format: ` + "`" + `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'explorer.exe "<URL_OR_PATH>"'` + "`" + ` (for URLs/files) or ` + "`" + `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList '<APP_EXE>'` + "`" + ` (for apps). DO NOT use Start-Process! You have full autonomy to decide whether to open applications using the run_terminal tool (e.g. via WMI for speed and reliability) or via the desktop_automation tool (e.g. searching the Start Menu). If UI search fails or opens the wrong app (like the Store instead of Edge), use your self-realization and error-correcting loop to instantly pivot to using run_terminal instead. However, to control the user's desktop (click buttons, fill forms, move the mouse on screen), you MUST use the desktop_automation tool - NEVER use run_terminal for UI interactions. To perform browser automation, you MUST use the browser_automation tool. Browser Workflow: (1) Choose action=goto (current tab) OR action=new_tab based on whether the current tab must be preserved. (2) Use list_tabs/switch_tab when working across tabs. (3) MANDATORY PAGE OBSERVATION: After EVERY goto/new_tab, your VERY NEXT action MUST be action=extract_interactive — this returns ALL visible clickable elements with their exact CSS selectors. NEVER guess or hardcode a selector without observing first. Only AFTER extract_interactive shows you what is on the page may you click/type/press/scroll/hover/search_word. (4) close_tab when done with an extra tab if useful. Never use about:blank. Every tool result includes ok/url/title - if ok is false, explain the error. LOOP PREVENTION: If you have already called goto with the same URL more than once without progress, STOP retrying goto. Call extract_interactive to re-observe the page, then re-plan.
 
 CRITICAL: You are running inside a Windows PowerShell environment. You MUST use PowerShell syntax, NOT Bash!
+
+BACKGROUND TASK & DECOMPOSITION POLICY (MANDATORY):
+1. DECOMPOSE FIRST: For any task needing >3 tool calls, begin by outputting a numbered plan before touching any tools.
+2. MANDATORY BG MODE: You MUST use bg_mode="BG TASK COMORADE" for ANY of these commands: npm install/ci/build, pip install, go build/mod/tidy, cargo build/install, docker build/pull/compose, git clone (large repos), flutter pub get/build, gradle/mvn build, yarn install/add, make/cmake, wget/curl downloads. Running these blocking is a critical error.
+3. PARALLELISM: After spawning a BG TASK COMORADE, immediately continue with OTHER subtasks (write code, create files, etc.) — do NOT wait idle.
+4. RECOVERY: Use check_bg_task to check progress only when you need the result. If the result shows failure, diagnose and re-spawn.
+5. ITERATION AWARENESS: You have a 50 tool-call budget per session. Expensive blocking calls waste it. Preserve budget with bg_mode.
 - Use 'Get-ChildItem' or 'ls' (without bash flags like -la). Do NOT use 'ls -la'.
 - Use 'Select-String' or 'findstr', NOT 'grep'.
 - Use 'Get-Content' or 'cat' (no bash flags).
@@ -5328,8 +5348,38 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 		}
 	}
 
-	debugLog.Printf("[executeGroqCommand] max iterations reached")
-	return "(max tool iterations reached)", nil
+	debugLog.Printf("[executeGroqCommand] max iterations reached - requesting final summary")
+	// Instead of silent exit, request a final summary from the AI
+	messages = append(messages, map[string]interface{}{
+		"role":    "user",
+		"content": "SYSTEM: You have reached the maximum tool call limit. Please provide a comprehensive summary of: (1) what you have accomplished so far, (2) what still needs to be done, (3) any background tasks running (check with check_bg_task if any were spawned). Be specific.",
+	})
+	// One final API call for summary
+	payload := map[string]interface{}{
+		"model":       modelName,
+		"messages":    messages,
+		"temperature": 0.3,
+		"max_tokens":  2048,
+		"tools":       toolListForSession(),
+	}
+	body, _ := json.Marshal(payload)
+	req, _ := http.NewRequestWithContext(context.Background(), "POST", "https://api.openai.com/v1/chat/completions", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Content-Type", "application/json")
+	if summaryClient := (&http.Client{Timeout: 30 * time.Second}); req != nil {
+		if summaryResp, summaryErr := summaryClient.Do(req); summaryErr == nil {
+			defer summaryResp.Body.Close()
+			var summaryResult struct {
+				Choices []struct {
+					Message struct{ Content string `json:"content"` } `json:"message"`
+				} `json:"choices"`
+			}
+			if json.NewDecoder(summaryResp.Body).Decode(&summaryResult) == nil && len(summaryResult.Choices) > 0 {
+				return "[TASK LIMIT REACHED - PROGRESS SUMMARY]\n" + summaryResult.Choices[0].Message.Content, nil
+			}
+		}
+	}
+	return "(max tool iterations reached — consider breaking this task into smaller steps)", nil
 }
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ Ollama executor with tool-calling loop Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
@@ -6295,6 +6345,8 @@ func main() {
 	// Must run before any LLM requests so toolListForSession() includes MCP tools.
 	initMCPHost()
 	defer mcp.GlobalHost.StopAll()
+	// Load any persisted background tasks from previous runs
+	loadBGTasksFromDisk()
 
 	// Check for background mode flag
 	backgroundMode := false
