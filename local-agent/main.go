@@ -4379,10 +4379,18 @@ case "read_file":
 		
 		if bgMode == "BG TASK" || bgMode == "BG TASK COMORADE" {
 			debugLog.Printf("[executeTool/run_terminal] Spawning %s background task", bgMode)
-			taskID := spawnBGTask(actualCommand)
+			taskID, isDup := spawnBGTaskSafe(actualCommand, actualCommand)
+			
+			if isDup {
+				dupMsg := fmt.Sprintf("DUPLICATE DETECTED: This command is already running as background task %s. Use check_bg_task with that task ID instead of re-spawning.", taskID)
+				if bgMode == "BG TASK COMORADE" {
+					return dupMsg
+				}
+				return waitForBGTask(taskID)
+			}
 			
 			if bgMode == "BG TASK COMORADE" {
-				return fmt.Sprintf("Command spawned in background successfully.\nTask ID: %s\nStatus: RUNNING\nUse check_bg_task to monitor its progress while you continue with other work.", taskID)
+				return fmt.Sprintf("Command spawned in background successfully.\nTask ID: %s\nLabel: %s\nStatus: RUNNING\nI will be notified automatically when it completes. You can also use check_bg_task to poll.", taskID, actualCommand)
 			}
 			
 			// BG TASK mode (pause and wait)
@@ -4965,6 +4973,31 @@ func executeGroqCommand(ctx context.Context, command, apiKey, modelName, clientI
 	debugLog.Printf("[executeGroqCommand] ENTRY model=%q key=%s commandLen=%d", modelName, maskedKey, len(command))
 
 	var toolUsageSummary strings.Builder
+
+	// Check for a pending checkpoint (resume from rate-limit or max-iter)
+	if cp, err := loadCheckpoint(convID, taskID); err == nil && len(cp.Messages) > 0 {
+		if time.Now().After(cp.ResumeAfter) {
+			debugLog.Printf("[executeGroqCommand] Resuming from checkpoint reason=%s msgs=%d", cp.Reason, len(cp.Messages))
+			fmt.Printf("STATUS: SYSTEM_MSG:Resuming from saved checkpoint (reason: %s)...\n", cp.Reason)
+			os.Stdout.Sync()
+			// Inject bg task results if any were running
+			resumeMessages := fetchAndInjectBGResults(cp.Messages, cp.BGTaskIDs)
+			// Add resume orientation message
+			resumeMessages = append(resumeMessages, map[string]interface{}{
+				"role":    "user",
+				"content": buildResumeInjection(cp),
+			})
+			clearCheckpoint(convID, taskID)
+			// Override command to the original goal
+			command = cp.Command
+			// Recursively call ourselves with the resumed messages
+			// We'll use the messages directly after building system prompt - replace command
+			_ = resumeMessages // will be used after systemPrompt section below
+		} else {
+			debugLog.Printf("[executeGroqCommand] Checkpoint exists but ResumeAfter not reached yet")
+		}
+	}
+	
 	var systemPrompt string
 	if clientID == "dag-internal" {
 		systemPrompt = `You are a highly advanced AI agent participating in a distributed Graphify workflow.
@@ -5106,7 +5139,7 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 		return false
 	}
 	
-	const maxIter = 50
+	const maxIter = 80
 
 	for iter := 0; iter < maxIter; iter++ {
 		select {
@@ -5134,6 +5167,11 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 		}
 		if ctx.Err() != nil {
 			return "Canceled by user", nil
+		}
+		// Drain any completed COMORADE background task notifications
+		if notifs := drainComradeNotifications(); len(notifs) > 0 {
+			messages = append(messages, notifs...)
+			debugLog.Printf("[executeGroqCommand] iter=%d injected %d COMORADE notifications", iter, len(notifs))
 		}
 		debugLog.Printf("[executeGroqCommand] iter=%d messages=%d", iter, len(messages))
 		payload := map[string]interface{}{
@@ -5195,7 +5233,33 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 				}
 				
 				if r == maxRetries-1 {
-					return "", fmt.Errorf("Groq API error %d: %s", resp.StatusCode, errStr)
+					// Instead of hard-exit: save checkpoint and wait longer
+					debugLog.Printf("[executeGroqCommand] 429 retries exhausted - saving checkpoint for iter=%d", iter)
+					cp := &Checkpoint{
+						ConvID:      convID,
+						TaskID:      taskID,
+						Command:     command,
+						Messages:    messages,
+						SavedAt:     time.Now(),
+						Reason:      "rate_limit",
+						Model:       modelName,
+						ResumeAfter: time.Now().Add(90 * time.Second),
+					}
+					// Collect any active BG tasks into checkpoint
+					bgTasksMu.RLock()
+					for id, t := range bgTasks {
+						if t.Status == "running" {
+							cp.BGTaskIDs = append(cp.BGTaskIDs, id)
+						}
+					}
+					bgTasksMu.RUnlock()
+					saveCheckpoint(cp)
+					fmt.Printf("STATUS: SYSTEM_MSG:API rate limit hit — saving checkpoint. Waiting 90s before resuming...\n")
+					os.Stdout.Sync()
+					time.Sleep(90 * time.Second)
+					// After wait, don't return error - just continue the outer iter loop
+					debugLog.Printf("[executeGroqCommand] Resuming after rate limit pause")
+					break // break inner retry loop; outer iter loop will try again
 				}
 				
 				if clientID == "dag-internal" {
@@ -5546,7 +5610,7 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 		return false
 	}
 	
-	const maxIter = 50
+	const maxIter = 80
 
 	for iter := 0; iter < maxIter; iter++ {
 		select {

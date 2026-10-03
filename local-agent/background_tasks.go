@@ -165,6 +165,15 @@ func spawnBGTask(command string) string {
 	return spawnBGTaskWithLabel(command, command)
 }
 
+// spawnBGTaskSafe is the public entry point - checks for duplicates first
+func spawnBGTaskSafe(command, label string) (string, bool) {
+	if isDup, existingID := isDuplicateBGTask(command); isDup {
+		debugLog.Printf("[BGTask] Duplicate detected - command already running as %s", existingID)
+		return existingID, true // true = was duplicate
+	}
+	return spawnBGTaskWithLabel(command, label), false
+}
+
 func spawnBGTaskWithLabel(command, label string) string {
 	bgTasksMu.Lock()
 	id := fmt.Sprintf("TASK-%d", bgTaskIdx)
@@ -228,6 +237,20 @@ func spawnBGTaskWithLabel(command, label string) string {
 		}
 		persistSnapshot(task)
 		saveBGTaskMeta(task)
+
+		// Push completion notification to the running LLM loop (COMORADE mode)
+		snapshot := generateSnapshot(task.Stdout.Bytes(), task.Stderr.Bytes())
+		select {
+		case comradeNotifyCh <- comradeNotification{
+			TaskID:   task.ID,
+			Label:    task.Label,
+			Snapshot: snapshot,
+		}:
+			debugLog.Printf("[BGTask] COMORADE notification sent for %s", task.ID)
+		default:
+			// Channel full - log and move on (LLM can still poll via check_bg_task)
+			debugLog.Printf("[BGTask] COMORADE channel full, notification for %s dropped (use check_bg_task)", task.ID)
+		}
 	}()
 
 	return id
