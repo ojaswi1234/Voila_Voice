@@ -3363,47 +3363,148 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFF14B8A6).withOpacity(0.1),
-        border: Border.all(color: const Color(0xFF0F766E), width: 1),
-        borderRadius: BorderRadius.circular(12),
+        color: const Color(0xFF14B8A6).withOpacity(0.08),
+        border: Border.all(color: const Color(0xFF0F766E).withOpacity(0.5), width: 1),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF14B8A6).withOpacity(0.05),
+            blurRadius: 10,
+            spreadRadius: 2,
+          ),
+        ],
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            children: const [
-              Icon(Icons.memory, color: Color(0xFF14B8A6), size: 16),
-              SizedBox(width: 8),
-              Text('Active Background Tasks', style: TextStyle(color: Color(0xFF14B8A6), fontWeight: FontWeight.bold, fontSize: 12)),
+            children: [
+              Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF14B8A6).withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Icon(Icons.memory, color: Color(0xFF2DD4BF), size: 14),
+              ),
+              const SizedBox(width: 10),
+              const Text('BACKGROUND TASKS', style: TextStyle(color: Color(0xFF2DD4BF), fontWeight: FontWeight.w800, fontSize: 11, letterSpacing: 0.5)),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0F766E).withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text('${_bgTasks.where((t) => t['status'] == 'running').length} RUNNING', 
+                  style: const TextStyle(color: Color(0xFF5EEAD4), fontSize: 9, fontWeight: FontWeight.bold)),
+              ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           ..._bgTasks.map((task) {
             final isDone = task['status'] == 'completed';
             final isFail = task['status'] == 'failed';
-            final c = isDone ? Colors.green : (isFail ? Colors.red : const Color(0xFF14B8A6));
+            final c = isDone ? const Color(0xFF34D399) : (isFail ? const Color(0xFFF87171) : const Color(0xFF2DD4BF));
+            
             return Padding(
-              padding: const EdgeInsets.only(bottom: 4),
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: 12,
-                    height: 12,
-                    child: isDone ? const Icon(Icons.check, size: 12, color: Colors.green) : 
-                           (isFail ? const Icon(Icons.close, size: 12, color: Colors.red) : 
-                            const CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF14B8A6))),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      '[${task['duration']}] ${task['command']}',
-                      style: TextStyle(color: c, fontSize: 11, fontFamily: 'monospace'),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+              padding: const EdgeInsets.only(bottom: 8),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: () {
+                  showDialog(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      backgroundColor: const Color(0xFF1E1E24),
+                      title: Row(
+                        children: [
+                          Icon(isDone ? Icons.check_circle : (isFail ? Icons.error : Icons.memory), color: c, size: 20),
+                          const SizedBox(width: 8),
+                          const Text('Task Details', style: TextStyle(color: Colors.white, fontSize: 16)),
+                        ],
+                      ),
+                      content: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('ID: ${task['id']}', style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                          const SizedBox(height: 4),
+                          Text('Status: ${task['status'].toString().toUpperCase()}', style: TextStyle(color: c, fontSize: 12, fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 4),
+                          Text('Duration: ${task['duration']}', style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                          const SizedBox(height: 12),
+                          const Text('Command:', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 4),
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(color: Colors.black45, borderRadius: BorderRadius.circular(6)),
+                            child: SelectableText(
+                              task['command']?.toString() ?? '',
+                              style: const TextStyle(color: Color(0xFFA3E635), fontSize: 11, fontFamily: 'monospace'),
+                            ),
+                          ),
+                        ],
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text('Close', style: TextStyle(color: Color(0xFF2DD4BF))),
+                        ),
+                      ],
                     ),
+                  );
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.black26,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: c.withOpacity(0.2), width: 1),
                   ),
-                ],
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: isDone ? Icon(Icons.check_circle, size: 14, color: c) : 
+                               (isFail ? Icon(Icons.cancel, size: 14, color: c) : 
+                                CircularProgressIndicator(strokeWidth: 2, color: c)),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    task['label']?.toString().isNotEmpty == true ? task['label'] : task['id'],
+                                    style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                Text(
+                                  task['duration'] ?? '',
+                                  style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 10, fontFamily: 'monospace'),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              task['command'] ?? '',
+                              style: TextStyle(color: c.withOpacity(0.8), fontSize: 10, fontFamily: 'monospace'),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             );
           }).toList(),

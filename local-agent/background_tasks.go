@@ -136,10 +136,11 @@ func loadBGTasksFromDisk() {
 // isLongRunningCommand heuristically detects commands that should auto-run as BG TASK COMORADE
 func isLongRunningCommand(cmd string) bool {
 	lower := strings.ToLower(strings.TrimSpace(cmd))
-	patterns := []string{
-		"npm install", "npm i ", "npm ci",
+	
+	commands := []string{
+		"npm install", "npm i", "npm ci", "npm run build",
 		"pip install", "pip3 install",
-		"yarn install", "yarn add",
+		"yarn install", "yarn add", "yarn build",
 		"go build", "go mod download", "go mod tidy",
 		"cargo build", "cargo install",
 		"docker build", "docker pull", "docker compose",
@@ -149,14 +150,18 @@ func isLongRunningCommand(cmd string) bool {
 		"apt install", "apt-get install",
 		"choco install",
 		"winget install",
-		"wget ", "curl -O", "curl --output",
-		"make ", "cmake ",
 	}
-	for _, p := range patterns {
-		if strings.Contains(lower, p) {
+
+	for _, p := range commands {
+		if lower == p || strings.HasPrefix(lower, p+" ") {
 			return true
 		}
 	}
+	
+	if strings.Contains(lower, "wget ") || strings.Contains(lower, "curl -O") || strings.Contains(lower, "curl --output") || strings.HasPrefix(lower, "make ") || strings.HasPrefix(lower, "cmake ") {
+		return true
+	}
+	
 	return false
 }
 

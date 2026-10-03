@@ -1,1 +1,20 @@
-{"installed": []}
+{
+  "installed": [
+    {
+      "id": "diagram-design",
+      "name": "diagram-design",
+      "description": "",
+      "source": "https://github.com/cathrynlavery/diagram-design",
+      "hash": "",
+      "installed_at": "2026-10-02T13:16:27+05:30"
+    },
+    {
+      "id": "claude-office-skills",
+      "name": "claude-office-skills",
+      "description": "",
+      "source": "https://github.com/tfriedel/claude-office-skills",
+      "hash": "",
+      "installed_at": "2026-10-03T16:28:07+05:30"
+    }
+  ]
+}

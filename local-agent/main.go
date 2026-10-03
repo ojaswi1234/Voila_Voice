@@ -4974,25 +4974,22 @@ func executeGroqCommand(ctx context.Context, command, apiKey, modelName, clientI
 
 	var toolUsageSummary strings.Builder
 
+	var resumeMessages []map[string]interface{}
+	var isResume bool
 	// Check for a pending checkpoint (resume from rate-limit or max-iter)
 	if cp, err := loadCheckpoint(convID, taskID); err == nil && len(cp.Messages) > 0 {
 		if time.Now().After(cp.ResumeAfter) {
 			debugLog.Printf("[executeGroqCommand] Resuming from checkpoint reason=%s msgs=%d", cp.Reason, len(cp.Messages))
 			fmt.Printf("STATUS: SYSTEM_MSG:Resuming from saved checkpoint (reason: %s)...\n", cp.Reason)
 			os.Stdout.Sync()
-			// Inject bg task results if any were running
-			resumeMessages := fetchAndInjectBGResults(cp.Messages, cp.BGTaskIDs)
-			// Add resume orientation message
+			isResume = true
+			resumeMessages = fetchAndInjectBGResults(cp.Messages, cp.BGTaskIDs)
 			resumeMessages = append(resumeMessages, map[string]interface{}{
 				"role":    "user",
 				"content": buildResumeInjection(cp),
 			})
 			clearCheckpoint(convID, taskID)
-			// Override command to the original goal
 			command = cp.Command
-			// Recursively call ourselves with the resumed messages
-			// We'll use the messages directly after building system prompt - replace command
-			_ = resumeMessages // will be used after systemPrompt section below
 		} else {
 			debugLog.Printf("[executeGroqCommand] Checkpoint exists but ResumeAfter not reached yet")
 		}
@@ -5100,11 +5097,23 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 	}
 
 	// Maintain conversation as raw JSON-friendly messages
-	messages := []map[string]interface{}{
-		{"role": "system", "content": systemPrompt},
+	var messages []map[string]interface{}
+	if isResume {
+		// Rebuild the system prompt at index 0 (to ensure it has the latest time/state if applicable),
+		// but keep the rest of the history intact.
+		if len(resumeMessages) > 0 && resumeMessages[0]["role"] == "system" {
+			resumeMessages[0]["content"] = systemPrompt
+		} else {
+			// Prepend system prompt if missing
+			resumeMessages = append([]map[string]interface{}{{"role": "system", "content": systemPrompt}}, resumeMessages...)
+		}
+		messages = resumeMessages
+	} else {
+		messages = []map[string]interface{}{
+			{"role": "system", "content": systemPrompt},
+		}
+		messages = append(messages, map[string]interface{}{"role": "user", "content": command})
 	}
-	// History loading removed per user request to only consider latest task
-	messages = append(messages, map[string]interface{}{"role": "user", "content": command})
 
 	client := &http.Client{Timeout: 60 * time.Second}
 	
