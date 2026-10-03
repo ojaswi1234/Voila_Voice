@@ -12,6 +12,5 @@ REQUIRED WORKFLOW:
 DATA FLOW (Follow this strictly):
 - [Researcher] passes output to [Orchestrator]
 - [Orchestrator] passes output to [Reviewer]
-- [Researcher] passes output to [Reviewer]
 
 Output this exact debate transcript before you execute any tools.

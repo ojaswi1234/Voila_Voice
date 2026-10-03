@@ -4371,14 +4371,14 @@ case "read_file":
 		
 		// AUTO-DETECT: Force BG TASK COMORADE for known long-running commands
 		if (bgMode == "" || bgMode == "NONE") && isLongRunningCommand(actualCommand) {
-			debugLog.Printf("[run_terminal] AUTO-DETECT: long-running command detected, upgrading to BG TASK COMORADE")
+			logBGWarn("AutoDetect", "Long-running command %q detected, upgrading to BG TASK COMORADE", actualCommand)
 			fmt.Printf("STATUS: SYSTEM_MSG:Auto-detected long-running command — spawning as background task\n")
 			os.Stdout.Sync()
 			bgMode = "BG TASK COMORADE"
 		}
 		
 		if bgMode == "BG TASK" || bgMode == "BG TASK COMORADE" {
-			debugLog.Printf("[executeTool/run_terminal] Spawning %s background task", bgMode)
+			logBGInfo("Terminal", "Spawning %s background task", bgMode)
 			taskID, isDup := spawnBGTaskSafe(actualCommand, actualCommand)
 			
 			if isDup {
@@ -4979,7 +4979,7 @@ func executeGroqCommand(ctx context.Context, command, apiKey, modelName, clientI
 	// Check for a pending checkpoint (resume from rate-limit or max-iter)
 	if cp, err := loadCheckpoint(convID, taskID); err == nil && len(cp.Messages) > 0 {
 		if time.Now().After(cp.ResumeAfter) {
-			debugLog.Printf("[executeGroqCommand] Resuming from checkpoint reason=%s msgs=%d", cp.Reason, len(cp.Messages))
+			logBGInfo("Groq", "Resuming from checkpoint reason=%s msgs=%d", cp.Reason, len(cp.Messages))
 			fmt.Printf("STATUS: SYSTEM_MSG:Resuming from saved checkpoint (reason: %s)...\n", cp.Reason)
 			os.Stdout.Sync()
 			isResume = true
@@ -4991,7 +4991,7 @@ func executeGroqCommand(ctx context.Context, command, apiKey, modelName, clientI
 			clearCheckpoint(convID, taskID)
 			command = cp.Command
 		} else {
-			debugLog.Printf("[executeGroqCommand] Checkpoint exists but ResumeAfter not reached yet")
+			logBGInfo("Groq", "Checkpoint exists but ResumeAfter not reached yet")
 		}
 	}
 	
@@ -5180,7 +5180,7 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 		// Drain any completed COMORADE background task notifications
 		if notifs := drainComradeNotifications(); len(notifs) > 0 {
 			messages = append(messages, notifs...)
-			debugLog.Printf("[executeGroqCommand] iter=%d injected %d COMORADE notifications", iter, len(notifs))
+			logBGInfo("Groq", "iter=%d injected %d COMORADE notifications", iter, len(notifs))
 		}
 		debugLog.Printf("[executeGroqCommand] iter=%d messages=%d", iter, len(messages))
 		payload := map[string]interface{}{
@@ -5243,7 +5243,7 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 				
 				if r == maxRetries-1 {
 					// Instead of hard-exit: save checkpoint and wait longer
-					debugLog.Printf("[executeGroqCommand] 429 retries exhausted - saving checkpoint for iter=%d", iter)
+					logBGWarn("Groq", "429 retries exhausted - saving checkpoint for iter=%d", iter)
 					cp := &Checkpoint{
 						ConvID:      convID,
 						TaskID:      taskID,
@@ -5385,7 +5385,7 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 				// Loop detection: check if we're repeating the same tool call
 				argsStr := string(toolCall.Function.Arguments)
 				if seenToolCall(toolCall.Function.Name, argsStr) {
-					debugLog.Printf("[LOOP_DETECTION] Repeated tool call detected: %s with args %s", toolCall.Function.Name, argsStr)
+					logBGWarn("LoopDetection", "Repeated tool call detected: %s with args %s", toolCall.Function.Name, argsStr)
 					// Inject a warning into the tool result to break the loop
 					toolResults[index] = map[string]interface{}{
 						"role":    "tool",
@@ -5680,7 +5680,7 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 			
 			if err != nil {
 				if r == maxRetries-1 {
-					debugLog.Printf("[executeOllamaCommand] iter=%d request failed: %v", iter, err)
+					logBGError("Ollama", "iter=%d request failed: %v", iter, err)
 					return "", fmt.Errorf("Ollama request failed: %w", err)
 				}
 				time.Sleep(3 * time.Second)
@@ -5690,7 +5690,7 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 			respBody, _ = io.ReadAll(resp.Body)
 			resp.Body.Close()
 			
-			debugLog.Printf("[executeOllamaCommand] iter=%d response status=%d responseLen=%d", iter, resp.StatusCode, len(respBody))
+			logBGInfo("Ollama", "iter=%d response status=%d responseLen=%d", iter, resp.StatusCode, len(respBody))
 			
 			if resp.StatusCode == 429 || resp.StatusCode >= 500 {
 				if r == maxRetries-1 {
@@ -5743,13 +5743,13 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 			debugLog.Printf("[DEBUG_LIFECYCLE: OLLAMA] Final Output Length: %d", len(result.Message.Content))
 			debugLog.Printf("[DEBUG_LIFECYCLE: OLLAMA] Returning output back to backend webhook...")
 			debugLog.Printf("================================================================")
-			debugLog.Printf("[executeOllamaCommand] iter=%d final answer len=%d", iter, len(result.Message.Content))
+			logBGInfo("Ollama", "iter=%d final answer len=%d", iter, len(result.Message.Content))
 			finalAnswer := strings.TrimSpace(result.Message.Content)
 			saveCloudHistory(convID, command, finalAnswer)
 			return finalAnswer, nil
 		}
 
-		debugLog.Printf("[executeOllamaCommand] iter=%d toolCalls=%d (First tool: %s)", iter, len(result.Message.ToolCalls), result.Message.ToolCalls[0].Function.Name)
+		logBGInfo("Ollama", "iter=%d toolCalls=%d (First tool: %s)", iter, len(result.Message.ToolCalls), result.Message.ToolCalls[0].Function.Name)
 
 		// ENFORCE STRICT SEQUENTIAL EXECUTION: If AI tries to blindly parallelize tool calls, truncate to the first one!
 		if len(result.Message.ToolCalls) > 1 {
@@ -5793,7 +5793,7 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 				// Loop detection: check if we're repeating the same tool call
 				argsStr := string(toolCall.Function.Arguments)
 				if seenToolCall(toolCall.Function.Name, argsStr) {
-					debugLog.Printf("[LOOP_DETECTION] Repeated tool call detected: %s with args %s", toolCall.Function.Name, argsStr)
+					logBGWarn("LoopDetection", "Repeated tool call detected: %s with args %s", toolCall.Function.Name, argsStr)
 					// Inject a warning into the tool result to break the loop
 					toolResults[index] = map[string]interface{}{
 						"role":    "tool",
@@ -5828,7 +5828,7 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 		}
 	}
 
-	debugLog.Printf("[executeOllamaCommand] max iterations reached")
+	logBGWarn("Ollama", "max iterations reached")
 	return "(max tool iterations reached)", nil
 }
 
@@ -6399,6 +6399,7 @@ func main() {
 	os.Setenv("PYTHONIOENCODING", "utf-8")
 	initZeroOrphanJobObject()
 	initDebugLog()
+	initBGLogger()
 
 	go func() {
 		ticker := time.NewTicker(5 * time.Minute)

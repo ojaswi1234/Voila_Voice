@@ -77,8 +77,7 @@ func saveCheckpoint(cp *Checkpoint) error {
 	if err := os.WriteFile(path, data, 0644); err != nil {
 		return fmt.Errorf("checkpoint write: %w", err)
 	}
-	debugLog.Printf("[Checkpoint] Saved %s reason=%s msgs=%d bgTasks=%v",
-		path, cp.Reason, len(cp.Messages), cp.BGTaskIDs)
+	logBGInfo("Checkpoint", "Saved %s reason=%s msgs=%d bgTasks=%v", path, cp.Reason, len(cp.Messages), cp.BGTaskIDs)
 	return nil
 }
 
@@ -93,7 +92,7 @@ func loadCheckpoint(convID, taskID string) (*Checkpoint, error) {
 	if err := json.Unmarshal(data, &cp); err != nil {
 		return nil, fmt.Errorf("checkpoint unmarshal: %w", err)
 	}
-	debugLog.Printf("[Checkpoint] Loaded %s reason=%s msgs=%d", path, cp.Reason, len(cp.Messages))
+	logBGInfo("Checkpoint", "Loaded %s reason=%s msgs=%d", path, cp.Reason, len(cp.Messages))
 	return &cp, nil
 }
 
@@ -101,7 +100,7 @@ func loadCheckpoint(convID, taskID string) (*Checkpoint, error) {
 func clearCheckpoint(convID, taskID string) {
 	path := checkpointPath(convID, taskID)
 	os.Remove(path)
-	debugLog.Printf("[Checkpoint] Cleared %s", path)
+	logBGInfo("Checkpoint", "Cleared %s", path)
 }
 
 // buildResumeInjection builds the system-side injection message that orients the LLM on resume
@@ -141,7 +140,7 @@ func fetchAndInjectBGResults(messages []map[string]interface{}, bgTaskIDs []stri
 			"name":    "check_bg_task",
 			"content": snapshot,
 		})
-		debugLog.Printf("[Checkpoint] Injected BG task %s snapshot (%d bytes)", id, len(snapshot))
+		logBGInfo("Checkpoint", "Injected BG task %s snapshot (%d bytes)", id, len(snapshot))
 	}
 	return messages
 }
@@ -160,7 +159,7 @@ func drainComradeNotifications() []map[string]interface{} {
 				"name":    "check_bg_task",
 				"content": msg,
 			})
-			debugLog.Printf("[Comrade] Drained notification for task %s", notif.TaskID)
+			logBGInfo("Comrade", "Drained notification for task %s", notif.TaskID)
 		default:
 			return injections
 		}

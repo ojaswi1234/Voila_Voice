@@ -129,7 +129,7 @@ func loadBGTasksFromDisk() {
 			}
 		}
 		bgTasks[task.ID] = &task
-		debugLog.Printf("[BGTask] Loaded persisted task %s status=%s", task.ID, task.Status)
+		logBGInfo("BGTask", "Loaded persisted task %s status=%s", task.ID, task.Status)
 	}
 }
 
@@ -173,7 +173,7 @@ func spawnBGTask(command string) string {
 // spawnBGTaskSafe is the public entry point - checks for duplicates first
 func spawnBGTaskSafe(command, label string) (string, bool) {
 	if isDup, existingID := isDuplicateBGTask(command); isDup {
-		debugLog.Printf("[BGTask] Duplicate detected - command already running as %s", existingID)
+		logBGWarn("BGTask", "Duplicate detected - command already running as %s", existingID)
 		return existingID, true // true = was duplicate
 	}
 	return spawnBGTaskWithLabel(command, label), false
@@ -200,7 +200,7 @@ func spawnBGTaskWithLabel(command, label string) string {
 
 	// Persist meta immediately so mobile/dashboard can see it
 	saveBGTaskMeta(task)
-	debugLog.Printf("[BGTask] Spawned task %s: %s", id, command)
+	logBGInfo("BGTask", "Spawned task %s: %s", id, command)
 
 	go func() {
 		fullCmd := fmt.Sprintf("Set-Location -Path [Environment]::GetFolderPath('Desktop'); %s", command)
@@ -235,10 +235,10 @@ func spawnBGTaskWithLabel(command, label string) string {
 		if err != nil {
 			task.Status = "failed"
 			fmt.Fprintf(task.Stderr, "\n[Execution Error: %v]", err)
-			debugLog.Printf("[BGTask] Task %s FAILED: %v", id, err)
+			logBGError("BGTask", "Task %s FAILED: %v", id, err)
 		} else {
 			task.Status = "completed"
-			debugLog.Printf("[BGTask] Task %s COMPLETED in %s", id, task.EndTime.Sub(task.StartTime).Round(time.Second))
+			logBGInfo("BGTask", "Task %s COMPLETED in %s", id, task.EndTime.Sub(task.StartTime).Round(time.Second))
 		}
 		persistSnapshot(task)
 		saveBGTaskMeta(task)
@@ -251,10 +251,10 @@ func spawnBGTaskWithLabel(command, label string) string {
 			Label:    task.Label,
 			Snapshot: snapshot,
 		}:
-			debugLog.Printf("[BGTask] COMORADE notification sent for %s", task.ID)
+			logBGInfo("BGTask", "COMORADE notification sent for %s", task.ID)
 		default:
 			// Channel full - log and move on (LLM can still poll via check_bg_task)
-			debugLog.Printf("[BGTask] COMORADE channel full, notification for %s dropped (use check_bg_task)", task.ID)
+			logBGWarn("BGTask", "COMORADE channel full, notification for %s dropped (use check_bg_task)", task.ID)
 		}
 	}()
 
