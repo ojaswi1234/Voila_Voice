@@ -2181,23 +2181,28 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   @override
 
   Widget _buildDrawer() {
+    bool isDark = appThemeMode.value == ThemeMode.dark;
     final colorScheme = Theme.of(context).colorScheme;
+    
     return Drawer(
-      backgroundColor: const Color(0xFF131316),
+      backgroundColor: AppTokens.bg(isDark),
       child: Column(
         children: [
           Container(
             padding: const EdgeInsets.only(top: 60, bottom: 20, left: 20, right: 20),
-            color: const Color(0xFF1A1A1F),
+            decoration: BoxDecoration(
+              color: AppTokens.card(isDark),
+              border: Border(bottom: BorderSide(color: AppTokens.border(isDark))),
+            ),
             child: Row(
               children: [
-                const Icon(Icons.mic, color: Colors.blueAccent, size: 28),
+                const Icon(Icons.blur_on_rounded, color: AppTokens.accent, size: 28),
                 const SizedBox(width: 12),
-                const Text('Voila Voice', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold, letterSpacing: -0.5)),
+                Text('VOILA VOICE', style: GoogleFonts.spaceGrotesk(color: AppTokens.textPrimary(isDark), fontSize: 20, fontWeight: FontWeight.w800, letterSpacing: -1.0)),
                 const Spacer(),
                 if (_currentMode.toUpperCase() == 'AGENT')
                   IconButton(
-                    icon: const Icon(Icons.refresh, color: Colors.white54),
+                    icon: Icon(Icons.refresh, color: AppTokens.textSecondary(isDark)),
                     onPressed: _fetchConversations,
                   )
               ],
@@ -2210,16 +2215,16 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
               children: [
                 if (_currentMode.toUpperCase() == 'AGENT') ...[
                   ListTile(
-                    leading: const Icon(Icons.add_circle_outline, color: Colors.blueAccent),
-                    title: const Text('New Conversation', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                    leading: const Icon(Icons.add_circle_outline, color: AppTokens.accentSecondary),
+                    title: Text('New Conversation', style: GoogleFonts.inter(color: AppTokens.textPrimary(isDark), fontWeight: FontWeight.w600)),
                     onTap: () {
                       Navigator.pop(context);
                       _startNewConversation();
                     },
                   ),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    child: Divider(color: Colors.white12),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: Divider(color: AppTokens.border(isDark)),
                   ),
                 ],
                 
@@ -2242,9 +2247,9 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                   Navigator.pop(context);
                 }),
                 
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  child: Divider(color: Colors.white12),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: Divider(color: AppTokens.border(isDark)),
                 ),
                 
                 Padding(
@@ -2255,7 +2260,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                       color: _isSessionValid() 
                         ? (_isSessionExpiringSoon() ? Colors.orange.withOpacity(0.1) : Colors.green.withOpacity(0.1))
                         : Colors.red.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(16),
                       border: Border.all(
                         color: _isSessionValid() 
                           ? (_isSessionExpiringSoon() ? Colors.orange.withOpacity(0.5) : Colors.green.withOpacity(0.5))
@@ -2265,7 +2270,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                     child: Row(
                       children: [
                         Icon(
-                          _isSessionValid() ? Icons.lock_open : Icons.lock,
+                          _isSessionValid() ? Icons.lock_open_rounded : Icons.lock_rounded,
                           size: 18,
                           color: _isSessionValid() 
                             ? (_isSessionExpiringSoon() ? Colors.orange : Colors.green)
@@ -2276,11 +2281,11 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text('Session Status', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                              Text('Session Status', style: GoogleFonts.inter(color: AppTokens.textSecondary(isDark), fontSize: 12)),
                               const SizedBox(height: 2),
                               Text(
                                 _getSessionStatusText(),
-                                style: TextStyle(
+                                style: GoogleFonts.inter(
                                   color: _isSessionValid() 
                                     ? (_isSessionExpiringSoon() ? Colors.orange : Colors.green)
                                     : Colors.red,
@@ -2297,22 +2302,22 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                 ),
                 
                 if (_currentMode.toUpperCase() == 'AGENT' && _conversations.isNotEmpty) ...[
-                  const Padding(
-                    padding: EdgeInsets.only(left: 20, top: 16, bottom: 8),
-                    child: Text('RECENT CHATS', style: TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+                  Padding(
+                    padding: const EdgeInsets.only(left: 20, top: 16, bottom: 8),
+                    child: Text('RECENT CHATS', style: GoogleFonts.spaceGrotesk(color: AppTokens.textSecondary(isDark), fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 1.2)),
                   ),
                   ..._conversations.map((conv) {
                     final isSelected = _currentConversationId == conv['id'];
                     return ListTile(
                       dense: true,
                       contentPadding: const EdgeInsets.symmetric(horizontal: 20),
-                      tileColor: isSelected ? colorScheme.primary.withOpacity(0.15) : null,
-                      leading: Icon(Icons.chat_bubble_outline, size: 18, color: isSelected ? colorScheme.primary : Colors.white54),
+                      tileColor: isSelected ? AppTokens.accentSecondary.withOpacity(0.15) : null,
+                      leading: Icon(Icons.chat_bubble_outline_rounded, size: 18, color: isSelected ? AppTokens.accentSecondary : AppTokens.textSecondary(isDark)),
                       title: Text(
                         conv['title'] ?? 'Unknown', 
-                        style: TextStyle(
-                          color: isSelected ? Colors.white : Colors.white70,
-                          fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                        style: GoogleFonts.inter(
+                          color: isSelected ? AppTokens.textPrimary(isDark) : AppTokens.textSecondary(isDark),
+                          fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
                           fontSize: 14,
                         ),
                         maxLines: 1,
@@ -2642,7 +2647,9 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
               IconButton(
                 icon: Icon(appThemeMode.value == ThemeMode.dark ? Icons.light_mode_rounded : Icons.dark_mode_rounded, size: 22, color: AppTokens.textPrimary(appThemeMode.value == ThemeMode.dark)),
                 onPressed: () {
-                  appThemeMode.value = appThemeMode.value == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
+                  setState(() {
+                    appThemeMode.value = appThemeMode.value == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
+                  });
                 },
               ),
               const SizedBox(width: 4),
@@ -3328,6 +3335,13 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     final isUser = type == 'user';
     final isError = type == 'error';
     final isSystem = type == 'system';
+    
+    bool isImage = false;
+    String displayContent = content;
+    if (content.startsWith('__IMAGE__:')) {
+      isImage = true;
+      displayContent = content.substring(10).replaceAll(RegExp(r'\s+'), '');
+    }
 
     return Container(
       margin: EdgeInsets.only(
@@ -3348,11 +3362,11 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                     BoxShadow(color: AppTokens.accent.withOpacity(0.3), blurRadius: 12, offset: const Offset(0, 6))
                   ],
                 ),
-                child: type == 'image'
+                child: isImage
                     ? ClipRRect(
                         borderRadius: BorderRadius.circular(12),
                         child: Image.memory(
-                          base64Decode(content),
+                          base64Decode(displayContent),
                           fit: BoxFit.cover,
                         ),
                       )
@@ -3394,18 +3408,18 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                   ],
                 ),
                 const SizedBox(height: 12),
-                type == 'image'
+                isImage
                     ? ClipRRect(
                         borderRadius: BorderRadius.circular(24),
                         child: Image.memory(
-                          base64Decode(content),
+                          base64Decode(displayContent),
                           fit: BoxFit.cover,
                         ),
                       )
                     : (isAgent 
                         // Gorgeous typography for AI Assistant
                         ? CollapsibleOutput(
-                            text: content,
+                            text: displayContent,
                             style: GoogleFonts.outfit(
                               textStyle: TextStyle(
                                 color: isError ? const Color(0xFFEF4444) : AppTokens.textPrimary(isDark),
@@ -3424,7 +3438,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                               border: Border.all(color: AppTokens.border(isDark)),
                             ),
                             child: CollapsibleOutput(
-                              text: content,
+                              text: displayContent,
                               style: GoogleFonts.firaCode(
                                 textStyle: TextStyle(
                                   color: isError ? const Color(0xFFEF4444) : AppTokens.textPrimary(isDark),
@@ -3441,11 +3455,12 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   }
 
   Widget _buildBgTasksSidebar() {
+    bool isDark = appThemeMode.value == ThemeMode.dark;
     // Reverse the tasks to show newest first, and limit to last 50 to avoid clutter
     final displayTasks = _bgTasks.reversed.take(50).toList();
     
     return Drawer(
-      backgroundColor: AppTokens.bg(appThemeMode.value == ThemeMode.dark),
+      backgroundColor: AppTokens.bg(isDark),
       child: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -3453,105 +3468,85 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                border: Border(bottom: BorderSide(color: AppTokens.border(appThemeMode.value == ThemeMode.dark))),
-                color: const Color(0xFF14B8A6).withOpacity(0.05),
+                border: Border(bottom: BorderSide(color: AppTokens.border(isDark))),
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.memory, color: Color(0xFF2DD4BF), size: 20),
+                  const Icon(Icons.memory_rounded, color: AppTokens.accentSecondary),
                   const SizedBox(width: 12),
-                  const Text('Background Tasks', style: TextStyle(color: Color(0xFF2DD4BF), fontWeight: FontWeight.w800, fontSize: 16)),
+                  Text('BACKGROUND TASKS', style: GoogleFonts.spaceGrotesk(color: AppTokens.textPrimary(isDark), fontSize: 16, fontWeight: FontWeight.w800, letterSpacing: -0.5)),
                   const Spacer(),
-                  Text('${_bgTasks.where((t) => t['status'] == 'running').length} RUNNING', 
-                    style: const TextStyle(color: Color(0xFF5EEAD4), fontSize: 10, fontWeight: FontWeight.bold)),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppTokens.accentSecondary.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      ' Active',
+                      style: GoogleFonts.inter(color: AppTokens.accentSecondary, fontSize: 12, fontWeight: FontWeight.bold),
+                    ),
+                  ),
                 ],
               ),
             ),
             Expanded(
               child: displayTasks.isEmpty
-                  ? const Center(child: Text('No background tasks', style: TextStyle(color: Colors.white54)))
-                  : ListView.builder(
-                      padding: const EdgeInsets.all(12),
+                  ? Center(
+                      child: Text(
+                        'No background tasks',
+                        style: GoogleFonts.inter(color: AppTokens.textSecondary(isDark)),
+                      ),
+                    )
+                  : ListView.separated(
+                      padding: const EdgeInsets.all(16),
                       itemCount: displayTasks.length,
+                      separatorBuilder: (context, index) => const SizedBox(height: 12),
                       itemBuilder: (context, index) {
                         final task = displayTasks[index];
-                        final isDone = task['status'] == 'completed';
-                        final isFail = task['status'] == 'failed';
-                        final c = isDone ? const Color(0xFF34D399) : (isFail ? const Color(0xFFF87171) : const Color(0xFF2DD4BF));
+                        final isRunning = task['status'] == 'running';
                         
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(8),
-                            onTap: () {
-                              showDialog(
-                                context: context,
-                                builder: (context) => AlertDialog(
-                                  backgroundColor: const Color(0xFF1E1E24),
-                                  title: Row(
-                                    children: [
-                                      Icon(isDone ? Icons.check_circle : (isFail ? Icons.error : Icons.memory), color: c, size: 20),
-                                      const SizedBox(width: 8),
-                                      const Text('Task Details', style: TextStyle(color: Colors.white, fontSize: 16)),
-                                    ],
-                                  ),
-                                  content: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text('ID: ${task["id"]}', style: const TextStyle(color: Colors.white70, fontSize: 12)),
-                                      const SizedBox(height: 4),
-                                      Text('Status: ${task["status"].toString().toUpperCase()}', style: TextStyle(color: c, fontSize: 12, fontWeight: FontWeight.bold)),
-                                      const SizedBox(height: 4),
-                                      Text('Duration: ${task["duration"]}', style: const TextStyle(color: Colors.white70, fontSize: 12)),
-                                      const SizedBox(height: 12),
-                                      const Text('Command:', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
-                                      const SizedBox(height: 4),
-                                      Container(
-                                        padding: const EdgeInsets.all(8),
-                                        decoration: BoxDecoration(
-                                          color: Colors.black38,
-                                          borderRadius: BorderRadius.circular(6),
-                                        ),
-                                        child: Text(task["command"], style: const TextStyle(color: Colors.greenAccent, fontFamily: 'monospace', fontSize: 11)),
-                                      ),
-                                    ],
-                                  ),
-                                  actions: [
-                                    TextButton(
-                                      onPressed: () => Navigator.pop(context),
-                                      child: const Text('Close', style: TextStyle(color: Colors.white70)),
-                                    )
-                                  ],
-                                ),
-                              );
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF1A1A1F),
-                                border: Border.all(color: c.withOpacity(0.3), width: 1),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Row(
+                        return Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: AppTokens.cardAlt(isDark),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: isRunning ? AppTokens.accentSecondary.withOpacity(0.5) : AppTokens.border(isDark)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
                                 children: [
-                                  Icon(isDone ? Icons.check_circle : (isFail ? Icons.error : Icons.hourglass_top), color: c, size: 16),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(task["id"], style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
-                                        const SizedBox(height: 4),
-                                        Text(task["command"], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white54, fontSize: 10, fontFamily: 'monospace')),
-                                      ],
-                                    ),
+                                  Icon(
+                                    isRunning ? Icons.play_circle_fill_rounded : Icons.check_circle_rounded,
+                                    size: 16,
+                                    color: isRunning ? AppTokens.accentSecondary : AppTokens.textSecondary(isDark),
                                   ),
                                   const SizedBox(width: 8),
-                                  Text(task["duration"], style: const TextStyle(color: Colors.white54, fontSize: 10)),
+                                  Expanded(
+                                    child: Text(
+                                      task['id'] ?? 'Unknown Task',
+                                      style: GoogleFonts.inter(
+                                        color: AppTokens.textPrimary(isDark),
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ),
                                 ],
                               ),
-                            ),
+                              if (task['action'] != null) ...[
+                                const SizedBox(height: 8),
+                                Text(
+                                  task['action'],
+                                  style: GoogleFonts.inter(
+                                    color: AppTokens.textSecondary(isDark),
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
                         );
                       },
