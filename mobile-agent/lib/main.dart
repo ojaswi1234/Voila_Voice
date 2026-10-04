@@ -2646,27 +2646,33 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                 },
               ),
               const SizedBox(width: 4),
-              GestureDetector(
-                onTap: () => _showDeviceSelector(context),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: AppTokens.cardAlt(appThemeMode.value == ThemeMode.dark),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: AppTokens.border(appThemeMode.value == ThemeMode.dark)),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.computer_rounded, size: 14, color: AppTokens.accent),
-                      const SizedBox(width: 6),
-                      Text(
-                        _activeDevice.isEmpty ? 'Select Device' : (_devices[_activeDevice]?['name'] ?? 'Desktop'),
-                        style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w500, color: AppTokens.textPrimary(appThemeMode.value == ThemeMode.dark)),
-                      ),
-                      const SizedBox(width: 4),
-                      Icon(Icons.keyboard_arrow_down_rounded, size: 14, color: AppTokens.textSecondary(appThemeMode.value == ThemeMode.dark)),
-                    ],
+              Flexible(
+                child: GestureDetector(
+                  onTap: () => _showDeviceSelector(context),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: AppTokens.cardAlt(appThemeMode.value == ThemeMode.dark),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: AppTokens.border(appThemeMode.value == ThemeMode.dark)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.computer_rounded, size: 14, color: AppTokens.accent),
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            _activeDevice.isEmpty ? 'Select Device' : (_devices[_activeDevice]?['name'] ?? 'Desktop'),
+                            style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w500, color: AppTokens.textPrimary(appThemeMode.value == ThemeMode.dark)),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(Icons.keyboard_arrow_down_rounded, size: 14, color: AppTokens.textSecondary(appThemeMode.value == ThemeMode.dark)),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -2708,10 +2714,9 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Expanded(
-                      child: _buildModeToggle(colorScheme),
-                    ),
+                    _buildModeToggle(colorScheme),
                     AnimatedSize(
                       duration: const Duration(milliseconds: 350),
                       curve: Curves.easeInOutCubic,
@@ -3616,9 +3621,8 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
               child: Container(
                 margin: const EdgeInsets.only(bottom: 2),
                 decoration: BoxDecoration(
-                  color: AppTokens.cardAlt(isDark),
+                  color: Colors.transparent, // Completely invisible as requested
                   borderRadius: BorderRadius.circular(100),
-                  border: Border.all(color: AppTokens.border(isDark)),
                 ),
                 child: TextField(
                   controller: _controller,
@@ -3628,7 +3632,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                   decoration: InputDecoration(
                     hintText: 'Ask me anything...',
                     hintStyle: GoogleFonts.inter(color: AppTokens.textSecondary(isDark)),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                     border: InputBorder.none,
                   ),
                 ),
