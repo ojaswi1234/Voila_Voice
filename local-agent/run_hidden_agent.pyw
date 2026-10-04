@@ -10,6 +10,22 @@ import os
 _popup_pos_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "popup_pos.txt")
 import random
 
+current_mode = "LOCAL"
+_dash_mode_btns = {}
+
+try:
+    import json, os
+    if os.path.exists('connection_data.json'):
+        with open('connection_data.json', 'r', encoding='utf-8') as _cf:
+            _cdata = json.load(_cf)
+            if _cdata.get('active_mode'):
+                current_mode = _cdata['active_mode']
+except: pass
+
+# Fetch saved mode from Go backend on startup
+def _fetch_saved_mode():
+    pass
+
 import ctypes
 
 import ctypes
@@ -62,6 +78,7 @@ try:
     ES_DISPLAY_REQUIRED = 0x00000002
     ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS | ES_DISPLAY_REQUIRED | ES_SYSTEM_REQUIRED)
 except Exception:
+    pass
     pass
 
 
@@ -260,7 +277,7 @@ title_text = canvas.create_text(70, 24, text="Voila AI", fill="#f3f4f6", font=("
 
 # Mode Badge
 mode_badge_bg = create_round_rect(canvas, 145, 16, 195, 32, r=6, fill='#27272a', outline='', width=0)
-mode_badge_text = canvas.create_text(170, 24, text="LOCAL", fill="#9ca3af", font=("Segoe UI", 8, "bold"), anchor="center")
+mode_badge_text = canvas.create_text(170, 24, text=current_mode, fill="#9ca3af", font=("Segoe UI", 8, "bold"), anchor="center")
 
 # Status Text (Sleek text below title)
 status_text = canvas.create_text(70, 44, text="Standing by...", fill="#9ca3af", font=("Segoe UI", 9), anchor="w", width=130)
@@ -273,45 +290,6 @@ close_btn = canvas.create_text(215, 32, text="✖", fill="#6b7280", font=("Segoe
 MODES = ["LOCAL", "GROQ", "OLLAMA"]
 MODE_COLORS = {"LOCAL": "#6366F1", "GROQ": "#10B981", "OLLAMA": "#F59E0B"}
 MODE_LABELS = {"LOCAL": "⚡LOCAL", "GROQ": "☕ GROQ", "OLLAMA": "🦙 OLLAMA"}
-current_mode = "LOCAL"
-_dash_mode_btns = {}
-
-# Fetch saved mode from Go backend on startup
-def _fetch_saved_mode():
-    global current_mode
-    import urllib.request, json, time, threading
-    def _do():
-        for _ in range(20): # retry for 10 seconds
-            try:
-                req = urllib.request.Request("http://localhost:8088/api-keys")
-                with urllib.request.urlopen(req, timeout=1) as resp:
-                    data = json.loads(resp.read().decode())
-                    if data.get("active_mode"):
-                        global current_mode
-                        current_mode = data["active_mode"]
-                        
-                        # Update the UI buttons
-                        def update_btns():
-                            for m, btn in _dash_mode_btns.items():
-                                if m == current_mode:
-                                    btn.config(bg=MODE_COLORS[m], fg='#FFFFFF')
-                                else:
-                                    btn.config(bg='#2D3039', fg='#9CA3AF')
-                            # Also update the dashboard execution mode text if it exists
-                            if 'current_rendered_state' in globals():
-                                try:
-                                    # force redraw
-                                    _on_refresh()
-                                except: pass
-                        try:
-                            if 'root' in globals():
-                                root.after(0, update_btns)
-                        except: pass
-                    break # success, exit loop
-            except Exception:
-                time.sleep(0.5)
-    threading.Thread(target=_do, daemon=True).start()
-_fetch_saved_mode()
 
 def _set_voila_mode(mode):
     def _do():
