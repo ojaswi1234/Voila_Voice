@@ -2387,128 +2387,143 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
 
   Widget _buildSubtitleOverlay(ColorScheme colorScheme, bool isOverlayMode) {
     if (!_showSubtitles || _currentAiSubtitle.isEmpty) return const SizedBox.shrink();
+    
+    bool isDark = appThemeMode.value == ThemeMode.dark;
 
     if (isOverlayMode) {
+      // Floating pill for system overlay (highly readable, strict bento style)
       return Container(
         margin: const EdgeInsets.only(left: 16, right: 16, top: 10, bottom: 20),
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
         width: double.infinity,
         constraints: const BoxConstraints(maxHeight: 250),
-        decoration: AppTokens.glassBox(radius: 40).copyWith(
-          color: Colors.black.withOpacity(0.6),
-          border: Border.all(color: AppTokens.glassBorder),
-          boxShadow: [
-            BoxShadow(color: Colors.black.withOpacity(0.6), blurRadius: 30, spreadRadius: 4, offset: const Offset(0, 10))
-          ]
-        ),
-        child: ClipRRect(
+        decoration: BoxDecoration(
+          color: AppTokens.card(isDark),
           borderRadius: BorderRadius.circular(40),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Flexible(
-                  child: SingleChildScrollView(
-                    physics: const BouncingScrollPhysics(),
-                    child: Text(
-                      _currentAiSubtitle,
-                      style: GoogleFonts.outfit(
-                        fontSize: 16,
-                        height: 1.5,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.white.withOpacity(0.95),
-                      ),
-                      textAlign: TextAlign.center,
+          border: Border.all(color: AppTokens.border(isDark), width: 1.5),
+          boxShadow: AppTokens.shadow(isDark),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
+                child: Text(
+                  _currentAiSubtitle,
+                  style: GoogleFonts.outfit(
+                    fontSize: 18,
+                    height: 1.5,
+                    fontWeight: FontWeight.w600,
+                    color: AppTokens.textPrimary(isDark),
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+            if (!_isAiSpeaking)
+              Padding(
+                padding: const EdgeInsets.only(top: 16.0),
+                child: InkWell(
+                  onTap: () => _speak(_currentAiSubtitle),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: AppTokens.accentSecondary.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(100),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.replay_circle_filled_rounded, size: 18, color: AppTokens.accentSecondary),
+                        const SizedBox(width: 6),
+                        Text("REPEAT AUDIO", style: GoogleFonts.spaceGrotesk(color: AppTokens.accentSecondary, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.0)),
+                      ],
                     ),
                   ),
                 ),
-                if (!_isAiSpeaking)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 10.0),
-                    child: InkWell(
-                      onTap: () => _speak(_currentAiSubtitle),
+              ),
+          ],
+        ),
+      );
+    } else {
+      // Full screen mode: raw beautiful typography, no card bounds
+      return Container(
+        margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+        width: double.infinity,
+        constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Container(
+                  width: 10,
+                  height: 10,
+                  decoration: const BoxDecoration(
+                    color: AppTokens.accentSecondary,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  'AI SUBTITLE',
+                  style: GoogleFonts.spaceGrotesk(
+                    color: AppTokens.accentSecondary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 2.0,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Flexible(
+              child: SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
+                child: Text(
+                  _currentAiSubtitle,
+                  style: GoogleFonts.outfit(
+                    fontSize: 28,
+                    height: 1.4,
+                    letterSpacing: 0.2,
+                    fontWeight: FontWeight.w600,
+                    color: AppTokens.textPrimary(isDark),
+                  ),
+                  textAlign: TextAlign.left,
+                ),
+              ),
+            ),
+            if (!_isAiSpeaking)
+              Padding(
+                padding: const EdgeInsets.only(top: 24.0),
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: InkWell(
+                    onTap: () => _speak(_currentAiSubtitle),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: AppTokens.accentSecondary.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(100),
+                        border: Border.all(color: AppTokens.accentSecondary.withOpacity(0.3)),
+                      ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
-                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Icon(Icons.replay_circle_filled_rounded, size: 18, color: Color(0xFF2DD4BF)),
-                          const SizedBox(width: 6),
-                          Text("REPEAT AUDIO", style: GoogleFonts.spaceGrotesk(color: const Color(0xFF2DD4BF), fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.0)),
+                          const Icon(Icons.replay_circle_filled_rounded, size: 20, color: AppTokens.accentSecondary),
+                          const SizedBox(width: 8),
+                          Text("REPEAT AUDIO", style: GoogleFonts.spaceGrotesk(color: AppTokens.accentSecondary, fontSize: 13, fontWeight: FontWeight.bold, letterSpacing: 1.0)),
                         ],
                       ),
                     ),
                   ),
-              ],
-            ),
-          ),
-        ),
-      );
-    } else {
-      return Container(
-        margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-        padding: const EdgeInsets.all(32),
-        width: double.infinity,
-        constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.5),
-        decoration: AppTokens.glassBox(radius: 32).copyWith(
-          color: AppTokens.bgCard.withOpacity(0.8),
-          boxShadow: [
-             BoxShadow(color: const Color(0xFF8B5CF6).withOpacity(0.1), blurRadius: 40, offset: const Offset(0, 10))
-          ]
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(32),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Flexible(
-                  child: SingleChildScrollView(
-                    physics: const BouncingScrollPhysics(),
-                    child: Text(
-                      _currentAiSubtitle,
-                      style: GoogleFonts.outfit(
-                        fontSize: 28,
-                        height: 1.4,
-                        letterSpacing: 0.5,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white,
-                      ),
-                      textAlign: TextAlign.left,
-                    ),
-                  ),
                 ),
-                if (!_isAiSpeaking)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 20.0),
-                    child: Align(
-                      alignment: Alignment.centerRight,
-                      child: InkWell(
-                        onTap: () => _speak(_currentAiSubtitle),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF2DD4BF).withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(100),
-                            border: Border.all(color: const Color(0xFF2DD4BF).withOpacity(0.3)),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.replay_circle_filled_rounded, size: 18, color: Color(0xFF2DD4BF)),
-                              const SizedBox(width: 8),
-                              Text("REPEAT", style: GoogleFonts.spaceGrotesk(color: const Color(0xFF2DD4BF), fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.0)),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
+              ),
+          ],
         ),
       );
     }
