@@ -75,46 +75,34 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 }
 
 
-// --- DESIGN TOKENS ---
+final ValueNotifier<ThemeMode> appThemeMode = ValueNotifier(ThemeMode.light);
+
 class AppTokens {
-  static const Color bgDark = Color(0xFF070709);
-  static const Color bgCard = Color(0xFF12121A);
+  static const Color accent = Color(0xFF6366F1); // Indigo
+  static const Color accentSecondary = Color(0xFFF97316); // Coral Orange
   
-  static const LinearGradient primaryGradient = LinearGradient(
-    colors: [Color(0xFF2DD4BF), Color(0xFF0F766E)],
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-  );
+  static Color bg(bool isDark) => isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC);
+  static Color card(bool isDark) => isDark ? const Color(0xFF1E293B) : Colors.white;
+  static Color cardAlt(bool isDark) => isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9);
   
-  static const LinearGradient accentGradient = LinearGradient(
-    colors: [Color(0xFF8B5CF6), Color(0xFF3B82F6)],
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-  );
+  static Color textPrimary(bool isDark) => isDark ? const Color(0xFFF9FAFB) : const Color(0xFF0F172A);
+  static Color textSecondary(bool isDark) => isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
   
-  static const LinearGradient warningGradient = LinearGradient(
-    colors: [Color(0xFFFF5A5F), Color(0xFFE11D48)],
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-  );
-
-  static LinearGradient glassGradient = LinearGradient(
-    colors: [Colors.white.withOpacity(0.08), Colors.white.withOpacity(0.02)],
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-  );
-
-  static Color glassBorder = Colors.white.withOpacity(0.1);
-  static Color textPrimary = Colors.white;
-  static Color textSecondary = Colors.white.withOpacity(0.6);
+  static Color border(bool isDark) => isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0);
   
-  static BoxDecoration glassBox({double radius = 16}) => BoxDecoration(
-    gradient: glassGradient,
+  static List<BoxShadow> shadow(bool isDark) => [
+    BoxShadow(
+      color: isDark ? Colors.black.withOpacity(0.3) : const Color(0xFFCBD5E1).withOpacity(0.4),
+      blurRadius: 16,
+      offset: const Offset(0, 4),
+    )
+  ];
+  
+  static BoxDecoration bentoBox(bool isDark, {double radius = 24}) => BoxDecoration(
+    color: card(isDark),
     borderRadius: BorderRadius.circular(radius),
-    border: Border.all(color: glassBorder, width: 1),
-    boxShadow: [
-      BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 20, offset: const Offset(0, 10))
-    ],
+    border: Border.all(color: border(isDark), width: 1.5),
+    boxShadow: shadow(isDark),
   );
 }
 // --- END TOKENS ---
@@ -137,28 +125,26 @@ class VoiceCliApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Voice CLI',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        scaffoldBackgroundColor: Colors.transparent,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF7C6CFF),
-          primary: const Color(0xFF7C6CFF),
-          secondary: const Color(0xFF3DDC97),
-          surface: const Color(0xFF1A1A1F),
-          brightness: Brightness.dark,
-        ),
-        useMaterial3: true,
-        textTheme: GoogleFonts.interTextTheme(ThemeData.dark().textTheme),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF0F0F12),
-          elevation: 0,
-          scrolledUnderElevation: 0,
-        ),
-      ),
-      themeMode: ThemeMode.dark,
-      home: const VoiceHomePage(),
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: appThemeMode,
+      builder: (context, currentMode, child) {
+        return MaterialApp(
+          title: 'Voila Voice',
+          debugShowCheckedModeBanner: false,
+          themeMode: currentMode,
+          theme: ThemeData(
+            scaffoldBackgroundColor: Colors.transparent,
+            brightness: Brightness.light,
+            useMaterial3: true,
+          ),
+          darkTheme: ThemeData(
+            scaffoldBackgroundColor: Colors.transparent,
+            brightness: Brightness.dark,
+            useMaterial3: true,
+          ),
+          home: const VoiceHomePage(),
+        );
+      }
     );
   }
 }
@@ -2348,9 +2334,10 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   }
 
   Widget _buildDrawerItem(IconData icon, String title, VoidCallback onTap) {
+    bool isDark = appThemeMode.value == ThemeMode.dark;
     return ListTile(
-      leading: Icon(icon, color: Colors.white70),
-      title: Text(title, style: const TextStyle(color: Colors.white, fontSize: 15)),
+      leading: Icon(icon, color: AppTokens.accent),
+      title: Text(title, style: GoogleFonts.inter(color: AppTokens.textPrimary(isDark), fontSize: 15, fontWeight: FontWeight.w500)),
       onTap: onTap,
     );
   }
@@ -2367,7 +2354,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       // Solution: disable the drawer completely when in assistant overlay mode.
       drawer: _isAssistant ? null : _buildDrawer(),
       endDrawer: _buildBgTasksSidebar(),
-      backgroundColor: _isAssistant ? Colors.transparent : AppTokens.bgDark,
+      backgroundColor: _isAssistant ? Colors.transparent : AppTokens.bg(appThemeMode.value == ThemeMode.dark),
       body: _isAssistant
         // BUG FIX B+C: The previous LayoutBuilder+SingleChildScrollView placed
         // content at the TOP of a full-screen scroll area, but rendered it visually
@@ -2391,7 +2378,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
             child: Container(
               width: double.infinity,
               height: double.infinity,
-              color: const Color(0xFF0F0F12),
+              color: Colors.transparent,
               child: _buildMainContent(colorScheme),
             ),
           ),
@@ -2571,7 +2558,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                 padding: const EdgeInsets.all(8),
                 constraints: const BoxConstraints(maxHeight: 250),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF0F0F12).withOpacity(0.85),
+                  color: AppTokens.card(appThemeMode.value == ThemeMode.dark).withOpacity(0.85),
                   borderRadius: BorderRadius.circular(24),
                   border: Border.all(color: Colors.white.withOpacity(0.05)),
                 ),
@@ -2590,7 +2577,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
             margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: const Color(0xFF0F0F12).withOpacity(0.85),
+              color: AppTokens.card(appThemeMode.value == ThemeMode.dark).withOpacity(0.85),
               borderRadius: BorderRadius.circular(24),
               border: Border.all(color: Colors.white.withOpacity(0.05)),
             ),
@@ -2616,48 +2603,53 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: BoxDecoration(
-            border: Border(bottom: BorderSide(color: Colors.white.withOpacity(0.05))),
+            border: Border(bottom: BorderSide(color: AppTokens.border(appThemeMode.value == ThemeMode.dark))),
           ),
           child: Row(
             children: [
               Builder(
                 builder: (BuildContext ctx) => IconButton(
-                  icon: const Icon(Icons.menu, size: 22),
+                  icon: Icon(Icons.menu_rounded, size: 22, color: AppTokens.textPrimary(appThemeMode.value == ThemeMode.dark)),
                   onPressed: () => Scaffold.of(ctx).openDrawer(),
                 ),
               ),
-              const Text(
+              Text(
                 'Voila Voice',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: -0.5),
+                style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: -0.5, color: AppTokens.textPrimary(appThemeMode.value == ThemeMode.dark)),
               ),
               const Spacer(),
               if (_currentMode.toUpperCase() == 'AGENT')
                 IconButton(
-                  icon: Icon(Icons.auto_awesome, size: 22, color: _selectedModel.isNotEmpty ? colorScheme.secondary : colorScheme.onSurface.withOpacity(0.7)),
+                  icon: Icon(Icons.auto_awesome, size: 22, color: _selectedModel.isNotEmpty ? AppTokens.accent : AppTokens.textSecondary(appThemeMode.value == ThemeMode.dark)),
                   onPressed: _showModelSelector,
                 ),
-              
-
+              IconButton(
+                icon: Icon(appThemeMode.value == ThemeMode.dark ? Icons.light_mode_rounded : Icons.dark_mode_rounded, size: 22, color: AppTokens.textPrimary(appThemeMode.value == ThemeMode.dark)),
+                onPressed: () {
+                  appThemeMode.value = appThemeMode.value == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
+                },
+              ),
+              const SizedBox(width: 4),
               GestureDetector(
                 onTap: () => _showDeviceSelector(context),
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF1A1A1F),
+                    color: AppTokens.cardAlt(appThemeMode.value == ThemeMode.dark),
                     borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Colors.white.withOpacity(0.1)),
+                    border: Border.all(color: AppTokens.border(appThemeMode.value == ThemeMode.dark)),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.computer, size: 14, color: colorScheme.secondary),
+                      Icon(Icons.computer_rounded, size: 14, color: AppTokens.accent),
                       const SizedBox(width: 6),
                       Text(
                         _activeDevice.isEmpty ? 'Select Device' : (_devices[_activeDevice]?['name'] ?? 'Desktop'),
-                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                        style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w500, color: AppTokens.textPrimary(appThemeMode.value == ThemeMode.dark)),
                       ),
                       const SizedBox(width: 4),
-                      const Icon(Icons.keyboard_arrow_down, size: 14, color: Colors.white54),
+                      Icon(Icons.keyboard_arrow_down_rounded, size: 14, color: AppTokens.textSecondary(appThemeMode.value == ThemeMode.dark)),
                     ],
                   ),
                 ),
@@ -3168,9 +3160,13 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
 
   Widget _buildModeToggle(ColorScheme colorScheme) {
     bool isAgent = _currentMode == 'agent';
+    bool isDark = appThemeMode.value == ThemeMode.dark;
     return Container(
-      decoration: AppTokens.glassBox(radius: 100).copyWith(
-        color: Colors.black.withOpacity(0.4),
+      decoration: BoxDecoration(
+        color: AppTokens.cardAlt(isDark),
+        borderRadius: BorderRadius.circular(100),
+        border: Border.all(color: AppTokens.border(isDark)),
+        boxShadow: AppTokens.shadow(isDark),
       ),
       padding: const EdgeInsets.all(4),
       child: Row(
@@ -3184,21 +3180,19 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
               }
             },
             child: AnimatedContainer(
-              duration: const Duration(milliseconds: 300),
-              curve: Curves.easeOutCubic,
+              duration: const Duration(milliseconds: 200),
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
               decoration: BoxDecoration(
-                gradient: isAgent ? AppTokens.accentGradient : null,
-                color: isAgent ? null : Colors.transparent,
+                color: isAgent ? AppTokens.accent : Colors.transparent,
                 borderRadius: BorderRadius.circular(100),
                 boxShadow: isAgent ? [
-                  BoxShadow(color: const Color(0xFF8B5CF6).withOpacity(0.5), blurRadius: 12, offset: const Offset(0, 4))
+                  BoxShadow(color: AppTokens.accent.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 2))
                 ] : [],
               ),
               child: Text(
                 'AGENT',
                 style: GoogleFonts.outfit(
-                  color: isAgent ? Colors.white : AppTokens.textSecondary,
+                  color: isAgent ? Colors.white : AppTokens.textSecondary(isDark),
                   fontWeight: FontWeight.bold,
                   fontSize: 13,
                   letterSpacing: 1.0,
@@ -3214,21 +3208,20 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
               }
             },
             child: AnimatedContainer(
-              duration: const Duration(milliseconds: 300),
-              curve: Curves.easeOutCubic,
+              duration: const Duration(milliseconds: 200),
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
               decoration: BoxDecoration(
-                gradient: !isAgent ? AppTokens.warningGradient : null,
-                color: !isAgent ? null : Colors.transparent,
+                color: !isAgent ? AppTokens.card(isDark) : Colors.transparent,
                 borderRadius: BorderRadius.circular(100),
+                border: Border.all(color: !isAgent ? AppTokens.border(isDark) : Colors.transparent),
                 boxShadow: !isAgent ? [
-                  BoxShadow(color: const Color(0xFFE11D48).withOpacity(0.5), blurRadius: 12, offset: const Offset(0, 4))
+                  BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 4, offset: const Offset(0, 2))
                 ] : [],
               ),
               child: Text(
                 'SHELL',
                 style: GoogleFonts.outfit(
-                  color: !isAgent ? Colors.white : AppTokens.textSecondary,
+                  color: !isAgent ? AppTokens.textPrimary(isDark) : AppTokens.textSecondary(isDark),
                   fontWeight: FontWeight.bold,
                   fontSize: 13,
                   letterSpacing: 1.0,
@@ -3307,6 +3300,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   }
 
   Widget _buildMessageCard(Map<String, dynamic> message, ColorScheme colorScheme) {
+    bool isDark = appThemeMode.value == ThemeMode.dark;
     final type = message['type'] as String? ?? 'unknown';
     final content = message['content'] as String? ?? '';
     final isUser = type == 'user';
@@ -3315,8 +3309,8 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     return Container(
       margin: EdgeInsets.only(
         bottom: 24,
-        left: isUser ? 40 : 12,
-        right: isUser ? 12 : 40,
+        left: isUser ? 40 : 16,
+        right: isUser ? 16 : 40,
       ),
       child: Row(
         mainAxisAlignment: isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
@@ -3328,66 +3322,49 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                gradient: AppTokens.accentGradient,
-                boxShadow: [
-                  BoxShadow(color: const Color(0xFF8B5CF6).withOpacity(0.4), blurRadius: 12, offset: const Offset(0, 4)),
-                ],
+                color: AppTokens.card(isDark),
+                border: Border.all(color: AppTokens.border(isDark), width: 1.5),
+                boxShadow: AppTokens.shadow(isDark),
               ),
-              child: const Icon(Icons.auto_awesome, size: 16, color: Colors.white),
+              child: const Icon(Icons.smart_toy_rounded, size: 16, color: AppTokens.accent),
             ),
           ],
           Flexible(
-            child: ClipRRect(
-              borderRadius: BorderRadius.only(
-                topLeft: const Radius.circular(24),
-                topRight: const Radius.circular(24),
-                bottomLeft: Radius.circular(isUser ? 24 : 6),
-                bottomRight: Radius.circular(isUser ? 6 : 24),
-              ),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                  decoration: BoxDecoration(
-                    gradient: isUser
-                        ? AppTokens.primaryGradient
-                        : isError
-                            ? AppTokens.warningGradient
-                            : AppTokens.glassGradient,
-                    border: Border.all(
-                      color: isUser || isError ? Colors.transparent : AppTokens.glassBorder,
-                      width: 1,
-                    ),
-                    boxShadow: [
-                      if (isUser)
-                        BoxShadow(
-                          color: const Color(0xFF2DD4BF).withOpacity(0.3),
-                          blurRadius: 20,
-                          offset: const Offset(0, 8),
-                        )
-                    ],
-                  ),
-                  child: type == 'image'
-                      ? ClipRRect(
-                          borderRadius: BorderRadius.circular(12),
-                          child: Image.memory(
-                            base64Decode(content),
-                            fit: BoxFit.cover,
-                          ),
-                        )
-                      : CollapsibleOutput(
-                          text: content,
-                          style: GoogleFonts.inter(
-                            textStyle: TextStyle(
-                              color: isUser || isError ? Colors.white : AppTokens.textPrimary.withOpacity(0.9),
-                              fontSize: 15,
-                              height: 1.6,
-                              fontWeight: isUser ? FontWeight.w500 : FontWeight.w400,
-                            ),
-                          ),
-                        ),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              decoration: BoxDecoration(
+                color: isUser ? AppTokens.accent : (isError ? const Color(0xFFFEF2F2) : AppTokens.card(isDark)),
+                borderRadius: BorderRadius.only(
+                  topLeft: const Radius.circular(24),
+                  topRight: const Radius.circular(24),
+                  bottomLeft: Radius.circular(isUser ? 24 : 6),
+                  bottomRight: Radius.circular(isUser ? 6 : 24),
                 ),
+                border: Border.all(
+                  color: isUser ? AppTokens.accent : (isError ? const Color(0xFFFCA5A5) : AppTokens.border(isDark)),
+                  width: 1.5,
+                ),
+                boxShadow: AppTokens.shadow(isDark),
               ),
+              child: type == 'image'
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.memory(
+                        base64Decode(content),
+                        fit: BoxFit.cover,
+                      ),
+                    )
+                  : CollapsibleOutput(
+                      text: content,
+                      style: GoogleFonts.inter(
+                        textStyle: TextStyle(
+                          color: isUser ? Colors.white : (isError ? const Color(0xFF991B1B) : AppTokens.textPrimary(isDark)),
+                          fontSize: 15,
+                          height: 1.6,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
             ),
           ),
           if (isUser) ...[
@@ -3396,10 +3373,10 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: AppTokens.glassBorder,
-                border: Border.all(color: AppTokens.glassBorder),
+                color: AppTokens.cardAlt(isDark),
+                border: Border.all(color: AppTokens.border(isDark)),
               ),
-              child: Icon(Icons.person, size: 16, color: AppTokens.textSecondary),
+              child: Icon(Icons.person_rounded, size: 16, color: AppTokens.textSecondary(isDark)),
             ),
           ],
         ],
@@ -3412,7 +3389,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     final displayTasks = _bgTasks.reversed.take(50).toList();
     
     return Drawer(
-      backgroundColor: const Color(0xFF0F0F12),
+      backgroundColor: AppTokens.bg(appThemeMode.value == ThemeMode.dark),
       child: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -3420,7 +3397,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                border: Border(bottom: BorderSide(color: Colors.white.withOpacity(0.05))),
+                border: Border(bottom: BorderSide(color: AppTokens.border(appThemeMode.value == ThemeMode.dark))),
                 color: const Color(0xFF14B8A6).withOpacity(0.05),
               ),
               child: Row(
@@ -3531,107 +3508,98 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   }
 
   Widget _buildInputArea(ColorScheme colorScheme) {
+    bool isDark = appThemeMode.value == ThemeMode.dark;
     return Container(
       margin: const EdgeInsets.only(left: 16, right: 16, bottom: 24, top: 8),
-      decoration: AppTokens.glassBox(radius: 32).copyWith(
-        color: Colors.black.withOpacity(0.4),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(32),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                GestureDetector(
-                  onTap: () {
-                    _controller.text = "__SCREENSHOT__";
-                    _sendMessage();
-                  },
-                  child: Container(
-                    margin: const EdgeInsets.only(bottom: 2, right: 8, left: 4),
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: AppTokens.glassBorder,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(Icons.camera_alt_rounded, color: AppTokens.textSecondary, size: 22),
-                  ),
+      decoration: AppTokens.bentoBox(isDark, radius: 32),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            GestureDetector(
+              onTap: () {
+                _controller.text = "__SCREENSHOT__";
+                _sendMessage();
+              },
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 4, right: 8, left: 4),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppTokens.cardAlt(isDark),
+                  shape: BoxShape.circle,
                 ),
-                Expanded(
-                  child: Container(
-                    margin: const EdgeInsets.only(bottom: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.02),
-                      borderRadius: BorderRadius.circular(24),
-                      border: Border.all(color: AppTokens.glassBorder),
-                    ),
-                    child: TextField(
-                      controller: _controller,
-                      minLines: 1,
-                      maxLines: 4,
-                      style: GoogleFonts.outfit(fontSize: 15, color: AppTokens.textPrimary),
-                      decoration: InputDecoration(
-                        hintText: _isListening ? 'Listening...' : (_currentMode == 'agent' ? 'Ask Agent...' : 'Enter command...'),
-                        hintStyle: GoogleFonts.outfit(color: AppTokens.textSecondary.withOpacity(0.5)),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                        border: InputBorder.none,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                GestureDetector(
-                  onTap: () {
-                    if (_isThinking) {
-                      _cancelBackendTask();
-                    } else if (_controller.text.isNotEmpty) {
-                      _sendMessage();
-                    } else {
-                      _toggleListening();
-                    }
-                  },
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeOutCubic,
-                    margin: const EdgeInsets.only(bottom: 2, right: 4),
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      gradient: _isThinking
-                          ? AppTokens.warningGradient
-                          : (_controller.text.isNotEmpty
-                              ? AppTokens.primaryGradient
-                              : _isListening
-                                  ? AppTokens.accentGradient
-                                  : AppTokens.glassGradient),
-                      shape: BoxShape.circle,
-                      border: Border.all(color: _isListening || _controller.text.isNotEmpty || _isThinking ? Colors.transparent : AppTokens.glassBorder),
-                      boxShadow: _isListening || _controller.text.isNotEmpty || _isThinking
-                          ? [
-                              BoxShadow(
-                                color: (_isThinking ? const Color(0xFFE11D48) : (_isListening ? const Color(0xFF8B5CF6) : const Color(0xFF2DD4BF))).withOpacity(0.5),
-                                blurRadius: 16,
-                                offset: const Offset(0, 4),
-                              )
-                            ]
-                          : [],
-                    ),
-                    child: Icon(
-                      _isThinking 
-                          ? Icons.stop_rounded 
-                          : (_controller.text.isNotEmpty 
-                              ? Icons.send_rounded 
-                              : (_isListening ? Icons.mic_rounded : Icons.mic_none_rounded)),
-                      color: _isListening || _controller.text.isNotEmpty || _isThinking ? Colors.white : AppTokens.textSecondary,
-                      size: 22,
-                    ),
-                  ),
-                ),
-              ],
+                child: Icon(Icons.camera_alt_rounded, color: AppTokens.textSecondary(isDark), size: 22),
+              ),
             ),
-          ),
+            Expanded(
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 4),
+                decoration: BoxDecoration(
+                  color: AppTokens.cardAlt(isDark),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: AppTokens.border(isDark)),
+                ),
+                child: TextField(
+                  controller: _controller,
+                  minLines: 1,
+                  maxLines: 4,
+                  style: GoogleFonts.inter(fontSize: 15, color: AppTokens.textPrimary(isDark)),
+                  decoration: InputDecoration(
+                    hintText: _isListening ? 'Listening...' : (_currentMode == 'agent' ? 'Ask Agent...' : 'Enter command...'),
+                    hintStyle: GoogleFonts.inter(color: AppTokens.textSecondary(isDark)),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    border: InputBorder.none,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: () {
+                if (_isThinking) {
+                  _cancelBackendTask();
+                } else if (_controller.text.isNotEmpty) {
+                  _sendMessage();
+                } else {
+                  _toggleListening();
+                }
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                margin: const EdgeInsets.only(bottom: 4, right: 4),
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: _isThinking
+                      ? const Color(0xFFEF4444)
+                      : (_controller.text.isNotEmpty
+                          ? AppTokens.accent
+                          : _isListening
+                              ? AppTokens.accentSecondary
+                              : AppTokens.cardAlt(isDark)),
+                  shape: BoxShape.circle,
+                  boxShadow: _isListening || _controller.text.isNotEmpty || _isThinking
+                      ? [
+                          BoxShadow(
+                            color: (_isThinking ? const Color(0xFFEF4444) : (_isListening ? AppTokens.accentSecondary : AppTokens.accent)).withOpacity(0.4),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          )
+                        ]
+                      : [],
+                ),
+                child: Icon(
+                  _isThinking 
+                      ? Icons.stop_rounded 
+                      : (_controller.text.isNotEmpty 
+                          ? Icons.send_rounded 
+                          : (_isListening ? Icons.mic_rounded : Icons.mic_none_rounded)),
+                  color: _isListening || _controller.text.isNotEmpty || _isThinking ? Colors.white : AppTokens.textSecondary(isDark),
+                  size: 22,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -3652,13 +3620,14 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   Widget _buildJobStrip(ColorScheme colorScheme) {
     if (_activeJobId == null || _activeJobStatus == '') return const SizedBox.shrink();
     
-    Color statusColor = const Color(0xFF8B5CF6);
+    bool isDark = appThemeMode.value == ThemeMode.dark;
+    Color statusColor = AppTokens.accent;
     IconData icon = Icons.sync;
     bool spinner = false;
     
     switch (_activeJobStatus) {
       case 'running':
-        statusColor = const Color(0xFF2DD4BF);
+        statusColor = AppTokens.accentSecondary;
         spinner = true;
         break;
       case 'waiting_approval':
@@ -3675,18 +3644,17 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
         icon = Icons.error_outline_rounded;
         break;
       case 'cancelling':
-        statusColor = Colors.grey;
+        statusColor = AppTokens.textSecondary(isDark);
         spinner = true;
         break;
     }
 
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
+      duration: const Duration(milliseconds: 200),
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: AppTokens.glassBox(radius: 24).copyWith(
-        color: statusColor.withOpacity(0.05),
-        border: Border.all(color: statusColor.withOpacity(0.3)),
+      decoration: AppTokens.bentoBox(isDark, radius: 24).copyWith(
+        border: Border.all(color: statusColor.withOpacity(0.3), width: 1.5),
       ),
       child: Row(
         children: [
@@ -3695,9 +3663,6 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: statusColor.withOpacity(0.15),
-              boxShadow: [
-                BoxShadow(color: statusColor.withOpacity(0.2), blurRadius: 10, offset: const Offset(0, 4))
-              ]
             ),
             child: spinner 
               ? SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: statusColor))
@@ -3708,9 +3673,9 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('BACKGROUND JOB', style: GoogleFonts.spaceGrotesk(color: statusColor, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+                Text('BACKGROUND JOB', style: GoogleFonts.outfit(color: statusColor, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
                 const SizedBox(height: 2),
-                Text(_activeJobSummary, style: GoogleFonts.inter(color: AppTokens.textPrimary, fontSize: 13, fontWeight: FontWeight.w500), maxLines: 1, overflow: TextOverflow.ellipsis),
+                Text(_activeJobSummary, style: GoogleFonts.inter(color: AppTokens.textPrimary(isDark), fontSize: 13, fontWeight: FontWeight.w500), maxLines: 1, overflow: TextOverflow.ellipsis),
               ],
             ),
           ),
@@ -3721,9 +3686,9 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: Colors.white.withOpacity(0.05),
+                  color: AppTokens.cardAlt(isDark),
                 ),
-                child: const Icon(Icons.close_rounded, color: Colors.white54, size: 16),
+                child: Icon(Icons.close_rounded, color: AppTokens.textSecondary(isDark), size: 16),
               ),
             ),
         ],
