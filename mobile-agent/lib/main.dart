@@ -2307,12 +2307,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       // Solution: disable the drawer completely when in assistant overlay mode.
       drawer: _isAssistant ? null : _buildDrawer(),
       endDrawer: _buildBgTasksSidebar(),
-      floatingActionButton: _bgTasks.isEmpty ? null : Builder(
-        builder: (ctx) {
-          int runningCount = _bgTasks.where((t) => t['status'] == 'running').length;
-          return FloatingActionButton.extended(
-            onPressed: () => Scaffold.of(ctx).openEndDrawer(),
-            backgroundColor: runningCount > 0 ? const Color(0xFF0F766E).withOpacity(0.9) : const Color(0xFF222222).withOpacity(0.9),
+      backgroundColor: runningCount > 0 ? const Color(0xFF0F766E).withOpacity(0.9) : const Color(0xFF222222).withOpacity(0.9),
             icon: Icon(Icons.memory, size: 18, color: runningCount > 0 ? const Color(0xFF2DD4BF) : Colors.white70),
             label: Text(
               runningCount > 0 ? '${runningCount} RUNNING' : 'TASKS',
@@ -2657,7 +2652,48 @@ backgroundColor: runningCount > 0 ? const Color(0xFF0F766E).withOpacity(0.9) : c
                 duration: const Duration(milliseconds: 250),
               ),
               const SizedBox(height: 12),
-              _buildModeToggle(colorScheme),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _buildModeToggle(colorScheme),
+                    ),
+                    AnimatedSize(
+                      duration: const Duration(milliseconds: 350),
+                      curve: Curves.easeInOutCubic,
+                      child: _bgTasks.isEmpty ? const SizedBox.shrink() :
+                        Builder(
+                          builder: (BuildContext ctx) {
+                            int runningCount = _bgTasks.where((t) => t['status'] == 'running').length;
+                            return GestureDetector(
+                              onTap: () => Scaffold.of(ctx).openEndDrawer(),
+                              child: Container(
+                                margin: const EdgeInsets.only(left: 12),
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                decoration: BoxDecoration(
+                                  color: runningCount > 0 ? const Color(0xFF0F766E).withOpacity(0.4) : const Color(0xFF222222).withOpacity(0.5),
+                                  borderRadius: BorderRadius.circular(100),
+                                  border: Border.all(color: runningCount > 0 ? const Color(0xFF14B8A6).withOpacity(0.5) : Colors.white24),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.memory, size: 16, color: runningCount > 0 ? const Color(0xFF2DD4BF) : Colors.white54),
+                                    if (runningCount > 0) ...[
+                                      const SizedBox(width: 6),
+                                      Text(' RUNNING', style: const TextStyle(color: Color(0xFF5EEAD4), fontSize: 11, fontWeight: FontWeight.bold)),
+                                    ]
+                                  ],
+                                ),
+                              ),
+                            );
+                          }
+                        ),
+                    ),
+                  ],
+                ),
+              ),
               const SizedBox(height: 16),
               if (_currentMode != 'agent')
                 Expanded(child: _buildMessagesList(colorScheme))
@@ -3088,7 +3124,7 @@ backgroundColor: runningCount > 0 ? const Color(0xFF0F766E).withOpacity(0.9) : c
   Widget _buildModeToggle(ColorScheme colorScheme) {
     final isAgent = _currentMode == 'agent' || _isAssistant;
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
+      margin: EdgeInsets.zero,
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
         color: const Color(0xFF1A1A1F),
