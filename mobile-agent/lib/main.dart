@@ -520,6 +520,21 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
         setState(() => _quietHoursEnabled = val == 'true');
       }
     });
+    _storage.read(key: 'show_subtitles').then((val) {
+      if (val != null && mounted) {
+        setState(() => _showSubtitles = val == 'true');
+      }
+    });
+    _storage.read(key: 'will_talk').then((val) {
+      if (val != null && mounted) {
+        setState(() => _willTalk = val == 'true');
+      }
+    });
+    _storage.read(key: 'graphify_enabled').then((val) {
+      if (val != null && mounted) {
+        setState(() => _graphifyEnabled = val == 'true');
+      }
+    });
 
     // Load cached token usage
     _storage.read(key: 'last_token_usage').then((cachedTokenUsage) {
@@ -2961,6 +2976,7 @@ backgroundColor: runningCount > 0 ? const Color(0xFF0F766E).withOpacity(0.9) : c
                 value: _showSubtitles,
                 onChanged: (val) {
                   if (mounted) setState(() => _showSubtitles = val);
+                  _storage.write(key: 'show_subtitles', value: val.toString());
                   Navigator.pop(context);
                 },
                 activeColor: const Color(0xFF3DDC97),
@@ -2974,6 +2990,7 @@ backgroundColor: runningCount > 0 ? const Color(0xFF0F766E).withOpacity(0.9) : c
                 contentPadding: EdgeInsets.zero,
                 onChanged: (bool value) {
                   if (mounted) setState(() => _willTalk = value);
+                  _storage.write(key: 'will_talk', value: value.toString());
                   Navigator.pop(context);
                 },
               ),
@@ -2985,6 +3002,7 @@ backgroundColor: runningCount > 0 ? const Color(0xFF0F766E).withOpacity(0.9) : c
                 contentPadding: EdgeInsets.zero,
                 onChanged: (bool value) {
                   if (mounted) setState(() => _graphifyEnabled = value);
+                  _storage.write(key: 'graphify_enabled', value: value.toString());
                   Navigator.pop(context);
                 },
               ),
