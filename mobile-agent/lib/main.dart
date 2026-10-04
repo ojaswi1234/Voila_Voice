@@ -78,17 +78,17 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 final ValueNotifier<ThemeMode> appThemeMode = ValueNotifier(ThemeMode.light);
 
 class AppTokens {
-  static const Color accent = Color(0xFF6366F1); // Indigo
-  static const Color accentSecondary = Color(0xFFF97316); // Coral Orange
+  static const Color accent = Color(0xFFFF4500); // Blazing Orange / Coral
+  static const Color accentSecondary = Color(0xFF00E5FF); // Electric Cyan
   
-  static Color bg(bool isDark) => isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC);
-  static Color card(bool isDark) => isDark ? const Color(0xFF1E293B) : Colors.white;
-  static Color cardAlt(bool isDark) => isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9);
+  static Color bg(bool isDark) => isDark ? const Color(0xFF09090B) : const Color(0xFFF4F4F5);
+  static Color card(bool isDark) => isDark ? const Color(0xFF18181B) : Colors.white;
+  static Color cardAlt(bool isDark) => isDark ? const Color(0xFF27272A) : const Color(0xFFE4E4E7);
   
-  static Color textPrimary(bool isDark) => isDark ? const Color(0xFFF9FAFB) : const Color(0xFF0F172A);
-  static Color textSecondary(bool isDark) => isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
+  static Color textPrimary(bool isDark) => isDark ? const Color(0xFFFAFAFA) : const Color(0xFF09090B);
+  static Color textSecondary(bool isDark) => isDark ? const Color(0xFFA1A1AA) : const Color(0xFF71717A);
   
-  static Color border(bool isDark) => isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0);
+  static Color border(bool isDark) => isDark ? const Color(0xFF3F3F46) : const Color(0xFFD4D4D8);
   
   static List<BoxShadow> shadow(bool isDark) => [
     BoxShadow(
@@ -2614,8 +2614,8 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                 ),
               ),
               Text(
-                'Voila Voice',
-                style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: -0.5, color: AppTokens.textPrimary(appThemeMode.value == ThemeMode.dark)),
+                'VOILA VOICE',
+                style: GoogleFonts.spaceGrotesk(fontSize: 22, fontWeight: FontWeight.w800, letterSpacing: -1.0, color: AppTokens.textPrimary(appThemeMode.value == ThemeMode.dark)),
               ),
               const Spacer(),
               if (_currentMode.toUpperCase() == 'AGENT')
@@ -3191,11 +3191,11 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
               ),
               child: Text(
                 'AGENT',
-                style: GoogleFonts.outfit(
+                style: GoogleFonts.spaceGrotesk(
                   color: isAgent ? Colors.white : AppTokens.textSecondary(isDark),
-                  fontWeight: FontWeight.bold,
-                  fontSize: 13,
-                  letterSpacing: 1.0,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 14,
+                  letterSpacing: 1.5,
                 ),
               ),
             ),
@@ -3220,11 +3220,11 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
               ),
               child: Text(
                 'SHELL',
-                style: GoogleFonts.outfit(
+                style: GoogleFonts.spaceGrotesk(
                   color: !isAgent ? AppTokens.textPrimary(isDark) : AppTokens.textSecondary(isDark),
-                  fontWeight: FontWeight.bold,
-                  fontSize: 13,
-                  letterSpacing: 1.0,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 14,
+                  letterSpacing: 1.5,
                 ),
               ),
             ),
@@ -3340,9 +3340,11 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                   bottomLeft: Radius.circular(isUser ? 24 : 6),
                   bottomRight: Radius.circular(isUser ? 6 : 24),
                 ),
-                border: Border.all(
-                  color: isUser ? AppTokens.accent : (isError ? const Color(0xFFFCA5A5) : AppTokens.border(isDark)),
-                  width: 1.5,
+                border: Border(
+                  top: BorderSide(color: isUser ? AppTokens.accent : (isError ? const Color(0xFFFCA5A5) : AppTokens.border(isDark)), width: 1.5),
+                  right: BorderSide(color: isUser ? AppTokens.accent : (isError ? const Color(0xFFFCA5A5) : AppTokens.border(isDark)), width: 1.5),
+                  bottom: BorderSide(color: isUser ? AppTokens.accent : (isError ? const Color(0xFFFCA5A5) : AppTokens.border(isDark)), width: 1.5),
+                  left: BorderSide(color: isUser ? AppTokens.accent : (isError ? const Color(0xFFEF4444) : AppTokens.accentSecondary), width: isUser ? 1.5 : 4.0),
                 ),
                 boxShadow: AppTokens.shadow(isDark),
               ),
