@@ -74,6 +74,51 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   debugPrint("Handling a background message: ${message.messageId}");
 }
 
+
+// --- DESIGN TOKENS ---
+class AppTokens {
+  static const Color bgDark = Color(0xFF070709);
+  static const Color bgCard = Color(0xFF12121A);
+  
+  static const LinearGradient primaryGradient = LinearGradient(
+    colors: [Color(0xFF2DD4BF), Color(0xFF0F766E)],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
+  
+  static const LinearGradient accentGradient = LinearGradient(
+    colors: [Color(0xFF8B5CF6), Color(0xFF3B82F6)],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
+  
+  static const LinearGradient warningGradient = LinearGradient(
+    colors: [Color(0xFFFF5A5F), Color(0xFFE11D48)],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
+
+  static LinearGradient glassGradient = LinearGradient(
+    colors: [Colors.white.withOpacity(0.08), Colors.white.withOpacity(0.02)],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
+
+  static Color glassBorder = Colors.white.withOpacity(0.1);
+  static Color textPrimary = Colors.white;
+  static Color textSecondary = Colors.white.withOpacity(0.6);
+  
+  static BoxDecoration glassBox({double radius = 16}) => BoxDecoration(
+    gradient: glassGradient,
+    borderRadius: BorderRadius.circular(radius),
+    border: Border.all(color: glassBorder, width: 1),
+    boxShadow: [
+      BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 20, offset: const Offset(0, 10))
+    ],
+  );
+}
+// --- END TOKENS ---
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // BUGFIX: Guard against duplicate-app exception if the engine is shared
@@ -2322,7 +2367,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       // Solution: disable the drawer completely when in assistant overlay mode.
       drawer: _isAssistant ? null : _buildDrawer(),
       endDrawer: _buildBgTasksSidebar(),
-      backgroundColor: _isAssistant ? Colors.transparent : const Color(0xFF0F0F12),
+      backgroundColor: _isAssistant ? Colors.transparent : AppTokens.bgDark,
       body: _isAssistant
         // BUG FIX B+C: The previous LayoutBuilder+SingleChildScrollView placed
         // content at the TOP of a full-screen scroll area, but rendered it visually
@@ -2357,113 +2402,126 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     if (!_showSubtitles || _currentAiSubtitle.isEmpty) return const SizedBox.shrink();
 
     if (isOverlayMode) {
-      // 1. OVERLAY MODE STYLE: Minimalist glass pill, floating, highly rounded, compact font
       return Container(
         margin: const EdgeInsets.only(left: 16, right: 16, top: 10, bottom: 20),
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
         width: double.infinity,
-        // BUGFIX: In overlay windows, MediaQuery.size.height can return 0 or
-        // tiny values, crashing the layout. Use a fixed safe maximum instead.
         constraints: const BoxConstraints(maxHeight: 250),
-        decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.85), // True glassmorphism
-          borderRadius: BorderRadius.circular(40), // Pill shape
-          border: Border.all(color: colorScheme.primary.withOpacity(0.5), width: 1),
+        decoration: AppTokens.glassBox(radius: 40).copyWith(
+          color: Colors.black.withOpacity(0.6),
+          border: Border.all(color: AppTokens.glassBorder),
           boxShadow: [
-            BoxShadow(color: colorScheme.primary.withOpacity(0.15), blurRadius: 20, spreadRadius: 2)
+            BoxShadow(color: Colors.black.withOpacity(0.6), blurRadius: 30, spreadRadius: 4, offset: const Offset(0, 10))
           ]
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Flexible(
-              child: SingleChildScrollView(
-                physics: const BouncingScrollPhysics(),
-                child: Text(
-                  _currentAiSubtitle,
-                  style: GoogleFonts.inter(
-                    fontSize: 16,
-                    height: 1.4,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.white.withOpacity(0.95),
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            ),
-            if (!_isAiSpeaking)
-              Padding(
-                padding: const EdgeInsets.only(top: 8.0),
-                child: InkWell(
-                  onTap: () => _speak(_currentAiSubtitle),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.replay_circle_filled, size: 20, color: colorScheme.primary),
-                      const SizedBox(width: 6),
-                      Text("Repeat Audio", style: TextStyle(color: colorScheme.primary, fontSize: 13, fontWeight: FontWeight.bold)),
-                    ],
-                  ),
-                ),
-              ),
-          ],
-        ),
-      );
-    } else {
-      // 2. FULL-SCREEN MODE STYLE: Cinematic, massive, embedded within the main view seamlessly
-      return Container(
-        margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-        padding: const EdgeInsets.all(28),
-        width: double.infinity,
-        constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.5),
-        decoration: BoxDecoration(
-          color: const Color(0xFF16161D), // Darker integrated card
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: colorScheme.secondary.withOpacity(0.3), width: 2),
-          boxShadow: [
-             BoxShadow(color: colorScheme.secondary.withOpacity(0.08), blurRadius: 40, offset: const Offset(0, 10))
-          ]
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Flexible(
-              child: SingleChildScrollView(
-                physics: const BouncingScrollPhysics(),
-                child: Text(
-                  _currentAiSubtitle,
-                  style: GoogleFonts.outfit(
-                    fontSize: 26,
-                    height: 1.5,
-                    letterSpacing: 0.5,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white,
-                  ),
-                  textAlign: TextAlign.left,
-                ),
-              ),
-            ),
-            if (!_isAiSpeaking)
-              Padding(
-                padding: const EdgeInsets.only(top: 16.0),
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: InkWell(
-                    onTap: () => _speak(_currentAiSubtitle),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.replay_circle_filled, size: 24, color: colorScheme.primary),
-                        const SizedBox(width: 8),
-                        Text("Repeat Audio", style: TextStyle(color: colorScheme.primary, fontSize: 16, fontWeight: FontWeight.bold)),
-                      ],
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(40),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Flexible(
+                  child: SingleChildScrollView(
+                    physics: const BouncingScrollPhysics(),
+                    child: Text(
+                      _currentAiSubtitle,
+                      style: GoogleFonts.outfit(
+                        fontSize: 16,
+                        height: 1.5,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.white.withOpacity(0.95),
+                      ),
+                      textAlign: TextAlign.center,
                     ),
                   ),
                 ),
-              ),
-          ],
+                if (!_isAiSpeaking)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 10.0),
+                    child: InkWell(
+                      onTap: () => _speak(_currentAiSubtitle),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.replay_circle_filled_rounded, size: 18, color: Color(0xFF2DD4BF)),
+                          const SizedBox(width: 6),
+                          Text("REPEAT AUDIO", style: GoogleFonts.spaceGrotesk(color: const Color(0xFF2DD4BF), fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.0)),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      );
+    } else {
+      return Container(
+        margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+        padding: const EdgeInsets.all(32),
+        width: double.infinity,
+        constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.5),
+        decoration: AppTokens.glassBox(radius: 32).copyWith(
+          color: AppTokens.bgCard.withOpacity(0.8),
+          boxShadow: [
+             BoxShadow(color: const Color(0xFF8B5CF6).withOpacity(0.1), blurRadius: 40, offset: const Offset(0, 10))
+          ]
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(32),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Flexible(
+                  child: SingleChildScrollView(
+                    physics: const BouncingScrollPhysics(),
+                    child: Text(
+                      _currentAiSubtitle,
+                      style: GoogleFonts.outfit(
+                        fontSize: 28,
+                        height: 1.4,
+                        letterSpacing: 0.5,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                      textAlign: TextAlign.left,
+                    ),
+                  ),
+                ),
+                if (!_isAiSpeaking)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 20.0),
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: InkWell(
+                        onTap: () => _speak(_currentAiSubtitle),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF2DD4BF).withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(100),
+                            border: Border.all(color: const Color(0xFF2DD4BF).withOpacity(0.3)),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.replay_circle_filled_rounded, size: 18, color: Color(0xFF2DD4BF)),
+                              const SizedBox(width: 8),
+                              Text("REPEAT", style: GoogleFonts.spaceGrotesk(color: const Color(0xFF2DD4BF), fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.0)),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
         ),
       );
     }
@@ -3109,64 +3167,76 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   }
 
   Widget _buildModeToggle(ColorScheme colorScheme) {
-    final isAgent = _currentMode == 'agent' || _isAssistant;
+    bool isAgent = _currentMode == 'agent';
     return Container(
-      margin: EdgeInsets.zero,
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1F),
-        borderRadius: BorderRadius.circular(100),
-        border: Border.all(color: Colors.white.withOpacity(0.04)),
+      decoration: AppTokens.glassBox(radius: 100).copyWith(
+        color: Colors.black.withOpacity(0.4),
       ),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final width = constraints.maxWidth / 2;
-          return Stack(
-            children: [
-              AnimatedPositioned(
-                duration: const Duration(milliseconds: 250),
-                curve: Curves.easeOutCubic,
-                left: isAgent ? 0 : width,
-                top: 0,
-                bottom: 0,
-                width: width,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF222228),
-                    borderRadius: BorderRadius.circular(100),
-                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 4, offset: const Offset(0, 2))],
-                  ),
+      padding: const EdgeInsets.all(4),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          GestureDetector(
+            onTap: () {
+              if (!isAgent) {
+                setState(() { _currentMode = 'agent'; });
+                _storage.write(key: 'last_mode', value: 'agent');
+              }
+            },
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOutCubic,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+              decoration: BoxDecoration(
+                gradient: isAgent ? AppTokens.accentGradient : null,
+                color: isAgent ? null : Colors.transparent,
+                borderRadius: BorderRadius.circular(100),
+                boxShadow: isAgent ? [
+                  BoxShadow(color: const Color(0xFF8B5CF6).withOpacity(0.5), blurRadius: 12, offset: const Offset(0, 4))
+                ] : [],
+              ),
+              child: Text(
+                'AGENT',
+                style: GoogleFonts.outfit(
+                  color: isAgent ? Colors.white : AppTokens.textSecondary,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                  letterSpacing: 1.0,
                 ),
               ),
-              Row(
-                children: [
-                  Expanded(
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () { if (mounted) setState(() => _currentMode = 'agent'); },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        alignment: Alignment.center,
-                        child: Text('Agent', style: TextStyle(fontSize: 13, fontWeight: isAgent ? FontWeight.w600 : FontWeight.w500, color: isAgent ? Colors.white : Colors.white54)),
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () { if (mounted) setState(() => _currentMode = 'shell'); },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        alignment: Alignment.center,
-                        child: Text('Shell', style: TextStyle(fontSize: 13, fontWeight: !isAgent ? FontWeight.w600 : FontWeight.w500, color: !isAgent ? Colors.white : Colors.white54)),
-                      ),
-                    ),
-                  ),
-                ],
+            ),
+          ),
+          GestureDetector(
+            onTap: () {
+              if (isAgent) {
+                setState(() { _currentMode = 'shell'; });
+                _storage.write(key: 'last_mode', value: 'shell');
+              }
+            },
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOutCubic,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+              decoration: BoxDecoration(
+                gradient: !isAgent ? AppTokens.warningGradient : null,
+                color: !isAgent ? null : Colors.transparent,
+                borderRadius: BorderRadius.circular(100),
+                boxShadow: !isAgent ? [
+                  BoxShadow(color: const Color(0xFFE11D48).withOpacity(0.5), blurRadius: 12, offset: const Offset(0, 4))
+                ] : [],
               ),
-            ],
-          );
-        },
+              child: Text(
+                'SHELL',
+                style: GoogleFonts.outfit(
+                  color: !isAgent ? Colors.white : AppTokens.textSecondary,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                  letterSpacing: 1.0,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -3241,175 +3311,98 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     final content = message['content'] as String? ?? '';
     final isUser = type == 'user';
     final isError = type == 'error';
-    final isSystem = type == 'system';
-
-    Color bgColor = const Color(0xFF1A1A1F);
-    Color borderColor = Colors.white.withOpacity(0.04);
-    
-    if (isUser) {
-      bgColor = const Color(0xFF222228);
-    } else if (isError) {
-      bgColor = Colors.redAccent.withOpacity(0.05);
-      borderColor = Colors.redAccent.withOpacity(0.2);
-    }
 
     return Container(
       margin: EdgeInsets.only(
-        bottom: 16,
-        left: isUser ? 32 : 0,
-        right: isUser ? 0 : 32,
+        bottom: 24,
+        left: isUser ? 40 : 12,
+        right: isUser ? 12 : 40,
       ),
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: borderColor),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        isUser ? 'You' : (isSystem ? 'System' : 'Agent'),
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: isUser ? Colors.white70 : (isError ? Colors.redAccent : colorScheme.primary),
-                        ),
-                      ),
-                      if (message['timestamp'] != null)
-                        Text(
-                          message['timestamp'].toString().split(' ')[1].substring(0, 5),
-                          style: const TextStyle(fontSize: 10, color: Colors.white30),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  if (content.startsWith('__IMAGE__:'))
-                    GestureDetector(
-                      onTap: () {
-                        showDialog(
-                          context: context,
-                          builder: (context) => Dialog(
-                            backgroundColor: Colors.transparent,
-                            insetPadding: EdgeInsets.zero,
-                            child: Stack(
-                              alignment: Alignment.center,
-                              children: [
-                                InteractiveViewer(
-                                  panEnabled: true,
-                                  boundaryMargin: const EdgeInsets.all(20),
-                                  minScale: 0.5,
-                                  maxScale: 4,
-                                  child: Builder(builder: (ctx) {  // BUG-16 fix: base64Decode throws FormatException on bad data
-                                    try {
-                                      return Image.memory(
-                                        base64Decode(content.substring(10).replaceAll(RegExp(r'\s+'), '')),
-                                        fit: BoxFit.contain,
-                                      );
-                                    } catch (_) {
-                                      return const Center(child: Text('Invalid image data', style: TextStyle(color: Colors.red)));
-                                    }
-                                  }),
-                                ),
-                                Positioned(
-                                  top: 40,
-                                  right: 20,
-                                  child: IconButton(
-                                    icon: const Icon(Icons.close, color: Colors.white, size: 30),
-                                    onPressed: () => Navigator.of(context).pop(),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Builder(builder: (ctx) {  // BUG-16 fix
-                          try {
-                            return Image.memory(
-                              base64Decode(content.substring(10).replaceAll(RegExp(r'\s+'), '')),
-                              fit: BoxFit.contain,
-                              errorBuilder: (context, error, stackTrace) => const Text('Invalid image data', style: TextStyle(color: Colors.red)),
-                            );
-                          } catch (_) {
-                            return const Text('Invalid image data', style: TextStyle(color: Colors.red));
-                          }
-                        }),
-                      ),
-                    )
-                  else
-                  CollapsibleOutput(
-                    text: content,
-                    style: TextStyle(
-                      fontSize: 14,
-                      height: 1.5,
-                      fontFamily: isUser || isSystem ? null : 'Courier',
-                      color: isError ? Colors.red.shade200 : Colors.white.withOpacity(0.9),
-                    ),
-                  ),
-                  if (isError) ...[
-                    const SizedBox(height: 12),
-                    Divider(color: Colors.redAccent.withOpacity(0.2), height: 1),
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        TextButton.icon(
-                          icon: const Icon(Icons.description, size: 16, color: Colors.redAccent),
-                          label: const Text('Show log', style: TextStyle(color: Colors.redAccent, fontSize: 12)),
-                          style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), minimumSize: Size.zero),
-                          onPressed: () => _showErrorLog(content),
-                        ),
-                        const SizedBox(width: 8),
-                        TextButton.icon(
-                          icon: const Icon(Icons.refresh, size: 16, color: Colors.white),
-                          label: const Text('Retry', style: TextStyle(color: Colors.white, fontSize: 12)),
-                          style: TextButton.styleFrom(
-                            backgroundColor: Colors.redAccent.withOpacity(0.2),
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4), 
-                            minimumSize: Size.zero
-                          ),
-                          onPressed: _retryLastCommand,
-                        ),
-                      ],
-                    ),
-                  ] else if (!isUser && !isSystem && message['summary'] != null && message['summary'].toString().isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    Divider(color: Colors.white.withOpacity(0.05), height: 1),
-                    const SizedBox(height: 8),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton.icon(
-                        icon: Icon(Icons.replay_circle_filled, size: 18, color: colorScheme.primary),
-                        label: Text('Repeat Audio', style: TextStyle(color: colorScheme.primary, fontSize: 12)),
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          minimumSize: Size.zero,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                        onPressed: () async {
-                          String cleanText = _normalizeForSpeech(message['summary']);
-                          _speak(cleanText);
-                        },
-                      ),
-                    ),
-                  ]
+      child: Row(
+        mainAxisAlignment: isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          if (!isUser) ...[
+            Container(
+              margin: const EdgeInsets.only(right: 12, bottom: 4),
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: AppTokens.accentGradient,
+                boxShadow: [
+                  BoxShadow(color: const Color(0xFF8B5CF6).withOpacity(0.4), blurRadius: 12, offset: const Offset(0, 4)),
                 ],
               ),
+              child: const Icon(Icons.auto_awesome, size: 16, color: Colors.white),
             ),
           ],
-        ),
+          Flexible(
+            child: ClipRRect(
+              borderRadius: BorderRadius.only(
+                topLeft: const Radius.circular(24),
+                topRight: const Radius.circular(24),
+                bottomLeft: Radius.circular(isUser ? 24 : 6),
+                bottomRight: Radius.circular(isUser ? 6 : 24),
+              ),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                  decoration: BoxDecoration(
+                    gradient: isUser
+                        ? AppTokens.primaryGradient
+                        : isError
+                            ? AppTokens.warningGradient
+                            : AppTokens.glassGradient,
+                    border: Border.all(
+                      color: isUser || isError ? Colors.transparent : AppTokens.glassBorder,
+                      width: 1,
+                    ),
+                    boxShadow: [
+                      if (isUser)
+                        BoxShadow(
+                          color: const Color(0xFF2DD4BF).withOpacity(0.3),
+                          blurRadius: 20,
+                          offset: const Offset(0, 8),
+                        )
+                    ],
+                  ),
+                  child: type == 'image'
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: Image.memory(
+                            base64Decode(content),
+                            fit: BoxFit.cover,
+                          ),
+                        )
+                      : CollapsibleOutput(
+                          text: content,
+                          style: GoogleFonts.inter(
+                            textStyle: TextStyle(
+                              color: isUser || isError ? Colors.white : AppTokens.textPrimary.withOpacity(0.9),
+                              fontSize: 15,
+                              height: 1.6,
+                              fontWeight: isUser ? FontWeight.w500 : FontWeight.w400,
+                            ),
+                          ),
+                        ),
+                ),
+              ),
+            ),
+          ),
+          if (isUser) ...[
+            Container(
+              margin: const EdgeInsets.only(left: 12, bottom: 4),
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppTokens.glassBorder,
+                border: Border.all(color: AppTokens.glassBorder),
+              ),
+              child: Icon(Icons.person, size: 16, color: AppTokens.textSecondary),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -3538,315 +3531,107 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   }
 
   Widget _buildInputArea(ColorScheme colorScheme) {
-    final isAgent = _currentMode == 'agent' || _isAssistant;
-
-    if (isAgent) {
-      return Stack(
-        alignment: Alignment.bottomCenter,
-        children: [
-          // If live, we show a translucent glassmorphic bar just like Gemini Live
-          Container(
-            padding: const EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 24),
-            decoration: const BoxDecoration(
-              color: Colors.transparent,
-            ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Dot indicators (dummy visual for Gemini styling)
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: List.generate(5, (index) => Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 4),
-                        width: index == 0 ? 8 : 6,
-                        height: index == 0 ? 8 : 6,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: index == 0 ? Colors.white70 : Colors.white24,
-                        ),
-                      )),
-                    ),
-                    const SizedBox(height: 20),
-                    
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        // LEFT: Camera & Keyboard
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            AnimatedSize(
-                              duration: const Duration(milliseconds: 250),
-                              curve: Curves.easeInOut,
-                              child: _showTextInput 
-                                ? const SizedBox(width: 0)
-                                : Padding(
-                                    padding: const EdgeInsets.only(right: 12),
-                                    child: GestureDetector(
-                                      onTap: () {
-                                        _controller.text = "__SCREENSHOT__";
-                                        _sendMessage();
-                                      },
-                                      child: Container(
-                                        padding: const EdgeInsets.all(12),
-                                        decoration: const BoxDecoration(
-                                          color: Color(0xFF1E1E24),
-                                          shape: BoxShape.circle,
-                                        ),
-                                        child: const Icon(Icons.camera_alt_outlined, color: Colors.white, size: 22),
-                                      ),
-                                    ),
-                                  ),
-                            ),
-                            GestureDetector(
-                              onTap: () {
-                                if (mounted) setState(() { _showTextInput = !_showTextInput; });
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: const BoxDecoration(
-                                  color: Color(0xFF1E1E24),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Icon(_showTextInput ? Icons.keyboard_hide : Icons.keyboard, color: Colors.white, size: 22),
-                              ),
-                            ),
-                          ],
-                        ),
-                        
-                        // CENTER: Glowing Pill OR Text Input (Animated)
-                        Expanded(
-                          child: AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 300),
-                            switchInCurve: Curves.easeOutBack,
-                            switchOutCurve: Curves.easeIn,
-                            transitionBuilder: (child, animation) {
-                              return FadeTransition(
-                                opacity: animation,
-                                child: SlideTransition(
-                                  position: Tween<Offset>(
-                                    begin: const Offset(0.0, 0.2),
-                                    end: Offset.zero,
-                                  ).animate(animation),
-                                  child: child,
-                                ),
-                              );
-                            },
-                            child: Container(
-                              key: ValueKey<bool>(_showTextInput),
-                              height: 56,
-                              margin: const EdgeInsets.symmetric(horizontal: 16),
-                              child: _showTextInput
-                                  ? TextField(
-                                      controller: _controller,
-                                      minLines: 1,
-                                      maxLines: 4,
-                                      style: const TextStyle(color: Colors.white, fontSize: 14),
-                                      decoration: InputDecoration(
-                                        hintText: 'Type your prompt...',
-                                        hintStyle: const TextStyle(color: Colors.white30),
-                                        filled: true,
-                                        fillColor: const Color(0xFF1E1E24),
-                                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                                        suffixIcon: IconButton(
-                                          icon: const Icon(Icons.clear, color: Colors.white54, size: 20),
-                                          onPressed: () {
-                                            _controller.clear();
-                                            _previousDictationText = "";
-                                          },
-                                        ),
-                                        border: OutlineInputBorder(
-                                          borderRadius: BorderRadius.circular(20),
-                                          borderSide: BorderSide.none,
-                                        ),
-                                      ),
-                                      onSubmitted: (_) {
-                                        _sendMessage();
-                                        if (mounted) setState(() { _showTextInput = false; });
-                                      },
-                                    )
-                                  : AudioVisualizer(
-                                      isListening: _isListening,
-                                      isSpeaking: _isAiSpeaking,
-                                      soundLevel: _currentSoundLevel,
-                                    ),
-                            ),
-                          ),
-                        ),
-                        
-                        // RIGHT: Mic & Send/Stop Toggle
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            AnimatedSize(
-                              duration: const Duration(milliseconds: 250),
-                              curve: Curves.easeInOut,
-                              child: _showTextInput
-                                ? const SizedBox(width: 0)
-                                : Padding(
-                                    padding: const EdgeInsets.only(right: 12),
-                                    child: GestureDetector(
-                                      onTap: () {
-                                        if (_isLiveSession) {
-                                          _stopListening();
-                                          flutterTts.stop();
-                                          if (mounted) setState(() { _isAiSpeaking = false; _isLiveSession = false; });
-                                        } else {
-                                          setState(() => _isLiveSession = true);
-                                          _startListening();
-                                        }
-                                      },
-                                      child: Container(
-                                        padding: const EdgeInsets.all(12),
-                                        decoration: const BoxDecoration(
-                                          color: Color(0xFF1E1E24),
-                                          shape: BoxShape.circle,
-                                        ),
-                                        child: Icon(_isLiveSession ? Icons.mic_rounded : Icons.mic_off_rounded, color: Colors.white, size: 22),
-                                      ),
-                                    ),
-                                  ),
-                            ),
-                            GestureDetector(
-                              onTap: () {
-                                if (_isThinking) {
-                                  _cancelBackendTask();
-                                } else {
-                                  if (_controller.text.isNotEmpty) {
-                                    _sendMessage();
-                                    if (mounted) setState(() { _showTextInput = false; });
-                                  } else {
-                                    setState(() { _showTextInput = true; });
-                                  }
-                                }
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: _isThinking ? Colors.red.withOpacity(0.2) : colorScheme.secondary.withOpacity(0.2),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Icon(
-                                  _isThinking ? Icons.stop_rounded : Icons.arrow_upward_rounded, 
-                                  color: _isThinking ? Colors.red : colorScheme.secondary, 
-                                  size: 22
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      _isLiveSession 
-                        ? (_isAiSpeaking ? 'AI is speaking...' : (_isListening ? 'Listening...' : _currentStatus)) 
-                        : 'Tap mic to start',
-                      style: const TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.w500),
-                    ),
-                  ],
-                ),
-              ),
-        ],
-      );
-    }
-    
-    // SHELL mode - standard text input
     return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0F0F12),
-        border: Border(top: BorderSide(color: Colors.white.withOpacity(0.05))),
+      margin: const EdgeInsets.only(left: 16, right: 16, bottom: 24, top: 8),
+      decoration: AppTokens.glassBox(radius: 32).copyWith(
+        color: Colors.black.withOpacity(0.4),
       ),
-      child: SafeArea(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Expanded(
-              child: Container(
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1A1A1F),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: _isListening ? colorScheme.primary.withOpacity(0.5) : Colors.white.withOpacity(0.08)),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(32),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                GestureDetector(
+                  onTap: () {
+                    _controller.text = "__SCREENSHOT__";
+                    _sendMessage();
+                  },
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 2, right: 8, left: 4),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppTokens.glassBorder,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(Icons.camera_alt_rounded, color: AppTokens.textSecondary, size: 22),
+                  ),
                 ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _controller,
-                        minLines: 1,
-                        maxLines: 5,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: Colors.white,
-                          fontFamily: 'Courier',
-                        ),
-                        decoration: InputDecoration(
-                          hintText: _isListening ? 'Listening...' : 'Enter shell command...',
-                          hintStyle: const TextStyle(
-                            color: Colors.white30,
-                            fontFamily: 'Courier',
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                          border: InputBorder.none,
-                        ),
+                Expanded(
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.02),
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(color: AppTokens.glassBorder),
+                    ),
+                    child: TextField(
+                      controller: _controller,
+                      minLines: 1,
+                      maxLines: 4,
+                      style: GoogleFonts.outfit(fontSize: 15, color: AppTokens.textPrimary),
+                      decoration: InputDecoration(
+                        hintText: _isListening ? 'Listening...' : (_currentMode == 'agent' ? 'Ask Agent...' : 'Enter command...'),
+                        hintStyle: GoogleFonts.outfit(color: AppTokens.textSecondary.withOpacity(0.5)),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        border: InputBorder.none,
                       ),
                     ),
-                    AnimatedSize(
-                      duration: const Duration(milliseconds: 200),
-                      child: GestureDetector(
-                        onTap: _toggleListening,
-                        child: Container(
-                          padding: const EdgeInsets.all(12),
-                          margin: const EdgeInsets.only(right: 4, bottom: 4),
-                          decoration: BoxDecoration(
-                            color: _isListening ? colorScheme.primary.withOpacity(0.15) : Colors.transparent,
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            _isListening ? Icons.mic : Icons.mic_none,
-                            color: _isListening ? colorScheme.primary : Colors.white54,
-                            size: 20,
-                          ),
-                        ),
-                      ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: () {
+                    if (_isThinking) {
+                      _cancelBackendTask();
+                    } else if (_controller.text.isNotEmpty) {
+                      _sendMessage();
+                    } else {
+                      _toggleListening();
+                    }
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeOutCubic,
+                    margin: const EdgeInsets.only(bottom: 2, right: 4),
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      gradient: _isThinking
+                          ? AppTokens.warningGradient
+                          : (_controller.text.isNotEmpty
+                              ? AppTokens.primaryGradient
+                              : _isListening
+                                  ? AppTokens.accentGradient
+                                  : AppTokens.glassGradient),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: _isListening || _controller.text.isNotEmpty || _isThinking ? Colors.transparent : AppTokens.glassBorder),
+                      boxShadow: _isListening || _controller.text.isNotEmpty || _isThinking
+                          ? [
+                              BoxShadow(
+                                color: (_isThinking ? const Color(0xFFE11D48) : (_isListening ? const Color(0xFF8B5CF6) : const Color(0xFF2DD4BF))).withOpacity(0.5),
+                                blurRadius: 16,
+                                offset: const Offset(0, 4),
+                              )
+                            ]
+                          : [],
                     ),
-                  ],
+                    child: Icon(
+                      _isThinking 
+                          ? Icons.stop_rounded 
+                          : (_controller.text.isNotEmpty 
+                              ? Icons.send_rounded 
+                              : (_isListening ? Icons.mic_rounded : Icons.mic_none_rounded)),
+                      color: _isListening || _controller.text.isNotEmpty || _isThinking ? Colors.white : AppTokens.textSecondary,
+                      size: 22,
+                    ),
+                  ),
                 ),
-              ),
+              ],
             ),
-
-            const SizedBox(width: 8),
-            GestureDetector(
-              onTap: () {
-                _controller.text = "__SCREENSHOT__";
-                _sendMessage();
-              },
-              child: Container(
-                padding: const EdgeInsets.all(14),
-                margin: const EdgeInsets.only(bottom: 2),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(Icons.camera_alt_outlined, color: Colors.white70, size: 20),
-              ),
-            ),
-            const SizedBox(width: 8),
-            GestureDetector(
-              onTap: _sendMessage,
-              child: Container(
-                padding: const EdgeInsets.all(14),
-                margin: const EdgeInsets.only(bottom: 2),
-                decoration: BoxDecoration(
-                  color: colorScheme.primary,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(Icons.send_rounded, color: Colors.white, size: 20),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -3867,27 +3652,27 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   Widget _buildJobStrip(ColorScheme colorScheme) {
     if (_activeJobId == null || _activeJobStatus == '') return const SizedBox.shrink();
     
-    Color statusColor = colorScheme.primary;
+    Color statusColor = const Color(0xFF8B5CF6);
     IconData icon = Icons.sync;
     bool spinner = false;
     
     switch (_activeJobStatus) {
       case 'running':
-        statusColor = colorScheme.primary;
+        statusColor = const Color(0xFF2DD4BF);
         spinner = true;
         break;
       case 'waiting_approval':
-        statusColor = Colors.orange;
+        statusColor = const Color(0xFFF59E0B);
         icon = Icons.warning_amber_rounded;
         break;
       case 'done':
-        statusColor = Colors.green;
-        icon = Icons.check_circle;
+        statusColor = const Color(0xFF10B981);
+        icon = Icons.check_circle_rounded;
         break;
       case 'failed':
       case 'cancelled':
-        statusColor = Colors.red;
-        icon = Icons.error_outline;
+        statusColor = const Color(0xFFEF4444);
+        icon = Icons.error_outline_rounded;
         break;
       case 'cancelling':
         statusColor = Colors.grey;
@@ -3899,32 +3684,47 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       duration: const Duration(milliseconds: 300),
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: statusColor.withOpacity(0.15),
+      decoration: AppTokens.glassBox(radius: 24).copyWith(
+        color: statusColor.withOpacity(0.05),
         border: Border.all(color: statusColor.withOpacity(0.3)),
-        borderRadius: BorderRadius.circular(16),
       ),
       child: Row(
         children: [
-          spinner 
-            ? SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: statusColor))
-            : Icon(icon, color: statusColor, size: 18),
-          const SizedBox(width: 12),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: statusColor.withOpacity(0.15),
+              boxShadow: [
+                BoxShadow(color: statusColor.withOpacity(0.2), blurRadius: 10, offset: const Offset(0, 4))
+              ]
+            ),
+            child: spinner 
+              ? SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: statusColor))
+              : Icon(icon, color: statusColor, size: 14),
+          ),
+          const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Job: ', style: TextStyle(color: statusColor, fontSize: 10, fontWeight: FontWeight.bold)),
-                Text(_activeJobSummary, style: const TextStyle(color: Colors.white, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis),
+                Text('BACKGROUND JOB', style: GoogleFonts.spaceGrotesk(color: statusColor, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+                const SizedBox(height: 2),
+                Text(_activeJobSummary, style: GoogleFonts.inter(color: AppTokens.textPrimary, fontSize: 13, fontWeight: FontWeight.w500), maxLines: 1, overflow: TextOverflow.ellipsis),
               ],
             ),
           ),
           if (_activeJobStatus == 'running' || _activeJobStatus == 'waiting_approval')
-            IconButton(
-              icon: const Icon(Icons.cancel, color: Colors.white54, size: 20),
-              onPressed: _cancelJob,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(),
+            GestureDetector(
+              onTap: _cancelJob,
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white.withOpacity(0.05),
+                ),
+                child: const Icon(Icons.close_rounded, color: Colors.white54, size: 16),
+              ),
             ),
         ],
       ),
