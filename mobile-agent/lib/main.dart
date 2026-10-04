@@ -2306,6 +2306,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       // touch absorber intercepts ALL taps, making every button unclickable.
       // Solution: disable the drawer completely when in assistant overlay mode.
       drawer: _isAssistant ? null : _buildDrawer(),
+      endDrawer: _buildBgTasksSidebar(),
       backgroundColor: _isAssistant ? Colors.transparent : const Color(0xFF0F0F12),
       body: _isAssistant
         // BUG FIX B+C: The previous LayoutBuilder+SingleChildScrollView placed
@@ -2563,6 +2564,35 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                   onPressed: _showModelSelector,
                 ),
 
+              // Background Tasks Counter Button
+              if (_bgTasks.isNotEmpty)
+                Builder(
+                  builder: (BuildContext ctx) {
+                    int runningCount = _bgTasks.where((t) => t['status'] == 'running').length;
+                    return GestureDetector(
+                      onTap: () => Scaffold.of(ctx).openEndDrawer(),
+                      child: Container(
+                        margin: const EdgeInsets.only(right: 12),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: runningCount > 0 ? const Color(0xFF0F766E).withOpacity(0.3) : const Color(0xFF333333).withOpacity(0.5),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: runningCount > 0 ? const Color(0xFF14B8A6).withOpacity(0.5) : Colors.white24),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.memory, size: 16, color: runningCount > 0 ? const Color(0xFF2DD4BF) : Colors.white54),
+                            if (runningCount > 0) ...[
+                              const SizedBox(width: 6),
+                              Text('${runningCount}', style: const TextStyle(color: Color(0xFF5EEAD4), fontSize: 13, fontWeight: FontWeight.bold)),
+                            ]
+                          ],
+                        ),
+                      ),
+                    );
+                  }
+                ),
+
               GestureDetector(
                 onTap: () => _showDeviceSelector(context),
                 child: Container(
@@ -2631,7 +2661,6 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
               
               _buildSubtitleOverlay(colorScheme, true),
               _buildJobStrip(colorScheme),
-              _buildBgTasksOverlay(),
               _buildInputArea(colorScheme),
             ],
           ),
@@ -3357,158 +3386,125 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     );
   }
 
-  Widget _buildBgTasksOverlay() {
-    if (_bgTasks.isEmpty) return const SizedBox.shrink();
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFF14B8A6).withOpacity(0.08),
-        border: Border.all(color: const Color(0xFF0F766E).withOpacity(0.5), width: 1),
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF14B8A6).withOpacity(0.05),
-            blurRadius: 10,
-            spreadRadius: 2,
-          ),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF14B8A6).withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: const Icon(Icons.memory, color: Color(0xFF2DD4BF), size: 14),
+  Widget _buildBgTasksSidebar() {
+    // Reverse the tasks to show newest first, and limit to last 50 to avoid clutter
+    final displayTasks = _bgTasks.reversed.take(50).toList();
+    
+    return Drawer(
+      backgroundColor: const Color(0xFF0F0F12),
+      child: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                border: Border(bottom: BorderSide(color: Colors.white.withOpacity(0.05))),
+                color: const Color(0xFF14B8A6).withOpacity(0.05),
               ),
-              const SizedBox(width: 10),
-              const Text('BACKGROUND TASKS', style: TextStyle(color: Color(0xFF2DD4BF), fontWeight: FontWeight.w800, fontSize: 11, letterSpacing: 0.5)),
-              const Spacer(),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF0F766E).withOpacity(0.3),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text('${_bgTasks.where((t) => t['status'] == 'running').length} RUNNING', 
-                  style: const TextStyle(color: Color(0xFF5EEAD4), fontSize: 9, fontWeight: FontWeight.bold)),
+              child: Row(
+                children: [
+                  const Icon(Icons.memory, color: Color(0xFF2DD4BF), size: 20),
+                  const SizedBox(width: 12),
+                  const Text('Background Tasks', style: TextStyle(color: Color(0xFF2DD4BF), fontWeight: FontWeight.w800, fontSize: 16)),
+                  const Spacer(),
+                  Text('${_bgTasks.where((t) => t['status'] == 'running').length} RUNNING', 
+                    style: const TextStyle(color: Color(0xFF5EEAD4), fontSize: 10, fontWeight: FontWeight.bold)),
+                ],
               ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          ..._bgTasks.map((task) {
-            final isDone = task['status'] == 'completed';
-            final isFail = task['status'] == 'failed';
-            final c = isDone ? const Color(0xFF34D399) : (isFail ? const Color(0xFFF87171) : const Color(0xFF2DD4BF));
-            
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(8),
-                onTap: () {
-                  showDialog(
-                    context: context,
-                    builder: (context) => AlertDialog(
-                      backgroundColor: const Color(0xFF1E1E24),
-                      title: Row(
-                        children: [
-                          Icon(isDone ? Icons.check_circle : (isFail ? Icons.error : Icons.memory), color: c, size: 20),
-                          const SizedBox(width: 8),
-                          const Text('Task Details', style: TextStyle(color: Colors.white, fontSize: 16)),
-                        ],
-                      ),
-                      content: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('ID: ${task['id']}', style: const TextStyle(color: Colors.white70, fontSize: 12)),
-                          const SizedBox(height: 4),
-                          Text('Status: ${task['status'].toString().toUpperCase()}', style: TextStyle(color: c, fontSize: 12, fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 4),
-                          Text('Duration: ${task['duration']}', style: const TextStyle(color: Colors.white70, fontSize: 12)),
-                          const SizedBox(height: 12),
-                          const Text('Command:', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 4),
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(color: Colors.black45, borderRadius: BorderRadius.circular(6)),
-                            child: SelectableText(
-                              task['command']?.toString() ?? '',
-                              style: const TextStyle(color: Color(0xFFA3E635), fontSize: 11, fontFamily: 'monospace'),
+            ),
+            Expanded(
+              child: displayTasks.isEmpty
+                  ? const Center(child: Text('No background tasks', style: TextStyle(color: Colors.white54)))
+                  : ListView.builder(
+                      padding: const EdgeInsets.all(12),
+                      itemCount: displayTasks.length,
+                      itemBuilder: (context, index) {
+                        final task = displayTasks[index];
+                        final isDone = task['status'] == 'completed';
+                        final isFail = task['status'] == 'failed';
+                        final c = isDone ? const Color(0xFF34D399) : (isFail ? const Color(0xFFF87171) : const Color(0xFF2DD4BF));
+                        
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(8),
+                            onTap: () {
+                              showDialog(
+                                context: context,
+                                builder: (context) => AlertDialog(
+                                  backgroundColor: const Color(0xFF1E1E24),
+                                  title: Row(
+                                    children: [
+                                      Icon(isDone ? Icons.check_circle : (isFail ? Icons.error : Icons.memory), color: c, size: 20),
+                                      const SizedBox(width: 8),
+                                      const Text('Task Details', style: TextStyle(color: Colors.white, fontSize: 16)),
+                                    ],
+                                  ),
+                                  content: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text('ID: ${task["id"]}', style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                                      const SizedBox(height: 4),
+                                      Text('Status: ${task["status"].toString().toUpperCase()}', style: TextStyle(color: c, fontSize: 12, fontWeight: FontWeight.bold)),
+                                      const SizedBox(height: 4),
+                                      Text('Duration: ${task["duration"]}', style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                                      const SizedBox(height: 12),
+                                      const Text('Command:', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                                      const SizedBox(height: 4),
+                                      Container(
+                                        padding: const EdgeInsets.all(8),
+                                        decoration: BoxDecoration(
+                                          color: Colors.black38,
+                                          borderRadius: BorderRadius.circular(6),
+                                        ),
+                                        child: Text(task["command"], style: const TextStyle(color: Colors.greenAccent, fontFamily: 'monospace', fontSize: 11)),
+                                      ),
+                                    ],
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.pop(context),
+                                      child: const Text('Close', style: TextStyle(color: Colors.white70)),
+                                    )
+                                  ],
+                                ),
+                              );
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF1A1A1F),
+                                border: Border.all(color: c.withOpacity(0.3), width: 1),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(isDone ? Icons.check_circle : (isFail ? Icons.error : Icons.hourglass_top), color: c, size: 16),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(task["id"], style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                                        const SizedBox(height: 4),
+                                        Text(task["command"], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white54, fontSize: 10, fontFamily: 'monospace')),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(task["duration"], style: const TextStyle(color: Colors.white54, fontSize: 10)),
+                                ],
+                              ),
                             ),
                           ),
-                        ],
-                      ),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context),
-                          child: const Text('Close', style: TextStyle(color: Color(0xFF2DD4BF))),
-                        ),
-                      ],
+                        );
+                      },
                     ),
-                  );
-                },
-                child: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.black26,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: c.withOpacity(0.2), width: 1),
-                  ),
-                  child: Row(
-                    children: [
-                      SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: isDone ? Icon(Icons.check_circle, size: 14, color: c) : 
-                               (isFail ? Icon(Icons.cancel, size: 14, color: c) : 
-                                CircularProgressIndicator(strokeWidth: 2, color: c)),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    task['label']?.toString().isNotEmpty == true ? task['label'] : task['id'],
-                                    style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                Text(
-                                  task['duration'] ?? '',
-                                  style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 10, fontFamily: 'monospace'),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              task['command'] ?? '',
-                              style: TextStyle(color: c.withOpacity(0.8), fontSize: 10, fontFamily: 'monospace'),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          }).toList(),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }
