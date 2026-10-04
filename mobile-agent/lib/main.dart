@@ -3308,81 +3308,90 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
 
     return Container(
       margin: EdgeInsets.only(
-        bottom: 24,
-        left: isUser ? 40 : 16,
-        right: isUser ? 16 : 40,
+        bottom: 32,
+        left: isUser ? 60 : 20,
+        right: isUser ? 20 : 60,
       ),
-      child: Row(
-        mainAxisAlignment: isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          if (!isUser) ...[
-            Container(
-              margin: const EdgeInsets.only(right: 12, bottom: 4),
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: AppTokens.card(isDark),
-                border: Border.all(color: AppTokens.border(isDark), width: 1.5),
-                boxShadow: AppTokens.shadow(isDark),
-              ),
-              child: const Icon(Icons.smart_toy_rounded, size: 16, color: AppTokens.accent),
-            ),
-          ],
-          Flexible(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-              decoration: BoxDecoration(
-                color: isUser ? AppTokens.accent : (isError ? const Color(0xFFFEF2F2) : AppTokens.card(isDark)),
-                borderRadius: BorderRadius.only(
-                  topLeft: const Radius.circular(24),
-                  topRight: const Radius.circular(24),
-                  bottomLeft: Radius.circular(isUser ? 24 : 6),
-                  bottomRight: Radius.circular(isUser ? 6 : 24),
+      child: isUser
+          // User messages are compact, bold pills (M-Chef style)
+          ? Align(
+              alignment: Alignment.centerRight,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                decoration: BoxDecoration(
+                  color: AppTokens.accent,
+                  borderRadius: BorderRadius.circular(100),
+                  boxShadow: [
+                    BoxShadow(color: AppTokens.accent.withOpacity(0.3), blurRadius: 12, offset: const Offset(0, 6))
+                  ],
                 ),
-                border: Border(
-                  top: BorderSide(color: isUser ? AppTokens.accent : (isError ? const Color(0xFFFCA5A5) : AppTokens.border(isDark)), width: 1.5),
-                  right: BorderSide(color: isUser ? AppTokens.accent : (isError ? const Color(0xFFFCA5A5) : AppTokens.border(isDark)), width: 1.5),
-                  bottom: BorderSide(color: isUser ? AppTokens.accent : (isError ? const Color(0xFFFCA5A5) : AppTokens.border(isDark)), width: 1.5),
-                  left: BorderSide(color: isUser ? AppTokens.accent : (isError ? const Color(0xFFEF4444) : AppTokens.accentSecondary), width: isUser ? 1.5 : 4.0),
-                ),
-                boxShadow: AppTokens.shadow(isDark),
-              ),
-              child: type == 'image'
-                  ? ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: Image.memory(
-                        base64Decode(content),
-                        fit: BoxFit.cover,
-                      ),
-                    )
-                  : CollapsibleOutput(
-                      text: content,
-                      style: GoogleFonts.inter(
-                        textStyle: TextStyle(
-                          color: isUser ? Colors.white : (isError ? const Color(0xFF991B1B) : AppTokens.textPrimary(isDark)),
+                child: type == 'image'
+                    ? ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Image.memory(
+                          base64Decode(content),
+                          fit: BoxFit.cover,
+                        ),
+                      )
+                    : Text(
+                        content,
+                        style: GoogleFonts.inter(
+                          color: Colors.white,
                           fontSize: 15,
-                          height: 1.6,
-                          fontWeight: FontWeight.w500,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
-                    ),
-            ),
-          ),
-          if (isUser) ...[
-            Container(
-              margin: const EdgeInsets.only(left: 12, bottom: 4),
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: AppTokens.cardAlt(isDark),
-                border: Border.all(color: AppTokens.border(isDark)),
               ),
-              child: Icon(Icons.person_rounded, size: 16, color: AppTokens.textSecondary(isDark)),
+            )
+          // AI messages are gorgeous raw text on background (Learning Roadmap style)
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: isError ? const Color(0xFFEF4444) : AppTokens.accentSecondary,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      isError ? 'SYSTEM ERROR' : 'AI ASSISTANT',
+                      style: GoogleFonts.spaceGrotesk(
+                        color: isError ? const Color(0xFFEF4444) : AppTokens.accentSecondary,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 2.0,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                type == 'image'
+                    ? ClipRRect(
+                        borderRadius: BorderRadius.circular(24),
+                        child: Image.memory(
+                          base64Decode(content),
+                          fit: BoxFit.cover,
+                        ),
+                      )
+                    : CollapsibleOutput(
+                        text: content,
+                        style: GoogleFonts.outfit(
+                          textStyle: TextStyle(
+                            color: isError ? const Color(0xFFEF4444) : AppTokens.textPrimary(isDark),
+                            fontSize: 18,
+                            height: 1.6,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+              ],
             ),
-          ],
-        ],
-      ),
     );
   }
 
@@ -3514,164 +3523,149 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     bool isAgent = _currentMode == 'agent' || _isAssistant;
 
     if (isAgent) {
-      return Container(
-        margin: const EdgeInsets.only(left: 16, right: 16, bottom: 24, top: 8),
-        padding: const EdgeInsets.all(16),
-        decoration: AppTokens.bentoBox(isDark, radius: 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (_isLiveSession && !_showTextInput) ...[
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(5, (index) => Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 4),
-                  width: index == 0 ? 8 : 6,
-                  height: index == 0 ? 8 : 6,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: index == 0 ? AppTokens.accent : AppTokens.textSecondary(isDark),
-                  ),
-                )),
+      if (_isLiveSession && !_showTextInput) {
+        // Voice-only AI Assistant layout (Guardian Robotics style)
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.only(bottom: 40, top: 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Text(
+                _isAiSpeaking ? 'AI is speaking...' : (_isListening ? 'Listening...' : _currentStatus),
+                style: GoogleFonts.spaceGrotesk(color: AppTokens.textPrimary(isDark), fontSize: 24, fontWeight: FontWeight.w800, letterSpacing: -0.5),
+                textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 16),
-            ],
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                if (!_isLiveSession || _showTextInput)
-                  GestureDetector(
-                    onTap: () {
-                      _controller.text = "__SCREENSHOT__";
-                      _sendMessage();
-                    },
+              const SizedBox(height: 40),
+              // Massive pulsing mic button
+              GestureDetector(
+                onTap: () {
+                  _stopListening();
+                  flutterTts.stop();
+                  if (mounted) setState(() { _isAiSpeaking = false; _isLiveSession = false; _showTextInput = true; });
+                },
+                child: Container(
+                  width: 100,
+                  height: 100,
+                  decoration: BoxDecoration(
+                    color: AppTokens.accent.withOpacity(0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Center(
                     child: Container(
-                      margin: const EdgeInsets.only(bottom: 4, right: 8, left: 4),
-                      padding: const EdgeInsets.all(12),
+                      width: 70,
+                      height: 70,
                       decoration: BoxDecoration(
-                        color: AppTokens.cardAlt(isDark),
+                        color: AppTokens.accent,
                         shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(color: AppTokens.accent.withOpacity(0.4), blurRadius: 30, spreadRadius: 10)
+                        ]
                       ),
-                      child: Icon(Icons.camera_alt_rounded, color: AppTokens.textSecondary(isDark), size: 22),
-                    ),
-                  ),
-                
-                if (_showTextInput || !_isLiveSession)
-                  Expanded(
-                    child: Container(
-                      margin: const EdgeInsets.only(bottom: 4),
-                      decoration: BoxDecoration(
-                        color: AppTokens.cardAlt(isDark),
-                        borderRadius: BorderRadius.circular(24),
-                        border: Border.all(color: AppTokens.border(isDark)),
-                      ),
-                      child: TextField(
-                        controller: _controller,
-                        minLines: 1,
-                        maxLines: 4,
-                        style: GoogleFonts.inter(fontSize: 15, color: AppTokens.textPrimary(isDark)),
-                        decoration: InputDecoration(
-                          hintText: _isListening ? 'Listening...' : 'Ask Agent...',
-                          hintStyle: GoogleFonts.inter(color: AppTokens.textSecondary(isDark)),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                          border: InputBorder.none,
-                        ),
-                      ),
-                    ),
-                  ),
-                
-                if (_isLiveSession && !_showTextInput)
-                  Expanded(
-                    child: Center(
-                      child: Text(
-                        _isAiSpeaking ? 'AI is speaking...' : (_isListening ? 'Listening...' : _currentStatus),
-                        style: GoogleFonts.outfit(color: AppTokens.textPrimary(isDark), fontSize: 16, fontWeight: FontWeight.w500),
-                      ),
-                    ),
-                  ),
-
-                const SizedBox(width: 8),
-                
-                AnimatedSize(
-                  duration: const Duration(milliseconds: 250),
-                  curve: Curves.easeInOut,
-                  child: _showTextInput
-                    ? const SizedBox(width: 0)
-                    : Padding(
-                        padding: const EdgeInsets.only(right: 8, bottom: 4),
-                        child: GestureDetector(
-                          onTap: () {
-                            if (_isLiveSession) {
-                              _stopListening();
-                              flutterTts.stop();
-                              if (mounted) setState(() { _isAiSpeaking = false; _isLiveSession = false; });
-                            } else {
-                              setState(() => _isLiveSession = true);
-                              _startListening();
-                            }
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(
-                              color: AppTokens.cardAlt(isDark),
-                              shape: BoxShape.circle,
-                            ),
-                            child: Icon(_isLiveSession ? Icons.mic_rounded : Icons.mic_off_rounded, color: AppTokens.textPrimary(isDark), size: 22),
-                          ),
-                        ),
-                      ),
-                ),
-
-                GestureDetector(
-                  onTap: () {
-                    if (_isThinking) {
-                      _cancelBackendTask();
-                    } else if (_controller.text.isNotEmpty) {
-                      _sendMessage();
-                      if (mounted) setState(() { _showTextInput = false; });
-                    } else {
-                      setState(() { _showTextInput = true; });
-                    }
-                  },
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    margin: const EdgeInsets.only(bottom: 4, right: 4),
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: _isThinking
-                          ? const Color(0xFFEF4444)
-                          : (_controller.text.isNotEmpty
-                              ? AppTokens.accent
-                              : AppTokens.accentSecondary),
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: (_isThinking ? const Color(0xFFEF4444) : (_controller.text.isNotEmpty ? AppTokens.accent : AppTokens.accentSecondary)).withOpacity(0.4),
-                          blurRadius: 12,
-                          offset: const Offset(0, 4),
-                        )
-                      ],
-                    ),
-                    child: Icon(
-                      _isThinking 
-                          ? Icons.stop_rounded 
-                          : (_controller.text.isNotEmpty 
-                              ? Icons.send_rounded 
-                              : Icons.keyboard_rounded),
-                      color: Colors.white,
-                      size: 22,
+                      child: const Icon(Icons.mic_rounded, color: Colors.white, size: 36),
                     ),
                   ),
                 ),
-              ],
+              ),
+            ],
+          ),
+        );
+      }
+
+      // Minimal floating pill input
+      return Container(
+        margin: const EdgeInsets.only(left: 20, right: 20, bottom: 30, top: 10),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            GestureDetector(
+              onTap: () {
+                _controller.text = "__SCREENSHOT__";
+                _sendMessage();
+              },
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 2, right: 12),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppTokens.cardAlt(isDark),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: AppTokens.border(isDark)),
+                ),
+                child: Icon(Icons.camera_alt_rounded, color: AppTokens.textSecondary(isDark), size: 22),
+              ),
+            ),
+            
+            Expanded(
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 2),
+                decoration: BoxDecoration(
+                  color: AppTokens.cardAlt(isDark),
+                  borderRadius: BorderRadius.circular(100),
+                  border: Border.all(color: AppTokens.border(isDark)),
+                ),
+                child: TextField(
+                  controller: _controller,
+                  minLines: 1,
+                  maxLines: 4,
+                  style: GoogleFonts.inter(fontSize: 16, color: AppTokens.textPrimary(isDark), fontWeight: FontWeight.w500),
+                  decoration: InputDecoration(
+                    hintText: 'Ask me anything...',
+                    hintStyle: GoogleFonts.inter(color: AppTokens.textSecondary(isDark)),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                    border: InputBorder.none,
+                  ),
+                ),
+              ),
+            ),
+
+            const SizedBox(width: 12),
+            GestureDetector(
+              onTap: () {
+                if (_isThinking) {
+                  _cancelBackendTask();
+                } else if (_controller.text.isNotEmpty) {
+                  _sendMessage();
+                } else {
+                  setState(() { _isLiveSession = true; _showTextInput = false; });
+                  _startListening();
+                }
+              },
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 2),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: _isThinking
+                      ? const Color(0xFFEF4444)
+                      : (_controller.text.isNotEmpty
+                          ? AppTokens.accentSecondary
+                          : AppTokens.accent),
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: (_isThinking ? const Color(0xFFEF4444) : (_controller.text.isNotEmpty ? AppTokens.accentSecondary : AppTokens.accent)).withOpacity(0.4),
+                      blurRadius: 16,
+                      offset: const Offset(0, 6),
+                    )
+                  ],
+                ),
+                child: Icon(
+                  _isThinking 
+                      ? Icons.stop_rounded 
+                      : (_controller.text.isNotEmpty 
+                          ? Icons.send_rounded 
+                          : Icons.mic_rounded),
+                  color: _controller.text.isNotEmpty ? const Color(0xFF09090B) : Colors.white,
+                  size: 22,
+                ),
+              ),
             ),
           ],
         ),
       );
     }
     
-    // SHELL mode
+    // SHELL mode (keeps compact bento structure)
     return Container(
       margin: const EdgeInsets.only(left: 16, right: 16, bottom: 24, top: 8),
       decoration: AppTokens.bentoBox(isDark, radius: 24),
@@ -3702,18 +3696,6 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                           hintStyle: GoogleFonts.inter(color: AppTokens.textSecondary(isDark)),
                           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                           border: InputBorder.none,
-                        ),
-                      ),
-                    ),
-                    GestureDetector(
-                      onTap: _toggleListening,
-                      child: Container(
-                        padding: const EdgeInsets.all(12),
-                        margin: const EdgeInsets.only(right: 4, bottom: 4),
-                        child: Icon(
-                          _isListening ? Icons.mic_rounded : Icons.mic_none_rounded,
-                          color: _isListening ? AppTokens.accent : AppTokens.textSecondary(isDark),
-                          size: 20,
                         ),
                       ),
                     ),
