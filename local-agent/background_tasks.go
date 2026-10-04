@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -22,7 +23,8 @@ type BGTask struct {
 	Status    string    `json:"status"` // "running", "completed", "failed"
 	StartTime time.Time `json:"start_time"`
 	EndTime   time.Time `json:"end_time"`
-	Label     string    `json:"label"` // human-readable hint e.g. "npm install"
+	Label string `json:"label"`
+	ConversationID string `json:"conversation_id"`
 
 	// Runtime-only (not persisted - rebuilt on startup)
 	Stdout *bytes.Buffer `json:"-"`
@@ -166,20 +168,20 @@ func isLongRunningCommand(cmd string) bool {
 }
 
 // spawnBGTask spawns a command in a goroutine, persists metadata, returns task ID
-func spawnBGTask(command string) string {
-	return spawnBGTaskWithLabel(command, command)
+func spawnBGTask(command, convID string) string {
+	return spawnBGTaskWithLabel(command, command, convID)
 }
 
 // spawnBGTaskSafe is the public entry point - checks for duplicates first
-func spawnBGTaskSafe(command, label string) (string, bool) {
+func spawnBGTaskSafe(command, label, convID string) (string, bool) {
 	if isDup, existingID := isDuplicateBGTask(command); isDup {
 		logBGWarn("BGTask", "Duplicate detected - command already running as %s", existingID)
 		return existingID, true // true = was duplicate
 	}
-	return spawnBGTaskWithLabel(command, label), false
+	return spawnBGTaskWithLabel(command, label, convID), false
 }
 
-func spawnBGTaskWithLabel(command, label string) string {
+func spawnBGTaskWithLabel(command, label, convID string) string {
 	bgTasksMu.Lock()
 	id := fmt.Sprintf("TASK-%d", bgTaskIdx)
 	bgTaskIdx++
@@ -189,6 +191,7 @@ func spawnBGTaskWithLabel(command, label string) string {
 		ID:           id,
 		Command:      command,
 		Label:        label,
+		ConversationID: convID,
 		Status:       "running",
 		Stdout:       &bytes.Buffer{},
 		Stderr:       &bytes.Buffer{},
@@ -253,9 +256,21 @@ func spawnBGTaskWithLabel(command, label string) string {
 		}:
 			logBGInfo("BGTask", "COMORADE notification sent for %s", task.ID)
 		default:
-			// Channel full - log and move on (LLM can still poll via check_bg_task)
-			logBGWarn("BGTask", "COMORADE channel full, notification for %s dropped (use check_bg_task)", task.ID)
+			logBGWarn("BGTask", "COMORADE channel full, notification for %s dropped", task.ID)
 		}
+		
+		// AUTONOMOUS WAKEUP: If we have a ConversationID, immediately trigger a follow-up LLM execution!
+		if task.ConversationID != "" {
+			go func(cID, tID, status, snap string) {
+				time.Sleep(2 * time.Second) // Give the UI a moment to breathe
+				ctx := context.Background()
+				connData, _ := loadConnectionData()
+				triggerMsg := fmt.Sprintf("BACKGROUND TASK ALERT:\nTask %s has completed with status: %s.\n\nLogs:\n%s\n\nCRITICAL INSTRUCTION: Analyze these logs. If the task FAILED, you MUST determine the root cause, adapt the command, and autonomously retry using run_terminal. If it SUCCEEDED, confirm the result.", tID, strings.ToUpper(status), snap)
+				logBGInfo("BGTask", "Triggering autonomous wakeup for task %s on conv %s", tID, cID)
+				executeCommand(ctx, triggerMsg, connData.ActiveMode, cID, "")
+			}(task.ConversationID, task.ID, task.Status, snapshot)
+		}
+
 	}()
 
 	return id
