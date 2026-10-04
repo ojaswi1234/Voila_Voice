@@ -2391,17 +2391,14 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     bool isDark = appThemeMode.value == ThemeMode.dark;
 
     if (isOverlayMode) {
-      // Floating pill for system overlay (highly readable, strict bento style)
+      // System overlay: Transparent background, text shadow for legibility over random apps
       return Container(
         margin: const EdgeInsets.only(left: 16, right: 16, top: 10, bottom: 20),
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
         width: double.infinity,
         constraints: const BoxConstraints(maxHeight: 250),
-        decoration: BoxDecoration(
-          color: AppTokens.card(isDark),
-          borderRadius: BorderRadius.circular(40),
-          border: Border.all(color: AppTokens.border(isDark), width: 1.5),
-          boxShadow: AppTokens.shadow(isDark),
+        decoration: const BoxDecoration(
+          color: Colors.transparent, // Fully transparent as requested
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -2412,10 +2409,14 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                 child: Text(
                   _currentAiSubtitle,
                   style: GoogleFonts.outfit(
-                    fontSize: 18,
-                    height: 1.5,
-                    fontWeight: FontWeight.w600,
+                    fontSize: 20,
+                    height: 1.4,
+                    fontWeight: FontWeight.w700,
                     color: AppTokens.textPrimary(isDark),
+                    shadows: [
+                      Shadow(color: isDark ? Colors.black : Colors.white, blurRadius: 12),
+                      Shadow(color: isDark ? Colors.black87 : Colors.white70, blurRadius: 4),
+                    ],
                   ),
                   textAlign: TextAlign.center,
                 ),
@@ -2429,7 +2430,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     decoration: BoxDecoration(
-                      color: AppTokens.accentSecondary.withOpacity(0.1),
+                      color: AppTokens.accentSecondary.withOpacity(0.15),
                       borderRadius: BorderRadius.circular(100),
                     ),
                     child: Row(
