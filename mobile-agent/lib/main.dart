@@ -2695,10 +2695,7 @@ backgroundColor: runningCount > 0 ? const Color(0xFF0F766E).withOpacity(0.9) : c
                 ),
               ),
               const SizedBox(height: 16),
-              if (_currentMode != 'agent')
-                Expanded(child: _buildMessagesList(colorScheme))
-              else
-                const Spacer(),
+              Expanded(child: _buildMessagesList(colorScheme)),
               
               _buildSubtitleOverlay(colorScheme, true),
               _buildJobStrip(colorScheme),
