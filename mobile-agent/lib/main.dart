@@ -182,7 +182,7 @@ class _TokenUsageRow extends StatelessWidget {
 }
 
 class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserver {
-  WebSocketChannel? _channel;  // nullable â€” prevents LateInitializationError before first connect
+  WebSocketChannel? _channel;  // nullable - prevents LateInitializationError before first connect
   StreamSubscription? _wsSubscription;  // stored so we can cancel on dispose/reconnect
   StreamSubscription? _fcmRefreshSubscription;  // BUG-15 fix: FCM refresh listener cancellation
   StreamSubscription? _fcmOpenedAppSubscription;
@@ -625,7 +625,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     _connectToBackend();
     _startHealthChecks();
     _startBgTaskChecks();
-    // BUG-18 fix: _initializeSpeech() removed â€” called once from initState()
+    // BUG-18 fix: _initializeSpeech() removed - called once from initState()
 
     Future.delayed(const Duration(seconds: 1), _getDevices);
   }
@@ -1548,7 +1548,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                   if (_modelsList.isEmpty) 
                     const Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator())
                   else
-                    SizedBox(  // BUG-23 fix: Expanded inside mainAxisSize.min crashes â€” use SizedBox
+                    SizedBox(  // BUG-23 fix: Expanded inside mainAxisSize.min crashes - use SizedBox
                       height: 300,
                       child: ListView.builder(
                         itemCount: _modelsList.length,
@@ -1597,7 +1597,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
         });
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('âš ï¸ Please connect your Desktop to use Voila AI.')),
+            const SnackBar(content: Text('⚠️ Please connect your Desktop to use Voila AI.')),
           );
         }
         _controller.clear();
@@ -1627,7 +1627,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
         setState(() {
           _addMessage({
             'type': 'error',
-            'content': 'Session expired â€” unlock to continue',
+            'content': 'Session expired - unlock to continue',
             'timestamp': DateTime.now().toString(),
           });
         });
@@ -1688,7 +1688,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
         }
         _addMessage({
           'type': 'user',
-          'content': _controller.text == '__SCREENSHOT__' ? 'ðŸ“¸ Taking screenshot...' : _controller.text,
+          'content': _controller.text == '__SCREENSHOT__' ? '📸 Taking screenshot...' : _controller.text,
           'timestamp': DateTime.now().toString(),
         });
       });
@@ -1781,18 +1781,18 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       return 'Session expired';
     }
     if (remaining < 60) {
-      return 'Unlocked â€¢ ${remaining}s left';
+      return 'Unlocked • ${remaining}s left';
     }
     final minutes = remaining ~/ 60;
     if (minutes < 60) {
-      return 'Unlocked â€¢ ${minutes}m left';
+      return 'Unlocked • ${minutes}m left';
     }
     final hours = minutes ~/ 60;
     if (hours < 24) {
-      return 'Unlocked â€¢ ${hours}h left';
+      return 'Unlocked • ${hours}h left';
     }
     final days = hours ~/ 24;
-    return 'Unlocked â€¢ ${days}d left';
+    return 'Unlocked • ${days}d left';
   }
 
   bool _isSessionExpiringSoon() {
@@ -1807,7 +1807,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       // Check if expiring soon and show warning
       if (_isSessionExpiringSoon() && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Session expiring soon â€“ consider unlocking again')),
+          const SnackBar(content: Text('Session expiring soon - consider unlocking again')),
         );
       }
       return true;
@@ -2339,12 +2339,12 @@ backgroundColor: runningCount > 0 ? const Color(0xFF0F766E).withOpacity(0.9) : c
       body: _isAssistant
         // BUG FIX B+C: The previous LayoutBuilder+SingleChildScrollView placed
         // content at the TOP of a full-screen scroll area, but rendered it visually
-        // at the bottom — hit-test coordinates were completely mismatched so
+        // at the bottom - hit-test coordinates were completely mismatched so
         // all button taps missed their targets.
         //
         // Fix: Stack + Positioned(bottom:0) correctly anchors BOTH the visual
         // rendering AND the hit-test region to the bottom of the screen.
-        // No scroll view needed — overlay content is always compact.
+        // No scroll view needed - overlay content is always compact.
         ? Stack(
             children: [
               Positioned(

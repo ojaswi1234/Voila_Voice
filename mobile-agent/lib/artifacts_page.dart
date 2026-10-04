@@ -260,7 +260,7 @@ class ArtifactDetailPage extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Source:  • ',
+                    'Source:  - ',
                     style: TextStyle(
                       fontSize: 12,
                       color: Colors.white.withOpacity(0.5),
