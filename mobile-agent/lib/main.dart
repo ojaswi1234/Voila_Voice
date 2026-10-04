@@ -3322,19 +3322,21 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
 
   Widget _buildMessageCard(Map<String, dynamic> message, ColorScheme colorScheme) {
     bool isDark = appThemeMode.value == ThemeMode.dark;
+    bool isAgent = _currentMode.toUpperCase() == 'AGENT';
     final type = message['type'] as String? ?? 'unknown';
     final content = message['content'] as String? ?? '';
     final isUser = type == 'user';
     final isError = type == 'error';
+    final isSystem = type == 'system';
 
     return Container(
       margin: EdgeInsets.only(
         bottom: 32,
-        left: isUser ? 60 : 20,
-        right: isUser ? 20 : 60,
+        left: isUser ? 60 : 16,
+        right: isUser ? 16 : 60,
       ),
       child: isUser
-          // User messages are compact, bold pills (M-Chef style)
+          // User messages are compact, bold pills
           ? Align(
               alignment: Alignment.centerRight,
               child: Container(
@@ -3364,7 +3366,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                       ),
               ),
             )
-          // AI messages are gorgeous raw text on background (Learning Roadmap style)
+          // System/AI/Shell responses
           : Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -3375,15 +3377,15 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                       width: 8,
                       height: 8,
                       decoration: BoxDecoration(
-                        color: isError ? const Color(0xFFEF4444) : AppTokens.accentSecondary,
+                        color: isError ? const Color(0xFFEF4444) : (isAgent ? AppTokens.accentSecondary : AppTokens.textSecondary(isDark)),
                         shape: BoxShape.circle,
                       ),
                     ),
                     const SizedBox(width: 12),
                     Text(
-                      isError ? 'SYSTEM ERROR' : 'AI ASSISTANT',
+                      isError ? 'SYSTEM ERROR' : (isSystem ? 'SYSTEM' : (isAgent ? 'AI ASSISTANT' : 'SHELL OUTPUT')),
                       style: GoogleFonts.spaceGrotesk(
-                        color: isError ? const Color(0xFFEF4444) : AppTokens.accentSecondary,
+                        color: isError ? const Color(0xFFEF4444) : (isAgent ? AppTokens.accentSecondary : AppTokens.textSecondary(isDark)),
                         fontSize: 11,
                         fontWeight: FontWeight.w800,
                         letterSpacing: 2.0,
@@ -3400,17 +3402,39 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                           fit: BoxFit.cover,
                         ),
                       )
-                    : CollapsibleOutput(
-                        text: content,
-                        style: GoogleFonts.outfit(
-                          textStyle: TextStyle(
-                            color: isError ? const Color(0xFFEF4444) : AppTokens.textPrimary(isDark),
-                            fontSize: 18,
-                            height: 1.6,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
+                    : (isAgent 
+                        // Gorgeous typography for AI Assistant
+                        ? CollapsibleOutput(
+                            text: content,
+                            style: GoogleFonts.outfit(
+                              textStyle: TextStyle(
+                                color: isError ? const Color(0xFFEF4444) : AppTokens.textPrimary(isDark),
+                                fontSize: 18,
+                                height: 1.6,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          )
+                        // Monospace, structured block for SHELL commands
+                        : Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: AppTokens.card(isDark),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: AppTokens.border(isDark)),
+                            ),
+                            child: CollapsibleOutput(
+                              text: content,
+                              style: GoogleFonts.firaCode(
+                                textStyle: TextStyle(
+                                  color: isError ? const Color(0xFFEF4444) : AppTokens.textPrimary(isDark),
+                                  fontSize: 13,
+                                  height: 1.5,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          )),
               ],
             ),
     );
