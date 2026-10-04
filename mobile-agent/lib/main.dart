@@ -2307,6 +2307,39 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       // Solution: disable the drawer completely when in assistant overlay mode.
       drawer: _isAssistant ? null : _buildDrawer(),
       endDrawer: _buildBgTasksSidebar(),
+      floatingActionButton: _bgTasks.isEmpty ? null : Builder(
+        builder: (ctx) {
+          int runningCount = _bgTasks.where((t) => t['status'] == 'running').length;
+          return FloatingActionButton.extended(
+            onPressed: () => Scaffold.of(ctx).openEndDrawer(),
+            backgroundColor: runningCount > 0 ? const Color(0xFF0F766E).withOpacity(0.9) : const Color(0xFF222222).withOpacity(0.9),
+            icon: Icon(Icons.memory, size: 18, color: runningCount > 0 ? const Color(0xFF2DD4BF) : Colors.white70),
+            label: Text(
+              runningCount > 0 ? '${runningCount} RUNNING' : 'TASKS',
+              style: TextStyle(
+                color: runningCount > 0 ? const Color(0xFF5EEAD4) : Colors.white70,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 0.5,
+              ),
+            ),
+          );
+        },
+      ),
+backgroundColor: runningCount > 0 ? const Color(0xFF0F766E).withOpacity(0.9) : const Color(0xFF222222).withOpacity(0.9),
+            icon: Icon(Icons.memory, size: 18, color: runningCount > 0 ? const Color(0xFF2DD4BF) : Colors.white70),
+            label: Text(
+              runningCount > 0 ? ' RUNNING' : 'TASKS',
+              style: TextStyle(
+                color: runningCount > 0 ? const Color(0xFF5EEAD4) : Colors.white70,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 0.5,
+              ),
+            ),
+          );
+        },
+      ),
       backgroundColor: _isAssistant ? Colors.transparent : const Color(0xFF0F0F12),
       body: _isAssistant
         // BUG FIX B+C: The previous LayoutBuilder+SingleChildScrollView placed
@@ -2563,35 +2596,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                   icon: Icon(Icons.auto_awesome, size: 22, color: _selectedModel.isNotEmpty ? colorScheme.secondary : colorScheme.onSurface.withOpacity(0.7)),
                   onPressed: _showModelSelector,
                 ),
-
-              // Background Tasks Counter Button
-              if (_bgTasks.isNotEmpty)
-                Builder(
-                  builder: (BuildContext ctx) {
-                    int runningCount = _bgTasks.where((t) => t['status'] == 'running').length;
-                    return GestureDetector(
-                      onTap: () => Scaffold.of(ctx).openEndDrawer(),
-                      child: Container(
-                        margin: const EdgeInsets.only(right: 12),
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: runningCount > 0 ? const Color(0xFF0F766E).withOpacity(0.3) : const Color(0xFF333333).withOpacity(0.5),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: runningCount > 0 ? const Color(0xFF14B8A6).withOpacity(0.5) : Colors.white24),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(Icons.memory, size: 16, color: runningCount > 0 ? const Color(0xFF2DD4BF) : Colors.white54),
-                            if (runningCount > 0) ...[
-                              const SizedBox(width: 6),
-                              Text('${runningCount}', style: const TextStyle(color: Color(0xFF5EEAD4), fontSize: 13, fontWeight: FontWeight.bold)),
-                            ]
-                          ],
-                        ),
-                      ),
-                    );
-                  }
-                ),
+              
 
               GestureDetector(
                 onTap: () => _showDeviceSelector(context),
