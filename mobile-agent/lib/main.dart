@@ -2322,34 +2322,6 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       // Solution: disable the drawer completely when in assistant overlay mode.
       drawer: _isAssistant ? null : _buildDrawer(),
       endDrawer: _buildBgTasksSidebar(),
-      backgroundColor: runningCount > 0 ? const Color(0xFF0F766E).withOpacity(0.9) : const Color(0xFF222222).withOpacity(0.9),
-            icon: Icon(Icons.memory, size: 18, color: runningCount > 0 ? const Color(0xFF2DD4BF) : Colors.white70),
-            label: Text(
-              runningCount > 0 ? '${runningCount} RUNNING' : 'TASKS',
-              style: TextStyle(
-                color: runningCount > 0 ? const Color(0xFF5EEAD4) : Colors.white70,
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 0.5,
-              ),
-            ),
-          );
-        },
-      ),
-backgroundColor: runningCount > 0 ? const Color(0xFF0F766E).withOpacity(0.9) : const Color(0xFF222222).withOpacity(0.9),
-            icon: Icon(Icons.memory, size: 18, color: runningCount > 0 ? const Color(0xFF2DD4BF) : Colors.white70),
-            label: Text(
-              runningCount > 0 ? ' RUNNING' : 'TASKS',
-              style: TextStyle(
-                color: runningCount > 0 ? const Color(0xFF5EEAD4) : Colors.white70,
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 0.5,
-              ),
-            ),
-          );
-        },
-      ),
       backgroundColor: _isAssistant ? Colors.transparent : const Color(0xFF0F0F12),
       body: _isAssistant
         // BUG FIX B+C: The previous LayoutBuilder+SingleChildScrollView placed
