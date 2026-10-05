@@ -3760,7 +3760,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                                         borderRadius: BorderRadius.circular(6),
                                         border: Border.all(color: AppTokens.border(isDark)),
                                       ),
-                                      child: Text(task["command"] ?? '', style: GoogleFonts.jetBrainsMono(color: AppTokens.accentPrimary, fontSize: 11)),
+                                      child: Text(task["command"] ?? '', style: GoogleFonts.jetBrainsMono(color: AppTokens.accent, fontSize: 11)),
                                     ),
                                   ],
                                 ),
@@ -3815,7 +3815,8 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                               ],
                             ],
                           ),
-                        );
+                        ),
+                      );
                       },
                     ),
             ),
