@@ -504,11 +504,13 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
             title = 'Task result';
           }
         }
+        if (artifactPath != null && artifactPath.isNotEmpty) {
         ArtifactsManager.addArtifact(
           title: title,
-          content: (artifactPath != null && artifactPath.isNotEmpty) ? artifactPath : summary,
+          content: artifactPath,
           source: 'fcm_task_finished',
         );
+      }
         if (artifactPath != null && artifactPath.isNotEmpty) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) {
@@ -557,11 +559,13 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
           }
         }
         
+        if (artifactPath != null && artifactPath.isNotEmpty) {
         ArtifactsManager.addArtifact(
           title: title,
-          content: (artifactPath != null && artifactPath.isNotEmpty) ? artifactPath : summary,
+          content: artifactPath,
           source: 'fcm_task_finished',
         );
+      }
 
         // Navigate to Artifacts if artifact_path is present
         if (artifactPath != null && artifactPath.isNotEmpty) {
@@ -603,11 +607,13 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
             title = 'Task result';
           }
         }
+        if (artifactPath != null && artifactPath.isNotEmpty) {
         ArtifactsManager.addArtifact(
           title: title,
-          content: (artifactPath != null && artifactPath.isNotEmpty) ? artifactPath : summary,
+          content: artifactPath,
           source: 'fcm_task_finished',
         );
+      }
         if (artifactPath != null && artifactPath.isNotEmpty) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) {
