@@ -3823,8 +3823,28 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     // Only show in Agent mode
     if (!isAgent) return const SizedBox.shrink();
 
+    // Merge HTTP polling tasks with Real-time WebSocket job_status
+    List<dynamic> allTasks = List.from(_bgTasks);
+    if (_activeJobId != null && _activeJobId!.isNotEmpty) {
+      int existingIndex = allTasks.indexWhere((t) => t['id'] == _activeJobId);
+      if (existingIndex != -1) {
+        // Update existing task with realtime websocket data
+        final Map<String, dynamic> existing = Map<String, dynamic>.from(allTasks[existingIndex] as Map);
+        existing['status'] = _activeJobStatus;
+        if (_activeJobSummary.isNotEmpty) existing['action'] = _activeJobSummary;
+        allTasks[existingIndex] = existing;
+      } else {
+        // Inject new realtime task before HTTP poll catches it
+        allTasks.add({
+          'id': _activeJobId,
+          'status': _activeJobStatus,
+          'action': _activeJobSummary,
+        });
+      }
+    }
+
     // Get up to 4 most recent tasks for the workflow visualization
-    final workflowTasks = _bgTasks.reversed.take(4).toList().reversed.toList();
+    final workflowTasks = allTasks.reversed.take(4).toList().reversed.toList();
     if (workflowTasks.isEmpty) return const SizedBox.shrink();
 
     return Container(
