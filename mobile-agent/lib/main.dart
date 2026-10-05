@@ -4187,8 +4187,9 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
 class CollapsibleOutput extends StatefulWidget {
   final String text;
   final TextStyle style;
+  final bool isCodeBlock;
 
-  const CollapsibleOutput({super.key, required this.text, required this.style});
+  const CollapsibleOutput({super.key, required this.text, required this.style, this.isCodeBlock = false});
 
   @override
   State<CollapsibleOutput> createState() => _CollapsibleOutputState();
@@ -4209,15 +4210,9 @@ class _CollapsibleOutputState extends State<CollapsibleOutput> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        widget.style.fontFamily == 'Courier'
-            ? Container(
+        widget.isCodeBlock
+            ? SizedBox(
                 width: double.infinity,
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.3),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.white.withOpacity(0.05)),
-                ),
-                padding: const EdgeInsets.all(12),
                 child: SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   child: SelectableText(
