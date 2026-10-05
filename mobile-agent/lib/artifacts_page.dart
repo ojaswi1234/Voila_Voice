@@ -16,7 +16,7 @@ class Artifact {
     required this.title,
     this.content,
     required this.source,
-    this.status = 'pending',
+    this.status = 'completed',
     required this.createdAt,
   });
 }
@@ -274,59 +274,7 @@ class ArtifactDetailPage extends StatelessWidget {
               ),
             ),
           ),
-          if (artifact.status == 'pending')
-            Container(
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: AppTokens.card(isDark),
-                border: Border(top: BorderSide(color: AppTokens.border(isDark))),
-              ),
-              child: SafeArea(
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: GestureDetector(
-                        onTap: () {
-                          ArtifactsManager.updateStatus(artifact.id, 'rejected');
-                          onStatusChanged();
-                          Navigator.pop(context);
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          decoration: BoxDecoration(
-                            color: Colors.transparent,
-                            borderRadius: BorderRadius.circular(100),
-                            border: Border.all(color: const Color(0xFFEF4444)),
-                          ),
-                          alignment: Alignment.center,
-                          child: Text('REJECT', style: GoogleFonts.spaceGrotesk(color: const Color(0xFFEF4444), fontWeight: FontWeight.w800, fontSize: 13, letterSpacing: 1.5)),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: GestureDetector(
-                        onTap: () {
-                          ArtifactsManager.updateStatus(artifact.id, 'approved');
-                          onStatusChanged();
-                          Navigator.pop(context);
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF10B981),
-                            borderRadius: BorderRadius.circular(100),
-                          ),
-                          alignment: Alignment.center,
-                          child: Text('APPROVE', style: GoogleFonts.spaceGrotesk(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 13, letterSpacing: 1.5)),
-                        ),
-                      ),
-                    ),
                   ],
-                ),
-              ),
-            ),
-        ],
       ),
     );
   }
