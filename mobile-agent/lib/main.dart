@@ -3808,6 +3808,8 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                 flutterTts.stop();
                 if (mounted) setState(() { _isAiSpeaking = false; _isLiveSession = false; _showTextInput = true; });
               },
+              ),
+            ],
             ),
           ),
         );

@@ -2327,10 +2327,42 @@ Write-Output $base64
 				isGraphifyRunning = true
 				cmdMu.Unlock()
 				
+				// Force spawn a completely independent Windows Terminal or PowerShell window
+				exe, _ := os.Executable()
+				exeDir := filepath.Dir(exe)
+				psScript := `
+$ErrorActionPreference = 'Continue'
+Set-Location -Path '` + exeDir + `'
+$host.UI.RawUI.WindowTitle = 'Voila AI - Graphify Tracker'
+Clear-Host
+& '` + exe + `' --tui
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "TUI crashed with code $LASTEXITCODE. Press Enter to exit."
+    Read-Host
+}
+`
+				psScriptPath := filepath.Join(os.TempDir(), "voila_tui_launcher.ps1")
+				os.WriteFile(psScriptPath, []byte(psScript), 0644)
+				
+				// Use cmd /c start to completely detach the process from the parent's stdout pipe!
+				tuiCmd := exec.Command("wt.exe", "-w", "new-window", "--title", "Voila TUI", "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", psScriptPath)
+				errWt := tuiCmd.Start()
+				if errWt != nil {
+					// Fallback to legacy console if Windows Terminal is not installed
+					tuiCmd = exec.Command("cmd.exe", "/c", "start", "Voila TUI", "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", psScriptPath)
+					if runtime.GOOS == "windows" {
+						tuiCmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+					}
+					tuiCmd.Start()
+				}
+				if tuiCmd != nil && tuiCmd.Process != nil {
+					cmdMu.Lock()
+					graphifyTuiPid = tuiCmd.Process.Pid
+					cmdMu.Unlock()
+				}
+				
 				fmt.Println("STATUS: GRAPHIFY")
-			os.Stdout.Sync()
-
-			
+				if !isTUIMode { os.Stdout.Sync() }
 
 				jobID := fmt.Sprintf("job-graphify-%x", time.Now().UnixNano()%0xFFFF)
 				jobRegistryMu.Lock()
@@ -3877,16 +3909,19 @@ while ($true) {
 	}
 }
 Write-Host 'Session closing...' -ForegroundColor DarkGray
-Start-Sleep -Seconds 2
+Start-Sleep -Seconds 1
+[Environment]::Exit(0)
 `, terminalPidFile, terminalCmdFile, terminalOutFile, terminalDoneFile, os.Getpid())
 
 	os.WriteFile(psWrapperFile, []byte(psCode), 0644)
 
-	cmdObj := exec.Command("powershell", "-NoProfile", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass", "-File", psWrapperFile)
-	if runtime.GOOS == "windows" {
-		cmdObj.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	cmdObj := exec.Command("wt.exe", "-w", "new-window", "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", psWrapperFile)
+	errStart := cmdObj.Start()
+	if errStart != nil {
+		cmdObj = exec.Command("powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", psWrapperFile)
+		cmdObj.SysProcAttr = &syscall.SysProcAttr{CreationFlags: 0x00000010}
+		cmdObj.Start()
 	}
-	cmdObj.Start()
 
 	for i := 0; i < 20; i++ {
 		if b, err := os.ReadFile(terminalPidFile); err == nil && len(b) > 0 {
