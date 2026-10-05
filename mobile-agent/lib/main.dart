@@ -1724,7 +1724,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                     const SizedBox(height: 16),
                     if (_isFetchingModels)
                       Center(child: CircularProgressIndicator(color: AppTokens.accentSecondary))
-                    else if (_availableModels.isEmpty)
+                    else if (_modelsList.isEmpty)
                       Text('No models available.', style: GoogleFonts.inter(color: AppTokens.textSecondary(isDark)))
                     else
                       Container(
@@ -1735,10 +1735,10 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                         ),
                         child: ListView.separated(
                           shrinkWrap: true,
-                          itemCount: _availableModels.length,
+                          itemCount: _modelsList.length,
                           separatorBuilder: (context, index) => Divider(color: AppTokens.border(isDark), height: 1),
                           itemBuilder: (context, index) {
-                            final model = _availableModels[index];
+                            final model = _modelsList[index];
                             final isSelected = _selectedModel == model;
                             return ListTile(
                               contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
@@ -2082,7 +2082,19 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     _securityPhrase = '';
   }
 
+
+  String _formatTime(dynamic ts) {
+    if (ts == null) return '';
+    try {
+      final d = DateTime.parse(ts.toString()).toLocal();
+      return ':';
+    } catch(e) {
+      return ts.toString();
+    }
+  }
+
   void _showSecurityAlerts() {
+
     FocusScope.of(context).unfocus();
     bool isDark = appThemeMode.value == ThemeMode.dark;
     
