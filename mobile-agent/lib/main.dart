@@ -2910,9 +2910,11 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                             int runningCount = _bgTasks.where((t) => t['status'] == 'running').length;
                             return GestureDetector(
                               onTap: () => Scaffold.of(ctx).openEndDrawer(),
-                              child: Container(
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 300),
+                                curve: Curves.easeInOutCubic,
                                 margin: const EdgeInsets.only(left: 12),
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                padding: EdgeInsets.symmetric(horizontal: runningCount > 0 ? 14 : 10, vertical: 10),
                                 decoration: BoxDecoration(
                                   color: runningCount > 0 ? const Color(0xFF0F766E).withOpacity(0.4) : const Color(0xFF222222).withOpacity(0.5),
                                   borderRadius: BorderRadius.circular(100),
@@ -2921,10 +2923,21 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
+                                    if (runningCount > 0) ...[
+                                      Container(
+                                        padding: const EdgeInsets.all(4),
+                                        decoration: const BoxDecoration(color: Color(0xFF14B8A6), shape: BoxShape.circle),
+                                        child: Text(
+                                          runningCount.toString(),
+                                          style: const TextStyle(color: Colors.black, fontSize: 10, fontWeight: FontWeight.w900),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                    ],
                                     Icon(Icons.memory, size: 16, color: runningCount > 0 ? const Color(0xFF2DD4BF) : Colors.white54),
                                     if (runningCount > 0) ...[
                                       const SizedBox(width: 6),
-                                      Text(' RUNNING', style: const TextStyle(color: Color(0xFF5EEAD4), fontSize: 11, fontWeight: FontWeight.bold)),
+                                      const Text('RUNNING', style: TextStyle(color: Color(0xFF5EEAD4), fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
                                     ]
                                   ],
                                 ),
@@ -2974,9 +2987,16 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     normalized = normalized.replaceAll('*', '');
     normalized = normalized.replaceAll('__', '');
     normalized = normalized.replaceAll('_', ' ');
-    normalized = normalized.replaceAll('`', '');
+    normalized = normalized.replaceAll('', '');
     normalized = normalized.replaceAll('#', '');
     
+    // Aggressive symbol stripping for TTS
+    normalized = normalized.replaceAll(RegExp(r'\s+[-]+\s+'), ' '); // Isolated dashes
+    normalized = normalized.replaceAll(RegExp(r'^\s*[-]+\s*'), ' '); // Leading dashes
+    normalized = normalized.replaceAll(RegExp(r'\.{2,}'), '. '); // Ellipses to single period
+    normalized = normalized.replaceAll(RegExp(r'[\[\]{}|\\<>]'), ' '); // Formatting brackets
+    normalized = normalized.replaceAll(RegExp(r'\s+'), ' '); // Collapse spaces
+
     // Replace programming operators
     normalized = normalized.replaceAll('&&', ' and ');
     normalized = normalized.replaceAll('||', ' or ');
