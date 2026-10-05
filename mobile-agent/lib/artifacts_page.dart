@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'main.dart'; // To access AppTokens and appThemeMode
 
 class Artifact {
   final String id;
@@ -59,81 +61,78 @@ class ArtifactsPage extends StatefulWidget {
 class _ArtifactsPageState extends State<ArtifactsPage> {
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
+    bool isDark = appThemeMode.value == ThemeMode.dark;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0F0F12),
+      backgroundColor: AppTokens.bg(isDark),
       appBar: AppBar(
-        title: const Text('Artifacts', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, letterSpacing: -0.3)),
-        backgroundColor: const Color(0xFF0F0F12),
+        title: Text('ARTIFACTS', style: GoogleFonts.spaceGrotesk(fontSize: 16, fontWeight: FontWeight.w800, letterSpacing: 1.5, color: AppTokens.textPrimary(isDark))),
+        backgroundColor: AppTokens.bg(isDark),
         elevation: 0,
         scrolledUnderElevation: 0,
+        iconTheme: IconThemeData(color: AppTokens.textPrimary(isDark)),
+        centerTitle: true,
       ),
       body: ArtifactsManager.artifacts.isEmpty
           ? Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.auto_awesome_mosaic, size: 48, color: Colors.white.withOpacity(0.2)),
-                  const SizedBox(height: 16),
-                  const Text('No Artifacts Yet', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 8),
-                  Text('Ask Voila to generate documents or run research\nto see artifacts appear here.', textAlign: TextAlign.center, style: TextStyle(color: Colors.white54, fontSize: 14)),
+                  Icon(Icons.dashboard_customize_rounded, size: 64, color: AppTokens.textSecondary(isDark).withOpacity(0.3)),
                   const SizedBox(height: 24),
+                  Text('No Artifacts Yet', style: GoogleFonts.spaceGrotesk(color: AppTokens.textPrimary(isDark), fontSize: 20, fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 8),
+                  Text('Ask Voila to generate documents or run research\nto see artifacts appear here.', textAlign: TextAlign.center, style: GoogleFonts.inter(color: AppTokens.textSecondary(isDark), fontSize: 14)),
+                  const SizedBox(height: 32),
                   ElevatedButton.icon(
-                    icon: const Icon(Icons.arrow_back, size: 16),
-                    label: const Text('Back to Chat'),
-                    style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1A1A1F), foregroundColor: Colors.white),
+                    icon: Icon(Icons.arrow_back_rounded, size: 16, color: AppTokens.textPrimary(isDark)),
+                    label: Text('Back to Chat', style: GoogleFonts.inter(fontWeight: FontWeight.bold, color: AppTokens.textPrimary(isDark))),
+                    style: ElevatedButton.styleFrom(backgroundColor: AppTokens.cardAlt(isDark), elevation: 0, padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
                     onPressed: () => Navigator.pop(context),
                   )
                 ],
               ),
             )
           : ListView.builder(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(20),
               itemCount: ArtifactsManager.artifacts.length,
               itemBuilder: (context, index) {
                 final artifact = ArtifactsManager.artifacts[index];
-                return _buildArtifactCard(artifact, colorScheme);
+                return _buildArtifactCard(artifact, isDark);
               },
             ),
     );
   }
 
-  Widget _buildArtifactCard(Artifact artifact, ColorScheme colorScheme) {
+  Widget _buildArtifactCard(Artifact artifact, bool isDark) {
     Color statusColor;
     IconData statusIcon;
-    Color statusBgColor;
 
     switch (artifact.status) {
       case 'approved':
-        statusColor = const Color(0xFF3DDC97);
-        statusBgColor = const Color(0xFF3DDC97).withOpacity(0.1);
-        statusIcon = Icons.check_circle_outline;
+        statusColor = const Color(0xFF10B981);
+        statusIcon = Icons.check_circle_rounded;
         break;
       case 'rejected':
-        statusColor = Colors.redAccent;
-        statusBgColor = Colors.redAccent.withOpacity(0.1);
-        statusIcon = Icons.cancel_outlined;
+        statusColor = const Color(0xFFEF4444);
+        statusIcon = Icons.cancel_rounded;
         break;
       default:
-        statusColor = const Color(0xFFFFB86C);
-        statusBgColor = const Color(0xFFFFB86C).withOpacity(0.1);
-        statusIcon = Icons.hourglass_empty;
+        statusColor = const Color(0xFFF59E0B);
+        statusIcon = Icons.hourglass_empty_rounded;
     }
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
+      margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1F),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withOpacity(0.04)),
+        color: AppTokens.card(isDark),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: AppTokens.border(isDark)),
       ),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(24),
           onTap: () {
             Navigator.push(
               context,
@@ -146,44 +145,44 @@ class _ArtifactsPageState extends State<ArtifactsPage> {
             );
           },
           child: Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(20),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   children: [
                     Icon(
-                      artifact.source == 'voila' ? Icons.terminal : Icons.auto_awesome,
-                      size: 14,
-                      color: colorScheme.primary,
+                      artifact.source == 'voila' ? Icons.terminal_rounded : Icons.auto_awesome_rounded,
+                      size: 16,
+                      color: AppTokens.accentSecondary,
                     ),
-                    const SizedBox(width: 6),
+                    const SizedBox(width: 8),
                     Text(
                       artifact.source.toUpperCase(),
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
-                        color: colorScheme.primary,
-                        letterSpacing: 0.5,
+                      style: GoogleFonts.spaceGrotesk(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        color: AppTokens.accentSecondary,
+                        letterSpacing: 1.0,
                       ),
                     ),
                     const Spacer(),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(
-                        color: statusBgColor,
+                        color: statusColor.withOpacity(0.15),
                         borderRadius: BorderRadius.circular(100),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(statusIcon, size: 10, color: statusColor),
+                          Icon(statusIcon, size: 12, color: statusColor),
                           const SizedBox(width: 4),
                           Text(
                             artifact.status.toUpperCase(),
-                            style: TextStyle(
-                              fontSize: 9,
-                              fontWeight: FontWeight.w700,
+                            style: GoogleFonts.inter(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
                               color: statusColor,
                               letterSpacing: 0.5,
                             ),
@@ -193,21 +192,13 @@ class _ArtifactsPageState extends State<ArtifactsPage> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 16),
                 Text(
                   artifact.title,
-                  style: const TextStyle(
-                    fontSize: 15,
+                  style: GoogleFonts.inter(
+                    fontSize: 16,
                     fontWeight: FontWeight.w600,
-                    color: Colors.white,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  ''.split('.')[0],
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Colors.white.withOpacity(0.5),
+                    color: AppTokens.textPrimary(isDark),
                   ),
                 ),
               ],
@@ -231,58 +222,51 @@ class ArtifactDetailPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
+    bool isDark = appThemeMode.value == ThemeMode.dark;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0F0F12),
+      backgroundColor: AppTokens.bg(isDark),
       appBar: AppBar(
-        title: const Text('Details', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, letterSpacing: -0.3)),
-        backgroundColor: const Color(0xFF0F0F12),
+        title: Text('DETAILS', style: GoogleFonts.spaceGrotesk(fontSize: 16, fontWeight: FontWeight.w800, letterSpacing: 1.5, color: AppTokens.textPrimary(isDark))),
+        backgroundColor: AppTokens.bg(isDark),
         elevation: 0,
         scrolledUnderElevation: 0,
+        iconTheme: IconThemeData(color: AppTokens.textPrimary(isDark)),
+        centerTitle: true,
       ),
       body: Column(
         children: [
           Expanded(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(24),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     artifact.title,
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
+                    style: GoogleFonts.inter(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: AppTokens.textPrimary(isDark),
                       height: 1.3,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Source:  - ',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.white.withOpacity(0.5),
                     ),
                   ),
                   const SizedBox(height: 24),
                   if (artifact.content != null && artifact.content!.isNotEmpty)
                     Container(
                       width: double.infinity,
-                      padding: const EdgeInsets.all(16),
+                      padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF1A1A1F),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.white.withOpacity(0.04)),
+                        color: AppTokens.cardAlt(isDark),
+                        borderRadius: BorderRadius.circular(24),
+                        border: Border.all(color: AppTokens.border(isDark)),
                       ),
                       child: SelectableText(
                         artifact.content!,
-                        style: TextStyle(
-                          fontFamily: 'Courier',
+                        style: GoogleFonts.firaCode(
                           fontSize: 13,
                           height: 1.5,
-                          color: Colors.white.withOpacity(0.9),
+                          color: AppTokens.textPrimary(isDark),
                         ),
                       ),
                     ),
@@ -292,10 +276,10 @@ class ArtifactDetailPage extends StatelessWidget {
           ),
           if (artifact.status == 'pending')
             Container(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
-                color: const Color(0xFF1A1A1F),
-                border: Border(top: BorderSide(color: Colors.white.withOpacity(0.04))),
+                color: AppTokens.card(isDark),
+                border: Border(top: BorderSide(color: AppTokens.border(isDark))),
               ),
               child: SafeArea(
                 child: Row(
@@ -308,18 +292,18 @@ class ArtifactDetailPage extends StatelessWidget {
                           Navigator.pop(context);
                         },
                         child: Container(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          padding: const EdgeInsets.symmetric(vertical: 16),
                           decoration: BoxDecoration(
                             color: Colors.transparent,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.redAccent.withOpacity(0.5)),
+                            borderRadius: BorderRadius.circular(100),
+                            border: Border.all(color: const Color(0xFFEF4444)),
                           ),
                           alignment: Alignment.center,
-                          child: const Text('Reject', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.w600, fontSize: 14)),
+                          child: Text('REJECT', style: GoogleFonts.spaceGrotesk(color: const Color(0xFFEF4444), fontWeight: FontWeight.w800, fontSize: 13, letterSpacing: 1.5)),
                         ),
                       ),
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 16),
                     Expanded(
                       child: GestureDetector(
                         onTap: () {
@@ -328,13 +312,13 @@ class ArtifactDetailPage extends StatelessWidget {
                           Navigator.pop(context);
                         },
                         child: Container(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          padding: const EdgeInsets.symmetric(vertical: 16),
                           decoration: BoxDecoration(
-                            color: const Color(0xFF3DDC97),
-                            borderRadius: BorderRadius.circular(12),
+                            color: const Color(0xFF10B981),
+                            borderRadius: BorderRadius.circular(100),
                           ),
                           alignment: Alignment.center,
-                          child: const Text('Approve', style: TextStyle(color: Colors.black, fontWeight: FontWeight.w700, fontSize: 14)),
+                          child: Text('APPROVE', style: GoogleFonts.spaceGrotesk(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 13, letterSpacing: 1.5)),
                         ),
                       ),
                     ),
