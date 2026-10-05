@@ -3800,36 +3800,15 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
               ),
               const SizedBox(height: 40),
               // Massive pulsing mic button
-              GestureDetector(
-                onTap: () {
-                  _stopListening();
-                  flutterTts.stop();
-                  if (mounted) setState(() { _isAiSpeaking = false; _isLiveSession = false; _showTextInput = true; });
-                },
-                child: Container(
-                  width: 100,
-                  height: 100,
-                  decoration: BoxDecoration(
-                    color: AppTokens.accent.withOpacity(0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Center(
-                    child: Container(
-                      width: 70,
-                      height: 70,
-                      decoration: BoxDecoration(
-                        color: AppTokens.accent,
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(color: AppTokens.accent.withOpacity(0.4), blurRadius: 30, spreadRadius: 10)
-                        ]
-                      ),
-                      child: const Icon(Icons.mic_rounded, color: Colors.white, size: 36),
-                    ),
-                  ),
-                ),
-              ),
-            ],
+            PulseWaveVisualizer(
+              isListening: _isListening,
+              isSpeaking: _isAiSpeaking,
+              onTap: () {
+                _stopListening();
+                flutterTts.stop();
+                if (mounted) setState(() { _isAiSpeaking = false; _isLiveSession = false; _showTextInput = true; });
+              },
+            ),
           ),
         );
       }
