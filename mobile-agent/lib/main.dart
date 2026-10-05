@@ -1574,44 +1574,65 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   }
 
   void _showModelSelector() {
-    if (_modelsList.isEmpty) {
-      _fetchModels();
-    }
+    FocusScope.of(context).unfocus();
+    bool isDark = appThemeMode.value == ThemeMode.dark;
+    
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF1E1E1E),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      backgroundColor: AppTokens.bg(isDark),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(32))),
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setModalState) {
-            return Container(
-              padding: const EdgeInsets.symmetric(vertical: 20),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text('Select AI Model', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
-                  const SizedBox(height: 10),
-                  if (_modelsList.isEmpty) 
-                    const Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator())
-                  else
-                    SizedBox(  // BUG-23 fix: Expanded inside mainAxisSize.min crashes - use SizedBox
-                      height: 300,
-                      child: ListView.builder(
-                        itemCount: _modelsList.length,
-                        itemBuilder: (context, index) {
-                          final model = _modelsList[index];
-                          return ListTile(
-                            title: Text(model, style: const TextStyle(color: Colors.white70)),
-                            trailing: _selectedModel == model ? const Icon(Icons.check, color: Colors.greenAccent) : null,
-                            onTap: () {
-                              if (mounted) setState(() => _selectedModel = model);
-                              Navigator.pop(context);
-                            },
-                          );
-                        },
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        margin: const EdgeInsets.only(bottom: 24),
+                        decoration: BoxDecoration(color: AppTokens.border(isDark), borderRadius: BorderRadius.circular(10)),
                       ),
                     ),
-                ],
+                    Text('AVAILABLE MODELS', style: GoogleFonts.spaceGrotesk(fontSize: 14, fontWeight: FontWeight.w800, color: AppTokens.textSecondary(isDark), letterSpacing: 1.5)),
+                    const SizedBox(height: 16),
+                    if (_isFetchingModels)
+                      Center(child: CircularProgressIndicator(color: AppTokens.accentSecondary))
+                    else if (_availableModels.isEmpty)
+                      Text('No models available.', style: GoogleFonts.inter(color: AppTokens.textSecondary(isDark)))
+                    else
+                      Container(
+                        decoration: BoxDecoration(
+                          color: AppTokens.card(isDark),
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(color: AppTokens.border(isDark)),
+                        ),
+                        child: ListView.separated(
+                          shrinkWrap: true,
+                          itemCount: _availableModels.length,
+                          separatorBuilder: (context, index) => Divider(color: AppTokens.border(isDark), height: 1),
+                          itemBuilder: (context, index) {
+                            final model = _availableModels[index];
+                            final isSelected = _selectedModel == model;
+                            return ListTile(
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+                              title: Text(model, style: GoogleFonts.inter(color: isSelected ? AppTokens.textPrimary(isDark) : AppTokens.textSecondary(isDark), fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400)),
+                              trailing: isSelected ? Icon(Icons.check_circle_rounded, color: AppTokens.accentSecondary) : null,
+                              onTap: () {
+                                if (mounted) setState(() => _selectedModel = model);
+                                Navigator.pop(context);
+                              },
+                            );
+                          },
+                        ),
+                      ),
+                  ],
+                ),
               ),
             );
           },
@@ -1942,10 +1963,12 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
 
   void _showSecurityAlerts() {
     FocusScope.of(context).unfocus();
+    bool isDark = appThemeMode.value == ThemeMode.dark;
+    
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF1E1E1E),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      backgroundColor: AppTokens.bg(isDark),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(32))),
       isScrollControlled: true,
       builder: (context) {
         return StatefulBuilder(
@@ -1955,102 +1978,117 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
               initialChildSize: 0.6,
               minChildSize: 0.3,
               maxChildSize: 0.9,
-              builder: (_, scrollController) => Container(  // BUG-22 fix: use DraggableScrollableSheet instead of mainAxisSize.min+Expanded
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Security Alerts', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
-                      Row(
-                        children: [
-                          if (_securityAlerts.isNotEmpty)
+              builder: (_, scrollController) => Container(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        margin: const EdgeInsets.only(bottom: 24),
+                        decoration: BoxDecoration(color: AppTokens.border(isDark), borderRadius: BorderRadius.circular(10)),
+                      ),
+                    ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('SECURITY ALERTS', style: GoogleFonts.spaceGrotesk(fontSize: 14, fontWeight: FontWeight.w800, color: AppTokens.textSecondary(isDark), letterSpacing: 1.5)),
+                        Row(
+                          children: [
+                            if (_securityAlerts.isNotEmpty)
+                              IconButton(
+                                icon: Icon(Icons.delete_sweep_rounded, size: 20, color: AppTokens.textSecondary(isDark)),
+                                onPressed: () {
+                                  if (mounted) setState(() {
+                                    _securityAlerts.clear();
+                                  });
+                                  setModalState(() {});
+                                },
+                              ),
                             IconButton(
-                              icon: const Icon(Icons.delete_sweep, size: 18),
+                              icon: Icon(Icons.refresh_rounded, size: 20, color: AppTokens.textSecondary(isDark)),
                               onPressed: () {
-                                if (mounted) setState(() {
-                                  _securityAlerts.clear();
-                                });
-                                setModalState(() {});
+                                final message = {
+                                  'type': 'get_security_alerts',
+                                  'device_id': _activeDevice,
+                                  'session_token': _sessionToken,
+                                };
+                                _channel?.sink.add(jsonEncode(message));
                               },
                             ),
-                          IconButton(
-                            icon: const Icon(Icons.refresh, size: 18),
-                            onPressed: () {
-                              final message = {
-                                'type': 'get_security_alerts',
-                                'device_id': _activeDevice,
-                                'session_token': _sessionToken,
-                              };
-                              _channel?.sink.add(jsonEncode(message));
-                            },
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                  const Divider(height: 20),
-                  // Circuit breaker reset button
-                  ElevatedButton.icon(
-                    onPressed: _resetCircuitBreaker,
-                    icon: const Icon(Icons.power_settings_new, size: 16),
-                    label: const Text('Reset Circuit Breaker'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.orange.withOpacity(0.2),
-                      foregroundColor: Colors.orange,
+                          ],
+                        ),
+                      ],
                     ),
-                  ),
-                  const SizedBox(height: 10),
-                  if (_securityAlerts.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.all(20),
-                      child: Text('No security alerts', style: TextStyle(color: Colors.white70)),
-                    )
-                  else
+                    const SizedBox(height: 16),
+                    // Circuit breaker reset button
+                    Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(bottom: 16),
+                      child: ElevatedButton.icon(
+                        onPressed: _resetCircuitBreaker,
+                        icon: const Icon(Icons.power_settings_new_rounded, size: 16),
+                        label: Text('Reset Circuit Breaker', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTokens.accent.withOpacity(0.15),
+                          foregroundColor: AppTokens.accent,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        ),
+                      ),
+                    ),
                     Expanded(
-                      child: ListView.builder(
-                        shrinkWrap: true,
-                        itemCount: _securityAlerts.length,
-                        itemBuilder: (context, index) {
-                          final alert = _securityAlerts[index];
-                          final timestamp = alert['timestamp']?.toString() ?? 'Unknown';
-                          final type = alert['type']?.toString() ?? 'Unknown';
-                          final severity = alert['severity']?.toString() ?? 'low';
-                          final ip = alert['ip']?.toString() ?? 'Unknown';
-                          final device = alert['device_id']?.toString() ?? 'Unknown';
-                          final detail = alert['detail']?.toString() ?? '';
-                          
-                          return Card(
-                            color: _getSeverityColor(severity).withOpacity(0.1),
-                            margin: const EdgeInsets.only(bottom: 8),
-                            child: ListTile(
-                              leading: Icon(
-                                _getSeverityIcon(severity),
-                                color: _getSeverityColor(severity),
-                                size: 20,
-                              ),
-                              title: Text(
-                                type,
-                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
-                              ),
-                              subtitle: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(timestamp, style: const TextStyle(color: Colors.white60, fontSize: 12)),
-                                  Text('IP: $ip', style: const TextStyle(color: Colors.white60, fontSize: 12)),
-                                  if (device != 'Unknown') Text('Device: $device', style: const TextStyle(color: Colors.white60, fontSize: 12)),
-                                  if (detail.isNotEmpty) Text(detail, style: const TextStyle(color: Colors.white60, fontSize: 12), maxLines: 2, overflow: TextOverflow.ellipsis),
-                                ],
-                              ),
+                      child: _securityAlerts.isEmpty
+                          ? Center(child: Text('No security alerts.', style: GoogleFonts.inter(color: AppTokens.textSecondary(isDark))))
+                          : ListView.separated(
+                              controller: scrollController,
+                              itemCount: _securityAlerts.length,
+                              separatorBuilder: (context, index) => const SizedBox(height: 12),
+                              itemBuilder: (context, index) {
+                                final alert = _securityAlerts[index];
+                                return Container(
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    color: AppTokens.cardAlt(isDark),
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: Border.all(color: AppTokens.border(isDark)),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Icon(Icons.warning_amber_rounded, size: 18, color: AppTokens.accent),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: Text(
+                                              alert['alert_type'] ?? 'Unknown Alert',
+                                              style: GoogleFonts.inter(color: AppTokens.textPrimary(isDark), fontWeight: FontWeight.bold, fontSize: 14),
+                                            ),
+                                          ),
+                                          Text(
+                                            _formatTime(alert['timestamp']),
+                                            style: GoogleFonts.inter(color: AppTokens.textSecondary(isDark), fontSize: 12),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        alert['details'] ?? 'No details provided.',
+                                        style: GoogleFonts.inter(color: AppTokens.textSecondary(isDark), fontSize: 13),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
                             ),
-                          );
-                        },
-                      ),
                     ),
-                ],
+                  ],
+                ),
               ),
-            ));  // BUG-22b fix: close DraggableScrollableSheet
+            );
           },
         );
       },
@@ -2196,7 +2234,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
             ),
             child: Row(
               children: [
-                const Icon(Icons.blur_on_rounded, color: AppTokens.accent, size: 28),
+                const Icon(Icons.graphic_eq_rounded, color: AppTokens.accent, size: 28),
                 const SizedBox(width: 12),
                 Text('VOILA VOICE', style: GoogleFonts.spaceGrotesk(color: AppTokens.textPrimary(isDark), fontSize: 20, fontWeight: FontWeight.w800, letterSpacing: -1.0)),
                 const Spacer(),
@@ -2215,7 +2253,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
               children: [
                 if (_currentMode.toUpperCase() == 'AGENT') ...[
                   ListTile(
-                    leading: const Icon(Icons.add_circle_outline, color: AppTokens.accentSecondary),
+                    leading: const Icon(Icons.add_circle_rounded, color: AppTokens.accentSecondary),
                     title: Text('New Conversation', style: GoogleFonts.inter(color: AppTokens.textPrimary(isDark), fontWeight: FontWeight.w600)),
                     onTap: () {
                       Navigator.pop(context);
@@ -2228,19 +2266,19 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                   ),
                 ],
                 
-                _buildDrawerItem(Icons.folder_copy_outlined, 'Artifacts', () {
+                _buildDrawerItem(Icons.dashboard_customize_rounded, 'Artifacts', () {
                   Navigator.pop(context);
                   Navigator.push(context, MaterialPageRoute(builder: (context) => const ArtifactsPage()));
                 }),
-                _buildDrawerItem(Icons.security_outlined, 'Security Alerts', () {
+                _buildDrawerItem(Icons.shield_rounded, 'Security Alerts', () {
                   Navigator.pop(context);
                   _showSecurityAlerts();
                 }),
-                _buildDrawerItem(Icons.settings_outlined, 'Settings', () {
+                _buildDrawerItem(Icons.tune_rounded, 'Settings', () {
                   Navigator.pop(context);
                   _showSettingsSheet(context);
                 }),
-                _buildDrawerItem(Icons.no_photography_outlined, 'Clear Screenshots', () {
+                _buildDrawerItem(Icons.image_not_supported_rounded, 'Clear Screenshots', () {
                   if (mounted) setState(() {
                     _messages.removeWhere((m) => (m['content'] as String? ?? '').startsWith('__IMAGE__:'));
                   });
@@ -2312,7 +2350,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                       dense: true,
                       contentPadding: const EdgeInsets.symmetric(horizontal: 20),
                       tileColor: isSelected ? AppTokens.accentSecondary.withOpacity(0.15) : null,
-                      leading: Icon(Icons.chat_bubble_outline_rounded, size: 18, color: isSelected ? AppTokens.accentSecondary : AppTokens.textSecondary(isDark)),
+                      leading: Icon(Icons.chat_bubble_rounded, size: 18, color: isSelected ? AppTokens.accentSecondary : AppTokens.textSecondary(isDark)),
                       title: Text(
                         conv['title'] ?? 'Unknown', 
                         style: GoogleFonts.inter(
@@ -3005,107 +3043,96 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
 
   void _showSettingsSheet(BuildContext context) {
     FocusScope.of(context).unfocus();
+    bool isDark = appThemeMode.value == ThemeMode.dark;
+    
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF1A1A1F),
+      backgroundColor: AppTokens.bg(isDark),
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(32))),
       builder: (context) => SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(24),
           child: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Settings', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-              const SizedBox(height: 20),
-              SwitchListTile(
-                title: const Text('Smart Subtitles (AI Speech)', style: TextStyle(fontSize: 14)),
-                subtitle: const Text('Show scrolling text when AI speaks'),
-                value: _showSubtitles,
-                onChanged: (val) {
-                  if (mounted) setState(() => _showSubtitles = val);
-                  _storage.write(key: 'show_subtitles', value: val.toString());
-                  Navigator.pop(context);
-                },
-                activeColor: const Color(0xFF3DDC97),
-                contentPadding: EdgeInsets.zero,
-              ),
-              _TokenUsageRow(tokenData: _lastTokenUsage),
-              SwitchListTile(
-                title: const Text('Auto-read Voice Responses', style: TextStyle(fontSize: 14)),
-                value: _willTalk,
-                activeColor: const Color(0xFF7C6CFF),
-                contentPadding: EdgeInsets.zero,
-                onChanged: (bool value) {
-                  if (mounted) setState(() => _willTalk = value);
-                  _storage.write(key: 'will_talk', value: value.toString());
-                  Navigator.pop(context);
-                },
-              ),
-              SwitchListTile(
-                title: const Text('Graphify Multi-Model Teams', style: TextStyle(fontSize: 14)),
-                subtitle: const Text('Chain models to save tokens & boost reasoning', style: TextStyle(fontSize: 12, color: Colors.grey)),
-                value: _graphifyEnabled,
-                activeColor: const Color(0xFF7C6CFF),
-                contentPadding: EdgeInsets.zero,
-                onChanged: (bool value) {
-                  if (mounted) setState(() => _graphifyEnabled = value);
-                  _storage.write(key: 'graphify_enabled', value: value.toString());
-                  Navigator.pop(context);
-                },
-              ),
-              SwitchListTile(
-                title: const Text('Quiet Hours', style: TextStyle(fontSize: 14)),
-                subtitle: const Text('Suppress non-critical voice summaries (10 PM - 7 AM)', style: TextStyle(fontSize: 12, color: Colors.grey)),
-                value: _quietHoursEnabled,
-                activeColor: const Color(0xFF7C6CFF),
-                contentPadding: EdgeInsets.zero,
-                onChanged: (bool value) {
-                  if (mounted) setState(() => _quietHoursEnabled = value);
-                  _storage.write(key: 'quiet_hours_enabled', value: value.toString());
-                  Navigator.pop(context);
-                },
-              ),
-              const Divider(color: Colors.white10),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Lock Session', style: TextStyle(fontSize: 14, color: Colors.orangeAccent)),
-                leading: const Icon(Icons.lock_outline, color: Colors.orangeAccent, size: 20),
-                onTap: () async {
-                  Navigator.pop(context);
-                  await _storage.delete(key: 'session_token');
-                  if (mounted) {
-                    setState(() {
-                      _sessionToken = '';
-                    });
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Session locked. Token destroyed.')),
-                    );
-                  }
-                },
-              ),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Clear Local Data', style: TextStyle(fontSize: 14, color: Colors.redAccent)),
-                leading: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
-                onTap: () {
-                  Navigator.pop(context);
-                  _clearLocalData();
-                },
-              ),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Clear Backend Devices', style: TextStyle(fontSize: 14, color: Colors.redAccent)),
-                leading: const Icon(Icons.delete_sweep_outlined, color: Colors.redAccent, size: 20),
-                onTap: () {
-                  Navigator.pop(context);
-                  _clearBackendData();
-                },
-              ),
-            ],
-          ),
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 24),
+                    decoration: BoxDecoration(color: AppTokens.border(isDark), borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+                Text('SETTINGS', style: GoogleFonts.spaceGrotesk(fontSize: 14, fontWeight: FontWeight.w800, color: AppTokens.textSecondary(isDark), letterSpacing: 1.5)),
+                const SizedBox(height: 24),
+                Container(
+                  decoration: BoxDecoration(
+                    color: AppTokens.card(isDark),
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: AppTokens.border(isDark)),
+                  ),
+                  child: Column(
+                    children: [
+                      SwitchListTile(
+                        title: Text('Smart Subtitles', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600, color: AppTokens.textPrimary(isDark))),
+                        subtitle: Text('Show scrolling text when AI speaks', style: GoogleFonts.inter(fontSize: 13, color: AppTokens.textSecondary(isDark))),
+                        value: _showSubtitles,
+                        onChanged: (val) {
+                          if (mounted) setState(() => _showSubtitles = val);
+                          _storage.write(key: 'show_subtitles', value: val.toString());
+                          Navigator.pop(context);
+                        },
+                        activeColor: AppTokens.accentSecondary,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                      ),
+                      Divider(color: AppTokens.border(isDark), height: 1),
+                      SwitchListTile(
+                        title: Text('Auto-read Responses', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600, color: AppTokens.textPrimary(isDark))),
+                        value: _willTalk,
+                        activeColor: AppTokens.accentSecondary,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                        onChanged: (bool value) {
+                          if (mounted) setState(() => _willTalk = value);
+                          _storage.write(key: 'will_talk', value: value.toString());
+                          Navigator.pop(context);
+                        },
+                      ),
+                      Divider(color: AppTokens.border(isDark), height: 1),
+                      SwitchListTile(
+                        title: Text('Graphify Multi-Model', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600, color: AppTokens.textPrimary(isDark))),
+                        subtitle: Text('Chain models to boost reasoning', style: GoogleFonts.inter(fontSize: 13, color: AppTokens.textSecondary(isDark))),
+                        value: _graphifyEnabled,
+                        activeColor: AppTokens.accentSecondary,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                        onChanged: (bool value) {
+                          if (mounted) setState(() => _graphifyEnabled = value);
+                          _storage.write(key: 'graphify_enabled', value: value.toString());
+                          Navigator.pop(context);
+                        },
+                      ),
+                      Divider(color: AppTokens.border(isDark), height: 1),
+                      SwitchListTile(
+                        title: Text('Quiet Hours', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600, color: AppTokens.textPrimary(isDark))),
+                        subtitle: Text('Suppress voice summaries (10 PM - 7 AM)', style: GoogleFonts.inter(fontSize: 13, color: AppTokens.textSecondary(isDark))),
+                        value: _quietHoursEnabled,
+                        activeColor: AppTokens.accentSecondary,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                        onChanged: (bool value) {
+                          if (mounted) setState(() => _quietHoursEnabled = value);
+                          _storage.write(key: 'quiet_hours_enabled', value: value.toString());
+                          Navigator.pop(context);
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+                _TokenUsageRow(tokenData: _lastTokenUsage),
+              ],
+            ),
           ),
         ),
       ),
