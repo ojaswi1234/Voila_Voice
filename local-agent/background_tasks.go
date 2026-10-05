@@ -11,8 +11,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"syscall"
-	"runtime"
 )
 
 // -------------------------------------------------------------------
@@ -209,10 +207,7 @@ func spawnBGTaskWithLabel(command, label, convID string) string {
 
 	go func() {
 		fullCmd := fmt.Sprintf("Set-Location -Path [Environment]::GetFolderPath('Desktop'); %s", command)
-		cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", fullCmd)
-		if runtime.GOOS == "windows" {
-			cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-		}
+		cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", fullCmd)
 		cmd.Stdout = task.Stdout
 		cmd.Stderr = task.Stderr
 		task.Cmd = cmd

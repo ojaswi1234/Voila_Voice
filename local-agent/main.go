@@ -3909,16 +3909,15 @@ while ($true) {
 	}
 }
 Write-Host 'Session closing...' -ForegroundColor DarkGray
-Start-Sleep -Seconds 1
-[Environment]::Exit(0)
+Start-Sleep -Seconds 2
 `, terminalPidFile, terminalCmdFile, terminalOutFile, terminalDoneFile, os.Getpid())
 
 	os.WriteFile(psWrapperFile, []byte(psCode), 0644)
 
-	cmdObj := exec.Command("wt.exe", "-w", "new-window", "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", psWrapperFile)
+	cmdObj := exec.Command("wt", "-w", "new-window", "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", psWrapperFile)
 	errStart := cmdObj.Start()
 	if errStart != nil {
-		cmdObj = exec.Command("powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", psWrapperFile)
+		cmdObj = exec.Command("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", psWrapperFile)
 		cmdObj.SysProcAttr = &syscall.SysProcAttr{CreationFlags: 0x00000010}
 		cmdObj.Start()
 	}
