@@ -2801,7 +2801,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
               Expanded(child: _buildMessagesList(colorScheme)),
               
               _buildSubtitleOverlay(colorScheme, true),
-              _buildJobStrip(colorScheme),
+              _buildTaskWorkflow(colorScheme),
               _buildInputArea(colorScheme),
             ],
           ),
@@ -3816,81 +3816,88 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     });
   }
 
-  Widget _buildJobStrip(ColorScheme colorScheme) {
-    if (_activeJobId == null || _activeJobStatus == '') return const SizedBox.shrink();
-    
+  Widget _buildTaskWorkflow(ColorScheme colorScheme) {
     bool isDark = appThemeMode.value == ThemeMode.dark;
-    Color statusColor = AppTokens.accent;
-    IconData icon = Icons.sync;
-    bool spinner = false;
+    bool isAgent = _currentMode.toUpperCase() == 'AGENT';
     
-    switch (_activeJobStatus) {
-      case 'running':
-        statusColor = AppTokens.accentSecondary;
-        spinner = true;
-        break;
-      case 'waiting_approval':
-        statusColor = const Color(0xFFF59E0B);
-        icon = Icons.warning_amber_rounded;
-        break;
-      case 'done':
-        statusColor = const Color(0xFF10B981);
-        icon = Icons.check_circle_rounded;
-        break;
-      case 'failed':
-      case 'cancelled':
-        statusColor = const Color(0xFFEF4444);
-        icon = Icons.error_outline_rounded;
-        break;
-      case 'cancelling':
-        statusColor = AppTokens.textSecondary(isDark);
-        spinner = true;
-        break;
-    }
+    // Only show in Agent mode
+    if (!isAgent) return const SizedBox.shrink();
 
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: AppTokens.bentoBox(isDark, radius: 24).copyWith(
-        border: Border.all(color: statusColor.withOpacity(0.3), width: 1.5),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: statusColor.withOpacity(0.15),
-            ),
-            child: spinner 
-              ? SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: statusColor))
-              : Icon(icon, color: statusColor, size: 14),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
+    // Get up to 4 most recent tasks for the workflow visualization
+    final workflowTasks = _bgTasks.reversed.take(4).toList().reversed.toList();
+    if (workflowTasks.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.only(left: 20, right: 20, bottom: 12),
+      height: 65,
+      child: Center(
+        child: ListView.builder(
+          scrollDirection: Axis.horizontal,
+          shrinkWrap: true,
+          itemCount: workflowTasks.length,
+          itemBuilder: (context, index) {
+            final task = workflowTasks[index];
+            final isRunning = task['status'] == 'running';
+            final isDone = task['status'] == 'completed' || task['status'] == 'done';
+            final isFailed = task['status'] == 'failed' || task['status'] == 'error';
+            
+            Color nodeColor = AppTokens.border(isDark);
+            if (isRunning) nodeColor = AppTokens.accentSecondary;
+            else if (isDone) nodeColor = const Color(0xFF10B981);
+            else if (isFailed) nodeColor = const Color(0xFFEF4444);
+
+            return Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('BACKGROUND JOB', style: GoogleFonts.outfit(color: statusColor, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
-                const SizedBox(height: 2),
-                Text(_activeJobSummary, style: GoogleFonts.inter(color: AppTokens.textPrimary(isDark), fontSize: 13, fontWeight: FontWeight.w500), maxLines: 1, overflow: TextOverflow.ellipsis),
-              ],
-            ),
-          ),
-          if (_activeJobStatus == 'running' || _activeJobStatus == 'waiting_approval')
-            GestureDetector(
-              onTap: _cancelJob,
-              child: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: AppTokens.cardAlt(isDark),
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 24,
+                      height: 24,
+                      decoration: BoxDecoration(
+                        color: isRunning ? nodeColor.withOpacity(0.15) : Colors.transparent,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: isRunning || isDone || isFailed ? nodeColor : AppTokens.border(isDark), width: isRunning ? 2 : 1.5),
+                      ),
+                      child: Center(
+                        child: isDone
+                            ? Icon(Icons.check_rounded, size: 14, color: nodeColor)
+                            : (isFailed
+                                ? Icon(Icons.close_rounded, size: 14, color: nodeColor)
+                                : (isRunning
+                                    ? SizedBox(width: 10, height: 10, child: CircularProgressIndicator(color: nodeColor, strokeWidth: 2))
+                                    : Icon(Icons.circle, size: 8, color: nodeColor))),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    SizedBox(
+                      width: 70,
+                      child: Text(
+                        task['action'] ?? task['id'] ?? 'Task',
+                        style: GoogleFonts.inter(
+                          color: isRunning ? AppTokens.textPrimary(isDark) : AppTokens.textSecondary(isDark),
+                          fontSize: 9,
+                          fontWeight: isRunning ? FontWeight.w700 : FontWeight.w500,
+                        ),
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
                 ),
-                child: Icon(Icons.close_rounded, color: AppTokens.textSecondary(isDark), size: 16),
-              ),
-            ),
-        ],
+                if (index < workflowTasks.length - 1)
+                  Container(
+                    width: 30,
+                    height: 2,
+                    margin: const EdgeInsets.only(top: 11),
+                    color: (isDone || isFailed) ? nodeColor.withOpacity(0.5) : AppTokens.border(isDark),
+                  ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
