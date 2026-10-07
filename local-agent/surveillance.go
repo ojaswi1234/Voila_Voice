@@ -52,6 +52,16 @@ func saveSurveillanceStateLocked() {
 	os.WriteFile(path, b, 0644)
 }
 
+
+var gestureDaemonCmd *exec.Cmd
+
+func startGestureDaemon() {
+	scriptPath := filepath.Join(getLocalAgentDir(), "surveillance", "gesture_omega.py")
+	gestureDaemonCmd = exec.Command("python", scriptPath, "daemon")
+	gestureDaemonCmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	gestureDaemonCmd.Start()
+}
+
 func startSurveillanceMonitor() {
 	survStateMu.Lock()
 	defer survStateMu.Unlock()
@@ -75,6 +85,7 @@ func stopSurveillanceMonitor() {
 }
 
 func setupSurveillanceRoutes(mux *http.ServeMux) {
+	startGestureDaemon()
 	mux.HandleFunc("/surveillance/status", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		survStateMu.Lock()
@@ -122,6 +133,7 @@ func setupSurveillanceRoutes(mux *http.ServeMux) {
 		// Optionally keep armed, but for safety disarm might be better, or just unlock
 		saveSurveillanceStateLocked()
 		survStateMu.Unlock()
+		stopSurveillanceMonitor()
 		w.Write([]byte(`{"status":"unlocked"}`))
 	})
 

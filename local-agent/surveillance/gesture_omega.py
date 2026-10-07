@@ -143,5 +143,54 @@ def main():
         else:
             print("NO_MATCH")
 
+    elif action == "daemon":
+        if not os.path.exists(template_file):
+            print("NOT_TRAINED")
+            return
+            
+        with open(template_file, "r") as f:
+            templates = json.load(f)
+            
+        THRESHOLD = 0.25
+        
+        import requests
+        print("Starting gesture daemon...")
+        
+        pts = []
+        last_p = get_mouse_pos()
+        last_move_time = time.time()
+        
+        while True:
+            time.sleep(0.01)
+            p = get_mouse_pos()
+            
+            if p != last_p:
+                pts.append(p)
+                last_p = p
+                last_move_time = time.time()
+            else:
+                # If mouse hasn't moved for 0.5s, evaluate
+                if time.time() - last_move_time > 0.5 and len(pts) > 0:
+                    if len(pts) > 10:
+                        norm_pts = normalize(resample(pts, 64))
+                        dist_omega = path_distance(norm_pts, templates["omega"])
+                        dist_water = path_distance(norm_pts, templates["water_omega"])
+                        
+                        if dist_omega < THRESHOLD and dist_omega < dist_water:
+                            print("MATCH_OMEGA - Locking")
+                            try:
+                                requests.post('http://localhost:8088/surveillance/lock')
+                            except:
+                                pass
+                        elif dist_water < THRESHOLD:
+                            print("MATCH_WATER_OMEGA - Unlocking")
+                            try:
+                                requests.post('http://localhost:8088/surveillance/unlock')
+                            except:
+                                pass
+                    # Clear path after evaluation
+                    pts = []
+
+
 if __name__ == "__main__":
     main()

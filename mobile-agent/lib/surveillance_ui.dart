@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:async';
 
 class SurveillanceSheet extends StatefulWidget {
   final String backendUrl;
@@ -16,11 +17,19 @@ class _SurveillanceSheetState extends State<SurveillanceSheet> {
   bool locked = false;
   bool loading = true;
   String lastAlert = "";
+  Timer? _timer;
 
   @override
   void initState() {
     super.initState();
     _fetchStatus();
+    _timer = Timer.periodic(const Duration(seconds: 2), (_) => _pollStatus());
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
   }
 
   String _getUrl(String endpoint) {
@@ -34,18 +43,31 @@ class _SurveillanceSheetState extends State<SurveillanceSheet> {
 
   Future<void> _fetchStatus() async {
     setState(() => loading = true);
+    await _pollStatus();
+    if (mounted) setState(() => loading = false);
+  }
+
+  Future<void> _pollStatus() async {
     try {
       final res = await http.get(Uri.parse(_getUrl('status')));
-      if (res.statusCode == 200) {
+      if (res.statusCode == 200 && mounted) {
         final data = jsonDecode(res.body);
+        final String newAlert = data['last_alert_reason'] ?? '';
+        
+        if (newAlert.isNotEmpty && newAlert != lastAlert && lastAlert.isNotEmpty) {
+          // Show a quick notification Snackbar if a new alert arrives while sheet is open
+          ScaffoldMessenger.of(context).showSnackBar(
+             SnackBar(content: Text('⚠️ INTRUDER DETECTED: $newAlert'), backgroundColor: Colors.redAccent, duration: const Duration(seconds: 3))
+          );
+        }
+        
         setState(() {
           armed = data['armed'] ?? false;
           locked = data['locked'] ?? false;
-          lastAlert = data['last_alert_reason'] ?? '';
+          lastAlert = newAlert;
         });
       }
     } catch (e) {}
-    setState(() => loading = false);
   }
 
   Future<void> _sendCommand(String cmd) async {

@@ -1783,9 +1783,10 @@ def animate_size_transition():
     # Update status text width
     canvas.itemconfig(status_text, width=max(150, new_width - 120))
     
-    # Update close button position
-    canvas.coords(close_btn, new_close_x, 45)
-    canvas.coords(close_btn_bg, new_close_x - 10, 35, new_close_x + 10, 55)
+    # Update close button position dynamically based on height
+    new_close_y = int(32 + (new_height - 65) / 2)
+    canvas.coords(close_btn, new_close_x, new_close_y)
+    canvas.coords(close_btn_bg, new_close_x - 10, new_close_y - 10, new_close_x + 10, new_close_y + 10)
     
     # Update pill outline to match new width and morph radius
     if target_width > 240:
@@ -1794,6 +1795,43 @@ def animate_size_transition():
         new_r = int(15 + (27 - 15) * ease)
     set_round_rect(pill, 5, 5, new_width - 5, new_height - 5, new_r)
     
+    # Scale elements and text
+    scale_factor = new_width / 240.0
+    
+    # Update cx, cy globally so animation_loop uses them
+    global cx, cy
+    cx = int(35 * scale_factor)
+    cy = int(30 * (new_height / 65.0))
+    
+    # Update text coordinates and fonts
+    title_x, title_y = int(70 * scale_factor), int(24 * (new_height / 65.0))
+    status_x, status_y = int(70 * scale_factor), int(44 * (new_height / 65.0))
+    
+    title_font_size = max(8, int(12 * scale_factor))
+    status_font_size = max(8, int(9 * scale_factor))
+    
+    canvas.coords(title_text, title_x, title_y)
+    canvas.itemconfig(title_text, font=("Segoe UI", title_font_size, "bold"))
+    
+    canvas.coords(status_text, status_x, status_y)
+    if alert_state.get("active"):
+        canvas.itemconfig(status_text, font=("Segoe UI", status_font_size, "bold"))
+    else:
+        canvas.itemconfig(status_text, font=("Segoe UI", status_font_size))
+        
+    # Scale Mode Badge
+    badge_x1 = int(145 * scale_factor)
+    badge_x2 = int(195 * scale_factor)
+    badge_y1 = int(16 * (new_height / 65.0))
+    badge_y2 = int(32 * (new_height / 65.0))
+    set_round_rect(mode_badge_bg, badge_x1, badge_y1, badge_x2, badge_y2, 6)
+    
+    badge_text_x = int(170 * scale_factor)
+    badge_text_y = int(24 * (new_height / 65.0))
+    badge_font_size = max(6, int(8 * scale_factor))
+    canvas.coords(mode_badge_text, badge_text_x, badge_text_y)
+    canvas.itemconfig(mode_badge_text, font=("Segoe UI", badge_font_size, "bold"))
+
     # Update current values
     current_width = new_width
     current_height = new_height
@@ -1805,6 +1843,73 @@ def animate_size_transition():
         # Reset progress for next transition
         transition_progress = 0.0
         transition_in_progress = False
+
+
+surveillance_locked = False
+surveillance_last_alert = ""
+
+def poll_surveillance():
+    global surveillance_locked, surveillance_last_alert, target_width, target_height, current_width, current_height, transition_progress, transition_in_progress
+    try:
+        url = 'http://localhost:8088/surveillance/status'
+        req = _urllib_req.Request(url, method="GET")
+        with _urllib_req.urlopen(req, timeout=1) as r:
+            data = _json_mod.loads(r.read())
+            locked = data.get("locked", False)
+            last_alert = data.get("last_alert_reason", "")
+            
+            if locked != surveillance_locked:
+                surveillance_locked = locked
+                if locked:
+                    # Lock engaged - DO NOT enlarge yet, just show Green Dot indicator
+                    try:
+                        canvas.itemconfig(bg_center, state='normal', fill='#22c55e')
+                    except:
+                        pass
+                else:
+                    # Unlocked - Revert size and hide Green Dot
+                    try:
+                        canvas.itemconfig(bg_center, state='hidden')
+                    except:
+                        pass
+                    if not dashboard_active:
+                        target_width = 240
+                        target_height = 65
+                        transition_progress = 0.0
+                        transition_in_progress = True
+                        animate_size_transition()
+            
+            if locked and not dashboard_active:
+                if last_alert and last_alert != surveillance_last_alert:
+                    surveillance_last_alert = last_alert
+                    
+                    # Movement detected! Now we enlarge.
+                    target_width = 320
+                    target_height = 85
+                    transition_progress = 0.0
+                    transition_in_progress = True
+                    animate_size_transition()
+                    
+                    # Trigger alert visually
+                    alert_state["active"] = True
+                    alert_state["message"] = f"INTRUDER: {last_alert}"
+                    alert_state["apps"] = []
+                    alert_state["state_changed"] = True
+                    
+                    if alert_state["alert_timer"]:
+                        root.after_cancel(alert_state["alert_timer"])
+                    alert_state["alert_timer"] = root.after(5000, clear_alert)
+                    
+    except Exception as e:
+        pass
+    root.after(1000, poll_surveillance)
+
+def clear_alert():
+    alert_state["active"] = False
+    alert_state["state_changed"] = True
+    
+    # Try to clean up expression right away
+    update_expression()
 
 def animation_loop():
     global anim_frame, usage_stats, current_rendered_state, transition_scale, transitioning
@@ -1893,7 +1998,8 @@ def animation_loop():
             canvas.itemconfig(mode_badge_text, fill='#9ca3af', text=current_mode)
             
             visual_state = current_rendered_state
-            scale = transition_scale
+            # Multiply animation scale by dynamic window size scale
+            scale = transition_scale * (current_width / 240.0)
             
             r1 = 16 * scale
             r2 = 12 * scale
@@ -2165,6 +2271,12 @@ def animation_loop():
             if not alert_state["active"]:
                 canvas.itemconfig(status_text, text=display, fill=target_color)
 
+            if surveillance_locked:
+                try:
+                    canvas.itemconfig(bg_center, state='normal', fill='#22c55e')
+                    canvas.tag_raise(bg_center)
+                except: pass
+
     elif dashboard_active and anim_frame % 50 == 0:
         if current_section not in ('Settings', 'MCP/Tools', 'Documents'):
             refresh_dashboard_content()
@@ -2392,6 +2504,7 @@ t.start()
 root.after(50, _drain_line_queue)
 
 update_expression()
+poll_surveillance()
 animation_loop()
 
 
