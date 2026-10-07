@@ -1736,6 +1736,7 @@ def ensure_heatmap_cache():
 def toggle_dashboard():
     """Smooth animated switch between mini popup canvas and dashboard frame."""
     global original_pos, original_size
+    if surveillance_locked: return
     if not dashboard_active:
         original_pos = (root.winfo_x(), root.winfo_y())
         original_size = (240, 65)
@@ -2118,9 +2119,18 @@ def animation_loop():
                   canvas.itemconfig(bg_orbit2, state="hidden")
                   canvas.itemconfig(browser_box, state="hidden")
                   canvas.itemconfig(browser_line, state="hidden")
-                  canvas.itemconfig(desktop_cursor_arrow, state="hidden")
-                  canvas.itemconfig(desktop_cursor_dot, state="hidden")
-                  canvas.itemconfig(desktop_cursor_label, state="hidden")
+                  if scale > 0.5:
+                      canvas.itemconfig(desktop_cursor_arrow, state="normal")
+                      canvas.itemconfig(desktop_cursor_dot, state="normal")
+                      canvas.itemconfig(desktop_cursor_label, state="normal")
+                  bounce = math.sin(anim_frame * 0.15) * 2
+                  # Arrow coords: base at cx, cy, moving around
+                  ax = cx + math.cos(anim_frame * 0.05) * 8 * scale
+                  ay = cy + math.sin(anim_frame * 0.05) * 4 * scale + bounce
+                  canvas.coords(desktop_cursor_arrow, ax-10*scale, ay-12*scale, ax-10*scale, ay+6*scale, ax-5*scale, ay+1*scale, ax-1*scale, ay+8*scale, ax+2*scale, ay+7*scale, ax-2*scale, ay, ax+4*scale, ay)
+                  canvas.coords(desktop_cursor_dot, ax+2*scale, ay+6*scale, ax+7*scale, ay+11*scale)
+                  canvas.coords(desktop_cursor_label, ax+12*scale, ay)
+                  canvas.itemconfig(desktop_cursor_label, font=("Segoe UI", max(1, int(7*scale)), "bold"))
             elif visual_state == "BASH":
                 target_text = "Bash"
                 target_color = '#34d399'
@@ -2139,6 +2149,7 @@ def animation_loop():
                 canvas.itemconfig(core_arc2, state="hidden")
                 canvas.itemconfig(core_arc3, state="hidden")
                 if scale > 0.5:
+                    canvas.coords(term_prompt, cx, cy)
                     canvas.itemconfig(term_prompt, state="normal" if anim_frame % 20 < 10 else "hidden", font=("Consolas", max(1, int(11 * scale)), "bold"))
                 
             elif visual_state == "FILE":
@@ -2273,6 +2284,7 @@ def animation_loop():
 
             if surveillance_locked:
                 try:
+                    canvas.coords(bg_center, cx-6*scale, cy-6*scale, cx+6*scale, cy+6*scale)
                     canvas.itemconfig(bg_center, state='normal', fill='#22c55e')
                     canvas.tag_raise(bg_center)
                 except: pass
