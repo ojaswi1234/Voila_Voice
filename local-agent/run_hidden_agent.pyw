@@ -1737,7 +1737,6 @@ def ensure_heatmap_cache():
 def toggle_dashboard():
     """Smooth animated switch between mini popup canvas and dashboard frame."""
     global original_pos, original_size
-    if surveillance_locked: return
     if not dashboard_active:
         original_pos = (root.winfo_x(), root.winfo_y())
         original_size = (240, 65)
@@ -1808,59 +1807,47 @@ def animate_size_transition():
     set_round_rect(pill, 5, 5, new_width - 5, new_height - 5, new_r)
     
     # Scale elements and text
-    scale_factor = new_width / 240.0
-    global cx, cy
+    # Interpolate layout continuously based on size ratio
+    fs_ratio = (new_width - 240) / max(1.0, float(root.winfo_screenwidth() - 240))
+    fs_ratio = max(0.0, min(1.0, fs_ratio))
     
-    if new_width > 500:
-        # Premium fullscreen security layout
-        cx = new_width // 2
-        cy = new_height // 2 - 100
-        
-        # Center the text below the massive animated core
-        title_x, title_y = cx, cy + 180
-        status_x, status_y = cx, cy + 240
-        
-        title_font_size = 48
-        status_font_size = 32
-        
+    compact_cx, compact_cy = 35, 30
+    fs_cx, fs_cy = new_width // 2, new_height // 2 - 100
+    
+    global cx, cy
+    cx = int(compact_cx + (fs_cx - compact_cx) * fs_ratio)
+    cy = int(compact_cy + (fs_cy - compact_cy) * fs_ratio)
+    
+    title_x = int(70 + (fs_cx - 70) * fs_ratio)
+    title_y = int(24 + (fs_cy + 180 - 24) * fs_ratio)
+    status_x = int(70 + (fs_cx - 70) * fs_ratio)
+    status_y = int(44 + (fs_cy + 240 - 44) * fs_ratio)
+    
+    title_font_size = int(12 + (48 - 12) * fs_ratio)
+    status_font_size = int(9 + (32 - 9) * fs_ratio)
+    
+    if fs_ratio > 0.5:
         canvas.itemconfig(title_text, anchor="center")
         canvas.itemconfig(status_text, anchor="center")
+    else:
+        canvas.itemconfig(title_text, anchor="w")
+        canvas.itemconfig(status_text, anchor="w")
         
-        # Hide unneeded small UI elements for a cleaner fullscreen look
+    if fs_ratio > 0.1:
         canvas.itemconfig(mode_badge_bg, state="hidden")
         canvas.itemconfig(mode_badge_text, state="hidden")
         canvas.itemconfig(close_btn, state="hidden")
         canvas.itemconfig(close_btn_bg, state="hidden")
     else:
-        # Original compact layout
-        cx = int(35 * scale_factor)
-        cy = int(30 * (new_height / 65.0))
-        
-        title_x, title_y = int(70 * scale_factor), int(24 * (new_height / 65.0))
-        status_x, status_y = int(70 * scale_factor), int(44 * (new_height / 65.0))
-        
-        title_font_size = max(8, int(12 * scale_factor))
-        status_font_size = max(8, int(9 * scale_factor))
-        
-        canvas.itemconfig(title_text, anchor="w")
-        canvas.itemconfig(status_text, anchor="w")
-        
         canvas.itemconfig(mode_badge_bg, state="normal")
         canvas.itemconfig(mode_badge_text, state="normal")
         canvas.itemconfig(close_btn, state="normal")
         canvas.itemconfig(close_btn_bg, state="normal")
         
-        badge_x1 = int(145 * scale_factor)
-        badge_x2 = int(195 * scale_factor)
-        badge_y1 = int(16 * (new_height / 65.0))
-        badge_y2 = int(32 * (new_height / 65.0))
-        set_round_rect(mode_badge_bg, badge_x1, badge_y1, badge_x2, badge_y2, 6)
-        
-        badge_text_x = int(170 * scale_factor)
-        badge_text_y = int(24 * (new_height / 65.0))
-        badge_font_size = max(6, int(8 * scale_factor))
-        canvas.coords(mode_badge_text, badge_text_x, badge_text_y)
-        canvas.itemconfig(mode_badge_text, font=("Segoe UI", badge_font_size, "bold"))
+        # Keep compact badge static, it fades out when resizing anyway
+        set_round_rect(mode_badge_bg, 145, 16, 195, 32, 6)
+        canvas.coords(mode_badge_text, 170, 24)
+        canvas.itemconfig(mode_badge_text, font=("Segoe UI", 8, "bold"))
     
     canvas.coords(title_text, title_x, title_y)
     canvas.itemconfig(title_text, font=("Segoe UI", title_font_size, "bold"))
@@ -1882,8 +1869,6 @@ def animate_size_transition():
         # Reset progress for next transition
         transition_progress = 0.0
         transition_in_progress = False
-        if target_width > 500:
-            root.attributes('-fullscreen', True)
         if target_width == 240:
             target_win_x = None
             target_win_y = None
@@ -1926,7 +1911,6 @@ def poll_surveillance():
                     except:
                         pass
                     if not dashboard_active:
-                        root.attributes('-fullscreen', False)
                         target_width = 240
                         target_height = 65
                         if pre_alert_x is not None:
@@ -2023,7 +2007,7 @@ def animation_loop():
                 if transition_scale > 1.0:
                     transition_scale = 1.0
 
-        if mobile_clients == 0:
+        if mobile_clients == 0 and not surveillance_locked:
             if not alert_state["active"]:
                 canvas.itemconfig(status_text, text="Offline (Standing by)", fill='#6b7280')
             canvas.itemconfig(core_bg, fill='#18181b')
