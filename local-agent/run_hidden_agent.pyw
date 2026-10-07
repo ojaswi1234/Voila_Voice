@@ -285,6 +285,7 @@ status_text = canvas.create_text(70, 44, text="Standing by...", fill="#9ca3af", 
 # Minimalist Close Button
 close_btn_bg = canvas.create_oval(205, 22, 225, 42, fill="", outline="", width=0, state='normal')
 close_btn = canvas.create_text(215, 32, text="✖", fill="#6b7280", font=("Segoe UI", 10, "bold"), anchor="center")
+surveillance_dot = canvas.create_oval(0, 0, 0, 0, fill="#22c55e", outline="", state="hidden")
 
 # ─── LOCAL/CLOUD mode toggle  ────────────────────────────────────────────
 MODES = ["LOCAL", "GROQ", "OLLAMA"]
@@ -1808,18 +1809,58 @@ def animate_size_transition():
     
     # Scale elements and text
     scale_factor = new_width / 240.0
-    
-    # Update cx, cy globally so animation_loop uses them
     global cx, cy
-    cx = int(35 * scale_factor)
-    cy = int(30 * (new_height / 65.0))
     
-    # Update text coordinates and fonts
-    title_x, title_y = int(70 * scale_factor), int(24 * (new_height / 65.0))
-    status_x, status_y = int(70 * scale_factor), int(44 * (new_height / 65.0))
-    
-    title_font_size = max(8, int(12 * scale_factor))
-    status_font_size = max(8, int(9 * scale_factor))
+    if new_width > 500:
+        # Premium fullscreen security layout
+        cx = new_width // 2
+        cy = new_height // 2 - 100
+        
+        # Center the text below the massive animated core
+        title_x, title_y = cx, cy + 180
+        status_x, status_y = cx, cy + 240
+        
+        title_font_size = 48
+        status_font_size = 32
+        
+        canvas.itemconfig(title_text, anchor="center")
+        canvas.itemconfig(status_text, anchor="center")
+        
+        # Hide unneeded small UI elements for a cleaner fullscreen look
+        canvas.itemconfig(mode_badge_bg, state="hidden")
+        canvas.itemconfig(mode_badge_text, state="hidden")
+        canvas.itemconfig(close_btn, state="hidden")
+        canvas.itemconfig(close_btn_bg, state="hidden")
+    else:
+        # Original compact layout
+        cx = int(35 * scale_factor)
+        cy = int(30 * (new_height / 65.0))
+        
+        title_x, title_y = int(70 * scale_factor), int(24 * (new_height / 65.0))
+        status_x, status_y = int(70 * scale_factor), int(44 * (new_height / 65.0))
+        
+        title_font_size = max(8, int(12 * scale_factor))
+        status_font_size = max(8, int(9 * scale_factor))
+        
+        canvas.itemconfig(title_text, anchor="w")
+        canvas.itemconfig(status_text, anchor="w")
+        
+        canvas.itemconfig(mode_badge_bg, state="normal")
+        canvas.itemconfig(mode_badge_text, state="normal")
+        canvas.itemconfig(close_btn, state="normal")
+        canvas.itemconfig(close_btn_bg, state="normal")
+        
+        badge_x1 = int(145 * scale_factor)
+        badge_x2 = int(195 * scale_factor)
+        badge_y1 = int(16 * (new_height / 65.0))
+        badge_y2 = int(32 * (new_height / 65.0))
+        set_round_rect(mode_badge_bg, badge_x1, badge_y1, badge_x2, badge_y2, 6)
+        
+        badge_text_x = int(170 * scale_factor)
+        badge_text_y = int(24 * (new_height / 65.0))
+        badge_font_size = max(6, int(8 * scale_factor))
+        canvas.coords(mode_badge_text, badge_text_x, badge_text_y)
+        canvas.itemconfig(mode_badge_text, font=("Segoe UI", badge_font_size, "bold"))
     
     canvas.coords(title_text, title_x, title_y)
     canvas.itemconfig(title_text, font=("Segoe UI", title_font_size, "bold"))
@@ -1829,19 +1870,6 @@ def animate_size_transition():
         canvas.itemconfig(status_text, font=("Segoe UI", status_font_size, "bold"))
     else:
         canvas.itemconfig(status_text, font=("Segoe UI", status_font_size))
-        
-    # Scale Mode Badge
-    badge_x1 = int(145 * scale_factor)
-    badge_x2 = int(195 * scale_factor)
-    badge_y1 = int(16 * (new_height / 65.0))
-    badge_y2 = int(32 * (new_height / 65.0))
-    set_round_rect(mode_badge_bg, badge_x1, badge_y1, badge_x2, badge_y2, 6)
-    
-    badge_text_x = int(170 * scale_factor)
-    badge_text_y = int(24 * (new_height / 65.0))
-    badge_font_size = max(6, int(8 * scale_factor))
-    canvas.coords(mode_badge_text, badge_text_x, badge_text_y)
-    canvas.itemconfig(mode_badge_text, font=("Segoe UI", badge_font_size, "bold"))
 
     # Update current values
     current_width = new_width
@@ -1854,6 +1882,8 @@ def animate_size_transition():
         # Reset progress for next transition
         transition_progress = 0.0
         transition_in_progress = False
+        if target_width > 500:
+            root.attributes('-fullscreen', True)
         if target_width == 240:
             target_win_x = None
             target_win_y = None
@@ -1896,6 +1926,7 @@ def poll_surveillance():
                     except:
                         pass
                     if not dashboard_active:
+                        root.attributes('-fullscreen', False)
                         target_width = 240
                         target_height = 65
                         if pre_alert_x is not None:
@@ -2318,9 +2349,14 @@ def animation_loop():
 
             if surveillance_locked:
                 try:
-                    canvas.coords(bg_center, cx-6*scale, cy-6*scale, cx+6*scale, cy+6*scale)
-                    canvas.itemconfig(bg_center, state='normal', fill='#22c55e')
-                    canvas.tag_raise(bg_center)
+                    w = current_width if current_width else 240
+                    canvas.coords(surveillance_dot, w - 25, 15, w - 15, 25)
+                    canvas.itemconfig(surveillance_dot, state='normal')
+                    canvas.tag_raise(surveillance_dot)
+                except: pass
+            else:
+                try:
+                    canvas.itemconfig(surveillance_dot, state='hidden')
                 except: pass
 
     elif dashboard_active and anim_frame % 50 == 0:
