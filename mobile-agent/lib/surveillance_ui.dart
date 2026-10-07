@@ -25,7 +25,10 @@ class _SurveillanceSheetState extends State<SurveillanceSheet> {
 
   String _getUrl(String endpoint) {
     String url = widget.backendUrl.replaceAll('wss://', 'https://').replaceAll('ws://', 'http://');
-    url = url.replaceAll('/ws', '/proxy/\/surveillance/\');
+    url = url.replaceAll('/ws', '/proxy/surveillance/' + endpoint);
+    if (widget.deviceId.isNotEmpty) {
+      url += (url.contains('?') ? '&' : '?') + 'device_id=' + widget.deviceId;
+    }
     return url;
   }
 
@@ -69,11 +72,11 @@ class _SurveillanceSheetState extends State<SurveillanceSheet> {
           const SizedBox(height: 24),
           if (loading) const Center(child: CircularProgressIndicator())
           else ...[
-            Text('Status: \', 
+            Text('Status: ${armed ? (locked ? "LOCKED" : "ARMED") : "DISARMED"}', 
               style: TextStyle(color: armed ? (locked ? Colors.redAccent : Colors.orangeAccent) : Colors.greenAccent, fontSize: 16, fontWeight: FontWeight.bold)),
             if (lastAlert.isNotEmpty) ...[
               const SizedBox(height: 8),
-              Text('Last Alert: \', style: const TextStyle(color: Colors.white70, fontSize: 14)),
+              Text('Last Alert: $lastAlert', style: const TextStyle(color: Colors.white70, fontSize: 14)),
             ],
             const SizedBox(height: 24),
             Row(

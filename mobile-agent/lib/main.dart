@@ -2420,7 +2420,10 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                     context: context,
                     isScrollControlled: true,
                     backgroundColor: Colors.transparent,
-                    builder: (context) => const SurveillanceSheet(),
+                    builder: (context) => SurveillanceSheet(
+                      backendUrl: backendUrl,
+                      deviceId: _activeDevice ?? '',
+                    ),
                   );
                 }),
                 _buildDrawerItem(Icons.tune_rounded, 'Settings', () {
