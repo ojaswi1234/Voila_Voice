@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -14,11 +13,11 @@ import (
 )
 
 type SurveillanceState struct {
-	Armed           bool   json:"armed"
-	Locked          bool   json:"locked"
-	LastAlertTs     string json:"last_alert_ts"
-	LastAlertReason string json:"last_alert_reason"
-	GestureTrained  bool   json:"gesture_trained"
+	Armed           bool   `json:"armed"`
+	Locked          bool   `json:"locked"`
+	LastAlertTs     string `json:"last_alert_ts"`
+	LastAlertReason string `json:"last_alert_reason"`
+	GestureTrained  bool   `json:"gesture_trained"`
 }
 
 var (
@@ -90,7 +89,7 @@ func setupSurveillanceRoutes(mux *http.ServeMux) {
 		saveSurveillanceStateLocked()
 		survStateMu.Unlock()
 		startSurveillanceMonitor()
-		w.Write([]byte({"status":"armed"}))
+		w.Write([]byte(`{"status":"armed"}`))
 	})
 
 	mux.HandleFunc("/surveillance/disarm", func(w http.ResponseWriter, r *http.Request) {
@@ -101,7 +100,7 @@ func setupSurveillanceRoutes(mux *http.ServeMux) {
 		saveSurveillanceStateLocked()
 		survStateMu.Unlock()
 		stopSurveillanceMonitor()
-		w.Write([]byte({"status":"disarmed"}))
+		w.Write([]byte(`{"status":"disarmed"}`))
 	})
 
 	mux.HandleFunc("/surveillance/lock", func(w http.ResponseWriter, r *http.Request) {
@@ -113,7 +112,7 @@ func setupSurveillanceRoutes(mux *http.ServeMux) {
 		saveSurveillanceStateLocked()
 		survStateMu.Unlock()
 		startSurveillanceMonitor()
-		w.Write([]byte({"status":"locked"}))
+		w.Write([]byte(`{"status":"locked"}`))
 	})
 
 	mux.HandleFunc("/surveillance/unlock", func(w http.ResponseWriter, r *http.Request) {
@@ -123,7 +122,7 @@ func setupSurveillanceRoutes(mux *http.ServeMux) {
 		// Optionally keep armed, but for safety disarm might be better, or just unlock
 		saveSurveillanceStateLocked()
 		survStateMu.Unlock()
-		w.Write([]byte({"status":"unlocked"}))
+		w.Write([]byte(`{"status":"unlocked"}`))
 	})
 
 	mux.HandleFunc("/surveillance/alert", func(w http.ResponseWriter, r *http.Request) {
@@ -137,16 +136,10 @@ func setupSurveillanceRoutes(mux *http.ServeMux) {
 				saveSurveillanceStateLocked()
 				survStateMu.Unlock()
 				
-				// Push intruder alert to mobile! We can send it as a job_status or FCM or a direct WebSocket broadcast!
-				msg := map[string]interface{}{
-					"type": "surveillance_alert",
-					"reason": payload["reason"],
-					"timestamp": survState.LastAlertTs,
-				}
-				broadcastToWebSockets(msg)
+				// Push intruder alert to mobile! (In prototype, mobile polls /surveillance/status)
 			}
 		}
-		w.Write([]byte({"status":"ok"}))
+		w.Write([]byte(`{"status":"ok"}`))
 	})
 	
 	mux.HandleFunc("/surveillance/gesture/train", func(w http.ResponseWriter, r *http.Request) {
@@ -160,7 +153,7 @@ func setupSurveillanceRoutes(mux *http.ServeMux) {
 		saveSurveillanceStateLocked()
 		survStateMu.Unlock()
 		
-		w.Write([]byte(fmt.Sprintf({"status":"trained", "output": "%s"}, string(out))))
+		w.Write([]byte(fmt.Sprintf(`{"status":"trained", "output": "%s"}`, string(out))))
 	})
 	
 	mux.HandleFunc("/surveillance/gesture/capture", func(w http.ResponseWriter, r *http.Request) {
@@ -189,7 +182,7 @@ func setupSurveillanceRoutes(mux *http.ServeMux) {
 			survStateMu.Unlock()
 		}
 		
-		w.Write([]byte(fmt.Sprintf({"result":"%s", "raw": "%s"}, result, out)))
+		w.Write([]byte(fmt.Sprintf(`{"result":"%s", "raw": "%s"}`, result, out)))
 	})
 }
 

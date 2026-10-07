@@ -1783,6 +1783,8 @@ func startHTTPServer() {
 	}
 
 	mux := http.NewServeMux()
+	
+	setupSurveillanceRoutes(mux)
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -6281,7 +6283,6 @@ func runBackgroundMode() {
 	log.Printf("Backend: %s", data.BackendURL)
 	log.Printf("Device: %s (%s)", data.DeviceName, data.DeviceID)
 
-	setupSurveillanceRoutes(mux)
 	// Start HTTP server
 	go startHTTPServer()
 
