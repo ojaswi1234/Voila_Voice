@@ -20,6 +20,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'device_identity.dart';
 import 'artifacts_page.dart';
 import 'visualizer.dart';
+import 'surveillance_ui.dart';
 import 'package:uuid/uuid.dart';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -2412,6 +2413,15 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                 _buildDrawerItem(Icons.shield_rounded, 'Security Alerts', () {
                   Navigator.pop(context);
                   _showSecurityAlerts();
+                }),
+                _buildDrawerItem(Icons.camera_outdoor_rounded, 'Surveillance', () {
+                  Navigator.pop(context);
+                  showModalBottomSheet(
+                    context: context,
+                    isScrollControlled: true,
+                    backgroundColor: Colors.transparent,
+                    builder: (context) => const SurveillanceSheet(),
+                  );
                 }),
                 _buildDrawerItem(Icons.tune_rounded, 'Settings', () {
                   Navigator.pop(context);

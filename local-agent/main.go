@@ -3860,11 +3860,17 @@ Clear-Host
 Write-Host '================================================' -ForegroundColor Magenta
 Write-Host '          [AI] PERSISTENT SESSION ACTIVE' -ForegroundColor Cyan
 Write-Host '================================================' -ForegroundColor Magenta
+Write-Host 'Surveillance: Use Ω (Omega) gesture to Lock' -ForegroundColor DarkGray
+Write-Host 'Surveillance: Use Water Ω (Top-Bottom Inverted) to Unlock' -ForegroundColor DarkGray
+Write-Host ''
 
 $cmdFile = '%s'
 $outFile = '%s'
 $doneFile = '%s'
 $parentPid = %d
+
+$lastStatus = ""
+$loopCount = 0
 
 while ($true) {
 	if (-not (Get-Process -Id $parentPid -ErrorAction SilentlyContinue)) {
@@ -3905,6 +3911,39 @@ while ($true) {
 			Start-Sleep -Milliseconds 100
 		}
 	} else {
+		$loopCount++
+		if (($loopCount %% 10) -eq 0) {
+			try {
+				$statusJson = Invoke-RestMethod -Uri "http://localhost:8088/surveillance/status" -ErrorAction SilentlyContinue
+				if ($statusJson) {
+					$armed = $statusJson.armed
+					$locked = $statusJson.locked
+					$newStatus = "$armed|$locked"
+					if ($newStatus -ne $lastStatus) {
+						$lastStatus = $newStatus
+						$title = "Voila AI - Agent Session"
+						if ($locked) {
+							$title += " [LOCKED] - Use Water Ω to unlock"
+						} elseif ($armed) {
+							$title += " [ARMED] - Use Ω to lock"
+						} else {
+							$title += " [DISARMED]"
+						}
+						$host.UI.RawUI.WindowTitle = $title
+						
+						Write-Host ''
+						if ($locked) {
+							Write-Host '>>> SURVEILLANCE LOCKED <<< [Tools Gated | Gesture: Water Ω to Unlock]' -ForegroundColor White -BackgroundColor Red
+						} elseif ($armed) {
+							Write-Host '>>> SURVEILLANCE ARMED <<< [Monitoring Activity | Gesture: Ω to Lock]' -ForegroundColor Black -BackgroundColor Yellow
+						} else {
+							Write-Host '>>> SURVEILLANCE DISARMED <<<' -ForegroundColor DarkGray
+						}
+						Write-Host ''
+					}
+				}
+			} catch {}
+		}
 		Start-Sleep -Milliseconds 200
 	}
 }
@@ -3999,6 +4038,11 @@ func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMes
 	// Emit status so Python face knows which tool is running
 	fmt.Printf("STATUS: TOOL:%s\n", toolName)
 	if !isTUIMode { os.Stdout.Sync() }
+
+	// SURVEILLANCE GATE
+	if isSurveillanceLocked() && (toolName == "desktop_automation" || toolName == "browser_automation" || toolName == "run_terminal") {
+		return "SURVEILLANCE_LOCKED: Action rejected because workstation surveillance mode is currently LOCKED. User must unlock via mobile or local Omega gesture."
+	}
 
 	var args map[string]interface{}
 	if err := json.Unmarshal(argsJSON, &args); err != nil {
@@ -6237,6 +6281,7 @@ func runBackgroundMode() {
 	log.Printf("Backend: %s", data.BackendURL)
 	log.Printf("Device: %s (%s)", data.DeviceName, data.DeviceID)
 
+	setupSurveillanceRoutes(mux)
 	// Start HTTP server
 	go startHTTPServer()
 

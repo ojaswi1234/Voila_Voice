@@ -1,3 +1,4 @@
 {"action":"test_action","details":"test_details","timestamp":"2026-10-04T00:49:20+05:30"}
 {"ts":"2026-10-04T14:35:14Z","tool":"run_terminal","action":"execute","level":"approve","risk":"high","decision":"pending","summary":"PowerShell deletion command.","matched_rule":"remove-item"}
 {"ts":"2026-10-04T14:35:59Z","tool":"run_terminal","action":"terminal","level":"approve","risk":"high","decision":"timeout_deny","summary":"PowerShell deletion command.","matched_rule":"remove-item"}
+{"action":"mcp_call","details":"tool: mcp__github__search_repositories, args: {\"query\":\"tensorflow\"}","timestamp":"2026-10-06T08:17:40+05:30"}

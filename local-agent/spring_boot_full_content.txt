@@ -1,0 +1,461 @@
+SPRING BOOT 3.x MASTERY FOR BEGINNERS: FULL COURSE CONTENT
+
+PAGE 1: TITLE PAGE
+Title: Spring Boot 3.x Mastery for Beginners
+Subtitle: From Zero to Production-Ready Backend
+Edition: 2024/2025 Professional Guide
+Technical Stack: Java 21, Spring Boot 3.3, Jakarta EE 10, Maven, PostgreSQL
+Visual Note for Designer: Place a large, glowing Spring Boot logo in the center. Surround it with a floating network of nodes representing Microservices, Databases, and Cloud Icons. Use a dark cyberpunk theme with neon green and white accents.
+
+PAGE 2: THE LEARNING ROADMAP
+Content:
+Your journey to becoming a Backend Engineer follows five critical milestones:
+1. Foundations (Pages 4-11): Setting up the environment, understanding the magic of Auto-Configuration, and mastering IoC/DI.
+2. Core Logic (Pages 12-17): Building REST APIs, managing the Request-Response cycle, and separating business logic via Services.
+3. Data Persistence (Pages 18-22): Connecting to databases using Spring Data JPA, Hibernate, and creating CRUD operations.
+4. Production Readiness (Pages 23-26): Global Exception Handling, Input Validation, Profiles, and Actuator monitoring.
+5. Final Project & Beyond (Pages 27-30): Implementing a Task Management System and a roadmap for Security and Microservices.
+Visual Note: A winding path (S-curve) with these 5 milestones as checkpoints.
+
+PAGE 3: TABLE OF CONTENTS
+(List all 30 pages as defined in the blueprint)
+
+PAGE 4: WHY SPRING BOOT 3.x?
+Content:
+The Evolution: Spring Framework was powerful but required massive XML configurations. Spring Boot changed the game by being Opinionated.
+Opinionated means Spring Boot makes a best-guess choice for you. If you add 'spring-boot-starter-web', it assumes you want an embedded Tomcat server and JSON support.
+
+Key Value Props:
+1. Auto-Configuration: The @EnableAutoConfiguration magic that configures your app based on the classpath.
+2. Starter Dependencies: Aggregated pom.xml entries that pull in all necessary libraries.
+3. Embedded Servers: No more deploying WAR files to external Tomcat. The server is inside the JAR.
+4. Java 21 Power: Virtual Threads (Project Loom) allow your app to handle millions of concurrent requests without crashing the JVM.
+5. Jakarta EE 10: The migration from javax.* to jakarta.* namespaces.
+
+PAGE 5: ENVIRONMENT SETUP
+Content:
+The Toolkit:
+1. JDK 21 (LTS): The gold standard. Install via SDKMAN or Oracle.
+   Command: java -version (Should show 21.x.x)
+2. IDE: IntelliJ IDEA Community/Ultimate (Recommended) or VS Code with Spring Boot Extension Pack.
+3. Build Tool: Maven. It handles the dependency graph.
+   Command: mvn -version (Should show 3.9+)
+4. Postman/Insomnia: For testing your endpoints.
+
+Decision Matrix: Maven vs Gradle
+- Maven: Standard, XML-based, strict lifecycle. Best for beginners.
+- Gradle: Groovy/Kotlin-based, faster builds, flexible. Best for huge enterprise projects.
+
+PAGE 6: YOUR FIRST PROJECT (SPRING INITIALIZR)
+Content:
+Step-by-Step Walkthrough of start.spring.io:
+1. Project: Maven
+2. Language: Java
+3. Spring Boot: 3.3.x (Current Stable)
+4. Project Metadata: Group (com.dev), Artifact (spring-mastery), Java: 21.
+5. Dependencies (The Essentials):
+   - Spring Web: For REST APIs.
+   - Spring Data JPA: For Database access.
+   - H2 Database: In-memory DB for fast prototyping.
+   - Lombok: To kill boilerplate code (getters/setters).
+   - Spring Boot DevTools: For automatic restarts.
+
+PAGE 7: ANATOMY OF A SPRING BOOT PROJECT
+Content:
+Folder Structure breakdown:
+/src/main/java: Where the actual logic lives.
+/src/main/resources: Configuration files (application.properties, static files, templates).
+/src/test/java: Unit and Integration tests.
+pom.xml: The Project Object Model. This is the brain of your project where all dependencies and versions are managed.
+
+Visual Diagram:
+[Project Root]
+  ├── pom.xml
+  └── src
+      ├── main
+      │   ├── java (com.dev.springmastery)
+      │   └── resources
+      │       └── application.properties
+      └── test
+          └── java (com.dev.springmastery)
+
+PAGE 8: DEEP DIVE: PACKAGE LAYOUT
+Content:
+The Layered Architecture (Separation of Concerns):
+To prevent your code from becoming a 'big ball of mud', we use specific packages:
+1. .controller: The Entry Point. Handles HTTP requests and returns responses. No business logic here!
+2. .service: The Brain. Contains all business rules, calculations, and orchestrations.
+3. .repository: The Data Access Layer. Interfaces that talk to the database.
+4. .model/entity: The Blueprint. Java classes that map to database tables.
+5. .dto: Data Transfer Objects. Simple POJOs used to move data between the API and the Service.
+
+PAGE 9: THE ENTRY POINT: @SPRINGBOOTAPPLICATION
+Content:
+Every app starts with one class annotated with @SpringBootApplication.
+Code Example:
+```java
+package com.dev.springmastery;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class SpringMasteryApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(SpringMasteryApplication.class, args);
+    }
+}
+```
+What is happening under the hood?
+@SpringBootApplication is a convenience annotation that combines:
+1. @Configuration: Tags the class as a source of bean definitions.
+2. @EnableAutoConfiguration: Tells Spring Boot to start adding beans based on classpath settings.
+3. @ComponentScan: Tells Spring to look for @Component, @Service, etc., in the current package and sub-packages.
+
+PAGE 10: SPRING TERMINOLOGIES I (THE BASICS)
+Content:
+1. Bean: An object that is instantiated, assembled, and managed by the Spring IoC container. It is not just a Java object; it is a Spring-managed object.
+2. ApplicationContext: The 'Big Box' that holds all the Beans. It is the heart of the Spring Framework.
+3. Inversion of Control (IoC): Instead of you saying 'new UserService()', you tell Spring 'I need a UserService' and Spring provides it. Control is inverted from the dev to the framework.
+4. Dependency Injection (DI): The act of pushing a dependency into a class (usually via constructor).
+
+Analogy: The Coffee Machine.
+You don't build a coffee machine every time you want espresso. You just ask the 'Kitchen' (ApplicationContext) for the 'CoffeeMachine' (Bean), and the Kitchen gives it to you, already plugged in and ready to use.
+
+PAGE 11: SPRING TERMINOLOGIES II (ADVANCED)
+Content:
+1. Stereotypes: Special annotations that tell Spring what a class does.
+   - @Component: General-purpose bean.
+   - @Service: Indicates a business logic layer.
+   - @Repository: Indicates a data access layer (handles DB exceptions).
+   - @Controller: Indicates a web handler.
+2. AOP (Aspect Oriented Programming): Separating cross-cutting concerns (like logging or security) from the main business logic.
+3. Component Scanning: The process where Spring scans your packages to find classes marked with stereotypes and adds them to the context.
+
+PAGE 12: THE REQUEST-RESPONSE CYCLE
+Content:
+Workflow of a single API call:
+1. Client (Postman/Browser) sends an HTTP Request (e.g., GET /users/1).
+2. DispatcherServlet: The front door of Spring. It receives the request and routes it to the correct Controller.
+3. Controller: Validates the request and calls the Service.
+4. Service: Processes business logic (e.g., checks if user is active). Calls the Repository.
+5. Repository: Executes a SQL query via JPA/Hibernate to the Database.
+6. Database: Returns the row.
+7. Repository -> Service -> Controller: Data flows back up.
+8. Controller: Wraps the data in a ResponseEntity and sends the HTTP Response (200 OK).
+
+PAGE 13: BUILDING YOUR FIRST REST CONTROLLER
+Content:
+The @RestController annotation tells Spring that every method returns data (JSON) instead of a HTML view.
+
+Code Example:
+```java
+@RestController
+@RequestMapping("/api/hello")
+public class HelloController {
+    
+    @GetMapping
+    public String sayHello() {
+        return "Welcome to Spring Boot 3.x!";
+    }
+}
+```
+Breakdown:
+- @RequestMapping("/api/hello"): The base path for all methods in this class.
+- @GetMapping: Maps HTTP GET requests to this method.
+
+PAGE 14: PATH VARIABLES AND REQUEST PARAMETERS
+Content:
+How to make APIs dynamic.
+
+1. @PathVariable: Used for resource identification.
+Example: GET /users/5 (Where 5 is the ID).
+```java
+@GetMapping("/users/{id}")
+public String getUser(@PathVariable Long id) {
+    return "Fetching user with ID: " + id;
+}
+```
+
+2. @RequestParam: Used for filtering, sorting, or searching.
+Example: GET /users?name=john
+```java
+@GetMapping("/users")
+public String searchUser(@RequestParam String name) {
+    return "Searching for user: " + name;
+}
+```
+
+PAGE 15: THE SERVICE LAYER (THE BRAINS)
+Content:
+Why a Service? If you put logic in the Controller, your code becomes untestable and messy. The Service layer acts as a buffer.
+
+Code Example:
+```java
+@Service
+public class UserService {
+    public String processUserLogic(String name) {
+        if (name == null) return "Invalid Name";
+        return "Processed User: " + name.toUpperCase();
+    }
+}
+```
+The Controller then calls this service. This keeps the Controller slim and the logic reusable across different controllers.
+
+PAGE 16: DEPENDENCY INJECTION IN ACTION
+Content:
+How to connect a Controller to a Service.
+
+Avoid Field Injection (@Autowired on the field) because it makes unit testing hard.
+Use Constructor Injection (The Gold Standard).
+
+Code Example:
+```java
+@RestController
+public class UserController {
+    private final UserService userService;
+
+    // Spring automatically injects UserService here
+    public UserController(UserService userService) {
+        this.userService = userService;
+    }
+
+    @GetMapping("/process")
+    public String process(@RequestParam String name) {
+        return userService.processUserLogic(name);
+    }
+}
+```
+Why is this based? Immutability (final field) and easy Mocking in JUnit tests.
+
+PAGE 17: MODEL VS DTO
+Content:
+Entities are your DB tables. DTOs (Data Transfer Objects) are your API contracts.
+NEVER return an @Entity directly to the user. Why?
+1. Security: You might accidentally leak the 'password' field of a User entity.
+2. Coupling: If you change your DB column name, your API breaks for all your users.
+
+Flow:
+DB -> Entity -> Service (Maps Entity to DTO) -> DTO -> Controller -> Client.
+
+PAGE 18: INTRODUCING SPRING DATA JPA
+Content:
+JPA (Java Persistence API) is a specification. Hibernate is the implementation. Spring Data JPA is a wrapper that makes it incredibly easy.
+
+Instead of writing complex SQL, you create an interface that extends JpaRepository.
+
+Configuration (application.properties):
+spring.datasource.url=jdbc:h2:mem:testdb
+spring.datasource.driverClassName=org.h2.Driver
+spring.datasource.username=sa
+spring.datasource.password=password
+spring.jpa.database-platform=org.hibernate.dialect.H2Dialect
+spring.h2.console.enabled=true
+
+PAGE 19: DATABASE CONNECTION LOGIC
+Content:
+The Plumbing Flow:
+Spring Boot Application -> DataSource (HikariCP) -> Hibernate (ORM) -> JDBC -> Database.
+
+Key Concept: HikariCP.
+Spring Boot uses HikariCP as the default connection pool. Instead of opening/closing a connection for every request (which is slow), it keeps a pool of warm connections ready to be used.
+
+H2 vs PostgreSQL:
+- H2: In-memory, disappears on restart. Great for learning.
+- PostgreSQL: Persistent, production-ready. Requires installation and a different driver.
+
+PAGE 20: CREATING YOUR FIRST ENTITY
+Content:
+An Entity is a Java class that represents a table.
+
+Code Example:
+```java
+@Entity
+@Data // Lombok: adds getters/setters
+@NoArgsConstructor
+@AllArgsConstructor
+public class Task {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    @Column(nullable = false)
+    private String title;
+    
+    private boolean completed;
+}
+```
+Annotations:
+- @Entity: Marks it as a JPA entity.
+- @Id: Defines the primary key.
+- @GeneratedValue: Auto-increments the ID.
+
+PAGE 21: THE REPOSITORY LAYER (CRUD MAGIC)
+Content:
+The power of JpaRepository. You don't write implementation code; Spring generates it.
+
+Code Example:
+```java
+@Repository
+public interface TaskRepository extends JpaRepository<Task, Long> {
+    // Custom query method: Spring parses the name to generate the SQL!
+    List<Task> findByCompleted(boolean completed);
+}
+```
+Built-in methods you get for free:
+- save(entity): Create or Update.
+- findAll(): Get all rows.
+- findById(id): Get one row.
+- deleteById(id): Remove a row.
+
+PAGE 22: CONNECTING THE DOTS: FULL CRUD FLOW
+Content:
+Putting it all together.
+Controller -> calls Service -> calls Repository -> hits DB.
+
+Full Flow Example:
+1. Controller: @PostMapping('/tasks') -> calls service.createTask(dto)
+2. Service: converts dto to Entity -> calls repository.save(entity)
+3. Repository: executes INSERT INTO tasks...
+4. DB: Stores data and returns the saved entity with an ID.
+
+Testing: Use Postman to send a POST request with a JSON body:
+{ "title": "Learn Spring Boot", "completed": false }
+
+PAGE 23: EXCEPTION HANDLING
+Content:
+Stop returning 500 Internal Server Error. Use a Global Exception Handler.
+
+Code Example:
+```java
+@ControllerAdvice
+public class GlobalExceptionHandler {
+    
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ResponseEntity<String> handleNotFound(ResourceNotFoundException ex) {
+        return new ResponseEntity<>(ex.getMessage(), HttpStatus.NOT_FOUND);
+    }
+}
+```
+Custom Exception:
+```java
+public class ResourceNotFoundException extends RuntimeException {
+    public ResourceNotFoundException(String message) { super(message); }
+}
+```
+
+PAGE 24: VALIDATION
+Content:
+Ensure bad data never hits your DB.
+Dependency: spring-boot-starter-validation.
+
+Code Example in Entity/DTO:
+```java
+public class TaskRequest {
+    @NotNull(message = "Title cannot be null")
+    @Size(min = 3, max = 100, message = "Title must be between 3 and 100 chars")
+    private String title;
+}
+```
+In Controller:
+```java
+@PostMapping("/tasks")
+public ResponseEntity<Task> create(@Valid @RequestBody TaskRequest request) {
+    // ...
+}
+```
+@Valid triggers the check. If it fails, Spring throws MethodArgumentNotValidException.
+
+PAGE 25: APPLICATION CONFIGURATION
+Content:
+application.properties vs application.yml.
+YAML is more readable for nested structures.
+
+Profiles:
+You can have different configs for different environments:
+- application-dev.properties (H2 DB)
+- application-prod.properties (PostgreSQL DB)
+Run using: spring.profiles.active=dev
+
+@Value:
+Inject a value from the properties file into your code.
+@Value("${app.welcome.message}")
+private String welcomeMsg;
+
+PAGE 26: LOGGING AND MONITORING
+Content:
+Stop using System.out.println(). Use SLF4J.
+
+Code Example:
+```java
+@RestController
+public class LogController {
+    private static final Logger logger = LoggerFactory.getLogger(LogController.class);
+    
+    @GetMapping("/log")
+    public String testLog() {
+        logger.info("This is an INFO log");
+        logger.error("This is an ERROR log");
+        return "Logged!";
+    }
+}
+```
+Spring Boot Actuator:
+Add dependency: spring-boot-starter-actuator.
+Enable endpoints in properties: management.endpoints.web.exposure.include=*
+Visit /actuator/health to see if your app is alive.
+
+PAGE 27: PROJECT BLUEPRINT: TASK MANAGER
+Content:
+The Project: 'SimpleTask' - A REST API to manage a To-Do list.
+Features:
+1. Create a task (title, description).
+2. List all tasks (filter by completed/pending).
+3. Mark task as done.
+4. Delete task.
+
+Database Schema:
+Table: tasks
+- id (BIGINT, PK)
+- title (VARCHAR, NOT NULL)
+- description (TEXT)
+- completed (BOOLEAN, DEFAULT FALSE)
+- created_at (TIMESTAMP)
+
+PAGE 28: STEP-BY-STEP IMPLEMENTATION GUIDE
+Content:
+Phase 1: The Foundation
+- Initializr -> Add Web, JPA, H2, Lombok.
+- Create Task entity and TaskRepository interface.
+
+Phase 2: The Logic
+- Create TaskService to handle business rules (e.g., prevent empty titles).
+- Create TaskDTO to hide internal DB IDs if needed.
+
+Phase 3: The API
+- Create TaskController with @GetMapping, @PostMapping, @PutMapping, @DeleteMapping.
+- Add GlobalExceptionHandler for 404s.
+
+Phase 4: Verification
+- Run app -> Open H2 Console (/h2-console) -> Verify tables.
+- Postman -> Test all CRUD endpoints.
+
+PAGE 29: ADVANCED ROADMAP
+Content:
+Now that you know the basics, here is the pro path:
+1. Spring Security: Implement JWT (JSON Web Tokens) for authentication and Role-Based Access Control (RBAC).
+2. Spring Cloud: Learn API Gateway, Eureka Service Discovery, and Config Server for Microservices.
+3. Docker: Create a Dockerfile to containerize your app.
+4. Redis: Implement caching to make your API blazing fast.
+5. GraalVM: Compile your app to a Native Image for instant startup times.
+
+PAGE 30: CLOSING & CHECKLIST
+Content:
+Mastery Checklist:
+- [ ] Can you explain DI and IoC without stuttering?
+- [ ] Do you know why we use @Service instead of putting logic in @Controller?
+- [ ] Can you create a JpaRepository and perform CRUD?
+- [ ] Do you understand the difference between @PathVariable and @RequestParam?
+- [ ] Have you implemented a @ControllerAdvice for error handling?
+
+Congratulations! You are no longer a Spring Boot beginner. You are a Backend Developer.
+Resources: spring.io/guides, Baeldung, Spring Academy.
