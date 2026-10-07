@@ -3862,8 +3862,8 @@ Clear-Host
 Write-Host '================================================' -ForegroundColor Magenta
 Write-Host '          [AI] PERSISTENT SESSION ACTIVE' -ForegroundColor Cyan
 Write-Host '================================================' -ForegroundColor Magenta
-Write-Host 'Surveillance: Use Ω (Omega) gesture to Lock' -ForegroundColor DarkGray
-Write-Host 'Surveillance: Use Water Ω (Top-Bottom Inverted) to Unlock' -ForegroundColor DarkGray
+Write-Host "Surveillance: Use $([char]0x03A9) (Omega) gesture to Lock" -ForegroundColor DarkGray
+Write-Host "Surveillance: Use Water $([char]0x03A9) (Top-Bottom Inverted) to Unlock" -ForegroundColor DarkGray
 Write-Host ''
 
 $cmdFile = '%s'
@@ -3925,19 +3925,22 @@ while ($true) {
 						$lastStatus = $newStatus
 						$title = "Voila AI - Agent Session"
 						if ($locked) {
-							$title += " [LOCKED] - Use Water Ω to unlock"
+							$title += " [LOCKED] - Use Water $([char]0x03A9) to unlock"
+							Write-Host -NoNewline "$([char]27)[8;40;140t"
 						} elseif ($armed) {
-							$title += " [ARMED] - Use Ω to lock"
+							$title += " [ARMED] - Use $([char]0x03A9) to lock"
+							Write-Host -NoNewline "$([char]27)[8;30;120t"
 						} else {
 							$title += " [DISARMED]"
+							Write-Host -NoNewline "$([char]27)[8;30;120t"
 						}
 						$host.UI.RawUI.WindowTitle = $title
 						
 						Write-Host ''
 						if ($locked) {
-							Write-Host '>>> SURVEILLANCE LOCKED <<< [Tools Gated | Gesture: Water Ω to Unlock]' -ForegroundColor White -BackgroundColor Red
+							Write-Host ">>> SURVEILLANCE LOCKED <<< [Tools Gated | Gesture: Water $([char]0x03A9) to Unlock]" -ForegroundColor White -BackgroundColor Red
 						} elseif ($armed) {
-							Write-Host '>>> SURVEILLANCE ARMED <<< [Monitoring Activity | Gesture: Ω to Lock]' -ForegroundColor Black -BackgroundColor Yellow
+							Write-Host ">>> SURVEILLANCE ARMED <<< [Monitoring Activity | Gesture: $([char]0x03A9) to Lock]" -ForegroundColor Black -BackgroundColor Yellow
 						} else {
 							Write-Host '>>> SURVEILLANCE DISARMED <<<' -ForegroundColor DarkGray
 						}
