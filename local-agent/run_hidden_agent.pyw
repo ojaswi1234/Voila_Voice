@@ -1756,7 +1756,7 @@ def update_size():
 
 def animate_size_transition():
     """Internal function for smooth size animation"""
-    global current_width, current_height, target_width, target_height, transition_progress, sx, sy, cx, cy, transition_in_progress
+    global current_width, current_height, target_width, target_height, transition_progress, sx, sy, cx, cy, transition_in_progress, current_win_x, current_win_y, target_win_x, target_win_y
     
     # Increment transition progress
     transition_progress += 0.05  # Slower, smoother transition
@@ -1771,9 +1771,19 @@ def animate_size_transition():
     new_height = int(current_height + (target_height - current_height) * ease)
     
     # Update window geometry
-    current_x = root.winfo_x()
-    current_y = root.winfo_y()
-    root.geometry(f"{new_width}x{new_height}+{current_x}+{current_y}")
+    if target_win_x is not None and target_win_y is not None:
+        if current_win_x is None: current_win_x = root.winfo_x()
+        if current_win_y is None: current_win_y = root.winfo_y()
+        
+        new_x = int(current_win_x + (target_win_x - current_win_x) * ease)
+        new_y = int(current_win_y + (target_win_y - current_win_y) * ease)
+        current_win_x = new_x
+        current_win_y = new_y
+        root.geometry(f"{new_width}x{new_height}+{new_x}+{new_y}")
+    else:
+        current_x = root.winfo_x()
+        current_y = root.winfo_y()
+        root.geometry(f"{new_width}x{new_height}+{current_x}+{current_y}")
     
     # Update canvas size
     canvas.config(width=new_width, height=new_height)
@@ -1844,13 +1854,25 @@ def animate_size_transition():
         # Reset progress for next transition
         transition_progress = 0.0
         transition_in_progress = False
+        if target_width == 240:
+            target_win_x = None
+            target_win_y = None
+            current_win_x = None
+            current_win_y = None
+            pre_alert_x = None
 
 
 surveillance_locked = False
 surveillance_last_alert = ""
+pre_alert_x = None
+pre_alert_y = None
+target_win_x = None
+target_win_y = None
+current_win_x = None
+current_win_y = None
 
 def poll_surveillance():
-    global surveillance_locked, surveillance_last_alert, target_width, target_height, current_width, current_height, transition_progress, transition_in_progress
+    global surveillance_locked, surveillance_last_alert, target_width, target_height, current_width, current_height, transition_progress, transition_in_progress, pre_alert_x, pre_alert_y, target_win_x, target_win_y, current_win_x, current_win_y
     try:
         url = 'http://localhost:8088/surveillance/status'
         req = _urllib_req.Request(url, method="GET")
@@ -1876,6 +1898,11 @@ def poll_surveillance():
                     if not dashboard_active:
                         target_width = 240
                         target_height = 65
+                        if pre_alert_x is not None:
+                            target_win_x = pre_alert_x
+                            target_win_y = pre_alert_y
+                            current_win_x = root.winfo_x()
+                            current_win_y = root.winfo_y()
                         transition_progress = 0.0
                         transition_in_progress = True
                         animate_size_transition()
@@ -1884,9 +1911,16 @@ def poll_surveillance():
                 if last_alert and last_alert != surveillance_last_alert:
                     surveillance_last_alert = last_alert
                     
-                    # Movement detected! Now we enlarge.
-                    target_width = 320
-                    target_height = 85
+                    # Movement detected! Now we enlarge to full screen.
+                    target_width = root.winfo_screenwidth()
+                    target_height = root.winfo_screenheight()
+                    if pre_alert_x is None:
+                        pre_alert_x = root.winfo_x()
+                        pre_alert_y = root.winfo_y()
+                    target_win_x = 0
+                    target_win_y = 0
+                    current_win_x = root.winfo_x()
+                    current_win_y = root.winfo_y()
                     transition_progress = 0.0
                     transition_in_progress = True
                     animate_size_transition()
