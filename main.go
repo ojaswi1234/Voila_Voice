@@ -2308,6 +2308,7 @@ http.HandleFunc("/proxy/", func(w http.ResponseWriter, r *http.Request) {
 	backend.mu.RUnlock()
 
 	if !exists || !device.Active {
+		w.WriteHeader(http.StatusBadGateway)
 		json.NewEncoder(w).Encode(map[string]interface{}{"error": "Device offline or not found", "tasks": []interface{}{}})
 		return
 	}
@@ -2315,6 +2316,7 @@ http.HandleFunc("/proxy/", func(w http.ResponseWriter, r *http.Request) {
 	client := &http.Client{Timeout: 5 * time.Second}
 	req, err := http.NewRequest(r.Method, strings.TrimRight(device.Address, "/")+endpoint, r.Body)
 	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]interface{}{"error": "Failed to create request", "tasks": []interface{}{}})
 		return
 	}
@@ -2329,6 +2331,7 @@ http.HandleFunc("/proxy/", func(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := client.Do(req)
 	if err != nil {
+		w.WriteHeader(http.StatusBadGateway)
 		json.NewEncoder(w).Encode(map[string]interface{}{"error": "Failed to reach device", "tasks": []interface{}{}})
 		return
 	}

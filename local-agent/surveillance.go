@@ -64,14 +64,17 @@ func startGestureDaemon() {
 	if err == nil {
 		go func(cmd *exec.Cmd) {
 			cmd.Wait()
+			// Auto-restart gesture daemon if it crashes
+			time.Sleep(2 * time.Second)
+			startGestureDaemon()
 		}(gestureDaemonCmd)
 	}
 }
 
 func startSurveillanceMonitor() {
 	survStateMu.Lock()
-	defer survStateMu.Unlock()
-	if monitorCmd != nil && monitorCmd.Process != nil {
+	if monitorCmd != nil {
+		survStateMu.Unlock()
 		return // already running
 	}
 	
@@ -80,9 +83,18 @@ func startSurveillanceMonitor() {
 	monitorCmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	err := monitorCmd.Start()
 	if err == nil {
+		cmdToWait := monitorCmd
+		survStateMu.Unlock()
 		go func(cmd *exec.Cmd) {
 			cmd.Wait()
-		}(monitorCmd)
+			survStateMu.Lock()
+			if monitorCmd == cmd {
+				monitorCmd = nil
+			}
+			survStateMu.Unlock()
+		}(cmdToWait)
+	} else {
+		survStateMu.Unlock()
 	}
 }
 

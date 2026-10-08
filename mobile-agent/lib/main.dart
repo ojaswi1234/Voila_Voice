@@ -3678,21 +3678,31 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                             ),
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(18),
-                              child: Container(
-                                padding: const EdgeInsets.all(16),
-                                decoration: BoxDecoration(
-                                  border: Border(left: BorderSide(color: AppTokens.accentSecondary, width: 4)),
-                                ),
-                                child: CollapsibleOutput(
-                                  text: displayContent,
-                                  style: GoogleFonts.inter(
-                                    textStyle: TextStyle(
-                                      color: isError ? const Color(0xFFEF4444) : AppTokens.textPrimary(isDark),
-                                      fontSize: 15,
-                                      height: 1.6,
-                                      fontWeight: FontWeight.w500,
+                              child: IntrinsicHeight(
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  children: [
+                                    Container(
+                                      width: 4,
+                                      color: AppTokens.accentSecondary,
                                     ),
-                                  ),
+                                    Expanded(
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(16),
+                                        child: CollapsibleOutput(
+                                          text: displayContent,
+                                          style: GoogleFonts.inter(
+                                            textStyle: TextStyle(
+                                              color: isError ? const Color(0xFFEF4444) : AppTokens.textPrimary(isDark),
+                                              fontSize: 15,
+                                              height: 1.6,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),
