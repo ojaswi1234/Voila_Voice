@@ -79,11 +79,22 @@ def path_distance(p1, p2):
         d += math.dist(a, b)
     return d / len(p1)
 
+def is_drawing():
+    return (user32.GetAsyncKeyState(1) & 0x8000) != 0
+
 def capture_path(duration=2.0):
-    start = time.time()
     points = []
     last_p = None
-    while time.time() - start < duration:
+    
+    # Wait for the user to start drawing (left mouse button down)
+    wait_start = time.time()
+    while not is_drawing():
+        if time.time() - wait_start > 5.0:
+            return points
+        time.sleep(0.01)
+        
+    start = time.time()
+    while time.time() - start < duration and is_drawing():
         p = get_mouse_pos()
         if p != last_p:
             points.append(p)
@@ -100,9 +111,8 @@ def main():
     template_file = os.path.join(data_dir, "omega_template.json")
     
     if action == "train":
-        print("Training in 1 second... Please draw an Omega.")
-        time.sleep(1)
-        pts = capture_path(2.0)
+        print("Training... Please HOLD Left Mouse Button and draw an Omega.")
+        pts = capture_path(5.0)
         if len(pts) < 10:
             print("Path too short.")
             return
@@ -122,17 +132,18 @@ def main():
         with open(template_file, "r") as f:
             templates = json.load(f)
             
-        time.sleep(0.5) # Short delay before capture
-        pts = capture_path(2.0)
+        print("Hold Left Mouse Button and draw gesture to capture...")
+        pts = capture_path(5.0)
         
         if len(pts) < 10:
             print("NO_MATCH")
             return
             
         norm_pts = normalize(resample(pts, 64))
+        norm_pts_rev = list(reversed(norm_pts))
         
-        dist_omega = path_distance(norm_pts, templates["omega"])
-        dist_water = path_distance(norm_pts, templates["water_omega"])
+        dist_omega = min(path_distance(norm_pts, templates["omega"]), path_distance(norm_pts_rev, templates["omega"]))
+        dist_water = min(path_distance(norm_pts, templates["water_omega"]), path_distance(norm_pts_rev, templates["water_omega"]))
         
         THRESHOLD = 0.25
         
@@ -154,43 +165,48 @@ def main():
         THRESHOLD = 0.25
         
         import requests
-        print("Starting gesture daemon...")
+        print("Starting gesture daemon (HOLD Left Mouse Button to draw)...")
         
         pts = []
-        last_p = get_mouse_pos()
-        last_move_time = time.time()
+        drawing = False
+        last_p = None
         
         while True:
             time.sleep(0.01)
-            p = get_mouse_pos()
             
-            if p != last_p:
-                pts.append(p)
-                last_p = p
-                last_move_time = time.time()
+            if is_drawing():
+                if not drawing:
+                    drawing = True
+                    pts = []
+                    last_p = get_mouse_pos()
+                
+                p = get_mouse_pos()
+                if p != last_p:
+                    pts.append(p)
+                    last_p = p
             else:
-                # If mouse hasn't moved for 0.5s, evaluate
-                if time.time() - last_move_time > 0.5 and len(pts) > 0:
+                if drawing:
+                    drawing = False
                     if len(pts) > 10:
                         norm_pts = normalize(resample(pts, 64))
-                        dist_omega = path_distance(norm_pts, templates["omega"])
-                        dist_water = path_distance(norm_pts, templates["water_omega"])
+                        norm_pts_rev = list(reversed(norm_pts))
+                        
+                        dist_omega = min(path_distance(norm_pts, templates["omega"]), path_distance(norm_pts_rev, templates["omega"]))
+                        dist_water = min(path_distance(norm_pts, templates["water_omega"]), path_distance(norm_pts_rev, templates["water_omega"]))
                         
                         if dist_omega < THRESHOLD and dist_omega < dist_water:
                             print("MATCH_OMEGA - Locking")
                             try:
-                                requests.post('http://localhost:8088/surveillance/lock')
+                                requests.post('http://localhost:8088/surveillance/lock', timeout=2)
                             except:
                                 pass
                         elif dist_water < THRESHOLD:
                             print("MATCH_WATER_OMEGA - Unlocking")
                             try:
-                                requests.post('http://localhost:8088/surveillance/unlock')
+                                requests.post('http://localhost:8088/surveillance/unlock', timeout=2)
                             except:
                                 pass
-                    # Clear path after evaluation
                     pts = []
-
 
 if __name__ == "__main__":
     main()

@@ -66,8 +66,17 @@ def main():
             key_states[i] = is_down
 
         if triggered and (current_time - last_alert_time > debounce_seconds):
-            send_alert(reason)
-            last_alert_time = current_time
+            # Delay slightly to allow user to finish the unlock gesture
+            time.sleep(1.5)
+            try:
+                status_req = requests.get('http://localhost:8088/surveillance/status', timeout=1)
+                if status_req.json().get('locked', False):
+                    send_alert(reason)
+                    last_alert_time = time.time()
+            except Exception as e:
+                # If backend is unreachable, default to firing the alert
+                send_alert(reason)
+                last_alert_time = time.time()
 
         time.sleep(0.05) # 20 Hz
 
