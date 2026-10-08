@@ -24,8 +24,7 @@ class AssistantActivity : FlutterActivity() {
         // outside the Activity's "focus region" pass through to the app below.
         // This is essential for a voice assistant overlay UX.
         window.addFlags(
-            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
         )
 
         flutterEngine?.let { engine ->

@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -59,7 +60,12 @@ func startGestureDaemon() {
 	scriptPath := filepath.Join(getLocalAgentDir(), "surveillance", "gesture_omega.py")
 	gestureDaemonCmd = exec.Command("python", scriptPath, "daemon")
 	gestureDaemonCmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-	gestureDaemonCmd.Start()
+	err := gestureDaemonCmd.Start()
+	if err == nil {
+		go func(cmd *exec.Cmd) {
+			cmd.Wait()
+		}(gestureDaemonCmd)
+	}
 }
 
 func startSurveillanceMonitor() {
@@ -72,7 +78,12 @@ func startSurveillanceMonitor() {
 	scriptPath := filepath.Join(getLocalAgentDir(), "surveillance", "monitor.py")
 	monitorCmd = exec.Command("python", scriptPath)
 	monitorCmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-	monitorCmd.Start()
+	err := monitorCmd.Start()
+	if err == nil {
+		go func(cmd *exec.Cmd) {
+			cmd.Wait()
+		}(monitorCmd)
+	}
 }
 
 func stopSurveillanceMonitor() {
@@ -95,6 +106,7 @@ func setupSurveillanceRoutes(mux *http.ServeMux) {
 
 	mux.HandleFunc("/surveillance/arm", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
+		log.Printf("[Surveillance] ARM requested")
 		survStateMu.Lock()
 		survState.Armed = true
 		saveSurveillanceStateLocked()
@@ -105,6 +117,7 @@ func setupSurveillanceRoutes(mux *http.ServeMux) {
 
 	mux.HandleFunc("/surveillance/disarm", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
+		log.Printf("[Surveillance] DISARM requested")
 		survStateMu.Lock()
 		survState.Armed = false
 		survState.Locked = false
@@ -116,6 +129,7 @@ func setupSurveillanceRoutes(mux *http.ServeMux) {
 
 	mux.HandleFunc("/surveillance/lock", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
+		log.Printf("[Surveillance] LOCK requested")
 		survStateMu.Lock()
 		survState.Locked = true
 		// Lock implicitly arms
@@ -128,9 +142,10 @@ func setupSurveillanceRoutes(mux *http.ServeMux) {
 
 	mux.HandleFunc("/surveillance/unlock", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
+		log.Printf("[Surveillance] UNLOCK requested")
 		survStateMu.Lock()
 		survState.Locked = false
-		// Optionally keep armed, but for safety disarm might be better, or just unlock
+		survState.Armed = false
 		saveSurveillanceStateLocked()
 		survStateMu.Unlock()
 		stopSurveillanceMonitor()
@@ -142,9 +157,11 @@ func setupSurveillanceRoutes(mux *http.ServeMux) {
 		if r.Method == "POST" {
 			var payload map[string]string
 			if err := json.NewDecoder(r.Body).Decode(&payload); err == nil {
+				reason := payload["reason"]
+				log.Printf("[Surveillance] INTRUDER ALERT: %s", reason)
 				survStateMu.Lock()
 				survState.LastAlertTs = time.Now().Format(time.RFC3339)
-				survState.LastAlertReason = payload["reason"]
+				survState.LastAlertReason = reason
 				saveSurveillanceStateLocked()
 				survStateMu.Unlock()
 				
@@ -190,8 +207,10 @@ func setupSurveillanceRoutes(mux *http.ServeMux) {
 			result = "matched_unlock"
 			survStateMu.Lock()
 			survState.Locked = false
+			survState.Armed = false
 			saveSurveillanceStateLocked()
 			survStateMu.Unlock()
+			stopSurveillanceMonitor()
 		}
 		
 		w.Write([]byte(fmt.Sprintf(`{"result":"%s", "raw": "%s"}`, result, out)))

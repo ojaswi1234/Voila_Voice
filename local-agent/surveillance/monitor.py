@@ -4,6 +4,10 @@ import requests
 import json
 import os
 import sys
+import logging
+
+log_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "voila_debug.log")
+logging.basicConfig(filename=log_file, level=logging.DEBUG, format='%(asctime)s [MONITOR] %(message)s')
 
 # Windows API structs
 class POINT(ctypes.Structure):
@@ -17,12 +21,15 @@ def get_mouse_pos():
     return pt.x, pt.y
 
 def send_alert(reason):
+    logging.info(f"Triggering alert for: {reason}")
     try:
-        requests.post('http://localhost:8088/surveillance/alert', json={'reason': reason})
-    except:
-        pass
+        r = requests.post('http://localhost:8088/surveillance/alert', json={'reason': reason}, timeout=2)
+        logging.info(f"Alert sent successfully, response: {r.status_code}")
+    except Exception as e:
+        logging.error(f"Failed to send alert: {e}")
 
 def main():
+    logging.info("Surveillance monitor script started.")
     last_x, last_y = get_mouse_pos()
     last_alert_time = 0
     debounce_seconds = 5
@@ -43,7 +50,6 @@ def main():
             last_x, last_y = mx, my
 
         # 2. Check keyboard activity
-        # We check a few important keys or all keys. Looping 0-255 is fast enough.
         for i in range(1, 256):
             state = user32.GetAsyncKeyState(i)
             # MSB is set if key is currently down
@@ -54,8 +60,6 @@ def main():
                     triggered = True
                     reason = "mute key pressed"
                 else:
-                    # Ignore mouse clicks (0x01, 0x02) to avoid double trigger with movement, 
-                    # but if they click we can trigger too.
                     if i not in (1, 2, 4, 5, 6): 
                         triggered = True
                         reason = "keyboard activity"

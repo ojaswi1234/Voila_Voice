@@ -4538,7 +4538,7 @@ case "read_file":
 
 		// If the IPC loop timed out (no done file), outBytes is still nil/empty - return actionable error
 		if len(outBytes) == 0 && err == nil {
-			return "ERROR: Command timed out after 5 minutes. The command may still be running. For long-running operations (npm install, builds, downloads), use bg_mode='BG TASK COMORADE' next time to avoid blocking."
+			return "ERROR: Command timed out after 5 minutes. The command may still be running. For long-running operations (npm install, builds, downloads), pass the 'bg_mode' parameter as 'BG TASK COMORADE' in the JSON tool call (DO NOT prepend it to the powershell command string) to avoid blocking."
 		}
 
 		// outBytes and err are already populated by IPC logic
@@ -5088,7 +5088,7 @@ CRITICAL: You are running inside a Windows PowerShell environment. You MUST use 
 
 BACKGROUND TASK & DECOMPOSITION POLICY (MANDATORY):
 1. DECOMPOSE FIRST: For any task needing >3 tool calls, begin by outputting a numbered plan before touching any tools.
-2. MANDATORY BG MODE: You MUST use bg_mode="BG TASK COMORADE" for ANY of these commands: npm install/ci/build, pip install, go build/mod/tidy, cargo build/install, docker build/pull/compose, git clone (large repos), flutter pub get/build, gradle/mvn build, yarn install/add, make/cmake, wget/curl downloads. Running these blocking is a critical error.
+2. MANDATORY BG MODE: You MUST set the 'bg_mode' JSON parameter of the run_terminal tool to "BG TASK COMORADE" for ANY of these commands: npm install/ci/build, pip install, go build/mod/tidy, cargo build/install, docker build/pull/compose, git clone (large repos), flutter pub get/build, gradle/mvn build, yarn install/add, make/cmake, wget/curl downloads. Running these blocking is a critical error. CRITICAL: NEVER prepend bg_mode= to the actual PowerShell command string! It is a tool parameter, not a shell variable!
 3. PARALLELISM: After spawning a BG TASK COMORADE, immediately continue with OTHER subtasks (write code, create files, etc.) — do NOT wait idle.
 4. RECOVERY: Use check_bg_task to check progress only when you need the result. If the result shows failure, diagnose and re-spawn.
 5. ITERATION AWARENESS: You have a 50 tool-call budget per session. Expensive blocking calls waste it. Preserve budget with bg_mode.

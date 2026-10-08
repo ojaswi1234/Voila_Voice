@@ -34,10 +34,7 @@ class _SurveillanceSheetState extends State<SurveillanceSheet> {
 
   String _getUrl(String endpoint) {
     String url = widget.backendUrl.replaceAll('wss://', 'https://').replaceAll('ws://', 'http://');
-    url = url.replaceAll('/ws', '/proxy/surveillance/' + endpoint);
-    if (widget.deviceId.isNotEmpty) {
-      url += (url.contains('?') ? '&' : '?') + 'device_id=' + widget.deviceId;
-    }
+    url = url.replaceAll('/ws', '/proxy/${widget.deviceId}/surveillance/$endpoint');
     return url;
   }
 

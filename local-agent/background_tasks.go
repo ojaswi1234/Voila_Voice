@@ -208,7 +208,7 @@ func spawnBGTaskWithLabel(command, label, convID string) string {
 	logBGInfo("BGTask", "Spawned task %s: %s", id, command)
 
 	go func() {
-		fullCmd := fmt.Sprintf("Set-Location -Path [Environment]::GetFolderPath('Desktop'); %s", command)
+		fullCmd := fmt.Sprintf("Set-Location -Path $([Environment]::GetFolderPath('Desktop')); %s", command)
 		cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", fullCmd)
 		if runtime.GOOS == "windows" {
 			cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}

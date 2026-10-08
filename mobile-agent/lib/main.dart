@@ -2100,7 +2100,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     }
   }
 
-  void _showSecurityAlerts() {
+  void _showSecurityAlerts() async { if (!await _ensureUnlocked()) return;
 
     FocusScope.of(context).unfocus();
     bool isDark = appThemeMode.value == ThemeMode.dark;
@@ -2406,17 +2406,19 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                   ),
                 ],
                 
-                _buildDrawerItem(Icons.dashboard_customize_rounded, 'Artifacts', () {
-                  Navigator.pop(context);
-                  Navigator.push(context, MaterialPageRoute(builder: (context) => const ArtifactsPage()));
+                _buildDrawerItem(Icons.dashboard_customize_rounded, 'Artifacts', () async {
+                  if (!await _ensureUnlocked()) return;
+                  if (mounted) Navigator.pop(context);
+                  if (mounted) Navigator.push(context, MaterialPageRoute(builder: (context) => const ArtifactsPage()));
                 }),
                 _buildDrawerItem(Icons.shield_rounded, 'Security Alerts', () {
                   Navigator.pop(context);
                   _showSecurityAlerts();
                 }),
-                _buildDrawerItem(Icons.camera_outdoor_rounded, 'Surveillance', () {
-                  Navigator.pop(context);
-                  showModalBottomSheet(
+                _buildDrawerItem(Icons.camera_outdoor_rounded, 'Surveillance', () async {
+                  if (!await _ensureUnlocked()) return;
+                  if (mounted) Navigator.pop(context);
+                  if (mounted) showModalBottomSheet(
                     context: context,
                     isScrollControlled: true,
                     backgroundColor: Colors.transparent,
@@ -2537,37 +2539,48 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     );
   }
 
+  // Helper method to merge HTTP tasks with real-time WebSocket data
+  List<dynamic> _getMergedTasks() {
+    List<dynamic> allTasks = List.from(_bgTasks);
+    if (_activeJobId != null && _activeJobId!.isNotEmpty) {
+      int existingIndex = allTasks.indexWhere((t) => t['id'] == _activeJobId);
+      if (existingIndex != -1) {
+        final Map<String, dynamic> existing = Map<String, dynamic>.from(allTasks[existingIndex] as Map);
+        existing['status'] = _activeJobStatus;
+        if (_activeJobSummary.isNotEmpty) existing['action'] = _activeJobSummary;
+        allTasks[existingIndex] = existing;
+      } else {
+        allTasks.add({
+          'id': _activeJobId,
+          'status': _activeJobStatus,
+          'action': _activeJobSummary,
+        });
+      }
+    }
+    return allTasks;
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     
     return Scaffold(
-      // BUG FIX A: In overlay mode the Drawer wraps the entire screen in an
-      // invisible GestureDetector (to detect swipe-open gestures). This full-screen
-      // touch absorber intercepts ALL taps, making every button unclickable.
-      // Solution: disable the drawer completely when in assistant overlay mode.
       drawer: _isAssistant ? null : _buildDrawer(),
-      endDrawer: _buildBgTasksSidebar(),
+      endDrawer: _isAssistant ? null : _buildBgTasksSidebar(),
       backgroundColor: _isAssistant ? Colors.transparent : AppTokens.bg(appThemeMode.value == ThemeMode.dark),
       body: _isAssistant
-        // BUG FIX B+C: The previous LayoutBuilder+SingleChildScrollView placed
-        // content at the TOP of a full-screen scroll area, but rendered it visually
-        // at the bottom - hit-test coordinates were completely mismatched so
-        // all button taps missed their targets.
-        //
-        // Fix: Stack + Positioned(bottom:0) correctly anchors BOTH the visual
-        // rendering AND the hit-test region to the bottom of the screen.
-        // No scroll view needed - overlay content is always compact.
-        ? Stack(
-            children: [
-              Positioned(
-                bottom: 0,
-                left: 0,
-                right: 0,
-                child: _buildMainContent(colorScheme),
-              ),
-            ],
+        ? SafeArea(
+            child: Stack(
+              children: [
+                Positioned(
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  child: _buildMainContent(colorScheme),
+                ),
+              ],
+            ),
           )
         : SafeArea(
             child: Container(
@@ -2922,7 +2935,10 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                           builder: (BuildContext ctx) {
                             int runningCount = _bgTasks.where((t) => t['status'] == 'running').length;
                             return GestureDetector(
-                              onTap: () => Scaffold.of(ctx).openEndDrawer(),
+                              onTap: () async {
+                                if (!await _ensureUnlocked()) return;
+                                if (mounted) Scaffold.of(ctx).openEndDrawer();
+                              },
                               child: AnimatedContainer(
                                 duration: const Duration(milliseconds: 300),
                                 curve: Curves.easeInOutCubic,
@@ -3579,19 +3595,19 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
 
     return Container(
       margin: EdgeInsets.only(
-        bottom: 32,
+        bottom: 24,
         left: isUser ? 60 : 16,
         right: isUser ? 16 : 60,
       ),
       child: isUser
-          // User messages are compact, bold pills
+          // User messages: Bento style
           ? Align(
               alignment: Alignment.centerRight,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
                 decoration: BoxDecoration(
                   color: AppTokens.accent,
-                  borderRadius: BorderRadius.circular(100),
+                  borderRadius: BorderRadius.circular(20),
                   boxShadow: [
                     BoxShadow(color: AppTokens.accent.withOpacity(0.3), blurRadius: 12, offset: const Offset(0, 6))
                   ],
@@ -3651,23 +3667,42 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                         ),
                       )
                     : (isAgent 
-                        // Gorgeous typography for AI Assistant
-                        ? CollapsibleOutput(
-                            text: displayContent,
-                            style: GoogleFonts.outfit(
-                              textStyle: TextStyle(
-                                color: isError ? const Color(0xFFEF4444) : AppTokens.textPrimary(isDark),
-                                fontSize: 18,
-                                height: 1.6,
-                                fontWeight: FontWeight.w500,
+                        // Bento Box styling for AI Assistant
+                        ? Container(
+                            width: double.infinity,
+                            decoration: BoxDecoration(
+                              color: AppTokens.card(isDark),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(color: AppTokens.border(isDark), width: 1.5),
+                              boxShadow: AppTokens.shadow(isDark),
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(18),
+                              child: Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  border: Border(left: BorderSide(color: AppTokens.accentSecondary, width: 4)),
+                                ),
+                                child: CollapsibleOutput(
+                                  text: displayContent,
+                                  style: GoogleFonts.inter(
+                                    textStyle: TextStyle(
+                                      color: isError ? const Color(0xFFEF4444) : AppTokens.textPrimary(isDark),
+                                      fontSize: 15,
+                                      height: 1.6,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
                               ),
                             ),
                           )
                         // Monospace, structured block for SHELL commands
                         : Container(
+                            width: double.infinity,
                             padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
-                              color: AppTokens.card(isDark),
+                              color: AppTokens.cardAlt(isDark),
                               borderRadius: BorderRadius.circular(16),
                               border: Border.all(color: AppTokens.border(isDark)),
                             ),
@@ -3691,7 +3726,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   Widget _buildBgTasksSidebar() {
     bool isDark = appThemeMode.value == ThemeMode.dark;
     // Reverse the tasks to show newest first, and limit to last 50 to avoid clutter
-    final displayTasks = _bgTasks.reversed.take(50).toList();
+    final displayTasks = _getMergedTasks().reversed.take(50).toList();
     
     return Drawer(
       backgroundColor: AppTokens.bg(isDark),
@@ -4057,28 +4092,17 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     // Only show in Agent mode
     if (!isAgent) return const SizedBox.shrink();
 
-    // Merge HTTP polling tasks with Real-time WebSocket job_status
-    List<dynamic> allTasks = List.from(_bgTasks);
-    if (_activeJobId != null && _activeJobId!.isNotEmpty) {
-      int existingIndex = allTasks.indexWhere((t) => t['id'] == _activeJobId);
-      if (existingIndex != -1) {
-        // Update existing task with realtime websocket data
-        final Map<String, dynamic> existing = Map<String, dynamic>.from(allTasks[existingIndex] as Map);
-        existing['status'] = _activeJobStatus;
-        if (_activeJobSummary.isNotEmpty) existing['action'] = _activeJobSummary;
-        allTasks[existingIndex] = existing;
-      } else {
-        // Inject new realtime task before HTTP poll catches it
-        allTasks.add({
-          'id': _activeJobId,
-          'status': _activeJobStatus,
-          'action': _activeJobSummary,
-        });
-      }
-    }
+    // Use the helper to merge HTTP polling tasks with Real-time WebSocket job_status
+    List<dynamic> allTasks = _getMergedTasks();
+    
+    // Filter out completed tasks so the flowchart disappears when idle
+    final activeTasks = allTasks.where((t) {
+      final status = t['status']?.toString().toLowerCase() ?? '';
+      return status == 'running' || status == 'queued' || status == 'cancelling';
+    }).toList();
 
-    // Get up to 4 most recent tasks for the workflow visualization
-    final workflowTasks = allTasks.reversed.take(4).toList().reversed.toList();
+    // Get up to 4 most recent active tasks for the workflow visualization
+    final workflowTasks = activeTasks.reversed.take(4).toList().reversed.toList();
     if (workflowTasks.isEmpty) return const SizedBox.shrink();
 
     return Container(

@@ -472,11 +472,14 @@ def update_expression():
         canvas.itemconfig(status_text, state='normal', text=alert_msg, fill='#ef4444', font=("Segoe UI", 9, "bold"))
         canvas.itemconfig(pill, outline='#ef4444', fill='#450a0a')
         
+        # Fill the entire window with dark red/black so no transparent gaps show the taskbar
+        canvas.config(bg='#0a0202')
+        
         if current_width != target_width:
             canvas.itemconfig(status_text, width=max(150, target_width - 120))
     else:
-        # Reset is handled by animation_loop automatically
-        pass
+        # Reset canvas transparency when alert is over
+        canvas.config(bg='magenta')
 
 # Dashboard state (separate from alert resizing to avoid conflicts)
 dashboard_active = False
@@ -1737,6 +1740,8 @@ def ensure_heatmap_cache():
 def toggle_dashboard():
     """Smooth animated switch between mini popup canvas and dashboard frame."""
     global original_pos, original_size
+    if surveillance_locked or surveillance_armed:
+        return
     if not dashboard_active:
         original_pos = (root.winfo_x(), root.winfo_y())
         original_size = (240, 65)
@@ -1878,6 +1883,8 @@ def animate_size_transition():
 
 
 surveillance_locked = False
+surveillance_armed = False
+alert_toplevel = None
 surveillance_last_alert = ""
 pre_alert_x = None
 pre_alert_y = None
@@ -1886,73 +1893,115 @@ target_win_y = None
 current_win_x = None
 current_win_y = None
 
-def poll_surveillance():
-    global surveillance_locked, surveillance_last_alert, target_width, target_height, current_width, current_height, transition_progress, transition_in_progress, pre_alert_x, pre_alert_y, target_win_x, target_win_y, current_win_x, current_win_y
+def _process_surveillance_result(data):
+    global surveillance_locked, surveillance_armed, surveillance_last_alert
+    global alert_toplevel, dashboard_active
+    
+    locked = data.get("locked", False)
+    armed = data.get("armed", False)
+    last_alert = data.get("last_alert_reason", "")
+    
+    # State change for ARMED
+    if armed != surveillance_armed:
+        import logging
+        _voila_log.info(f"Surveillance armed state changed: {armed}")
+        surveillance_armed = armed
+        if not armed:
+            # hide green dot when fully disarmed
+            try:
+                canvas.itemconfig(surveillance_dot, state='hidden')
+            except: pass
+            
+            # also destroy alert if active
+            if alert_toplevel:
+                alert_toplevel.destroy()
+                alert_toplevel = None
+                alert_state["active"] = False
+                surveillance_last_alert = ""
+    
+    # Update Green Dot position regardless of lock, just needs to be armed
+    if surveillance_armed and not dashboard_active:
+        try:
+            w = current_width if current_width else 240
+            canvas.coords(surveillance_dot, w - 25, 15, w - 15, 25)
+            canvas.itemconfig(surveillance_dot, state='normal')
+            canvas.tag_raise(surveillance_dot)
+            canvas.itemconfig(bg_center, state='normal', fill='#22c55e')
+        except: pass
+
+    # State change for LOCKED
+    if locked != surveillance_locked:
+        _voila_log.info(f"Surveillance lock state changed: {locked}")
+        surveillance_locked = locked
+        if locked:
+            if dashboard_active:
+                close_dashboard()
+        else:
+            # Unlocked - Destroy alert window
+            if alert_toplevel:
+                alert_toplevel.destroy()
+                alert_toplevel = None
+            
+            alert_state["active"] = False
+            alert_state["message"] = ""
+            alert_state["state_changed"] = True
+            surveillance_last_alert = ""
+
+    # Alert triggering
+    if locked:
+        if last_alert and last_alert != surveillance_last_alert:
+            _voila_log.info(f"Surveillance alert triggered: {last_alert}")
+            surveillance_last_alert = last_alert
+            
+            # Show premium full screen alert window
+            if not alert_toplevel:
+                alert_toplevel = tk.Toplevel(root)
+                alert_toplevel.attributes("-topmost", True)
+                alert_toplevel.overrideredirect(True)
+                sw = root.winfo_screenwidth()
+                sh = root.winfo_screenheight()
+                alert_toplevel.geometry(f"{sw}x{sh}+0+0")
+                alert_toplevel.configure(bg='#0F1115') # deep dark slate
+                
+                # Canvas for drawing glassmorphic/glowing effects
+                acanvas = tk.Canvas(alert_toplevel, width=sw, height=sh, bg='#09090B', highlightthickness=0)
+                acanvas.pack(fill='both', expand=True)
+                
+                # Glowing center orb / radar
+                acanvas.create_oval(sw//2 - 400, sh//2 - 400, sw//2 + 400, sh//2 + 400, fill="", outline="#FF4500", width=2, dash=(10, 10))
+                acanvas.create_oval(sw//2 - 200, sh//2 - 200, sw//2 + 200, sh//2 + 200, fill="#1a0703", outline="#FF4500", width=4)
+                
+                # Text
+                acanvas.create_text(sw//2, sh//2 - 40, text="SYSTEM LOCKED", font=("Segoe UI", 48, "bold"), fill="#FF4500")
+                acanvas.create_text(sw//2, sh//2 + 40, text="INTRUDER DETECTED", font=("Segoe UI", 24, "bold"), fill="#FFFFFF")
+                acanvas.create_text(sw//2, sh//2 + 100, text=f"Reason: {last_alert}", font=("Segoe UI", 16), fill="#a1a1aa")
+                acanvas.create_text(sw//2, sh//2 + 150, text="Unlock via Mobile App or Gesture", font=("Segoe UI", 14), fill="#6b7280")
+                
+                # Intercept all clicks
+                def block_click(e): return "break"
+                alert_toplevel.bind("<Button-1>", block_click)
+                acanvas.bind("<Button-1>", block_click)
+
+            # We don't mess with the main root window size anymore!
+            alert_state["active"] = True
+            alert_state["message"] = f"INTRUDER: {last_alert}"
+            alert_state["state_changed"] = True
+
+def _poll_thread():
     try:
         url = 'http://localhost:8088/surveillance/status'
         req = _urllib_req.Request(url, method="GET")
         with _urllib_req.urlopen(req, timeout=1) as r:
             data = _json_mod.loads(r.read())
-            locked = data.get("locked", False)
-            last_alert = data.get("last_alert_reason", "")
-            
-            if locked != surveillance_locked:
-                surveillance_locked = locked
-                if locked:
-                    # Lock engaged - DO NOT enlarge yet, just show Green Dot indicator
-                    try:
-                        canvas.itemconfig(bg_center, state='normal', fill='#22c55e')
-                    except:
-                        pass
-                else:
-                    # Unlocked - Revert size and hide Green Dot
-                    try:
-                        canvas.itemconfig(bg_center, state='hidden')
-                    except:
-                        pass
-                    if not dashboard_active:
-                        target_width = 240
-                        target_height = 65
-                        if pre_alert_x is not None:
-                            target_win_x = pre_alert_x
-                            target_win_y = pre_alert_y
-                            current_win_x = root.winfo_x()
-                            current_win_y = root.winfo_y()
-                        transition_progress = 0.0
-                        transition_in_progress = True
-                        animate_size_transition()
-            
-            if locked and not dashboard_active:
-                if last_alert and last_alert != surveillance_last_alert:
-                    surveillance_last_alert = last_alert
-                    
-                    # Movement detected! Now we enlarge to full screen.
-                    target_width = root.winfo_screenwidth()
-                    target_height = root.winfo_screenheight()
-                    if pre_alert_x is None:
-                        pre_alert_x = root.winfo_x()
-                        pre_alert_y = root.winfo_y()
-                    target_win_x = 0
-                    target_win_y = 0
-                    current_win_x = root.winfo_x()
-                    current_win_y = root.winfo_y()
-                    transition_progress = 0.0
-                    transition_in_progress = True
-                    animate_size_transition()
-                    
-                    # Trigger alert visually
-                    alert_state["active"] = True
-                    alert_state["message"] = f"INTRUDER: {last_alert}"
-                    alert_state["apps"] = []
-                    alert_state["state_changed"] = True
-                    
-                    if alert_state["alert_timer"]:
-                        root.after_cancel(alert_state["alert_timer"])
-                    alert_state["alert_timer"] = root.after(5000, clear_alert)
-                    
-    except Exception as e:
+            root.after(0, _process_surveillance_result, data)
+    except Exception:
         pass
-    root.after(1000, poll_surveillance)
+    finally:
+        root.after(1000, poll_surveillance)
+
+def poll_surveillance():
+    import threading
+    threading.Thread(target=_poll_thread, daemon=True).start()
 
 def clear_alert():
     alert_state["active"] = False
@@ -2331,12 +2380,14 @@ def animation_loop():
             if not alert_state["active"]:
                 canvas.itemconfig(status_text, text=display, fill=target_color)
 
-            if surveillance_locked:
+            if surveillance_armed:
                 try:
                     w = current_width if current_width else 240
                     canvas.coords(surveillance_dot, w - 25, 15, w - 15, 25)
                     canvas.itemconfig(surveillance_dot, state='normal')
                     canvas.tag_raise(surveillance_dot)
+                    canvas.itemconfig(bg_center, state='normal', fill='#22c55e')
+                    canvas.tag_raise(bg_center)
                 except: pass
             else:
                 try:
