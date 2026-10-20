@@ -3118,37 +3118,28 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                     if (_currentMode.toUpperCase() == 'AGENT')
                       GestureDetector(
                         onTap: _openLiveModeSheet,
-                        child: Container(
-                          margin: const EdgeInsets.only(left: 8),
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFF6366F1), Color(0xFF8B5CF6), Color(0xFFEC4899)],
-                            ),
-                            borderRadius: BorderRadius.circular(100),
-                            boxShadow: [
-                              BoxShadow(
-                                color: const Color(0xFF8B5CF6).withOpacity(0.4),
-                                blurRadius: 8,
-                                offset: const Offset(0, 2),
+                        child: Tooltip(
+                          message: 'Gemini Live Mode',
+                          child: Container(
+                            width: 36,
+                            height: 36,
+                            margin: const EdgeInsets.only(left: 8),
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              gradient: const LinearGradient(
+                                colors: [Color(0xFF6366F1), Color(0xFF8B5CF6), Color(0xFFEC4899)],
                               ),
-                            ],
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.stream_rounded, size: 14, color: Colors.white),
-                              const SizedBox(width: 5),
-                              Text(
-                                'LIVE MODE',
-                                style: GoogleFonts.spaceGrotesk(
-                                  color: Colors.white,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 0.5,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: const Color(0xFF8B5CF6).withOpacity(0.4),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
+                            child: const Center(
+                              child: Icon(Icons.sensors_rounded, size: 18, color: Colors.white),
+                            ),
                           ),
                         ),
                       ),
@@ -3708,116 +3699,157 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       displayContent = content.substring(10).replaceAll(RegExp(r'\s+'), '');
     }
 
+    final screenWidth = MediaQuery.of(context).size.width;
+
     return Container(
-      margin: EdgeInsets.only(
-        bottom: 24,
-        left: isUser ? 60 : 16,
-        right: isUser ? 16 : 60,
-      ),
+      margin: const EdgeInsets.only(bottom: 16),
       child: isUser
-          // User messages: Bento style
+          // User messages: Dynamic WhatsApp-style bubble (hugs text width, max width 82% of screen)
           ? Align(
               alignment: Alignment.centerRight,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-                decoration: BoxDecoration(
-                  color: AppTokens.accent,
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(color: AppTokens.accent.withOpacity(0.3), blurRadius: 12, offset: const Offset(0, 6))
-                  ],
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: screenWidth * 0.82,
+                  minWidth: 48,
                 ),
-                child: isImage
-                    ? ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: Image.memory(
-                          base64Decode(displayContent),
-                          fit: BoxFit.cover,
-                          cacheWidth: 800,
-                          gaplessPlayback: true,
-                        ),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: AppTokens.accent,
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(18),
+                      topRight: Radius.circular(18),
+                      bottomLeft: Radius.circular(18),
+                      bottomRight: Radius.circular(4),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppTokens.accent.withOpacity(0.3),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
                       )
-                    : Text(
-                        content,
-                        style: GoogleFonts.inter(
-                          color: Colors.white,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
+                    ],
+                  ),
+                  child: isImage
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: Image.memory(
+                            base64Decode(displayContent),
+                            fit: BoxFit.cover,
+                            cacheWidth: 800,
+                            gaplessPlayback: true,
+                          ),
+                        )
+                      : Text(
+                          content,
+                          style: GoogleFonts.inter(
+                            color: Colors.white,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
-                      ),
+                ),
               ),
             )
-          // System/AI/Shell responses
-          : Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Container(
-                      width: 8,
-                      height: 8,
-                      decoration: BoxDecoration(
-                        color: isError ? const Color(0xFFEF4444) : (isAgent ? AppTokens.accentSecondary : AppTokens.textSecondary(isDark)),
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Text(
-                      isError ? 'SYSTEM ERROR' : (isSystem ? 'SYSTEM' : (isAgent ? 'AI ASSISTANT' : 'SHELL OUTPUT')),
-                      style: GoogleFonts.spaceGrotesk(
-                        color: isError ? const Color(0xFFEF4444) : (isAgent ? AppTokens.accentSecondary : AppTokens.textSecondary(isDark)),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 2.0,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                isImage
-                    ? ClipRRect(
-                        borderRadius: BorderRadius.circular(24),
-                        child: Image.memory(
-                          base64Decode(displayContent),
-                          fit: BoxFit.cover,
-                          cacheWidth: 800,
-                          gaplessPlayback: true,
+          // System/AI/Shell responses: Dynamic bubble aligned left (hugs content, max width 88% / 94% of screen)
+          : Align(
+              alignment: Alignment.centerLeft,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: isError ? const Color(0xFFEF4444) : (isAgent ? AppTokens.accentSecondary : AppTokens.textSecondary(isDark)),
+                          shape: BoxShape.circle,
                         ),
-                      )
-                    : (isAgent 
-                        // Bento Box rich styling for AI Assistant
-                        ? Container(
-                            width: double.infinity,
-                            decoration: BoxDecoration(
-                              color: AppTokens.card(isDark),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(color: AppTokens.border(isDark), width: 1.5),
-                              boxShadow: AppTokens.shadow(isDark),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        isError ? 'SYSTEM ERROR' : (isSystem ? 'SYSTEM' : (isAgent ? 'AI ASSISTANT' : 'SHELL OUTPUT')),
+                        style: GoogleFonts.spaceGrotesk(
+                          color: isError ? const Color(0xFFEF4444) : (isAgent ? AppTokens.accentSecondary : AppTokens.textSecondary(isDark)),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 2.0,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  isImage
+                      ? ConstrainedBox(
+                          constraints: BoxConstraints(maxWidth: screenWidth * 0.88),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(18),
+                            child: Image.memory(
+                              base64Decode(displayContent),
+                              fit: BoxFit.cover,
+                              cacheWidth: 800,
+                              gaplessPlayback: true,
                             ),
-                            child: Container(
-                              decoration: BoxDecoration(
-                                border: Border(
-                                  left: BorderSide(color: AppTokens.accentSecondary, width: 4),
-                                ),
-                                borderRadius: BorderRadius.circular(18),
+                          ),
+                        )
+                      : (isAgent 
+                          // Dynamic Bento Box rich styling for AI Assistant (WhatsApp-style maxWidth 88%, wraps content)
+                          ? ConstrainedBox(
+                              constraints: BoxConstraints(
+                                maxWidth: screenWidth * 0.88,
+                                minWidth: 60,
                               ),
-                              child: Padding(
-                                padding: const EdgeInsets.all(16),
-                                child: VoilaRichSummaryView(
-                                  text: displayContent,
-                                  isDark: isDark,
-                                  primaryTextColor: isError ? const Color(0xFFEF4444) : AppTokens.textPrimary(isDark),
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: AppTokens.card(isDark),
+                                  borderRadius: const BorderRadius.only(
+                                    topLeft: Radius.circular(4),
+                                    topRight: Radius.circular(18),
+                                    bottomLeft: Radius.circular(18),
+                                    bottomRight: Radius.circular(18),
+                                  ),
+                                  border: Border.all(color: AppTokens.border(isDark), width: 1.5),
+                                  boxShadow: AppTokens.shadow(isDark),
+                                ),
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    border: Border(
+                                      left: BorderSide(color: AppTokens.accentSecondary, width: 4),
+                                    ),
+                                    borderRadius: const BorderRadius.only(
+                                      topLeft: Radius.circular(4),
+                                      topRight: Radius.circular(16),
+                                      bottomLeft: Radius.circular(16),
+                                      bottomRight: Radius.circular(16),
+                                    ),
+                                  ),
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(16),
+                                    child: VoilaRichSummaryView(
+                                      text: displayContent,
+                                      isDark: isDark,
+                                      primaryTextColor: isError ? const Color(0xFFEF4444) : AppTokens.textPrimary(isDark),
+                                    ),
+                                  ),
                                 ),
                               ),
-                            ),
-                          )
-                        // Dedicated Authentic Terminal Card for SHELL commands
-                        : ShellOutputCard(
-                            message: message,
-                            isDark: isDark,
-                          )),
-              ],
+                            )
+                          // Dedicated Authentic Terminal Card for SHELL commands
+                          : ConstrainedBox(
+                              constraints: BoxConstraints(
+                                maxWidth: screenWidth * 0.94,
+                              ),
+                              child: ShellOutputCard(
+                                message: message,
+                                isDark: isDark,
+                              ),
+                            )),
+                ],
+              ),
             ),
     );
   }
