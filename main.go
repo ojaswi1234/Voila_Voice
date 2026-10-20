@@ -1052,29 +1052,28 @@ func (b *Backend) forwardCommand(deviceID, command, mode, clientID, conversation
 }
 
 func (b *Backend) generateTaskSummary(command, output string) string {
-	// Simple rule-based summarization (can be enhanced with actual AI)
 	summary := ""
 	
 	// Analyze output for success/failure patterns
-	if strings.Contains(output, "ERROR") {
-		summary = "âŒ Command failed. Check error details above."
-	} else if strings.Contains(output, "done") || strings.Contains(output, "completed") || strings.Contains(output, "success") {
-		summary = "âœ… Command completed successfully."
-	} else if strings.Contains(command, "npm") && strings.Contains(command, "dev") {
-		summary = "ðŸš€ Development server started successfully."
-	} else if strings.Contains(command, "test") {
-		summary = "ðŸ§ª Tests executed. Check output for results."
-	} else if strings.Contains(command, "build") {
-		summary = "ðŸ”¨ Build process completed."
+	isErr := strings.Contains(strings.ToUpper(output), "ERROR") || strings.Contains(output, "Command failed") || strings.Contains(output, "FAILED")
+	if isErr {
+		summary = "❌ Command failed with errors. Check terminal output above."
 	} else if strings.Contains(command, "git") {
-		summary = "ðŸ“ Git operation completed."
+		summary = "📦 Git operation finished successfully."
+	} else if strings.Contains(command, "test") {
+		summary = "🧪 Test suite completed."
+	} else if strings.Contains(command, "build") {
+		summary = "⚡ Build command finished."
+	} else if strings.Contains(command, "npm") && strings.Contains(command, "dev") {
+		summary = "🚀 Dev server launched."
 	} else {
-		summary = "âœ“ Command executed. Review output for details."
+		summary = "✅ Terminal execution finished."
 	}
 	
-	// Add execution context
-	if len(output) > 0 {
-		summary += fmt.Sprintf(" Output size: %d characters.", len(output))
+	lineCount := len(strings.Split(strings.TrimSpace(output), "
+"))
+	if lineCount > 1 {
+		summary += fmt.Sprintf(" (%d lines generated)", lineCount)
 	}
 	
 	return summary
