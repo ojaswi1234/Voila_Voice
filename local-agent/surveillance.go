@@ -91,7 +91,14 @@ func startSurveillanceMonitor() {
 			if monitorCmd == cmd {
 				monitorCmd = nil
 			}
+			wasArmed := survState.Armed
 			survStateMu.Unlock()
+			
+			if wasArmed {
+				// Auto-restart if it crashed while armed
+				time.Sleep(2 * time.Second)
+				startSurveillanceMonitor()
+			}
 		}(cmdToWait)
 	} else {
 		survStateMu.Unlock()
