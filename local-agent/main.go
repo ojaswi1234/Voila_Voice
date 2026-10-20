@@ -1796,6 +1796,7 @@ func startHTTPServer() {
 		return
 	}
 	go ensureGeminiLiveBridge()
+	go InitGRPCTunnel()
 	// Restore saved mode
 	if connData, err := loadConnectionData(); err == nil && connData.ActiveMode != "" {
 		currentModeMu.Lock()
@@ -6606,6 +6607,7 @@ func main() {
 		}
 	}()
 	go startScheduleTicker(context.Background())
+	go InitGRPCTunnel()
 	// Load circuit state on startup
 	loadCircuitState()
 

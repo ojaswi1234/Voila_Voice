@@ -42,6 +42,9 @@ var (
 	bgTasks   = make(map[string]*BGTask)
 	bgTasksMu sync.RWMutex
 	bgTaskIdx = 1
+
+	// Hook for gRPC tunnel telemetry
+	onBGTaskProgressUpdate func(id, label, command, status string, elapsedSeconds int64, logSnippet string)
 )
 
 // bgTasksDir returns a stable directory for BG task persistence
@@ -89,6 +92,13 @@ func persistSnapshot(task *BGTask) {
 	}
 	snap := generateSnapshot(task.Stdout.Bytes(), task.Stderr.Bytes())
 	os.WriteFile(task.SnapshotFile, []byte(snap), 0644)
+	if onBGTaskProgressUpdate != nil {
+		elapsed := int64(0)
+		if !task.StartTime.IsZero() {
+			elapsed = int64(time.Since(task.StartTime).Seconds())
+		}
+		go onBGTaskProgressUpdate(task.ID, task.Label, task.Command, task.Status, elapsed, snap)
+	}
 }
 
 // saveBGTaskMeta saves task metadata (not snapshot) to disk as JSON
