@@ -210,6 +210,7 @@ class GeminiLiveSessionManager:
         self.gemini_session = None
         self.api_key = load_local_api_key()
         self.model = LIVE_MODEL
+        self.binary_mode = False
 
     async def broadcast_to_client(self, payload: dict):
         try:
@@ -217,11 +218,13 @@ class GeminiLiveSessionManager:
         except Exception:
             pass
 
-    async def start(self, user_api_key: Optional[str] = None, model: Optional[str] = None):
+    async def start(self, user_api_key: Optional[str] = None, model: Optional[str] = None, binary_mode: bool = False):
         if user_api_key:
             self.api_key = user_api_key
         if model:
             self.model = model
+        if binary_mode:
+            self.binary_mode = True
 
         if not self.api_key:
             await self.broadcast_to_client({
@@ -313,11 +316,19 @@ class GeminiLiveSessionManager:
                             await self.broadcast_to_client({"type": "live_state", "state": "SPEAKING"})
                             for part in content.model_turn.parts:
                                 if getattr(part, "inline_data", None):
-                                    audio_b64 = base64.b64encode(part.inline_data.data).decode("ascii")
-                                    await self.broadcast_to_client({
-                                        "type": "ai_audio",
-                                        "data": audio_b64
-                                    })
+                                    raw_pcm = part.inline_data.data
+                                    if self.binary_mode:
+                                        # Fast binary transmission: 0x01 prefix + raw PCM bytes (33.3% bandwidth saved)
+                                        try:
+                                            await self.ws_client.send(b"\x01" + raw_pcm)
+                                        except Exception:
+                                            pass
+                                    else:
+                                        audio_b64 = base64.b64encode(raw_pcm).decode("ascii")
+                                        await self.broadcast_to_client({
+                                            "type": "ai_audio",
+                                            "data": audio_b64
+                                        })
 
                         # 5. Turn completion
                         if getattr(content, "turn_complete", False):
@@ -395,6 +406,15 @@ async def handle_client(websocket, path=None):
     session_mgr = GeminiLiveSessionManager(websocket)
     try:
         async for raw_msg in websocket:
+            # Direct binary frame handling: 0x01 prefix or raw PCM bytes
+            if isinstance(raw_msg, bytes):
+                session_mgr.binary_mode = True
+                if len(raw_msg) > 1 and raw_msg[0] == 0x01:
+                    await session_mgr.send_audio_chunk(raw_msg[1:])
+                elif len(raw_msg) > 0:
+                    await session_mgr.send_audio_chunk(raw_msg)
+                continue
+
             try:
                 data = json.loads(raw_msg)
             except Exception:
@@ -404,7 +424,8 @@ async def handle_client(websocket, path=None):
             if msg_type == "start":
                 api_key = data.get("apiKey") or load_local_api_key()
                 model = data.get("model", LIVE_MODEL)
-                asyncio.create_task(session_mgr.start(api_key, model))
+                binary_mode = data.get("binary_mode", False)
+                asyncio.create_task(session_mgr.start(api_key, model, binary_mode=binary_mode))
             elif msg_type == "audio":
                 b64_data = data.get("data", "")
                 if b64_data:

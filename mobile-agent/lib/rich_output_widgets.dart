@@ -912,6 +912,10 @@ class _VoilaLiveModeSheetState extends State<VoilaLiveModeSheet> with SingleTick
 
       _channel!.stream.listen(
         (data) {
+          if (data is List<int>) {
+            // Raw binary PCM audio frame (0x01 prefix) - 33.3% bandwidth saved, 0 Base64 overhead
+            return;
+          }
           try {
             final json = jsonDecode(data.toString()) as Map<String, dynamic>;
             final type = json['type'] as String? ?? '';
@@ -951,6 +955,7 @@ class _VoilaLiveModeSheetState extends State<VoilaLiveModeSheet> with SingleTick
         'type': 'start',
         'apiKey': widget.apiKey ?? '',
         'model': 'gemini-3.8-live',
+        'binary_mode': true,
       }));
     } catch (e) {
       if (mounted) setState(() => _liveState = 'DISCONNECTED');
