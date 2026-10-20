@@ -241,6 +241,12 @@ func spawnBGTaskWithLabel(command, label, convID string) string {
 		bgTasksMu.Lock()
 		defer bgTasksMu.Unlock()
 		task.EndTime = time.Now()
+		if task.Status == "cancelled" {
+			logBGInfo("BGTask", "Task %s was CANCELLED by user (skipping retries)", id)
+			persistSnapshot(task)
+			saveBGTaskMeta(task)
+			return
+		}
 		if err != nil {
 			task.Status = "failed"
 			fmt.Fprintf(task.Stderr, "\n[Execution Error: %v]", err)
@@ -384,4 +390,58 @@ func listBGTasks() []map[string]string {
 		}
 	}
 	return list
+}
+
+// killBGTask forcibly terminates a running background task by ID
+func killBGTask(id string) bool {
+	bgTasksMu.Lock()
+	defer bgTasksMu.Unlock()
+
+	task, exists := bgTasks[id]
+	if !exists || task.Status != "running" {
+		return false
+	}
+
+	task.Status = "cancelled"
+	task.EndTime = time.Now()
+
+	if task.Cmd != nil && task.Cmd.Process != nil {
+		pid := task.Cmd.Process.Pid
+		logBGWarn("BGTask", "Forcibly killing background task %s (PID %d)", id, pid)
+		if runtime.GOOS == "windows" {
+			exec.Command("taskkill", "/F", "/T", "/PID", fmt.Sprintf("%d", pid)).Run()
+		} else {
+			task.Cmd.Process.Kill()
+		}
+	}
+	persistSnapshot(task)
+	saveBGTaskMeta(task)
+	return true
+}
+
+// stopAllBGTasks forcibly terminates all in-flight background tasks
+func stopAllBGTasks() int {
+	bgTasksMu.Lock()
+	defer bgTasksMu.Unlock()
+
+	count := 0
+	for id, task := range bgTasks {
+		if task.Status == "running" {
+			task.Status = "cancelled"
+			task.EndTime = time.Now()
+			if task.Cmd != nil && task.Cmd.Process != nil {
+				pid := task.Cmd.Process.Pid
+				logBGWarn("BGTask", "Forcibly killing background task %s (PID %d)", id, pid)
+				if runtime.GOOS == "windows" {
+					exec.Command("taskkill", "/F", "/T", "/PID", fmt.Sprintf("%d", pid)).Run()
+				} else {
+					task.Cmd.Process.Kill()
+				}
+			}
+			persistSnapshot(task)
+			saveBGTaskMeta(task)
+			count++
+		}
+	}
+	return count
 }

@@ -1832,6 +1832,14 @@ func startHTTPServer() {
 			return
 		}
 
+		// Optional: parse task_id or job_id if provided in JSON body
+		var body map[string]interface{}
+		json.NewDecoder(r.Body).Decode(&body)
+		specificTaskID, _ := body["task_id"].(string)
+		if specificTaskID == "" {
+			specificTaskID, _ = body["job_id"].(string)
+		}
+
 		cmdMu.Lock()
 		if currentCancel != nil {
 			currentCancel()
@@ -1842,6 +1850,7 @@ func startHTTPServer() {
 			} else {
 				currentCmd.Process.Kill()
 			}
+			currentCmd = nil
 		}
 		for _, pid := range activeToolPids {
 			if runtime.GOOS == "windows" {
@@ -1871,8 +1880,31 @@ func startHTTPServer() {
 		}
 		cmdMu.Unlock()
 
+		// 1. Force kill persistent terminal session if alive
+		forceKillTerminalSession()
+
+		// 2. Kill background tasks
+		if specificTaskID != "" && strings.HasPrefix(specificTaskID, "bg-") {
+			killBGTask(specificTaskID)
+		} else {
+			stopAllBGTasks()
+		}
+
+		// 3. Mark active jobs cancelled in jobRegistry
+		jobRegistryMu.Lock()
+		for _, j := range jobRegistry {
+			if j.Status == "running" || j.Status == "queued" {
+				j.Status = "cancelled"
+			}
+		}
+		jobRegistryMu.Unlock()
+
+		// 4. Reset status display
+		fmt.Println("STATUS: IDLE")
+		if !isTUIMode { os.Stdout.Sync() }
+
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]string{"output": "Command execution stopped."})
+		json.NewEncoder(w).Encode(map[string]string{"output": "Command execution and background tasks stopped."})
 	})
 
 	mux.HandleFunc("/models", listModelsHandler)
@@ -2963,15 +2995,21 @@ func executeCommand(ctx context.Context, command string, mode string, conversati
 		fmt.Println("STATUS: RUNNING")
 		if !isTUIMode { os.Stdout.Sync() }
 
+		cmdObj := exec.CommandContext(ctx, "powershell", "-Command", agyCmd)
+		if runtime.GOOS == "windows" {
+			cmdObj.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+		}
+
 		cmdMu.Lock()
+		currentCmd = cmdObj
 		currentConvID = conversationID
 		cmdMu.Unlock()
 
 		// Execute agy silently in the background
-		cmdObj := exec.CommandContext(ctx, "powershell", "-Command", agyCmd)
 		outBytes, _ := cmdObj.CombinedOutput()
 
 		cmdMu.Lock()
+		currentCmd = nil
 		currentConvID = ""
 		cmdMu.Unlock()
 
@@ -4043,6 +4081,20 @@ func cleanupTerminalSession() {
 		terminalActive = false
 		terminalPid = ""
 	}
+}
+
+func forceKillTerminalSession() {
+	terminalSessionMu.Lock()
+	defer terminalSessionMu.Unlock()
+	if terminalPid != "" {
+		if runtime.GOOS == "windows" {
+			exec.Command("taskkill", "/F", "/T", "/PID", terminalPid).Run()
+		}
+	}
+	os.Remove(terminalCmdFile)
+	os.Remove(terminalDoneFile)
+	terminalActive = false
+	terminalPid = ""
 }
 // requireMobileApproval is a backward-compatible shim.
 // All new call sites use requireSecurityApproval (security_policy.go) directly
