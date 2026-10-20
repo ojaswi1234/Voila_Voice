@@ -21,6 +21,7 @@ import 'device_identity.dart';
 import 'artifacts_page.dart';
 import 'visualizer.dart';
 import 'surveillance_ui.dart';
+import 'rich_output_widgets.dart';
 import 'package:uuid/uuid.dart';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -243,7 +244,25 @@ class _PulseWaveVisualizerState extends State<PulseWaveVisualizer> with SingleTi
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2000),
-    )..repeat();
+    );
+    if (widget.isListening || widget.isSpeaking) {
+      _controller.repeat();
+    }
+  }
+
+  @override
+  void didUpdateWidget(PulseWaveVisualizer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isListening || widget.isSpeaking) {
+      if (!_controller.isAnimating) {
+        _controller.repeat();
+      }
+    } else {
+      if (_controller.isAnimating) {
+        _controller.stop();
+        _controller.reset();
+      }
+    }
   }
 
   @override
@@ -254,22 +273,52 @@ class _PulseWaveVisualizerState extends State<PulseWaveVisualizer> with SingleTi
 
   @override
   Widget build(BuildContext context) {
-    bool isDark = appThemeMode.value == ThemeMode.dark;
     Color baseColor = widget.isSpeaking ? AppTokens.accentSecondary : AppTokens.accent;
+
+    final coreButton = Container(
+      width: 90,
+      height: 90,
+      decoration: BoxDecoration(
+        color: baseColor,
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: baseColor.withOpacity(0.35),
+            blurRadius: 20,
+            spreadRadius: 4,
+          )
+        ],
+      ),
+      child: Center(
+        child: Icon(
+          widget.isSpeaking ? Icons.graphic_eq_rounded : Icons.mic_rounded,
+          color: Colors.white,
+          size: 40,
+        ),
+      ),
+    );
+
+    // ZERO IDLE OVERHEAD: Return static button directly when not listening or speaking
+    if (!widget.isListening && !widget.isSpeaking) {
+      return GestureDetector(
+        onTap: widget.onTap,
+        child: SizedBox(
+          width: 220,
+          height: 220,
+          child: Center(child: coreButton),
+        ),
+      );
+    }
 
     return GestureDetector(
       onTap: widget.onTap,
       child: AnimatedBuilder(
         animation: _controller,
         builder: (context, child) {
-          // Multiple overlapping circle scales to create the 'wavy ping' effect
           double wave1 = 1.0 + (_controller.value * 1.5);
           double wave2 = 1.0 + (((_controller.value + 0.3) % 1.0) * 1.2);
           double wave3 = 1.0 + (((_controller.value + 0.6) % 1.0) * 0.9);
-          
-          double corePulse = widget.isListening || widget.isSpeaking 
-              ? 10 + (math.sin(_controller.value * math.pi * 2) * 5) 
-              : 5;
+          double corePulse = 10 + (math.sin(_controller.value * math.pi * 2) * 5);
 
           return SizedBox(
             width: 220,
@@ -277,32 +326,27 @@ class _PulseWaveVisualizerState extends State<PulseWaveVisualizer> with SingleTi
             child: Stack(
               alignment: Alignment.center,
               children: [
-                if (widget.isListening || widget.isSpeaking) ...[
-                  // Wavy outer circles of different sizes
-                  Transform.scale(
-                    scale: wave1,
-                    child: Container(
-                      width: 90, height: 90,
-                      decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: baseColor.withOpacity(0.05 * (1.0 - _controller.value)), width: 2)),
-                    ),
+                Transform.scale(
+                  scale: wave1,
+                  child: Container(
+                    width: 90, height: 90,
+                    decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: baseColor.withOpacity(0.05 * (1.0 - _controller.value)), width: 2)),
                   ),
-                  Transform.scale(
-                    scale: wave2,
-                    child: Container(
-                      width: 90, height: 90,
-                      decoration: BoxDecoration(shape: BoxShape.circle, color: baseColor.withOpacity(0.1 * (1.0 - ((_controller.value + 0.3) % 1.0)))),
-                    ),
+                ),
+                Transform.scale(
+                  scale: wave2,
+                  child: Container(
+                    width: 90, height: 90,
+                    decoration: BoxDecoration(shape: BoxShape.circle, color: baseColor.withOpacity(0.1 * (1.0 - ((_controller.value + 0.3) % 1.0)))),
                   ),
-                  Transform.scale(
-                    scale: wave3,
-                    child: Container(
-                      width: 90, height: 90,
-                      decoration: BoxDecoration(shape: BoxShape.circle, color: baseColor.withOpacity(0.15 * (1.0 - ((_controller.value + 0.6) % 1.0)))),
-                    ),
+                ),
+                Transform.scale(
+                  scale: wave3,
+                  child: Container(
+                    width: 90, height: 90,
+                    decoration: BoxDecoration(shape: BoxShape.circle, color: baseColor.withOpacity(0.15 * (1.0 - ((_controller.value + 0.6) % 1.0)))),
                   ),
-                ],
-                
-                // Central core button
+                ),
                 Container(
                   width: 90,
                   height: 90,
@@ -331,6 +375,68 @@ class _PulseWaveVisualizerState extends State<PulseWaveVisualizer> with SingleTi
         },
       ),
     );
+  }
+}
+
+
+
+
+// ─── HIGH-PERFORMANCE STATIC REGEX SPEECH NORMALIZER ───
+class SpeechNormalizer {
+  static final RegExp _urlRegex = RegExp(r'https?://[^\s)\]]+');
+  static final RegExp _winPathRegex = RegExp(r'[a-zA-Z]:\\[^\s)\]]+');
+  static final RegExp _unixPathRegex = RegExp(r'/(?:[a-zA-Z0-9_.-]+/)+[a-zA-Z0-9_.-]+');
+  static final RegExp _uuidRegex = RegExp(r'\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b');
+  static final RegExp _hexHashRegex = RegExp(r'\b[0-9a-fA-F]{12,}\b');
+  static final RegExp _dashRegex = RegExp(r'\s+[-]+\s+');
+  static final RegExp _leadingDashRegex = RegExp(r'^\s*[-]+\s*');
+  static final RegExp _ellipsisRegex = RegExp(r'\.{2,}');
+  static final RegExp _bracketRegex = RegExp(r'[\[\]{}|\\<>]');
+  static final RegExp _spaceRegex = RegExp(r'\s+');
+  static final RegExp _fullStopRegex = RegExp(r'\.([A-Za-z])');
+  static final RegExp chunkRegex = RegExp(r'([^.?!]+[.?!]*)');
+
+  static String normalize(String text) {
+    String normalized = text;
+    normalized = normalized.replaceAll(_urlRegex, 'the link');
+    normalized = normalized.replaceAll(_winPathRegex, 'the file path');
+    normalized = normalized.replaceAll(_unixPathRegex, 'the file path');
+    normalized = normalized.replaceAll(_uuidRegex, 'an ID');
+    normalized = normalized.replaceAll(_hexHashRegex, 'a hash');
+
+    normalized = normalized.replaceAll('**', '');
+    normalized = normalized.replaceAll('*', '');
+    normalized = normalized.replaceAll('__', '');
+    normalized = normalized.replaceAll('_', ' ');
+    normalized = normalized.replaceAll('#', '');
+
+    normalized = normalized.replaceAll(_dashRegex, ' ');
+    normalized = normalized.replaceAll(_leadingDashRegex, ' ');
+    normalized = normalized.replaceAll(_ellipsisRegex, '. ');
+    normalized = normalized.replaceAll(_bracketRegex, ' ');
+    normalized = normalized.replaceAll(_spaceRegex, ' ');
+
+    normalized = normalized.replaceAll('&&', ' and ');
+    normalized = normalized.replaceAll('||', ' or ');
+    normalized = normalized.replaceAll('!=', ' not equal to ');
+    normalized = normalized.replaceAll('==', ' equals ');
+    normalized = normalized.replaceAll('>=', ' greater than or equal to ');
+    normalized = normalized.replaceAll('<=', ' less than or equal to ');
+
+    normalized = normalized.replaceAll(' | ', ' or ');
+    normalized = normalized.replaceAll(' + ', ' plus ');
+    normalized = normalized.replaceAll(' - ', ' minus ');
+    normalized = normalized.replaceAll(' = ', ' equals ');
+    normalized = normalized.replaceAll(' < ', ' less than ');
+    normalized = normalized.replaceAll(' > ', ' greater than ');
+    normalized = normalized.replaceAll('/', ' slash ');
+    normalized = normalized.replaceAll('\\', ' backslash ');
+
+    normalized = normalized.replaceAllMapped(_fullStopRegex, (match) => '. ${match.group(1)}');
+    normalized = normalized.replaceAll('\n', '. ');
+    normalized = normalized.replaceAll(_spaceRegex, ' ').trim();
+
+    return normalized;
   }
 }
 
@@ -384,7 +490,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   
   String _activeDevice = '';
   String _previousDictationText = "";
-  bool _isConnected = false;
+  bool _isConnected = false; _activeJobId = null; _activeJobStatus = '';
   bool _isHealthy = false;
   bool _localAgentConnected = false;
   String _currentAiSubtitle = "";
@@ -1451,7 +1557,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
         if (!mounted) return;  // BUG-11b fix
         setState(() {
           _isThinking = false; _triggerDataArriving();
-          _isConnected = false;
+          _isConnected = false; _activeJobId = null; _activeJobStatus = '';
           _addMessage({
             'type': 'error',
             'content': 'Connection error: $error',
@@ -1460,7 +1566,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
         });
       }, onDone: () {
         if (mounted) setState(() {  // BUG-11 fix
-          _isConnected = false;
+          _isConnected = false; _activeJobId = null; _activeJobStatus = '';
           _addMessage({
             'type': 'system',
             'content': 'Connection closed. Attempting to reconnect...',
@@ -1483,7 +1589,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     } catch (e) {
       if (!mounted) return;  // REMAIN-05 fix
       setState(() {
-        _isConnected = false;
+        _isConnected = false; _activeJobId = null; _activeJobStatus = '';
         _addMessage({
           'type': 'error',
           'content': 'Failed to connect: $e',
@@ -1657,21 +1763,16 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      // HIDDEN BUG FIX: Do NOT call _checkIntent() here unconditionally.
-      // The shared engine's MethodChannel handler may still be set to
-      // AssistantActivity's version (returning isAssistantIntent=true)
-      // even when we are back in MainActivity context, causing the full
-      // app to permanently render in overlay mode.
-      //
-      // Instead: the onIntentChanged push from MainActivity.onResume() (Kotlin)
-      // is the authoritative signal. We only call _checkIntent() as a fallback
-      // if we are currently NOT in assistant mode (initial boot validation).
       if (!_isAssistant) {
         _checkIntent();
       }
-    } else if (state == AppLifecycleState.paused) {
-      // When the app is paused (going to background), the overlay may be
-      // taking over. Do not change _isAssistant here; wait for onIntentChanged.
+      // Resume background timers upon app foreground
+      _startBgTaskChecks();
+      _startHealthChecks();
+    } else if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+      // Pause background timers to eliminate idle battery & network drain
+      _bgTaskTimer?.cancel();
+      _healthCheckTimer?.cancel();
     }
   }
 
@@ -1699,6 +1800,27 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
         "session_token": _sessionToken
       }));
     }
+  }
+
+  void _openLiveModeSheet() {
+    FocusScope.of(context).unfocus();
+    String host = '127.0.0.1';
+    try {
+      final uri = Uri.parse(backendUrl);
+      if (uri.host.isNotEmpty && uri.host != 'voila-voice.onrender.com') {
+        host = uri.host;
+      }
+    } catch (_) {}
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => VoilaLiveModeSheet(
+        host: host,
+        onClose: () => Navigator.pop(ctx),
+      ),
+    );
   }
 
   void _showModelSelector() {
@@ -2546,7 +2668,25 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       int existingIndex = allTasks.indexWhere((t) => t['id'] == _activeJobId);
       if (existingIndex != -1) {
         final Map<String, dynamic> existing = Map<String, dynamic>.from(allTasks[existingIndex] as Map);
-        existing['status'] = _activeJobStatus;
+        String polledStatus = existing['status']?.toString().toLowerCase() ?? '';
+        
+        // If the backend has marked it as done/failed, don't let local stuck state override it
+        if (polledStatus == 'completed' || polledStatus == 'done' || polledStatus == 'failed' || polledStatus == 'error') {
+          if (_activeJobStatus == 'running' || _activeJobStatus == 'queued' || _activeJobStatus == 'cancelling') {
+             // Clear the stuck local state
+             WidgetsBinding.instance.addPostFrameCallback((_) {
+               if (mounted) {
+                 setState(() {
+                   _activeJobId = null;
+                   _activeJobStatus = '';
+                 });
+               }
+             });
+          }
+        } else {
+          existing['status'] = _activeJobStatus;
+        }
+        
         if (_activeJobSummary.isNotEmpty) existing['action'] = _activeJobSummary;
         allTasks[existingIndex] = existing;
       } else {
@@ -2975,6 +3115,43 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                           }
                         ),
                     ),
+                    if (_currentMode.toUpperCase() == 'AGENT')
+                      GestureDetector(
+                        onTap: _openLiveModeSheet,
+                        child: Container(
+                          margin: const EdgeInsets.only(left: 8),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFF6366F1), Color(0xFF8B5CF6), Color(0xFFEC4899)],
+                            ),
+                            borderRadius: BorderRadius.circular(100),
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFF8B5CF6).withOpacity(0.4),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.stream_rounded, size: 14, color: Colors.white),
+                              const SizedBox(width: 5),
+                              Text(
+                                'LIVE MODE',
+                                style: GoogleFonts.spaceGrotesk(
+                                  color: Colors.white,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -2992,68 +3169,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   }
 
   String _normalizeForSpeech(String text) {
-    String normalized = text;
-    
-    // --- Smart Speech Techniques ---
-    // 1. URLs - Aggressively shorten to just "the link" to prevent reading long garbled text
-    normalized = normalized.replaceAll(RegExp(r'https?://[^\s)\]]+'), 'the link');
-    
-    // 2. Windows paths - Aggressively shorten
-    normalized = normalized.replaceAll(RegExp(r'[a-zA-Z]:\\[^\s)\]]+'), 'the file path');
-    
-    // 3. Unix paths
-    normalized = normalized.replaceAll(RegExp(r'/(?:[a-zA-Z0-9_.-]+/)+[a-zA-Z0-9_.-]+'), 'the file path');
-    
-    // 4. UUIDs
-    normalized = normalized.replaceAll(RegExp(r'\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b'), 'an ID');
-    
-    // 5. Long hex hashes (12+ chars like git commits)
-    normalized = normalized.replaceAll(RegExp(r'\b[0-9a-fA-F]{12,}\b'), 'a hash');
-    // --------------------------------
-    
-    // Remove Markdown formatting
-    normalized = normalized.replaceAll('**', '');
-    normalized = normalized.replaceAll('*', '');
-    normalized = normalized.replaceAll('__', '');
-    normalized = normalized.replaceAll('_', ' ');
-    normalized = normalized.replaceAll('', '');
-    normalized = normalized.replaceAll('#', '');
-    
-    // Aggressive symbol stripping for TTS
-    normalized = normalized.replaceAll(RegExp(r'\s+[-]+\s+'), ' '); // Isolated dashes
-    normalized = normalized.replaceAll(RegExp(r'^\s*[-]+\s*'), ' '); // Leading dashes
-    normalized = normalized.replaceAll(RegExp(r'\.{2,}'), '. '); // Ellipses to single period
-    normalized = normalized.replaceAll(RegExp(r'[\[\]{}|\\<>]'), ' '); // Formatting brackets
-    normalized = normalized.replaceAll(RegExp(r'\s+'), ' '); // Collapse spaces
-
-    // Replace programming operators
-    normalized = normalized.replaceAll('&&', ' and ');
-    normalized = normalized.replaceAll('||', ' or ');
-    normalized = normalized.replaceAll('!=', ' not equal to ');
-    normalized = normalized.replaceAll('==', ' equals ');
-    normalized = normalized.replaceAll('>=', ' greater than or equal to ');
-    normalized = normalized.replaceAll('<=', ' less than or equal to ');
-    
-    // Replace standalone symbols
-    normalized = normalized.replaceAll(' | ', ' or ');
-    normalized = normalized.replaceAll(' + ', ' plus ');
-    normalized = normalized.replaceAll(' - ', ' minus ');
-    normalized = normalized.replaceAll(' = ', ' equals ');
-    normalized = normalized.replaceAll(' < ', ' less than ');
-    normalized = normalized.replaceAll(' > ', ' greater than ');
-    normalized = normalized.replaceAll('/', ' slash ');
-    normalized = normalized.replaceAll('\\', ' backslash ');
-    
-    // Ensure proper pauses for full stops (add a space if missing to trigger natural sentence break)
-    normalized = normalized.replaceAllMapped(RegExp(r'\.([A-Za-z])'), (match) => '. ${match.group(1)}');
-    
-    // Replace newlines with ellipses to force TTS engines to pause between lines
-    normalized = normalized.replaceAll('\n', '. ');
-    
-    // Clean up extra spaces
-    normalized = normalized.replaceAll(RegExp(r'\s+'), ' ').trim();
-    
-    return normalized;
+    return SpeechNormalizer.normalize(text);
   }
 
   Future<void> _speak(String text) async {
@@ -3075,8 +3191,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     if (!edgeSuccess) {
       // Fallback to native built-in TTS
       try {
-        final RegExp chunkRegex = RegExp(r'([^.?!]+[.?!]*)');
-        final Iterable<Match> matches = chunkRegex.allMatches(cleanText);
+        final Iterable<Match> matches = SpeechNormalizer.chunkRegex.allMatches(cleanText);
         
         for (final Match match in matches) {
           String chunk = match.group(0)?.trim() ?? "";
@@ -3618,6 +3733,8 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                         child: Image.memory(
                           base64Decode(displayContent),
                           fit: BoxFit.cover,
+                          cacheWidth: 800,
+                          gaplessPlayback: true,
                         ),
                       )
                     : Text(
@@ -3664,10 +3781,12 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                         child: Image.memory(
                           base64Decode(displayContent),
                           fit: BoxFit.cover,
+                          cacheWidth: 800,
+                          gaplessPlayback: true,
                         ),
                       )
                     : (isAgent 
-                        // Bento Box styling for AI Assistant
+                        // Bento Box rich styling for AI Assistant
                         ? Container(
                             width: double.infinity,
                             decoration: BoxDecoration(
@@ -3676,57 +3795,27 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                               border: Border.all(color: AppTokens.border(isDark), width: 1.5),
                               boxShadow: AppTokens.shadow(isDark),
                             ),
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(18),
-                              child: IntrinsicHeight(
-                                child: Row(
-                                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                                  children: [
-                                    Container(
-                                      width: 4,
-                                      color: AppTokens.accentSecondary,
-                                    ),
-                                    Expanded(
-                                      child: Padding(
-                                        padding: const EdgeInsets.all(16),
-                                        child: CollapsibleOutput(
-                                          text: displayContent,
-                                          style: GoogleFonts.inter(
-                                            textStyle: TextStyle(
-                                              color: isError ? const Color(0xFFEF4444) : AppTokens.textPrimary(isDark),
-                                              fontSize: 15,
-                                              height: 1.6,
-                                              fontWeight: FontWeight.w500,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
+                            child: Container(
+                              decoration: BoxDecoration(
+                                border: Border(
+                                  left: BorderSide(color: AppTokens.accentSecondary, width: 4),
+                                ),
+                                borderRadius: BorderRadius.circular(18),
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.all(16),
+                                child: VoilaRichSummaryView(
+                                  text: displayContent,
+                                  isDark: isDark,
+                                  primaryTextColor: isError ? const Color(0xFFEF4444) : AppTokens.textPrimary(isDark),
                                 ),
                               ),
                             ),
                           )
-                        // Monospace, structured block for SHELL commands
-                        : Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: AppTokens.cardAlt(isDark),
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(color: AppTokens.border(isDark)),
-                            ),
-                            child: CollapsibleOutput(
-                              text: displayContent,
-                              style: GoogleFonts.firaCode(
-                                textStyle: TextStyle(
-                                  color: isError ? const Color(0xFFEF4444) : AppTokens.textPrimary(isDark),
-                                  fontSize: 13,
-                                  height: 1.5,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ),
+                        // Dedicated Authentic Terminal Card for SHELL commands
+                        : ShellOutputCard(
+                            message: message,
+                            isDark: isDark,
                           )),
               ],
             ),
@@ -3735,8 +3824,8 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
 
   Widget _buildBgTasksSidebar() {
     bool isDark = appThemeMode.value == ThemeMode.dark;
-    // Reverse the tasks to show newest first, and limit to last 50 to avoid clutter
-    final displayTasks = _getMergedTasks().reversed.take(50).toList();
+    // The backend already sorts newest-first. Do not reverse it.
+    final displayTasks = _getMergedTasks().take(50).toList();
     
     return Drawer(
       backgroundColor: AppTokens.bg(isDark),
@@ -4342,6 +4431,7 @@ class _CollapsibleOutputState extends State<CollapsibleOutput> {
   }
 
 }
+
 
 
 
