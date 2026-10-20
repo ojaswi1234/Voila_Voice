@@ -3022,92 +3022,82 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     _buildModeToggle(colorScheme),
-                    AnimatedSize(
-                      duration: const Duration(milliseconds: 350),
-                      curve: Curves.easeInOutCubic,
-                      child: _bgTasks.isEmpty ? const SizedBox.shrink() :
-                        Builder(
-                          builder: (BuildContext ctx) {
-                            int runningCount = _bgTasks.where((t) => t['status'] == 'running').length;
-                            return GestureDetector(
-                              onTap: () async {
-                                if (!await _ensureUnlocked()) return;
-                                if (mounted) Scaffold.of(ctx).openEndDrawer();
-                              },
-                              child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 300),
-                                curve: Curves.easeInOutCubic,
-                                margin: const EdgeInsets.only(left: 12),
-                                padding: EdgeInsets.symmetric(horizontal: runningCount > 0 ? 14 : 10, vertical: 10),
-                                decoration: BoxDecoration(
-                                  color: runningCount > 0 ? const Color(0xFF0F766E).withOpacity(0.4) : const Color(0xFF222222).withOpacity(0.5),
-                                  borderRadius: BorderRadius.circular(100),
-                                  border: Border.all(color: runningCount > 0 ? const Color(0xFF14B8A6).withOpacity(0.5) : Colors.white24),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    if (runningCount > 0) ...[
-                                      Container(
-                                        padding: const EdgeInsets.all(4),
-                                        decoration: const BoxDecoration(color: Color(0xFF14B8A6), shape: BoxShape.circle),
-                                        child: Text(
-                                          runningCount.toString(),
-                                          style: const TextStyle(color: Colors.black, fontSize: 10, fontWeight: FontWeight.w900),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                    ],
-                                    Icon(Icons.memory, size: 16, color: runningCount > 0 ? const Color(0xFF2DD4BF) : Colors.white54),
-                                    if (runningCount > 0) ...[
-                                      const SizedBox(width: 6),
-                                      const Text('RUNNING', style: TextStyle(color: Color(0xFF5EEAD4), fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
-                                    ]
-                                  ],
-                                ),
-                              ),
-                            );
-                          }
-                        ),
-                    ),
-                    if (_currentMode.toUpperCase() == 'AGENT')
-                      GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: _openLiveModeSheet,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                          margin: const EdgeInsets.only(left: 8),
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFF6366F1), Color(0xFF8B5CF6), Color(0xFFEC4899)],
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        AnimatedSize(
+                          duration: const Duration(milliseconds: 350),
+                          curve: Curves.easeInOutCubic,
+                          child: _bgTasks.isEmpty ? const SizedBox.shrink() :
+                            Builder(
+                              builder: (BuildContext ctx) {
+                                int runningCount = _bgTasks.where((t) => t['status'] == 'running').length;
+                                return GestureDetector(
+                                  onTap: () async {
+                                    if (!await _ensureUnlocked()) return;
+                                    if (mounted) Scaffold.of(ctx).openEndDrawer();
+                                  },
+                                  child: AnimatedContainer(
+                                    duration: const Duration(milliseconds: 300),
+                                    curve: Curves.easeInOutCubic,
+                                    margin: const EdgeInsets.only(left: 12),
+                                    padding: EdgeInsets.symmetric(horizontal: runningCount > 0 ? 14 : 10, vertical: 10),
+                                    decoration: BoxDecoration(
+                                      color: runningCount > 0 ? const Color(0xFF0F766E).withOpacity(0.4) : const Color(0xFF222222).withOpacity(0.5),
+                                      borderRadius: BorderRadius.circular(100),
+                                      border: Border.all(color: runningCount > 0 ? const Color(0xFF14B8A6).withOpacity(0.5) : Colors.white24),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        if (runningCount > 0) ...[
+                                          Container(
+                                            padding: const EdgeInsets.all(4),
+                                            decoration: const BoxDecoration(color: Color(0xFF14B8A6), shape: BoxShape.circle),
+                                            child: Text(
+                                              runningCount.toString(),
+                                              style: const TextStyle(color: Colors.black, fontSize: 10, fontWeight: FontWeight.w900),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                        ],
+                                        Icon(Icons.memory, size: 16, color: runningCount > 0 ? const Color(0xFF2DD4BF) : Colors.white54),
+                                        if (runningCount > 0) ...[
+                                          const SizedBox(width: 6),
+                                          const Text('RUNNING', style: TextStyle(color: Color(0xFF5EEAD4), fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
+                                        ]
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              }
                             ),
-                            borderRadius: BorderRadius.circular(100),
-                            boxShadow: [
-                              BoxShadow(
-                                color: const Color(0xFF8B5CF6).withOpacity(0.35),
-                                blurRadius: 8,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.sensors_rounded, size: 14, color: Colors.white),
-                              const SizedBox(width: 5),
-                              Text(
-                                'LIVE',
-                                style: GoogleFonts.spaceGrotesk(
-                                  color: Colors.white,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 0.8,
-                                ),
-                              ),
-                            ],
-                          ),
                         ),
-                      ),
+                        if (_currentMode.toUpperCase() == 'AGENT')
+                          GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: _openLiveModeSheet,
+                            child: Container(
+                              padding: const EdgeInsets.all(8),
+                              margin: const EdgeInsets.only(left: 8),
+                              decoration: BoxDecoration(
+                                gradient: const LinearGradient(
+                                  colors: [Color(0xFF6366F1), Color(0xFF8B5CF6), Color(0xFFEC4899)],
+                                ),
+                                shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: const Color(0xFF8B5CF6).withOpacity(0.35),
+                                    blurRadius: 6,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              child: const Icon(Icons.sensors_rounded, size: 16, color: Colors.white),
+                            ),
+                          ),
+                      ],
+                    ),
                   ],
                 ),
               ),
@@ -4011,46 +4001,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            // Prominent Dedicated Live Button in Agent Mode toolbar
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: _openLiveModeSheet,
-              child: Container(
-                margin: const EdgeInsets.only(bottom: 2, right: 8),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF6366F1), Color(0xFF8B5CF6), Color(0xFFEC4899)],
-                  ),
-                  borderRadius: BorderRadius.circular(100),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFF8B5CF6).withOpacity(0.35),
-                      blurRadius: 8,
-                      offset: const Offset(0, 3),
-                    )
-                  ],
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.sensors_rounded, size: 16, color: Colors.white),
-                    const SizedBox(width: 4),
-                    Text(
-                      'LIVE',
-                      style: GoogleFonts.spaceGrotesk(
-                        color: Colors.white,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.8,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            // Screenshot Camera Button
+            // Screenshot Camera Button (compact)
             GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: () {
@@ -4058,22 +4009,22 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                 _sendMessage();
               },
               child: Container(
-                margin: const EdgeInsets.only(bottom: 2, right: 8),
-                padding: const EdgeInsets.all(14),
+                margin: const EdgeInsets.only(bottom: 2, right: 6),
+                padding: const EdgeInsets.all(9),
                 decoration: BoxDecoration(
                   color: AppTokens.cardAlt(isDark),
                   shape: BoxShape.circle,
                   border: Border.all(color: AppTokens.border(isDark)),
                 ),
-                child: Icon(Icons.camera_alt_rounded, color: AppTokens.textSecondary(isDark), size: 20),
+                child: Icon(Icons.camera_alt_rounded, color: AppTokens.textSecondary(isDark), size: 18),
               ),
             ),
             
-            // Text Input Field
+            // Text Input Field (spans full available width)
             Expanded(
               child: Container(
                 margin: const EdgeInsets.only(bottom: 2),
-                padding: const EdgeInsets.symmetric(horizontal: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
                 decoration: BoxDecoration(
                   color: AppTokens.cardAlt(isDark),
                   borderRadius: BorderRadius.circular(100),
@@ -4086,20 +4037,21 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                   textInputAction: TextInputAction.send,
                   onSubmitted: (_) => _sendMessage(),
                   onChanged: (_) => setState(() {}),
-                  style: GoogleFonts.inter(fontSize: 15, color: AppTokens.textPrimary(isDark), fontWeight: FontWeight.w500),
+                  style: GoogleFonts.inter(fontSize: 14, color: AppTokens.textPrimary(isDark), fontWeight: FontWeight.w500),
                   decoration: InputDecoration(
                     hintText: 'Ask me anything...',
                     hintStyle: GoogleFonts.inter(color: AppTokens.textSecondary(isDark), fontSize: 14),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 14),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 2, vertical: 10),
                     border: InputBorder.none,
+                    isDense: true,
                   ),
                 ),
               ),
             ),
 
-            const SizedBox(width: 8),
+            const SizedBox(width: 6),
 
-            // Send / Mic Button with dynamic listener
+            // Send / Mic Button with dynamic listener (compact)
             ValueListenableBuilder<TextEditingValue>(
               valueListenable: _controller,
               builder: (context, val, _) {
@@ -4118,7 +4070,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                   },
                   child: Container(
                     margin: const EdgeInsets.only(bottom: 2),
-                    padding: const EdgeInsets.all(14),
+                    padding: const EdgeInsets.all(9),
                     decoration: BoxDecoration(
                       color: _isThinking
                           ? const Color(0xFFEF4444)
@@ -4129,8 +4081,8 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                       boxShadow: [
                         BoxShadow(
                           color: (_isThinking ? const Color(0xFFEF4444) : (hasText ? AppTokens.accentSecondary : AppTokens.accent)).withOpacity(0.4),
-                          blurRadius: 12,
-                          offset: const Offset(0, 4),
+                          blurRadius: 10,
+                          offset: const Offset(0, 3),
                         )
                       ],
                     ),
@@ -4141,7 +4093,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                               ? Icons.send_rounded 
                               : Icons.mic_rounded),
                       color: hasText ? const Color(0xFF09090B) : Colors.white,
-                      size: 20,
+                      size: 18,
                     ),
                   ),
                 );
@@ -4193,7 +4145,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                 ),
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 6),
             GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: () {
@@ -4201,27 +4153,27 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                 _sendMessage();
               },
               child: Container(
-                padding: const EdgeInsets.all(14),
+                padding: const EdgeInsets.all(9),
                 margin: const EdgeInsets.only(bottom: 2),
                 decoration: BoxDecoration(
                   color: AppTokens.cardAlt(isDark),
                   shape: BoxShape.circle,
                 ),
-                child: Icon(Icons.camera_alt_rounded, color: AppTokens.textSecondary(isDark), size: 20),
+                child: Icon(Icons.camera_alt_rounded, color: AppTokens.textSecondary(isDark), size: 18),
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 6),
             GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: _sendMessage,
               child: Container(
-                padding: const EdgeInsets.all(14),
+                padding: const EdgeInsets.all(9),
                 margin: const EdgeInsets.only(bottom: 2),
                 decoration: const BoxDecoration(
                   color: AppTokens.accent,
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.send_rounded, color: Colors.white, size: 20),
+                child: const Icon(Icons.send_rounded, color: Colors.white, size: 18),
               ),
             ),
           ],
