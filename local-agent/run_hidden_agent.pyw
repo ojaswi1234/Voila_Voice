@@ -107,6 +107,16 @@ root.attributes('-topmost', True)
 root.attributes('-transparentcolor', 'magenta')
 root.config(bg='magenta')
 
+def force_focus(e):
+    try:
+        import ctypes
+        # Set focus to the specific top-level window the widget belongs to
+        ctypes.windll.user32.SetFocus(e.widget.winfo_toplevel().winfo_id())
+        e.widget.focus_set()
+    except Exception:
+        pass
+root.bind_all("<Button-1>", force_focus)
+
 x = (root.winfo_screenwidth() - 240) // 2
 y = root.winfo_screenheight() - 120
 root.geometry(f"+{x}+{y}")
@@ -324,9 +334,85 @@ agent_process = subprocess.Popen(
 )
 _assign_process_to_job(agent_process.pid)
 
+# ─── Screen Edge Glowing Plasma Border (Apple Intelligence / Gemini FX) ───
+plasma_process = None
+PLASMA_PORT = 19885
+_last_plasma_state = None
+
+def _notify_plasma_border(cmd_str):
+    try:
+        import socket
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.sendto(cmd_str.encode('utf-8'), ('127.0.0.1', PLASMA_PORT))
+        s.close()
+    except Exception:
+        pass
+
+def start_plasma_border(theme="gemini"):
+    global plasma_process
+    try:
+        settings_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "plasma_settings.json")
+        is_enabled = True
+        chosen_theme = theme
+        if os.path.exists(settings_path):
+            try:
+                import json
+                with open(settings_path, "r", encoding="utf-8") as _sf:
+                    _sdata = json.load(_sf)
+                    if _sdata.get("state") == "OFF":
+                        is_enabled = False
+                    if _sdata.get("theme"):
+                        chosen_theme = _sdata["theme"]
+            except Exception:
+                pass
+
+        if not is_enabled:
+            return
+
+        script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "plasma_border.py")
+        if os.path.exists(script):
+            plasma_process = subprocess.Popen(
+                [sys.executable, script, "--port", str(PLASMA_PORT), "--theme", chosen_theme],
+                creationflags=CREATE_NO_WINDOW
+            )
+            _assign_process_to_job(plasma_process.pid)
+            _voila_log.info(f"Plasma border started PID={plasma_process.pid} theme={chosen_theme}")
+    except Exception as e:
+        _voila_log.error(f"Failed to start plasma border: {e}")
+
+start_plasma_border("gemini")
+
+# ─── Gemini Live Audio/Agent Bridge ───
+live_bridge_process = None
+def start_live_bridge():
+    global live_bridge_process
+    try:
+        bridge_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gemini_live_bridge.py")
+        if os.path.exists(bridge_script):
+            live_bridge_process = subprocess.Popen(
+                [sys.executable, bridge_script],
+                creationflags=CREATE_NO_WINDOW
+            )
+            _assign_process_to_job(live_bridge_process.pid)
+            _voila_log.info(f"Gemini Live bridge started PID={live_bridge_process.pid}")
+    except Exception as e:
+        _voila_log.error(f"Failed to start Gemini Live bridge: {e}")
+
+start_live_bridge()
+
 import atexit
 
 def cleanup_processes():
+    try:
+        _notify_plasma_border("EXIT")
+        if plasma_process and plasma_process.poll() is None:
+            plasma_process.terminate()
+    except Exception:
+        pass
+    try:
+        subprocess.run(['wmic', 'process', 'where', 'commandline like "%plasma_border.py%" or commandline like "%gemini_live_bridge.py%"', 'call', 'terminate'], creationflags=subprocess.CREATE_NO_WINDOW, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
     try:
         # Kill detached desktop automation processes (bridge and overlay)
         subprocess.run(['wmic', 'process', 'where', 'commandline like "%desktop_bridge.py%" or commandline like "%cursor_overlay.py%"', 'call', 'terminate'], creationflags=subprocess.CREATE_NO_WINDOW, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -1304,6 +1390,89 @@ def _show_settings_widgets():
 
     # ─── Info footer ─────────────────────────────────────────────────────────
 
+    # ─── PLASMA BORDER (SIRI / GEMINI GLOW) ───
+    plasma_frame = tk.LabelFrame(inner, text=' ⚡ Screen Glow Plasma Border (Siri & Gemini FX) ',
+                                 bg='#1A1D23', fg='#06B6D4', font=('Segoe UI', 10, 'bold'),
+                                 bd=1, relief='solid', labelanchor='nw')
+    plasma_frame.grid(row=7, column=0, columnspan=4, padx=16, pady=(12, 6), sticky='ew')
+
+    _p_settings_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "plasma_settings.json")
+    _cur_p_theme = "siri"
+    _cur_p_state = "IDLE"
+    try:
+        if os.path.exists(_p_settings_path):
+            with open(_p_settings_path, "r", encoding="utf-8") as _pf:
+                _pdata = json.load(_pf)
+                _cur_p_theme = _pdata.get("theme", "siri")
+                _cur_p_state = _pdata.get("state", "IDLE")
+    except Exception:
+        pass
+
+    plasma_status_var = tk.StringVar(value="Status: ACTIVE" if _cur_p_state != "OFF" else "Status: OFF")
+
+    p_header_row = tk.Frame(plasma_frame, bg='#1A1D23')
+    p_header_row.pack(fill='x', padx=12, pady=(8, 4))
+    tk.Label(p_header_row, text='Fullscreen perimeter glow with animated iridescent plasma when Voila starts.',
+             bg='#1A1D23', fg='#9CA3AF', font=('Segoe UI', 9)).pack(side='left')
+
+    def _toggle_plasma_border():
+        nonlocal _cur_p_state
+        if _cur_p_state == "OFF":
+            _cur_p_state = "IDLE"
+            plasma_status_var.set("Status: ACTIVE")
+            _notify_plasma_border("STATE:IDLE")
+            if plasma_process is None or plasma_process.poll() is not None:
+                start_plasma_border(_cur_p_theme)
+        else:
+            _cur_p_state = "OFF"
+            plasma_status_var.set("Status: OFF")
+            _notify_plasma_border("STATE:OFF")
+        try:
+            with open(_p_settings_path, "w", encoding="utf-8") as _pf:
+                json.dump({"theme": _cur_p_theme, "state": _cur_p_state}, _pf, indent=2)
+        except Exception:
+            pass
+
+    p_btn_row = tk.Frame(plasma_frame, bg='#1A1D23')
+    p_btn_row.pack(fill='x', padx=12, pady=(4, 12))
+
+    tk.Label(p_btn_row, text='Palette:', bg='#1A1D23', fg='#E5E7EB', font=('Segoe UI', 9, 'bold')).pack(side='left', padx=(0, 8))
+
+    THEME_BTNS = [
+        ("siri", "🍎 Siri", "#EC4899"),
+        ("gemini", "✨ Gemini", "#4285F4"),
+        ("vibgyor", "🌈 VIBGYOR", "#10B981"),
+        ("cyber_cyan", "💎 Cyber Cyan", "#06B6D4"),
+        ("solar_gold", "☀️ Solar Gold", "#F59E0B"),
+    ]
+
+    def _select_plasma_theme(tname):
+        nonlocal _cur_p_theme
+        _cur_p_theme = tname
+        _notify_plasma_border(f"THEME:{tname}")
+        try:
+            with open(_p_settings_path, "w", encoding="utf-8") as _pf:
+                json.dump({"theme": _cur_p_theme, "state": _cur_p_state}, _pf, indent=2)
+        except Exception:
+            pass
+
+    for tkey, tlabel, tcolor in THEME_BTNS:
+        tb = tk.Button(
+            p_btn_row, text=tlabel,
+            bg='#2D3039', fg='#E5E7EB', activebackground=tcolor, activeforeground='#FFFFFF',
+            relief='flat', bd=0, padx=8, pady=4, font=('Segoe UI', 8, 'bold'), cursor='hand2',
+            command=lambda k=tkey: _select_plasma_theme(k)
+        )
+        tb.pack(side='left', padx=3)
+
+    tgl_btn = tk.Button(
+        p_btn_row, textvariable=plasma_status_var,
+        bg='#374151', fg='#A7F3D0', activebackground='#4B5563', activeforeground='#FFFFFF',
+        relief='flat', bd=0, padx=10, pady=4, font=('Segoe UI', 8, 'bold'), cursor='hand2',
+        command=_toggle_plasma_border
+    )
+    tgl_btn.pack(side='right', padx=4)
+
     # --- FLUSH MEMORY ---
     def flush_memory():
         try:
@@ -2010,9 +2179,17 @@ def clear_alert():
     # Try to clean up expression right away
     update_expression()
 
+def _sync_plasma_state():
+    global _last_plasma_state, ai_state
+    current = ai_state
+    if current != _last_plasma_state:
+        _last_plasma_state = current
+        _notify_plasma_border(f"STATE:{current}")
+
 def animation_loop():
     global anim_frame, usage_stats, current_rendered_state, transition_scale, transitioning
     anim_frame += 1
+    _sync_plasma_state()
     dots = "." * ((anim_frame // 10) % 4)
 
     # --- COMPUTE ANIMATION MATH UNCONDITIONALLY (OUTSIDE OF DASHBOARD CHECKS) ---
@@ -2424,12 +2601,29 @@ def trigger_black_hole():
 
 def send_cursor_home():
     try:
-        import socket
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        x = root.winfo_x() + 40
-        y = root.winfo_y() + 32
-        sock.sendto(f"HOME,{x},{y}".encode(), ("127.0.0.1", 19882))
-        trigger_black_hole()
+        here = os.path.dirname(os.path.abspath(__file__))
+        cursor_flag = os.path.join(here, "cursor_is_out.txt")
+        is_out = False
+        if os.path.exists(cursor_flag):
+            try:
+                with open(cursor_flag, "r") as f:
+                    is_out = (f.read().strip() == "1")
+            except Exception:
+                pass
+
+        # Only bring cursor home & show black hole IF desktop tools actually spawned the cursor out!
+        if is_out or ai_state == "DESKTOP":
+            import socket
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            x = root.winfo_x() + 40
+            y = root.winfo_y() + 32
+            sock.sendto(f"HOME,{x},{y}".encode(), ("127.0.0.1", 19882))
+            trigger_black_hole()
+            try:
+                with open(cursor_flag, "w") as f:
+                    f.write("0")
+            except Exception:
+                pass
     except Exception:
         pass
 
@@ -2483,12 +2677,14 @@ def parse_line(line):
     if "STATUS: IDLE" in line:
         if glow_timer: root.after_cancel(glow_timer)
         send_cursor_home()
-        glow_timer = root.after(1500, reset_to_idle)
+        ai_state = "IDLE"
+        update_expression()
         return
 
     if "STATUS: FORCE_IDLE" in line:
         if glow_timer: root.after_cancel(glow_timer)
         send_cursor_home()
+        ai_state = "IDLE"
         reset_to_idle()
         return
 
@@ -2596,9 +2792,9 @@ def read_output():
             _line_queue.put(line)
 
 def _drain_line_queue():
-    """UI thread: drain up to 20 queued lines per tick to stay responsive."""
+    """UI thread: drain up to 250 queued lines per tick so UI never lags behind finished tasks."""
     did_process_status = False
-    for _ in range(20):
+    for _ in range(250):
         try:
             line = _line_queue.get_nowait()
             if "STATUS:" in line:
@@ -2610,7 +2806,7 @@ def _drain_line_queue():
     if did_process_status and dashboard_active and current_section == 'Analytics':
         refresh_dashboard_content()
         
-    root.after(50, _drain_line_queue)  # Poll every 50ms
+    root.after(30, _drain_line_queue)  # Poll every 30ms
 
 # Resource monitoring background thread removed to drop overhead
 

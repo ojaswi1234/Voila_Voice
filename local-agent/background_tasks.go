@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -264,14 +265,15 @@ func spawnBGTaskWithLabel(command, label, convID string) string {
 			logBGWarn("BGTask", "COMORADE channel full, notification for %s dropped", task.ID)
 		}
 		
-		// AUTONOMOUS WAKEUP: If we have a ConversationID, immediately trigger a follow-up LLM execution!
-		if task.ConversationID != "" {
+		// AUTONOMOUS WAKEUP: If task FAILED and we have a ConversationID, trigger self-healing retry!
+		// If it SUCCEEDED, do NOT wake up the LLM — the task is finished and output is already delivered.
+		if task.Status == "failed" && task.ConversationID != "" {
 			go func(cID, tID, status, snap string) {
 				time.Sleep(2 * time.Second) // Give the UI a moment to breathe
 				ctx := context.Background()
 				connData, _ := loadConnectionData()
-				triggerMsg := fmt.Sprintf("BACKGROUND TASK ALERT:\nTask %s has completed with status: %s.\n\nLogs:\n%s\n\nCRITICAL INSTRUCTION: Analyze these logs. If the task FAILED, you MUST determine the root cause, adapt the command, and autonomously retry using run_terminal. If it SUCCEEDED, confirm the result.", tID, strings.ToUpper(status), snap)
-				logBGInfo("BGTask", "Triggering autonomous wakeup for task %s on conv %s", tID, cID)
+				triggerMsg := fmt.Sprintf("BACKGROUND TASK FAILURE ALERT:\nTask %s has failed with status: %s.\n\nLogs:\n%s\n\nCRITICAL INSTRUCTION: Analyze these logs, determine the root cause, adapt the command, and autonomously retry using run_terminal.", tID, strings.ToUpper(status), snap)
+				logBGInfo("BGTask", "Triggering autonomous error recovery for failed task %s on conv %s", tID, cID)
 				executeCommand(ctx, triggerMsg, connData.ActiveMode, cID, "")
 			}(task.ConversationID, task.ID, task.Status, snapshot)
 		}
@@ -346,7 +348,24 @@ func listBGTasks() []map[string]string {
 	defer bgTasksMu.RUnlock()
 
 	var list []map[string]string
+	
+	// Collect all tasks first to sort and filter them
+	var allTasks []*BGTask
 	for _, task := range bgTasks {
+		allTasks = append(allTasks, task)
+	}
+	
+	// Sort by StartTime descending (newest first)
+	sort.Slice(allTasks, func(i, j int) bool {
+		return allTasks[i].StartTime.After(allTasks[j].StartTime)
+	})
+
+	for _, task := range allTasks {
+		// Only show tasks that are running, or completed within the last 24 hours
+		if task.Status != "running" && time.Since(task.EndTime) > 24*time.Hour {
+			continue
+		}
+		
 		dur := time.Since(task.StartTime).Round(time.Second).String()
 		if task.Status != "running" {
 			dur = task.EndTime.Sub(task.StartTime).Round(time.Second).String()
@@ -358,6 +377,11 @@ func listBGTasks() []map[string]string {
 			"status":   task.Status,
 			"duration": dur,
 		})
+		
+		// Limit to 20 most recent tasks to prevent mobile UI clutter
+		if len(list) >= 20 {
+			break
+		}
 	}
 	return list
 }
