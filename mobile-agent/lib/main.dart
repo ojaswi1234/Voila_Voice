@@ -1444,13 +1444,13 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
               // Task queued! Keep loader spinning.
               return;
             } else if (jsonResponse is Map && jsonResponse.containsKey('summary')) {
-              if (jsonResponse['mode'] != 'screenshot') {
-                if (mounted) setState(() {
-                  _isThinking = false; _triggerDataArriving();
-                });
-              } else {
-                setState(() { _triggerDataArriving(); });
-              }
+              // Always clear the thinking/processing state when any response
+              // arrives — including screenshots. Previously the screenshot branch
+              // only called _triggerDataArriving() but forgot to set
+              // _isThinking = false, leaving the skeleton loader visible.
+              if (mounted) setState(() {
+                _isThinking = false; _triggerDataArriving();
+              });
               
               String summaryToSpeak = jsonResponse['summary'];
               if (jsonResponse['delayed'] == true) {
