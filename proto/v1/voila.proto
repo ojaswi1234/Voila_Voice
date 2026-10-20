@@ -1,0 +1,100 @@
+syntax = "proto3";
+
+package voila.v1;
+
+option go_package = "voice-cli-system/proto/v1;voilav1";
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DesktopTunnelService: Bidirectional persistent stream between Cloud & Desktop
+// ═══════════════════════════════════════════════════════════════════════════
+service DesktopTunnelService {
+  // Desktop Local Agent establishes this stream outbound to the Cloud Backend.
+  // Over this single stream, telemetry flows up, and commands/stops flow down.
+  rpc EstablishTunnel(stream AgentTelemetry) returns (stream ExecutionCommand);
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// ExecutionCommand: Cloud Backend -> Desktop Local Agent
+// ───────────────────────────────────────────────────────────────────────────
+message ExecutionCommand {
+  string command_id = 1;
+  string command = 2;
+  string mode = 3; // "SHELL", "AGENT", "GROQ", "OLLAMA"
+  string conversation_id = 4;
+  bool graphify_enabled = 5;
+  string client_id = 6;
+  string session_token = 7;
+  
+  // Emergency stop / cancellation controls
+  bool is_cancel_signal = 8;
+  string target_task_id = 9;
+  string target_job_id = 10;
+  
+  int64 timestamp_ms = 11;
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// AgentTelemetry: Desktop Local Agent -> Cloud Backend
+// ───────────────────────────────────────────────────────────────────────────
+message AgentTelemetry {
+  string device_id = 1;
+  string device_name = 2;
+  string status = 3; // "IDLE", "RUNNING", "TOOL_EXEC", "PAUSED"
+  int64 timestamp_ms = 4;
+
+  oneof payload {
+    HeartbeatPing heartbeat = 5;
+    CommandOutputChunk output_chunk = 6;
+    TaskProgressUpdate progress = 7;
+    ScreenCapture screenshot = 8;
+    SurveillanceAlert surveillance_alert = 9;
+    ExecutionResult final_result = 10;
+  }
+}
+
+message HeartbeatPing {
+  int64 uptime_seconds = 1;
+  int32 active_tasks_count = 2;
+}
+
+message CommandOutputChunk {
+  string command_id = 1;
+  string text = 2;
+  bool is_error = 3;
+  bool is_final = 4;
+  string tool_name = 5;
+}
+
+message TaskProgressUpdate {
+  string task_id = 1;
+  string label = 2;
+  string command = 3;
+  string status = 4; // "running", "completed", "failed", "cancelled"
+  int64 elapsed_seconds = 5;
+  string latest_log_snippet = 6;
+}
+
+message ScreenCapture {
+  string command_id = 1;
+  bytes image_data = 2; // Pure raw binary JPEG or PNG (zero Base64 inflation)
+  int32 width = 3;
+  int32 height = 4;
+  string format = 5; // "jpeg" or "png"
+  int64 timestamp_ms = 6;
+}
+
+message SurveillanceAlert {
+  string alert_type = 1;
+  string reason = 2;
+  int64 timestamp_ms = 3;
+  bytes snapshot_jpeg = 4;
+}
+
+message ExecutionResult {
+  string command_id = 1;
+  string output = 2;
+  string summary = 3;
+  string status = 4; // "ok", "error", "cancelled"
+  string new_conversation_id = 5;
+  int64 latency_ms = 6;
+}
