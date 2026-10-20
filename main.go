@@ -27,6 +27,10 @@ import (
 	"firebase.google.com/go/v4"
 	"firebase.google.com/go/v4/messaging"
 	"google.golang.org/api/option"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
+	"google.golang.org/grpc"
+	voilav1 "voice-cli-system/proto/v1"
 )
 
 var sessionSigningKey []byte
@@ -931,6 +935,22 @@ func (b *Backend) stopCommand(deviceID string) (string, error) {
 }
 
 func (b *Backend) stopCommandWithTask(deviceID, jobID, taskID string) (string, error) {
+	// First check if device has an active gRPC reverse tunnel
+	if globalTunnelManager != nil && globalTunnelManager.HasTunnel(deviceID) {
+		cmdID := fmt.Sprintf("stop-%d", time.Now().UnixNano())
+		cancelCmd := &voilav1.ExecutionCommand{
+			CommandId:      cmdID,
+			IsCancelSignal: true,
+			TargetTaskId:   taskID,
+			TargetJobId:    jobID,
+			TimestampMs:    time.Now().UnixMilli(),
+		}
+		if ok := globalTunnelManager.SendCommand(deviceID, cancelCmd); ok {
+			log.Printf("[stopCommandWithTask] Dispatched stop signal via gRPC tunnel to device %s (task: %s, job: %s)", deviceID, taskID, jobID)
+			return "Task stopped via gRPC tunnel", nil
+		}
+	}
+
 	b.mu.RLock()
 	device, exists := b.devices[deviceID]
 	if !exists {
@@ -1014,8 +1034,28 @@ func (b *Backend) forwardCommand(deviceID, command, mode, clientID, conversation
 		forwardMode = "SHELL"
 	case "GROQ", "OLLAMA":
 		forwardMode = modeUp
-	// "AGENT" and anything else â†’ "" â†’ local agent uses desktop badge
+	// "AGENT" and anything else → "" → local agent uses desktop badge
 	}
+
+	// Check if device is connected via persistent gRPC reverse tunnel
+	if globalTunnelManager != nil && globalTunnelManager.HasTunnel(deviceID) {
+		cmdID := fmt.Sprintf("cmd-%d", time.Now().UnixNano())
+		execCmd := &voilav1.ExecutionCommand{
+			CommandId:       cmdID,
+			Command:         optimizedCommand,
+			Mode:            forwardMode,
+			ConversationId:  conversationID,
+			GraphifyEnabled: graphifyEnabled,
+			ClientId:        clientID,
+			TimestampMs:     time.Now().UnixMilli(),
+		}
+		if ok := globalTunnelManager.SendCommand(deviceID, execCmd); ok {
+			log.Printf("[forwardCommand] Dispatched command %s to device %s via gRPC tunnel", cmdID, deviceID)
+			return "TASK_QUEUED", nil
+		}
+		log.Printf("[forwardCommand] Failed to send via gRPC tunnel for device %s, falling back to HTTP", deviceID)
+	}
+
 	payload := map[string]interface{}{"command": optimizedCommand, "mode": forwardMode, "client_id": clientID, "conversation_id": conversationID, "graphify_enabled": graphifyEnabled}
 	jsonPayload, _ := json.Marshal(payload)
 
@@ -2410,8 +2450,23 @@ http.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
 		port = "8090"
 	}
 	
-	log.Printf("Backend server starting on port %s", port)
-	log.Fatal(http.ListenAndServe(":"+port, nil))
+	// Initialize gRPC Desktop Tunnel Server
+	grpcServer := grpc.NewServer()
+	tunnelServer := &TunnelServer{backend: backend}
+	globalTunnelManager.backend = backend
+	voilav1.RegisterDesktopTunnelServiceServer(grpcServer, tunnelServer)
+
+	// Multiplex gRPC and HTTP/WebSocket on the same port using h2c (cleartext HTTP/2)
+	h2s := &http2.Server{}
+	multiplexed := createMultiplexedHandler(grpcServer, http.DefaultServeMux)
+	h2cHandler := h2c.NewHandler(multiplexed, h2s)
+	httpServer := &http.Server{
+		Addr:    ":" + port,
+		Handler: h2cHandler,
+	}
+
+	log.Printf("Backend server starting on port %s (HTTP/1.1 + HTTP/2 h2c gRPC multiplexed)", port)
+	log.Fatal(httpServer.ListenAndServe())
 }
 
 func autoDetectNgrokURL(backend *Backend) {
