@@ -1070,8 +1070,7 @@ func (b *Backend) generateTaskSummary(command, output string) string {
 		summary = "✅ Terminal execution finished."
 	}
 	
-	lineCount := len(strings.Split(strings.TrimSpace(output), "
-"))
+	lineCount := len(strings.Split(strings.TrimSpace(output), "\n"))
 	if lineCount > 1 {
 		summary += fmt.Sprintf(" (%d lines generated)", lineCount)
 	}
