@@ -1891,9 +1891,12 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     );
   }
   void _sendMessage() async {
-    if (_controller.text.isNotEmpty) {
-      if (!_isConnected) {
-        if (mounted) setState(() {
+    final text = _controller.text.trim();
+    if (text.isEmpty) return;
+
+    if (!_isConnected) {
+      if (mounted) {
+        setState(() {
           _addMessage({
             'type': 'error',
             'content': 'Not connected to backend. Please wait for reconnection.',
@@ -1901,117 +1904,69 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
           });
         });
         _scrollToBottom();
-        return;
       }
-      
-      if (_activeDevice.isEmpty) {
-        if (mounted) setState(() {
-          _addMessage({
-            'type': 'error',
-            'content': 'No online desktop device selected. Please wait for devices to load or refresh.',
-            'timestamp': DateTime.now().toString(),
-          });
-        });
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('⚠️ Please connect your Desktop to use Voila AI.')),
-          );
-        }
-        _controller.clear();
-        _scrollToBottom();
-        return;
+      return;
+    }
+    
+    // Auto-select desktop if activeDevice is not set yet but devices are available
+    if (_activeDevice.isEmpty && _devices.isNotEmpty) {
+      final fallback = _devices.keys.firstWhere((k) => k.startsWith('desktop-'), orElse: () => '');
+      if (fallback.isNotEmpty) {
+        _activeDevice = fallback;
       }
-      
-      // Validate that selected device is actually a desktop device
-      if (!_activeDevice.startsWith('desktop-')) {
-        if (mounted) setState(() {
-          _addMessage({
-            'type': 'error',
-            'content': 'Invalid device selected: $_activeDevice. Expected desktop- device.',
-            'timestamp': DateTime.now().toString(),
-          });
-        });
-        _controller.clear();
-        _scrollToBottom();
-        return;
-      }
-      
-      final deviceInfo = await DeviceIdentity.getDeviceInfo();
-      if (!mounted) return;  // BUG-05 fix
-      
-      // Check session validity before sending
-      if (!_isSessionValid()) {
-        setState(() {
-          _addMessage({
-            'type': 'error',
-            'content': 'Session expired - unlock to continue',
-            'timestamp': DateTime.now().toString(),
-          });
-        });
-        _controller.clear();
-        _scrollToBottom();
-        
-        // Show unlock dialog
-        if (mounted) {
-          showDialog(
-            context: context,
-            builder: (context) => AlertDialog(
-              title: const Text('Session Expired'),
-              content: const Text('Your session has expired. Please unlock to continue sending commands.'),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Cancel'),
-                ),
-                TextButton(
-                  onPressed: () {
-                    Navigator.pop(context);
-                    _ensureUnlocked();
-                  },
-                  child: const Text('Unlock'),
-                ),
-              ],
-            ),
-          );
-        }
-        return;
-      }
-      
-      if (!await _ensureUnlocked()) return;
+    }
 
-      final message = {
-        ...deviceInfo,
-        'type': 'command',
-        'device_id': _activeDevice,
-        'client_device_id': _currentDeviceId,
-        'client_device_name': _currentDeviceName,
-        'session_id': _sessionId,
-        'session_token': _sessionToken,
-        'command': _controller.text,
-        'mode': _currentMode,
-        'graphify_enabled': _graphifyEnabled,
-        'idempotency_key': const Uuid().v4(),
-        'client_timestamp': DateTime.now().millisecondsSinceEpoch,
-      };
-      
-      debugPrint('Sending command to device: $_activeDevice');
-      debugPrint('Message: $message');
-      
-      _channel?.sink.add(jsonEncode(message));
-      if (mounted) setState(() {
-        if (_controller.text != '__SCREENSHOT__') {
+    if (_activeDevice.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('⚠️ No desktop connected yet. Please ensure Voila is running on PC.')),
+        );
+      }
+      return;
+    }
+    
+    // Ensure session is unlocked (prompts security phrase inline if expired/locked)
+    if (!await _ensureUnlocked()) {
+      return; // Kept in controller so user does not lose input
+    }
+
+    final deviceInfo = await DeviceIdentity.getDeviceInfo();
+    if (!mounted) return;
+
+    final message = {
+      ...deviceInfo,
+      'type': 'command',
+      'device_id': _activeDevice,
+      'client_device_id': _currentDeviceId,
+      'client_device_name': _currentDeviceName,
+      'session_id': _sessionId,
+      'session_token': _sessionToken,
+      'command': text,
+      'mode': _currentMode,
+      'graphify_enabled': _graphifyEnabled,
+      'idempotency_key': const Uuid().v4(),
+      'client_timestamp': DateTime.now().millisecondsSinceEpoch,
+    };
+    
+    debugPrint('Sending command to device: $_activeDevice');
+    debugPrint('Message: $message');
+    
+    _channel?.sink.add(jsonEncode(message));
+    if (mounted) {
+      setState(() {
+        if (text != '__SCREENSHOT__') {
           _isThinking = true;
           _triggerDataDeparting();
         }
         _addMessage({
           'type': 'user',
-          'content': _controller.text == '__SCREENSHOT__' ? '📸 Taking screenshot...' : _controller.text,
+          'content': text == '__SCREENSHOT__' ? '📸 Taking screenshot...' : text,
           'timestamp': DateTime.now().toString(),
         });
       });
-      _controller.clear();
-      _scrollToBottom();
     }
+    _controller.clear();
+    _scrollToBottom();
   }
 
   void _switchDevice(String deviceId) async {
@@ -3117,29 +3072,39 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                     ),
                     if (_currentMode.toUpperCase() == 'AGENT')
                       GestureDetector(
+                        behavior: HitTestBehavior.opaque,
                         onTap: _openLiveModeSheet,
-                        child: Tooltip(
-                          message: 'Gemini Live Mode',
-                          child: Container(
-                            width: 36,
-                            height: 36,
-                            margin: const EdgeInsets.only(left: 8),
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              gradient: const LinearGradient(
-                                colors: [Color(0xFF6366F1), Color(0xFF8B5CF6), Color(0xFFEC4899)],
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                          margin: const EdgeInsets.only(left: 8),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFF6366F1), Color(0xFF8B5CF6), Color(0xFFEC4899)],
+                            ),
+                            borderRadius: BorderRadius.circular(100),
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFF8B5CF6).withOpacity(0.35),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
                               ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: const Color(0xFF8B5CF6).withOpacity(0.4),
-                                  blurRadius: 8,
-                                  offset: const Offset(0, 2),
+                            ],
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.sensors_rounded, size: 14, color: Colors.white),
+                              const SizedBox(width: 5),
+                              Text(
+                                'LIVE',
+                                style: GoogleFonts.spaceGrotesk(
+                                  color: Colors.white,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 0.8,
                                 ),
-                              ],
-                            ),
-                            child: const Center(
-                              child: Icon(Icons.sensors_rounded, size: 18, color: Colors.white),
-                            ),
+                              ),
+                            ],
                           ),
                         ),
                       ),
@@ -4042,89 +4007,145 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
 
       // Minimal floating pill input
       return Container(
-        margin: const EdgeInsets.only(left: 20, right: 20, bottom: 30, top: 10),
+        margin: const EdgeInsets.only(left: 14, right: 14, bottom: 26, top: 8),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
+            // Prominent Dedicated Live Button in Agent Mode toolbar
             GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _openLiveModeSheet,
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 2, right: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF6366F1), Color(0xFF8B5CF6), Color(0xFFEC4899)],
+                  ),
+                  borderRadius: BorderRadius.circular(100),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF8B5CF6).withOpacity(0.35),
+                      blurRadius: 8,
+                      offset: const Offset(0, 3),
+                    )
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.sensors_rounded, size: 16, color: Colors.white),
+                    const SizedBox(width: 4),
+                    Text(
+                      'LIVE',
+                      style: GoogleFonts.spaceGrotesk(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // Screenshot Camera Button
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
               onTap: () {
                 _controller.text = "__SCREENSHOT__";
                 _sendMessage();
               },
               child: Container(
-                margin: const EdgeInsets.only(bottom: 2, right: 12),
-                padding: const EdgeInsets.all(16),
+                margin: const EdgeInsets.only(bottom: 2, right: 8),
+                padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
                   color: AppTokens.cardAlt(isDark),
                   shape: BoxShape.circle,
                   border: Border.all(color: AppTokens.border(isDark)),
                 ),
-                child: Icon(Icons.camera_alt_rounded, color: AppTokens.textSecondary(isDark), size: 22),
+                child: Icon(Icons.camera_alt_rounded, color: AppTokens.textSecondary(isDark), size: 20),
               ),
             ),
             
+            // Text Input Field
             Expanded(
               child: Container(
                 margin: const EdgeInsets.only(bottom: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
                 decoration: BoxDecoration(
-                  color: Colors.transparent, // Completely invisible as requested
+                  color: AppTokens.cardAlt(isDark),
                   borderRadius: BorderRadius.circular(100),
+                  border: Border.all(color: AppTokens.border(isDark)),
                 ),
                 child: TextField(
                   controller: _controller,
                   minLines: 1,
                   maxLines: 4,
-                  style: GoogleFonts.inter(fontSize: 16, color: AppTokens.textPrimary(isDark), fontWeight: FontWeight.w500),
+                  textInputAction: TextInputAction.send,
+                  onSubmitted: (_) => _sendMessage(),
+                  onChanged: (_) => setState(() {}),
+                  style: GoogleFonts.inter(fontSize: 15, color: AppTokens.textPrimary(isDark), fontWeight: FontWeight.w500),
                   decoration: InputDecoration(
                     hintText: 'Ask me anything...',
-                    hintStyle: GoogleFonts.inter(color: AppTokens.textSecondary(isDark)),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                    hintStyle: GoogleFonts.inter(color: AppTokens.textSecondary(isDark), fontSize: 14),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 14),
                     border: InputBorder.none,
                   ),
                 ),
               ),
             ),
 
-            const SizedBox(width: 12),
-            GestureDetector(
-              onTap: () {
-                if (_isThinking) {
-                  _cancelBackendTask();
-                } else if (_controller.text.isNotEmpty) {
-                  _sendMessage();
-                } else {
-                  setState(() { _isLiveSession = true; _showTextInput = false; });
-                  _startListening();
-                }
+            const SizedBox(width: 8),
+
+            // Send / Mic Button with dynamic listener
+            ValueListenableBuilder<TextEditingValue>(
+              valueListenable: _controller,
+              builder: (context, val, _) {
+                final hasText = val.text.trim().isNotEmpty;
+                return GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () {
+                    if (_isThinking) {
+                      _cancelBackendTask();
+                    } else if (hasText) {
+                      _sendMessage();
+                    } else {
+                      setState(() { _isLiveSession = true; _showTextInput = false; });
+                      _startListening();
+                    }
+                  },
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 2),
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: _isThinking
+                          ? const Color(0xFFEF4444)
+                          : (hasText
+                              ? AppTokens.accentSecondary
+                              : AppTokens.accent),
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: (_isThinking ? const Color(0xFFEF4444) : (hasText ? AppTokens.accentSecondary : AppTokens.accent)).withOpacity(0.4),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        )
+                      ],
+                    ),
+                    child: Icon(
+                      _isThinking 
+                          ? Icons.stop_rounded 
+                          : (hasText 
+                              ? Icons.send_rounded 
+                              : Icons.mic_rounded),
+                      color: hasText ? const Color(0xFF09090B) : Colors.white,
+                      size: 20,
+                    ),
+                  ),
+                );
               },
-              child: Container(
-                margin: const EdgeInsets.only(bottom: 2),
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: _isThinking
-                      ? const Color(0xFFEF4444)
-                      : (_controller.text.isNotEmpty
-                          ? AppTokens.accentSecondary
-                          : AppTokens.accent),
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: (_isThinking ? const Color(0xFFEF4444) : (_controller.text.isNotEmpty ? AppTokens.accentSecondary : AppTokens.accent)).withOpacity(0.4),
-                      blurRadius: 16,
-                      offset: const Offset(0, 6),
-                    )
-                  ],
-                ),
-                child: Icon(
-                  _isThinking 
-                      ? Icons.stop_rounded 
-                      : (_controller.text.isNotEmpty 
-                          ? Icons.send_rounded 
-                          : Icons.mic_rounded),
-                  color: _controller.text.isNotEmpty ? const Color(0xFF09090B) : Colors.white,
-                  size: 22,
-                ),
-              ),
             ),
           ],
         ),
@@ -4156,6 +4177,9 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                         controller: _controller,
                         minLines: 1,
                         maxLines: 4,
+                        textInputAction: TextInputAction.send,
+                        onSubmitted: (_) => _sendMessage(),
+                        onChanged: (_) => setState(() {}),
                         style: GoogleFonts.inter(fontSize: 14, color: AppTokens.textPrimary(isDark)),
                         decoration: InputDecoration(
                           hintText: _isListening ? 'Listening...' : 'Enter shell command...',
@@ -4171,6 +4195,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
             ),
             const SizedBox(width: 8),
             GestureDetector(
+              behavior: HitTestBehavior.opaque,
               onTap: () {
                 _controller.text = "__SCREENSHOT__";
                 _sendMessage();
@@ -4187,6 +4212,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
             ),
             const SizedBox(width: 8),
             GestureDetector(
+              behavior: HitTestBehavior.opaque,
               onTap: _sendMessage,
               child: Container(
                 padding: const EdgeInsets.all(14),
