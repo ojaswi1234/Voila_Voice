@@ -6,6 +6,8 @@ import 'dart:async';
 class SurveillanceSheet extends StatefulWidget {
   final String backendUrl;
   final String deviceId;
+  static void Function(Map<String, dynamic>)? onStatusUpdate;
+
   const SurveillanceSheet({Key? key, required this.backendUrl, required this.deviceId}) : super(key: key);
 
   @override
@@ -22,12 +24,24 @@ class _SurveillanceSheetState extends State<SurveillanceSheet> {
   @override
   void initState() {
     super.initState();
+    SurveillanceSheet.onStatusUpdate = (data) {
+      if (mounted) {
+        setState(() {
+          armed = data['armed'] ?? armed;
+          locked = data['locked'] ?? locked;
+          lastAlert = data['last_alert_reason'] ?? lastAlert;
+          loading = false;
+        });
+      }
+    };
     _fetchStatus();
-    _timer = Timer.periodic(const Duration(seconds: 2), (_) => _pollStatus());
+    // Relaxed fallback poll (15s) since gRPC pushes real-time status
+    _timer = Timer.periodic(const Duration(seconds: 15), (_) => _pollStatus());
   }
 
   @override
   void dispose() {
+    SurveillanceSheet.onStatusUpdate = null;
     _timer?.cancel();
     super.dispose();
   }

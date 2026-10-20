@@ -1799,6 +1799,24 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 					}
 				}(deviceID, jobID, taskID)
 
+			case "surveillance_action":
+				action, _ := msg["action"].(string)
+				if deviceID == "" {
+					dev := b.getActiveDevice()
+					if dev != nil {
+						deviceID = dev.ID
+					}
+				}
+				if globalTunnelManager != nil && globalTunnelManager.HasTunnel(deviceID) {
+					cmdID := fmt.Sprintf("surv-%d", time.Now().UnixNano())
+					execCmd := &voilav1.ExecutionCommand{
+						CommandId:          cmdID,
+						SurveillanceAction: action,
+						TimestampMs:        time.Now().UnixMilli(),
+					}
+					globalTunnelManager.SendCommand(deviceID, execCmd)
+				}
+
 			case "switch_device":
 				err := b.setActiveDevice(deviceID)
 				if err != nil {

@@ -1392,6 +1392,23 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                   } catch (_) { return <String, String>{}; }
                 }).where((m) => m.isNotEmpty).toList();
               });
+            } else if (jsonResponse is Map && jsonResponse['type'] == 'surveillance_alert') {
+              final alert = jsonResponse['alert'];
+              final reason = alert != null ? (alert['reason'] ?? 'Intruder detected!') : 'Intruder detected!';
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('⚠️ INTRUDER ALERT: $reason'),
+                    backgroundColor: Colors.redAccent,
+                    duration: const Duration(seconds: 4),
+                  ),
+                );
+              }
+            } else if (jsonResponse is Map && jsonResponse['type'] == 'surveillance_status') {
+              final data = jsonResponse['data'];
+              if (data is Map<String, dynamic>) {
+                SurveillanceSheet.onStatusUpdate?.call(data);
+              }
             } else if (jsonResponse is Map && jsonResponse['type'] == 'security_alert') {
               final alert = jsonResponse['alert'];
               if (alert != null) {

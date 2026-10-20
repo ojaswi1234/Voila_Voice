@@ -229,6 +229,9 @@ func (c *GRPCTunnelClient) connectAndServe(connData ConnectionData) error {
 		return fmt.Errorf("initial registration failed: %w", err)
 	}
 
+	// Stream initial surveillance state immediately upon connection
+	go broadcastSurveillanceState()
+
 	// Goroutine: Sender loop (Desktop -> Cloud)
 	sendErrChan := make(chan error, 1)
 	go func() {
@@ -291,6 +294,12 @@ func (c *GRPCTunnelClient) connectAndServe(connData ConnectionData) error {
 		// Handle emergency cancellation / stop immediately out-of-band
 		if cmd.IsCancelSignal {
 			go handleCancelSignalViaGRPC(cmd, connData)
+			continue
+		}
+
+		// Handle surveillance control action
+		if cmd.SurveillanceAction != "" {
+			go handleSurveillanceActionViaGRPC(cmd.SurveillanceAction)
 			continue
 		}
 

@@ -8,9 +8,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
+
+	voilav1 "voice-cli-system/proto/v1"
 )
 
 type SurveillanceState struct {
@@ -34,13 +37,13 @@ func getSurveillanceStatePath() string {
 func loadSurveillanceState() {
 	survStateMu.Lock()
 	defer survStateMu.Unlock()
-	
+
 	path := getSurveillanceStatePath()
 	b, err := os.ReadFile(path)
 	if err == nil {
 		json.Unmarshal(b, &survState)
 	}
-	
+
 	// Reset armed/locked on startup so we don't accidentally lock ourselves out if monitor isn't running
 	survState.Armed = false
 	survState.Locked = false
@@ -51,8 +54,66 @@ func saveSurveillanceStateLocked() {
 	path := getSurveillanceStatePath()
 	b, _ := json.MarshalIndent(survState, "", "  ")
 	os.WriteFile(path, b, 0644)
+	go broadcastSurveillanceState()
 }
 
+// broadcastSurveillanceState streams updated surveillance state to the cloud backend over gRPC
+func broadcastSurveillanceState() {
+	survStateMu.Lock()
+	armed := survState.Armed
+	locked := survState.Locked
+	reason := survState.LastAlertReason
+	survStateMu.Unlock()
+
+	SendTelemetry(&voilav1.AgentTelemetry{
+		DeviceId:    getDeviceID(),
+		Status:      "IDLE",
+		TimestampMs: time.Now().UnixMilli(),
+		Payload: &voilav1.AgentTelemetry_SurveillanceState{
+			SurveillanceState: &voilav1.SurveillanceStateUpdate{
+				Armed:                armed,
+				Locked:               locked,
+				LastAlertReason:      reason,
+				LastAlertTimestampMs: time.Now().UnixMilli(),
+			},
+		},
+	})
+}
+
+// handleSurveillanceActionViaGRPC executes surveillance controls received from gRPC tunnel
+func handleSurveillanceActionViaGRPC(action string) {
+	switch strings.ToUpper(action) {
+	case "ARM":
+		survStateMu.Lock()
+		survState.Armed = true
+		saveSurveillanceStateLocked()
+		survStateMu.Unlock()
+		startSurveillanceMonitor()
+	case "DISARM":
+		survStateMu.Lock()
+		survState.Armed = false
+		survState.Locked = false
+		saveSurveillanceStateLocked()
+		survStateMu.Unlock()
+		stopSurveillanceMonitor()
+	case "LOCK":
+		survStateMu.Lock()
+		survState.Locked = true
+		survState.Armed = true
+		saveSurveillanceStateLocked()
+		survStateMu.Unlock()
+		startSurveillanceMonitor()
+	case "UNLOCK":
+		survStateMu.Lock()
+		survState.Locked = false
+		survState.Armed = false
+		saveSurveillanceStateLocked()
+		survStateMu.Unlock()
+		stopSurveillanceMonitor()
+	case "STATUS", "GET_STATUS":
+		broadcastSurveillanceState()
+	}
+}
 
 var gestureDaemonCmd *exec.Cmd
 
@@ -77,7 +138,7 @@ func startSurveillanceMonitor() {
 		survStateMu.Unlock()
 		return // already running
 	}
-	
+
 	scriptPath := filepath.Join(getLocalAgentDir(), "surveillance", "monitor.py")
 	monitorCmd = exec.Command("python", scriptPath)
 	monitorCmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
@@ -93,7 +154,7 @@ func startSurveillanceMonitor() {
 			}
 			wasArmed := survState.Armed
 			survStateMu.Unlock()
-			
+
 			if wasArmed {
 				// Auto-restart if it crashed while armed
 				time.Sleep(2 * time.Second)
@@ -183,36 +244,48 @@ func setupSurveillanceRoutes(mux *http.ServeMux) {
 				survState.LastAlertReason = reason
 				saveSurveillanceStateLocked()
 				survStateMu.Unlock()
-				
-				// Push intruder alert to mobile! (In prototype, mobile polls /surveillance/status)
+
+				// Stream alert directly over gRPC to cloud
+				SendTelemetry(&voilav1.AgentTelemetry{
+					DeviceId:    getDeviceID(),
+					Status:      "IDLE",
+					TimestampMs: time.Now().UnixMilli(),
+					Payload: &voilav1.AgentTelemetry_SurveillanceAlert{
+						SurveillanceAlert: &voilav1.SurveillanceAlert{
+							AlertType:   "intruder_detected",
+							Reason:      reason,
+							TimestampMs: time.Now().UnixMilli(),
+						},
+					},
+				})
 			}
 		}
 		w.Write([]byte(`{"status":"ok"}`))
 	})
-	
+
 	mux.HandleFunc("/surveillance/gesture/train", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		scriptPath := filepath.Join(getLocalAgentDir(), "surveillance", "gesture_omega.py")
 		cmd := exec.Command("python", scriptPath, "train")
 		out, _ := cmd.CombinedOutput()
-		
+
 		survStateMu.Lock()
 		survState.GestureTrained = true
 		saveSurveillanceStateLocked()
 		survStateMu.Unlock()
-		
+
 		w.Write([]byte(fmt.Sprintf(`{"status":"trained", "output": "%s"}`, string(out))))
 	})
-	
+
 	mux.HandleFunc("/surveillance/gesture/capture", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		intent := r.URL.Query().Get("intent") // "lock" or "unlock"
-		
+
 		scriptPath := filepath.Join(getLocalAgentDir(), "surveillance", "gesture_omega.py")
 		cmd := exec.Command("python", scriptPath, "capture")
 		outBytes, _ := cmd.CombinedOutput()
 		out := string(outBytes)
-		
+
 		result := "no_match"
 		if intent == "lock" && bytesContains(outBytes, []byte("MATCH_OMEGA")) {
 			result = "matched_lock"
@@ -231,13 +304,12 @@ func setupSurveillanceRoutes(mux *http.ServeMux) {
 			survStateMu.Unlock()
 			stopSurveillanceMonitor()
 		}
-		
+
 		w.Write([]byte(fmt.Sprintf(`{"result":"%s", "raw": "%s"}`, result, out)))
 	})
 }
 
 func bytesContains(b []byte, sub []byte) bool {
-	// Simple helper to avoid importing bytes if not needed
 	s := string(b)
 	subStr := string(sub)
 	return len(s) >= len(subStr) && (s == subStr || s[:len(subStr)] == subStr || s[len(s)-len(subStr):] == subStr || func() bool {

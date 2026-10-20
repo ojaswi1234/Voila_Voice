@@ -248,6 +248,21 @@ func (s *TunnelServer) EstablishTunnel(stream voilav1.DesktopTunnelService_Estab
 			if b, err := json.Marshal(resp); err == nil && s.backend != nil {
 				s.backend.broadcastToClients(websocket.TextMessage, b)
 			}
+
+		case *voilav1.AgentTelemetry_SurveillanceState:
+			st := p.SurveillanceState
+			resp := map[string]interface{}{
+				"type": "surveillance_status",
+				"data": map[string]interface{}{
+					"armed":                   st.Armed,
+					"locked":                  st.Locked,
+					"last_alert_reason":       st.LastAlertReason,
+					"last_alert_timestamp_ms": st.LastAlertTimestampMs,
+				},
+			}
+			if b, err := json.Marshal(resp); err == nil && s.backend != nil {
+				s.backend.broadcastToClients(websocket.TextMessage, b)
+			}
 		}
 	}
 }
