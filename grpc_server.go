@@ -186,12 +186,13 @@ func (s *TunnelServer) EstablishTunnel(stream voilav1.DesktopTunnelService_Estab
 		case *voilav1.AgentTelemetry_FinalResult:
 			res := p.FinalResult
 			resp := map[string]interface{}{
-				"type":       "result",
-				"command_id": res.CommandId,
-				"output":     res.Output,
-				"summary":    res.Summary,
-				"status":     res.Status,
-				"mode":       telemetry.Status,
+				"type":          "result",
+				"command_id":    res.CommandId,
+				"output":        res.Output,
+				"summary":       res.Summary,
+				"status":        res.Status,
+				"artifact_path": res.ArtifactPath,
+				"mode":          telemetry.Status,
 			}
 			if b, err := json.Marshal(resp); err == nil && s.backend != nil {
 				s.backend.broadcastToClients(websocket.TextMessage, b)

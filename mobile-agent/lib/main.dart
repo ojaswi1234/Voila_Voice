@@ -1409,6 +1409,19 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
               if (data is Map<String, dynamic>) {
                 SurveillanceSheet.onStatusUpdate?.call(data);
               }
+            } else if (jsonResponse is Map && jsonResponse['type'] == 'bg_task_update') {
+              final task = jsonResponse['task'];
+              if (task is Map && mounted) {
+                setState(() {
+                  final taskId = task['id']?.toString() ?? '';
+                  final existingIdx = _bgTasks.indexWhere((t) => t['id'] == taskId);
+                  if (existingIdx != -1) {
+                    _bgTasks[existingIdx] = Map<String, dynamic>.from(task);
+                  } else {
+                    _bgTasks.insert(0, Map<String, dynamic>.from(task));
+                  }
+                });
+              }
             } else if (jsonResponse is Map && jsonResponse['type'] == 'security_alert') {
               final alert = jsonResponse['alert'];
               if (alert != null) {
@@ -1665,7 +1678,8 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   }
 
   void _startBgTaskChecks() {
-    _bgTaskTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+    // Relaxed fallback poll (15s) since gRPC streams task updates in real-time
+    _bgTaskTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       _checkBgTasks();
     });
     _checkBgTasks();

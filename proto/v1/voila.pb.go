@@ -794,6 +794,7 @@ type ExecutionResult struct {
 	Status            string                 `protobuf:"bytes,4,opt,name=status,proto3" json:"status,omitempty"` // "ok", "error", "cancelled"
 	NewConversationId string                 `protobuf:"bytes,5,opt,name=new_conversation_id,json=newConversationId,proto3" json:"new_conversation_id,omitempty"`
 	LatencyMs         int64                  `protobuf:"varint,6,opt,name=latency_ms,json=latencyMs,proto3" json:"latency_ms,omitempty"`
+	ArtifactPath      string                 `protobuf:"bytes,7,opt,name=artifact_path,json=artifactPath,proto3" json:"artifact_path,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -870,6 +871,13 @@ func (x *ExecutionResult) GetLatencyMs() int64 {
 	return 0
 }
 
+func (x *ExecutionResult) GetArtifactPath() string {
+	if x != nil {
+		return x.ArtifactPath
+	}
+	return ""
+}
+
 var File_proto_v1_voila_proto protoreflect.FileDescriptor
 
 const file_proto_v1_voila_proto_rawDesc = "" +
@@ -943,7 +951,7 @@ const file_proto_v1_voila_proto_rawDesc = "" +
 	"alert_type\x18\x01 \x01(\tR\talertType\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\x12!\n" +
 	"\ftimestamp_ms\x18\x03 \x01(\x03R\vtimestampMs\x12#\n" +
-	"\rsnapshot_jpeg\x18\x04 \x01(\fR\fsnapshotJpeg\"\xc9\x01\n" +
+	"\rsnapshot_jpeg\x18\x04 \x01(\fR\fsnapshotJpeg\"\xee\x01\n" +
 	"\x0fExecutionResult\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tR\tcommandId\x12\x16\n" +
@@ -952,7 +960,8 @@ const file_proto_v1_voila_proto_rawDesc = "" +
 	"\x06status\x18\x04 \x01(\tR\x06status\x12.\n" +
 	"\x13new_conversation_id\x18\x05 \x01(\tR\x11newConversationId\x12\x1d\n" +
 	"\n" +
-	"latency_ms\x18\x06 \x01(\x03R\tlatencyMs2c\n" +
+	"latency_ms\x18\x06 \x01(\x03R\tlatencyMs\x12#\n" +
+	"\rartifact_path\x18\a \x01(\tR\fartifactPath2c\n" +
 	"\x14DesktopTunnelService\x12K\n" +
 	"\x0fEstablishTunnel\x12\x18.voila.v1.AgentTelemetry\x1a\x1a.voila.v1.ExecutionCommand(\x010\x01B#Z!voice-cli-system/proto/v1;voilav1b\x06proto3"
 

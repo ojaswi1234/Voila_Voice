@@ -106,4 +106,5 @@ message ExecutionResult {
   string status = 4; // "ok", "error", "cancelled"
   string new_conversation_id = 5;
   int64 latency_ms = 6;
+  string artifact_path = 7;
 }

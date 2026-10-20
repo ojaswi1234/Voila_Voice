@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -231,6 +232,17 @@ func (c *GRPCTunnelClient) connectAndServe(connData ConnectionData) error {
 
 	// Stream initial surveillance state immediately upon connection
 	go broadcastSurveillanceState()
+
+	// Broadcast any existing background tasks upon connection
+	go func() {
+		bgTasksMu.RLock()
+		defer bgTasksMu.RUnlock()
+		for _, t := range bgTasks {
+			if onBGTaskProgressUpdate != nil {
+				onBGTaskProgressUpdate(t.ID, t.Label, t.Command, t.Status, int64(time.Since(t.StartTime).Seconds()), "")
+			}
+		}
+	}()
 
 	// Goroutine: Sender loop (Desktop -> Cloud)
 	sendErrChan := make(chan error, 1)
@@ -484,6 +496,12 @@ func handleIncomingCommandViaGRPC(cmd *voilav1.ExecutionCommand, connData Connec
 		summary = summary[:60] + "..."
 	}
 
+	artifactPath := ""
+	artifactRe := regexp.MustCompile("(?i)([A-Z]:\\\\[^\\n*|<>\\'\\`\"]+\\.(?:pdf|png|docx|pptx|html))")
+	if match := artifactRe.FindStringSubmatch(output); len(match) > 1 {
+		artifactPath = match[1]
+	}
+
 	// Send final execution result via gRPC
 	SendTelemetry(&voilav1.AgentTelemetry{
 		DeviceId:    connData.DeviceID,
@@ -497,6 +515,7 @@ func handleIncomingCommandViaGRPC(cmd *voilav1.ExecutionCommand, connData Connec
 				Status:            status,
 				NewConversationId: newConvID,
 				LatencyMs:         latencyMs,
+				ArtifactPath:      artifactPath,
 			},
 		},
 	})
