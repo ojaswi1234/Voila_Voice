@@ -314,7 +314,7 @@ class VoilaRichSummaryView extends StatelessWidget {
 
   // Lightweight LRU Block Cache for 60/120 FPS jank-free scrolling
   static final Map<int, List<_RichBlock>> _blockCache = {};
-  static final RegExp _inlineRegex = RegExp(r'(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|==[^=]+==)');
+  static final RegExp _inlineRegex = RegExp(r'(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|==[^=]+==|~~[^~]+~~)');
 
   const VoilaRichSummaryView({
     Key? key,
@@ -655,6 +655,16 @@ class VoilaRichSummaryView extends StatelessWidget {
             ),
           ),
         ));
+      } else if (raw.startsWith('~~') && raw.endsWith('~~')) {
+        spans.add(TextSpan(
+          text: raw.substring(2, raw.length - 2),
+          style: GoogleFonts.inter(
+            color: primaryTextColor.withOpacity(0.5),
+            fontSize: 14.5,
+            decoration: TextDecoration.lineThrough,
+            height: 1.6,
+          ),
+        ));
       }
 
       lastEnd = match.end;
@@ -811,6 +821,18 @@ class _CalloutAlertBlock extends StatelessWidget {
       accent = const Color(0xFF00E5FF);
       icon = Icons.info_outline_rounded;
       cleanContent = content.replaceFirst(RegExp(r'(\[!note\]|note:)', caseSensitive: false), '').trim();
+    } else if (lower.startsWith('[!important]') || lower.startsWith('important:')) {
+      accent = const Color(0xFF8B5CF6);
+      icon = Icons.priority_high_rounded;
+      cleanContent = content.replaceFirst(RegExp(r'(\[!important\]|important:)', caseSensitive: false), '').trim();
+    } else if (lower.startsWith('[!caution]') || lower.startsWith('caution:') || lower.startsWith('[!danger]') || lower.startsWith('danger:')) {
+      accent = const Color(0xFFEF4444);
+      icon = Icons.dangerous_rounded;
+      cleanContent = content.replaceFirst(RegExp(r'(\[!caution\]|caution:|\[!danger\]|danger:)', caseSensitive: false), '').trim();
+    } else if (lower.startsWith('[!success]') || lower.startsWith('success:')) {
+      accent = const Color(0xFF10B981);
+      icon = Icons.check_circle_outline_rounded;
+      cleanContent = content.replaceFirst(RegExp(r'(\[!success\]|success:)', caseSensitive: false), '').trim();
     }
 
     return Container(
@@ -870,6 +892,7 @@ class _VoilaLiveModeSheetState extends State<VoilaLiveModeSheet> with SingleTick
   String _aiTranscript = '';
   String _activeToolAction = '';
   bool _isMuted = false;
+  final TextEditingController _liveInputController = TextEditingController();
   late AnimationController _pulseController;
 
   @override
@@ -940,8 +963,24 @@ class _VoilaLiveModeSheetState extends State<VoilaLiveModeSheet> with SingleTick
     setState(() => _liveState = 'LISTENING');
   }
 
+  void _sendLiveText() {
+    final text = _liveInputController.text.trim();
+    if (text.isEmpty) return;
+    if (_liveState == 'SPEAKING') {
+      _sendInterrupt();
+    }
+    _channel?.sink.add(jsonEncode({'type': 'text', 'text': text}));
+    HapticFeedback.selectionClick();
+    setState(() {
+      _userTranscript = text;
+      _liveInputController.clear();
+      _liveState = 'THINKING';
+    });
+  }
+
   @override
   void dispose() {
+    _liveInputController.dispose();
     _pulseController.dispose();
     _channel?.sink.add(jsonEncode({'type': 'stop'}));
     _channel?.sink.close();
@@ -1125,7 +1164,40 @@ class _VoilaLiveModeSheetState extends State<VoilaLiveModeSheet> with SingleTick
             ),
           ),
 
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
+
+          // Live Text / Voice Prompt Bar
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            decoration: BoxDecoration(
+              color: const Color(0xFF131822),
+              borderRadius: BorderRadius.circular(100),
+              border: Border.all(color: Colors.white12),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _liveInputController,
+                    style: GoogleFonts.inter(color: Colors.white, fontSize: 13),
+                    decoration: InputDecoration(
+                      hintText: 'Talk or type live with Gemini...',
+                      hintStyle: GoogleFonts.inter(color: Colors.white38, fontSize: 13),
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    ),
+                    onSubmitted: (_) => _sendLiveText(),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.arrow_upward_rounded, size: 18, color: Color(0xFF00E5FF)),
+                  onPressed: _sendLiveText,
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 12),
 
           // Bottom Controls: Interrupt, Mute, End
           Row(
