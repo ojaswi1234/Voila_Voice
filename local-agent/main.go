@@ -33,6 +33,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -2264,6 +2265,32 @@ func startHTTPServer() {
 		if command == "__SCREENSHOT__" {
 			w.WriteHeader(http.StatusAccepted)
 			go func() {
+				// ── Plasma-glow exclusion ──────────────────────────────────
+				// Hide the AmorphousPlasmaOverlay before capturing so it never
+				// bleeds into the screenshot. We use the plasma UDP IPC on port
+				// 19885 (STATE:OFF blanks the overlay in ≤1 render frame).
+				sendPlasmaIPC := func(msg string) {
+					if conn, e2 := net.Dial("udp", "127.0.0.1:19885"); e2 == nil {
+						conn.Write([]byte(msg))
+						conn.Close()
+					}
+				}
+				// Read the current plasma state so we can restore it after capture.
+				prevPlasmaState := "IDLE"
+				{
+					settingsPath := filepath.Join(getLocalAgentDir(), "plasma_settings.json")
+					if raw, e2 := os.ReadFile(settingsPath); e2 == nil {
+						var ps struct {
+							State string `json:"state"`
+						}
+						if json.Unmarshal(raw, &ps) == nil && ps.State != "" {
+							prevPlasmaState = ps.State
+						}
+					}
+				}
+				sendPlasmaIPC("STATE:OFF")
+				time.Sleep(90 * time.Millisecond) // ≥5 render frames @ 60 fps → overlay blanked
+
 				psCode := `
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
@@ -2281,6 +2308,8 @@ $stream.Dispose()
 Write-Output $base64
 `
 				out, err := exec.Command("powershell", "-NoProfile", "-Command", psCode).CombinedOutput()
+				// Restore plasma overlay state now that capture is done.
+				sendPlasmaIPC("STATE:" + prevPlasmaState)
 				var result string
 				if err != nil {
 					result = "Screenshot failed: " + err.Error()
