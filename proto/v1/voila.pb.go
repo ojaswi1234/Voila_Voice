@@ -34,12 +34,13 @@ type ExecutionCommand struct {
 	ClientId        string                 `protobuf:"bytes,6,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
 	SessionToken    string                 `protobuf:"bytes,7,opt,name=session_token,json=sessionToken,proto3" json:"session_token,omitempty"`
 	// Emergency stop / cancellation controls
-	IsCancelSignal bool   `protobuf:"varint,8,opt,name=is_cancel_signal,json=isCancelSignal,proto3" json:"is_cancel_signal,omitempty"`
-	TargetTaskId   string `protobuf:"bytes,9,opt,name=target_task_id,json=targetTaskId,proto3" json:"target_task_id,omitempty"`
-	TargetJobId    string `protobuf:"bytes,10,opt,name=target_job_id,json=targetJobId,proto3" json:"target_job_id,omitempty"`
-	TimestampMs    int64  `protobuf:"varint,11,opt,name=timestamp_ms,json=timestampMs,proto3" json:"timestamp_ms,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	IsCancelSignal     bool   `protobuf:"varint,8,opt,name=is_cancel_signal,json=isCancelSignal,proto3" json:"is_cancel_signal,omitempty"`
+	TargetTaskId       string `protobuf:"bytes,9,opt,name=target_task_id,json=targetTaskId,proto3" json:"target_task_id,omitempty"`
+	TargetJobId        string `protobuf:"bytes,10,opt,name=target_job_id,json=targetJobId,proto3" json:"target_job_id,omitempty"`
+	TimestampMs        int64  `protobuf:"varint,11,opt,name=timestamp_ms,json=timestampMs,proto3" json:"timestamp_ms,omitempty"`
+	SurveillanceAction string `protobuf:"bytes,12,opt,name=surveillance_action,json=surveillanceAction,proto3" json:"surveillance_action,omitempty"` // "ARM", "DISARM", "LOCK", "UNLOCK"
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *ExecutionCommand) Reset() {
@@ -149,6 +150,13 @@ func (x *ExecutionCommand) GetTimestampMs() int64 {
 	return 0
 }
 
+func (x *ExecutionCommand) GetSurveillanceAction() string {
+	if x != nil {
+		return x.SurveillanceAction
+	}
+	return ""
+}
+
 // ───────────────────────────────────────────────────────────────────────────
 // AgentTelemetry: Desktop Local Agent -> Cloud Backend
 // ───────────────────────────────────────────────────────────────────────────
@@ -166,6 +174,7 @@ type AgentTelemetry struct {
 	//	*AgentTelemetry_Screenshot
 	//	*AgentTelemetry_SurveillanceAlert
 	//	*AgentTelemetry_FinalResult
+	//	*AgentTelemetry_SurveillanceState
 	Payload       isAgentTelemetry_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -290,6 +299,15 @@ func (x *AgentTelemetry) GetFinalResult() *ExecutionResult {
 	return nil
 }
 
+func (x *AgentTelemetry) GetSurveillanceState() *SurveillanceStateUpdate {
+	if x != nil {
+		if x, ok := x.Payload.(*AgentTelemetry_SurveillanceState); ok {
+			return x.SurveillanceState
+		}
+	}
+	return nil
+}
+
 type isAgentTelemetry_Payload interface {
 	isAgentTelemetry_Payload()
 }
@@ -318,6 +336,10 @@ type AgentTelemetry_FinalResult struct {
 	FinalResult *ExecutionResult `protobuf:"bytes,10,opt,name=final_result,json=finalResult,proto3,oneof"`
 }
 
+type AgentTelemetry_SurveillanceState struct {
+	SurveillanceState *SurveillanceStateUpdate `protobuf:"bytes,11,opt,name=surveillance_state,json=surveillanceState,proto3,oneof"`
+}
+
 func (*AgentTelemetry_Heartbeat) isAgentTelemetry_Payload() {}
 
 func (*AgentTelemetry_OutputChunk) isAgentTelemetry_Payload() {}
@@ -330,6 +352,76 @@ func (*AgentTelemetry_SurveillanceAlert) isAgentTelemetry_Payload() {}
 
 func (*AgentTelemetry_FinalResult) isAgentTelemetry_Payload() {}
 
+func (*AgentTelemetry_SurveillanceState) isAgentTelemetry_Payload() {}
+
+type SurveillanceStateUpdate struct {
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	Armed                bool                   `protobuf:"varint,1,opt,name=armed,proto3" json:"armed,omitempty"`
+	Locked               bool                   `protobuf:"varint,2,opt,name=locked,proto3" json:"locked,omitempty"`
+	LastAlertReason      string                 `protobuf:"bytes,3,opt,name=last_alert_reason,json=lastAlertReason,proto3" json:"last_alert_reason,omitempty"`
+	LastAlertTimestampMs int64                  `protobuf:"varint,4,opt,name=last_alert_timestamp_ms,json=lastAlertTimestampMs,proto3" json:"last_alert_timestamp_ms,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *SurveillanceStateUpdate) Reset() {
+	*x = SurveillanceStateUpdate{}
+	mi := &file_proto_v1_voila_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SurveillanceStateUpdate) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SurveillanceStateUpdate) ProtoMessage() {}
+
+func (x *SurveillanceStateUpdate) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_v1_voila_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SurveillanceStateUpdate.ProtoReflect.Descriptor instead.
+func (*SurveillanceStateUpdate) Descriptor() ([]byte, []int) {
+	return file_proto_v1_voila_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *SurveillanceStateUpdate) GetArmed() bool {
+	if x != nil {
+		return x.Armed
+	}
+	return false
+}
+
+func (x *SurveillanceStateUpdate) GetLocked() bool {
+	if x != nil {
+		return x.Locked
+	}
+	return false
+}
+
+func (x *SurveillanceStateUpdate) GetLastAlertReason() string {
+	if x != nil {
+		return x.LastAlertReason
+	}
+	return ""
+}
+
+func (x *SurveillanceStateUpdate) GetLastAlertTimestampMs() int64 {
+	if x != nil {
+		return x.LastAlertTimestampMs
+	}
+	return 0
+}
+
 type HeartbeatPing struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	UptimeSeconds    int64                  `protobuf:"varint,1,opt,name=uptime_seconds,json=uptimeSeconds,proto3" json:"uptime_seconds,omitempty"`
@@ -340,7 +432,7 @@ type HeartbeatPing struct {
 
 func (x *HeartbeatPing) Reset() {
 	*x = HeartbeatPing{}
-	mi := &file_proto_v1_voila_proto_msgTypes[2]
+	mi := &file_proto_v1_voila_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -352,7 +444,7 @@ func (x *HeartbeatPing) String() string {
 func (*HeartbeatPing) ProtoMessage() {}
 
 func (x *HeartbeatPing) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_voila_proto_msgTypes[2]
+	mi := &file_proto_v1_voila_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -365,7 +457,7 @@ func (x *HeartbeatPing) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HeartbeatPing.ProtoReflect.Descriptor instead.
 func (*HeartbeatPing) Descriptor() ([]byte, []int) {
-	return file_proto_v1_voila_proto_rawDescGZIP(), []int{2}
+	return file_proto_v1_voila_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *HeartbeatPing) GetUptimeSeconds() int64 {
@@ -395,7 +487,7 @@ type CommandOutputChunk struct {
 
 func (x *CommandOutputChunk) Reset() {
 	*x = CommandOutputChunk{}
-	mi := &file_proto_v1_voila_proto_msgTypes[3]
+	mi := &file_proto_v1_voila_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -407,7 +499,7 @@ func (x *CommandOutputChunk) String() string {
 func (*CommandOutputChunk) ProtoMessage() {}
 
 func (x *CommandOutputChunk) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_voila_proto_msgTypes[3]
+	mi := &file_proto_v1_voila_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -420,7 +512,7 @@ func (x *CommandOutputChunk) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommandOutputChunk.ProtoReflect.Descriptor instead.
 func (*CommandOutputChunk) Descriptor() ([]byte, []int) {
-	return file_proto_v1_voila_proto_rawDescGZIP(), []int{3}
+	return file_proto_v1_voila_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *CommandOutputChunk) GetCommandId() string {
@@ -472,7 +564,7 @@ type TaskProgressUpdate struct {
 
 func (x *TaskProgressUpdate) Reset() {
 	*x = TaskProgressUpdate{}
-	mi := &file_proto_v1_voila_proto_msgTypes[4]
+	mi := &file_proto_v1_voila_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -484,7 +576,7 @@ func (x *TaskProgressUpdate) String() string {
 func (*TaskProgressUpdate) ProtoMessage() {}
 
 func (x *TaskProgressUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_voila_proto_msgTypes[4]
+	mi := &file_proto_v1_voila_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -497,7 +589,7 @@ func (x *TaskProgressUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskProgressUpdate.ProtoReflect.Descriptor instead.
 func (*TaskProgressUpdate) Descriptor() ([]byte, []int) {
-	return file_proto_v1_voila_proto_rawDescGZIP(), []int{4}
+	return file_proto_v1_voila_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *TaskProgressUpdate) GetTaskId() string {
@@ -556,7 +648,7 @@ type ScreenCapture struct {
 
 func (x *ScreenCapture) Reset() {
 	*x = ScreenCapture{}
-	mi := &file_proto_v1_voila_proto_msgTypes[5]
+	mi := &file_proto_v1_voila_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -568,7 +660,7 @@ func (x *ScreenCapture) String() string {
 func (*ScreenCapture) ProtoMessage() {}
 
 func (x *ScreenCapture) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_voila_proto_msgTypes[5]
+	mi := &file_proto_v1_voila_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -581,7 +673,7 @@ func (x *ScreenCapture) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScreenCapture.ProtoReflect.Descriptor instead.
 func (*ScreenCapture) Descriptor() ([]byte, []int) {
-	return file_proto_v1_voila_proto_rawDescGZIP(), []int{5}
+	return file_proto_v1_voila_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ScreenCapture) GetCommandId() string {
@@ -638,7 +730,7 @@ type SurveillanceAlert struct {
 
 func (x *SurveillanceAlert) Reset() {
 	*x = SurveillanceAlert{}
-	mi := &file_proto_v1_voila_proto_msgTypes[6]
+	mi := &file_proto_v1_voila_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -650,7 +742,7 @@ func (x *SurveillanceAlert) String() string {
 func (*SurveillanceAlert) ProtoMessage() {}
 
 func (x *SurveillanceAlert) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_voila_proto_msgTypes[6]
+	mi := &file_proto_v1_voila_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -663,7 +755,7 @@ func (x *SurveillanceAlert) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SurveillanceAlert.ProtoReflect.Descriptor instead.
 func (*SurveillanceAlert) Descriptor() ([]byte, []int) {
-	return file_proto_v1_voila_proto_rawDescGZIP(), []int{6}
+	return file_proto_v1_voila_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *SurveillanceAlert) GetAlertType() string {
@@ -708,7 +800,7 @@ type ExecutionResult struct {
 
 func (x *ExecutionResult) Reset() {
 	*x = ExecutionResult{}
-	mi := &file_proto_v1_voila_proto_msgTypes[7]
+	mi := &file_proto_v1_voila_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -720,7 +812,7 @@ func (x *ExecutionResult) String() string {
 func (*ExecutionResult) ProtoMessage() {}
 
 func (x *ExecutionResult) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_voila_proto_msgTypes[7]
+	mi := &file_proto_v1_voila_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -733,7 +825,7 @@ func (x *ExecutionResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecutionResult.ProtoReflect.Descriptor instead.
 func (*ExecutionResult) Descriptor() ([]byte, []int) {
-	return file_proto_v1_voila_proto_rawDescGZIP(), []int{7}
+	return file_proto_v1_voila_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ExecutionResult) GetCommandId() string {
@@ -782,7 +874,7 @@ var File_proto_v1_voila_proto protoreflect.FileDescriptor
 
 const file_proto_v1_voila_proto_rawDesc = "" +
 	"\n" +
-	"\x14proto/v1/voila.proto\x12\bvoila.v1\"\x8c\x03\n" +
+	"\x14proto/v1/voila.proto\x12\bvoila.v1\"\xbd\x03\n" +
 	"\x10ExecutionCommand\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tR\tcommandId\x12\x18\n" +
@@ -796,7 +888,8 @@ const file_proto_v1_voila_proto_rawDesc = "" +
 	"\x0etarget_task_id\x18\t \x01(\tR\ftargetTaskId\x12\"\n" +
 	"\rtarget_job_id\x18\n" +
 	" \x01(\tR\vtargetJobId\x12!\n" +
-	"\ftimestamp_ms\x18\v \x01(\x03R\vtimestampMs\"\x95\x04\n" +
+	"\ftimestamp_ms\x18\v \x01(\x03R\vtimestampMs\x12/\n" +
+	"\x13surveillance_action\x18\f \x01(\tR\x12surveillanceAction\"\xe9\x04\n" +
 	"\x0eAgentTelemetry\x12\x1b\n" +
 	"\tdevice_id\x18\x01 \x01(\tR\bdeviceId\x12\x1f\n" +
 	"\vdevice_name\x18\x02 \x01(\tR\n" +
@@ -811,8 +904,14 @@ const file_proto_v1_voila_proto_rawDesc = "" +
 	"screenshot\x12L\n" +
 	"\x12surveillance_alert\x18\t \x01(\v2\x1b.voila.v1.SurveillanceAlertH\x00R\x11surveillanceAlert\x12>\n" +
 	"\ffinal_result\x18\n" +
-	" \x01(\v2\x19.voila.v1.ExecutionResultH\x00R\vfinalResultB\t\n" +
-	"\apayload\"d\n" +
+	" \x01(\v2\x19.voila.v1.ExecutionResultH\x00R\vfinalResult\x12R\n" +
+	"\x12surveillance_state\x18\v \x01(\v2!.voila.v1.SurveillanceStateUpdateH\x00R\x11surveillanceStateB\t\n" +
+	"\apayload\"\xaa\x01\n" +
+	"\x17SurveillanceStateUpdate\x12\x14\n" +
+	"\x05armed\x18\x01 \x01(\bR\x05armed\x12\x16\n" +
+	"\x06locked\x18\x02 \x01(\bR\x06locked\x12*\n" +
+	"\x11last_alert_reason\x18\x03 \x01(\tR\x0flastAlertReason\x125\n" +
+	"\x17last_alert_timestamp_ms\x18\x04 \x01(\x03R\x14lastAlertTimestampMs\"d\n" +
 	"\rHeartbeatPing\x12%\n" +
 	"\x0euptime_seconds\x18\x01 \x01(\x03R\ruptimeSeconds\x12,\n" +
 	"\x12active_tasks_count\x18\x02 \x01(\x05R\x10activeTasksCount\"\x9a\x01\n" +
@@ -869,31 +968,33 @@ func file_proto_v1_voila_proto_rawDescGZIP() []byte {
 	return file_proto_v1_voila_proto_rawDescData
 }
 
-var file_proto_v1_voila_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_proto_v1_voila_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_proto_v1_voila_proto_goTypes = []any{
-	(*ExecutionCommand)(nil),   // 0: voila.v1.ExecutionCommand
-	(*AgentTelemetry)(nil),     // 1: voila.v1.AgentTelemetry
-	(*HeartbeatPing)(nil),      // 2: voila.v1.HeartbeatPing
-	(*CommandOutputChunk)(nil), // 3: voila.v1.CommandOutputChunk
-	(*TaskProgressUpdate)(nil), // 4: voila.v1.TaskProgressUpdate
-	(*ScreenCapture)(nil),      // 5: voila.v1.ScreenCapture
-	(*SurveillanceAlert)(nil),  // 6: voila.v1.SurveillanceAlert
-	(*ExecutionResult)(nil),    // 7: voila.v1.ExecutionResult
+	(*ExecutionCommand)(nil),        // 0: voila.v1.ExecutionCommand
+	(*AgentTelemetry)(nil),          // 1: voila.v1.AgentTelemetry
+	(*SurveillanceStateUpdate)(nil), // 2: voila.v1.SurveillanceStateUpdate
+	(*HeartbeatPing)(nil),           // 3: voila.v1.HeartbeatPing
+	(*CommandOutputChunk)(nil),      // 4: voila.v1.CommandOutputChunk
+	(*TaskProgressUpdate)(nil),      // 5: voila.v1.TaskProgressUpdate
+	(*ScreenCapture)(nil),           // 6: voila.v1.ScreenCapture
+	(*SurveillanceAlert)(nil),       // 7: voila.v1.SurveillanceAlert
+	(*ExecutionResult)(nil),         // 8: voila.v1.ExecutionResult
 }
 var file_proto_v1_voila_proto_depIdxs = []int32{
-	2, // 0: voila.v1.AgentTelemetry.heartbeat:type_name -> voila.v1.HeartbeatPing
-	3, // 1: voila.v1.AgentTelemetry.output_chunk:type_name -> voila.v1.CommandOutputChunk
-	4, // 2: voila.v1.AgentTelemetry.progress:type_name -> voila.v1.TaskProgressUpdate
-	5, // 3: voila.v1.AgentTelemetry.screenshot:type_name -> voila.v1.ScreenCapture
-	6, // 4: voila.v1.AgentTelemetry.surveillance_alert:type_name -> voila.v1.SurveillanceAlert
-	7, // 5: voila.v1.AgentTelemetry.final_result:type_name -> voila.v1.ExecutionResult
-	1, // 6: voila.v1.DesktopTunnelService.EstablishTunnel:input_type -> voila.v1.AgentTelemetry
-	0, // 7: voila.v1.DesktopTunnelService.EstablishTunnel:output_type -> voila.v1.ExecutionCommand
-	7, // [7:8] is the sub-list for method output_type
-	6, // [6:7] is the sub-list for method input_type
-	6, // [6:6] is the sub-list for extension type_name
-	6, // [6:6] is the sub-list for extension extendee
-	0, // [0:6] is the sub-list for field type_name
+	3, // 0: voila.v1.AgentTelemetry.heartbeat:type_name -> voila.v1.HeartbeatPing
+	4, // 1: voila.v1.AgentTelemetry.output_chunk:type_name -> voila.v1.CommandOutputChunk
+	5, // 2: voila.v1.AgentTelemetry.progress:type_name -> voila.v1.TaskProgressUpdate
+	6, // 3: voila.v1.AgentTelemetry.screenshot:type_name -> voila.v1.ScreenCapture
+	7, // 4: voila.v1.AgentTelemetry.surveillance_alert:type_name -> voila.v1.SurveillanceAlert
+	8, // 5: voila.v1.AgentTelemetry.final_result:type_name -> voila.v1.ExecutionResult
+	2, // 6: voila.v1.AgentTelemetry.surveillance_state:type_name -> voila.v1.SurveillanceStateUpdate
+	1, // 7: voila.v1.DesktopTunnelService.EstablishTunnel:input_type -> voila.v1.AgentTelemetry
+	0, // 8: voila.v1.DesktopTunnelService.EstablishTunnel:output_type -> voila.v1.ExecutionCommand
+	8, // [8:9] is the sub-list for method output_type
+	7, // [7:8] is the sub-list for method input_type
+	7, // [7:7] is the sub-list for extension type_name
+	7, // [7:7] is the sub-list for extension extendee
+	0, // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_proto_v1_voila_proto_init() }
@@ -908,6 +1009,7 @@ func file_proto_v1_voila_proto_init() {
 		(*AgentTelemetry_Screenshot)(nil),
 		(*AgentTelemetry_SurveillanceAlert)(nil),
 		(*AgentTelemetry_FinalResult)(nil),
+		(*AgentTelemetry_SurveillanceState)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -915,7 +1017,7 @@ func file_proto_v1_voila_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_v1_voila_proto_rawDesc), len(file_proto_v1_voila_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   8,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

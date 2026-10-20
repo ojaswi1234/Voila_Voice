@@ -31,6 +31,7 @@ message ExecutionCommand {
   string target_job_id = 10;
   
   int64 timestamp_ms = 11;
+  string surveillance_action = 12; // "ARM", "DISARM", "LOCK", "UNLOCK"
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -49,7 +50,15 @@ message AgentTelemetry {
     ScreenCapture screenshot = 8;
     SurveillanceAlert surveillance_alert = 9;
     ExecutionResult final_result = 10;
+    SurveillanceStateUpdate surveillance_state = 11;
   }
+}
+
+message SurveillanceStateUpdate {
+  bool armed = 1;
+  bool locked = 2;
+  string last_alert_reason = 3;
+  int64 last_alert_timestamp_ms = 4;
 }
 
 message HeartbeatPing {
