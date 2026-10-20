@@ -1772,10 +1772,30 @@ func startNgrok() error {
 	return nil
 }
 
+func ensureGeminiLiveBridge() {
+	conn, err := net.DialTimeout("tcp", "127.0.0.1:19890", 250*time.Millisecond)
+	if err == nil {
+		conn.Close()
+		return
+	}
+	scriptPath := filepath.Join(getLocalAgentDir(), "gemini_live_bridge.py")
+	if _, err := os.Stat(scriptPath); err == nil {
+		cmd := exec.Command("python", scriptPath)
+		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+		if err := cmd.Start(); err == nil {
+			cmdMu.Lock()
+			activeToolPids = append(activeToolPids, cmd.Process.Pid)
+			cmdMu.Unlock()
+			log.Printf("[LiveBridge] Auto-started gemini_live_bridge.py PID=%d", cmd.Process.Pid)
+		}
+	}
+}
+
 func startHTTPServer() {
 	if serverRunning {
 		return
 	}
+	go ensureGeminiLiveBridge()
 	// Restore saved mode
 	if connData, err := loadConnectionData(); err == nil && connData.ActiveMode != "" {
 		currentModeMu.Lock()
@@ -1786,6 +1806,12 @@ func startHTTPServer() {
 	mux := http.NewServeMux()
 	
 	setupSurveillanceRoutes(mux)
+
+	mux.HandleFunc("/live/ensure", func(w http.ResponseWriter, r *http.Request) {
+		go ensureGeminiLiveBridge()
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "port": "19890"})
+	})
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

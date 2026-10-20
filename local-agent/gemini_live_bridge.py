@@ -5,6 +5,7 @@ over bidirectional WebSockets with:
 - Low-latency real-time voice streaming (16kHz PCM audio upstream, 24kHz PCM downstream).
 - Real-time barge-in interruption detection (interrupted: true).
 - Non-blocking asynchronous tool execution while streaming conversational speech.
+- Desktop UI control (desktop_automation via desktop_tools.py) & plasma-free screenshot capture.
 - Streaming live user & AI transcription.
 - Desktop UI synchronization (notifies plasma border on UDP 19885).
 - WebSocket bridge server for the Voila mobile app on ws://127.0.0.1:19890.
@@ -18,6 +19,7 @@ import base64
 import time
 import socket
 import traceback
+import subprocess
 from typing import Optional
 
 try:
@@ -39,10 +41,11 @@ LIVE_MODEL = "gemini-3.8-live"
 LIVE_SYSTEM_INSTRUCTION = """You are Voila Live, a real-time voice AI assistant operating on the user's Windows desktop.
 Tone & Personality: Raw, direct, conversational, and highly competent. Address the user as 'boss'.
 You are having a continuous live spoken conversation with the user. Keep your spoken answers brief, natural, and direct.
-When executing actions on the user's computer, speak natural conversational fillers (e.g., 'Checking the server status now...', 'Opening that file for you...').
+When executing actions on the user's computer, speak natural conversational fillers (e.g., 'Checking the server status now...', 'Opening that file for you...', 'Clicking that button on your screen...').
 If the user interrupts you while you are speaking, stop immediately and listen to their new instruction."""
 
 def notify_plasma_border(state: str):
+    """Notify the amorphous plasma border overlay of state changes via UDP IPC."""
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.sendto(f"STATE:{state}".encode("utf-8"), ("127.0.0.1", PLASMA_PORT))
@@ -51,11 +54,11 @@ def notify_plasma_border(state: str):
         pass
 
 def load_local_api_key() -> str:
-    # Check env var
+    # 1. Check environment variable
     key = os.environ.get("GEMINI_API_KEY", "")
     if key:
         return key
-    # Check local-agent connection data
+    # 2. Check local-agent connection data
     cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "connection_data.json")
     if os.path.exists(cfg_path):
         try:
@@ -66,33 +69,65 @@ def load_local_api_key() -> str:
             pass
     return ""
 
-# Tool definitions with behavior="NON_BLOCKING"
-LIVE_TOOL_DECLARATIONS = [
-    {
-        "name": "run_terminal",
-        "description": "Execute a PowerShell or command line instruction on the Windows host",
-        "parameters": {
+def get_live_tools():
+    """Build official NON_BLOCKING function declarations for Gemini 3.8 Live."""
+    if not types:
+        return []
+
+    decl_terminal = types.FunctionDeclaration(
+        name="run_terminal",
+        description="Execute a PowerShell or command line instruction on the Windows host",
+        behavior="NON_BLOCKING",
+        parameters={
             "type": "OBJECT",
             "properties": {
                 "command": {"type": "STRING", "description": "PowerShell command to execute"}
             },
             "required": ["command"]
-        },
-        "behavior": "NON_BLOCKING"
-    },
-    {
-        "name": "read_file",
-        "description": "Read file contents from the local disk",
-        "parameters": {
+        }
+    )
+
+    decl_read_file = types.FunctionDeclaration(
+        name="read_file",
+        description="Read file contents from the local disk",
+        behavior="NON_BLOCKING",
+        parameters={
             "type": "OBJECT",
             "properties": {
                 "path": {"type": "STRING", "description": "Absolute file path to read"}
             },
             "required": ["path"]
-        },
-        "behavior": "NON_BLOCKING"
-    }
-]
+        }
+    )
+
+    decl_desktop = types.FunctionDeclaration(
+        name="desktop_automation",
+        description="Control Windows desktop UI (click buttons, type text, find elements, switch windows)",
+        behavior="NON_BLOCKING",
+        parameters={
+            "type": "OBJECT",
+            "properties": {
+                "action": {"type": "STRING", "description": "list_windows | snapshot | find | invoke | click_ref | focus_window | close_window | set_value | type_keys"},
+                "selector": {"type": "STRING", "description": "Accessibility name or title to match"},
+                "ref": {"type": "STRING", "description": "Element reference from snapshot (e.g. e1)"},
+                "value": {"type": "STRING", "description": "Text value to type or set"},
+                "window": {"type": "STRING", "description": "Target window title or null for foreground"}
+            },
+            "required": ["action"]
+        }
+    )
+
+    decl_screenshot = types.FunctionDeclaration(
+        name="take_screenshot",
+        description="Capture the desktop screen (automatically excludes any plasma glow border)",
+        behavior="NON_BLOCKING",
+        parameters={
+            "type": "OBJECT",
+            "properties": {}
+        }
+    )
+
+    return [types.Tool(function_declarations=[decl_terminal, decl_read_file, decl_desktop, decl_screenshot])]
 
 async def execute_local_tool(name: str, args: dict) -> str:
     """Executes a local tool call on the desktop."""
@@ -108,12 +143,62 @@ async def execute_local_tool(name: str, args: dict) -> str:
             res = stdout.decode("utf-8", errors="replace")
             err = stderr.decode("utf-8", errors="replace")
             return res if res else err
+
         elif name == "read_file":
             path = args.get("path", "")
             if os.path.exists(path):
                 with open(path, "r", encoding="utf-8", errors="replace") as f:
                     return f.read(4000)
             return f"Error: File not found at {path}"
+
+        elif name == "desktop_automation":
+            action = args.get("action", "snapshot")
+            ref = args.get("ref", "")
+            selector = args.get("selector", "")
+            value = args.get("value", "")
+            window = args.get("window", "")
+            script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "desktop_tools.py")
+            cmd_args = [sys.executable, script_path, "--action", action]
+            if ref: cmd_args.extend(["--ref", ref])
+            if selector: cmd_args.extend(["--selector", selector])
+            if value: cmd_args.extend(["--value", value])
+            if window: cmd_args.extend(["--window", window])
+            proc = await asyncio.create_subprocess_exec(
+                *cmd_args,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await proc.communicate()
+            return stdout.decode("utf-8", errors="replace").strip()
+
+        elif name == "take_screenshot":
+            # Exclude plasma border from screenshot: blank it, wait 90ms, capture, restore
+            notify_plasma_border("OFF")
+            await asyncio.sleep(0.09)
+            psCode = """
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+$bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+$bitmap = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height
+$graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+$graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+$stream = New-Object System.IO.MemoryStream
+$bitmap.Save($stream, [System.Drawing.Imaging.ImageFormat]::Jpeg)
+$bytes = $stream.ToArray()
+$graphics.Dispose()
+$bitmap.Dispose()
+$stream.Dispose()
+Write-Output "Screenshot captured ($($bytes.Length) bytes, plasma-free)"
+"""
+            proc = await asyncio.create_subprocess_shell(
+                f'powershell -NoProfile -Command "{psCode}"',
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, _ = await proc.communicate()
+            notify_plasma_border("IDLE")
+            return stdout.decode("utf-8", errors="replace").strip()
+
     except Exception as e:
         return f"Tool execution error: {str(e)}"
     return "Unknown tool"
@@ -158,14 +243,23 @@ class GeminiLiveSessionManager:
 
         try:
             client = genai.Client(api_key=self.api_key)
-            config = types.LiveConnectConfig(
-                response_modalities=[types.Modality.AUDIO],
-                system_instruction=types.Content(
+            tools = get_live_tools()
+
+            config_args = {
+                "response_modalities": [types.Modality.AUDIO],
+                "system_instruction": types.Content(
                     parts=[types.Part(text=LIVE_SYSTEM_INSTRUCTION)]
                 ),
-                input_audio_transcription=types.AudioTranscriptionConfig(),
-                output_audio_transcription=types.AudioTranscriptionConfig(),
-            )
+                "input_audio_transcription": types.AudioTranscriptionConfig(),
+                "output_audio_transcription": types.AudioTranscriptionConfig(),
+                "tools": tools,
+            }
+
+            # Extended thinking configuration for high-reasoning live model
+            if self.model == "gemini-3.8-live-extended-thinking":
+                config_args["thinking_config"] = types.ThinkingConfig(thinking_level="low")
+
+            config = types.LiveConnectConfig(**config_args)
 
             async with client.aio.live.connect(model=self.model, config=config) as session:
                 self.gemini_session = session
@@ -176,6 +270,12 @@ class GeminiLiveSessionManager:
                 async for response in session.receive():
                     if not self.active:
                         break
+
+                    # Monitor interaction status (Gemini 3.8 async reasoning)
+                    interaction_status = getattr(response, "interaction_status", None)
+                    if interaction_status == "IDLE":
+                        notify_plasma_border("IDLE")
+                        await self.broadcast_to_client({"type": "live_state", "state": "LISTENING"})
 
                     content = response.server_content
                     if content:
@@ -219,7 +319,12 @@ class GeminiLiveSessionManager:
                                         "data": audio_b64
                                     })
 
-                    # 5. Handle Live Tool Calls
+                        # 5. Turn completion
+                        if getattr(content, "turn_complete", False):
+                            notify_plasma_border("IDLE")
+                            await self.broadcast_to_client({"type": "live_state", "state": "LISTENING"})
+
+                    # 6. Handle Live Non-Blocking Tool Calls
                     tool_call = getattr(response, "tool_call", None)
                     if tool_call:
                         notify_plasma_border("BASH")
@@ -286,7 +391,7 @@ class GeminiLiveSessionManager:
         self.active = False
         notify_plasma_border("IDLE")
 
-async def handle_client(websocket, path):
+async def handle_client(websocket, path=None):
     session_mgr = GeminiLiveSessionManager(websocket)
     try:
         async for raw_msg in websocket:
@@ -311,6 +416,7 @@ async def handle_client(websocket, path):
                     await session_mgr.send_text_chunk(text)
             elif msg_type == "interrupt":
                 notify_plasma_border("IDLE")
+                session_mgr.stop()
                 await session_mgr.broadcast_to_client({"type": "interrupted"})
             elif msg_type == "stop":
                 session_mgr.stop()
