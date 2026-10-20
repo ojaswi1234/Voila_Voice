@@ -133,7 +133,7 @@ jobs:
           exit 1
         fi
 
-        flutter build apk --release --dart-define=BACKEND_URL="$WS_URL"
+        flutter build apk --release --dart-define=BACKEND_URL="$WS_URL" --obfuscate --split-debug-info=./debug_info
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
