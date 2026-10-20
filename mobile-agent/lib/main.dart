@@ -1189,18 +1189,66 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       final message = {
         'type': 'stop_command',
         'device_id': _activeDevice,
+        'job_id': _activeJobId ?? '',
+        'session_token': _sessionToken,
       };
       _channel?.sink.add(jsonEncode(message));
       
+      if (_activeJobId != null && _activeJobId!.isNotEmpty) {
+        _channel?.sink.add(jsonEncode({
+          'type': 'cancel_job',
+          'device_id': _activeDevice,
+          'job_id': _activeJobId,
+          'session_token': _sessionToken,
+        }));
+      }
+      
       if (mounted) setState(() {
-        _isThinking = false; _triggerDataArriving();
+        _isThinking = false;
+        _triggerDataArriving();
+        _activeJobStatus = 'cancelled';
+        for (var t in _bgTasks) {
+          if (t['status'] == 'running') {
+            t['status'] = 'cancelling';
+          }
+        }
         _addMessage({
           'type': 'system',
-          'content': 'Cancellation signal sent to local agent (ESC pressed).',
+          'content': '⏹️ Force stop signal dispatched to local agent. Running processes and tasks terminated.',
           'timestamp': DateTime.now().toString(),
         });
       });
       _scrollToBottom();
+    }
+  }
+
+  void _killSpecificBgTask(String taskId) {
+    if (taskId.isEmpty) return;
+    if (_isConnected && _activeDevice.isNotEmpty && _activeDevice.startsWith('desktop-')) {
+      final message = {
+        'type': 'kill_task',
+        'device_id': _activeDevice,
+        'task_id': taskId,
+        'job_id': taskId,
+        'session_token': _sessionToken,
+      };
+      _channel?.sink.add(jsonEncode(message));
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('⏹️ Sent kill signal for task $taskId'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+        setState(() {
+          for (var t in _bgTasks) {
+            if (t['id'] == taskId) {
+              t['status'] = 'cancelling';
+            }
+          }
+        });
+      }
     }
   }
 
@@ -3899,6 +3947,14 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                                   ],
                                 ),
                                 actions: [
+                                  if (isRunning)
+                                    TextButton(
+                                      onPressed: () {
+                                        Navigator.pop(context);
+                                        _killSpecificBgTask(task['id']?.toString() ?? '');
+                                      },
+                                      child: const Text('Kill Task', style: TextStyle(color: Color(0xFFEF4444), fontWeight: FontWeight.bold)),
+                                    ),
                                   TextButton(
                                     onPressed: () => Navigator.pop(context),
                                     child: Text('Close', style: GoogleFonts.inter(color: AppTokens.textSecondary(isDark))),
@@ -3935,6 +3991,35 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                                       ),
                                     ),
                                   ),
+                                  if (isRunning) ...[
+                                    GestureDetector(
+                                      behavior: HitTestBehavior.opaque,
+                                      onTap: () => _killSpecificBgTask(task['id']?.toString() ?? ''),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFEF4444).withOpacity(0.15),
+                                          borderRadius: BorderRadius.circular(8),
+                                          border: Border.all(color: const Color(0xFFEF4444)),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            const Icon(Icons.stop_rounded, size: 12, color: Color(0xFFEF4444)),
+                                            const SizedBox(width: 2),
+                                            Text(
+                                              'KILL',
+                                              style: GoogleFonts.spaceGrotesk(
+                                                color: const Color(0xFFEF4444),
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.w800,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ],
                               ),
                               if (task['action'] != null) ...[
@@ -4183,9 +4268,10 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   }
 
   void _cancelJob() {
-    if (_activeJobId == null) return;
+    if (_activeJobId == null || _activeJobId!.isEmpty) return;
     _channel?.sink.add(jsonEncode({
       'type': 'cancel_job',
+      'device_id': _activeDevice,
       'job_id': _activeJobId,
       'session_token': _sessionToken,
     }));
