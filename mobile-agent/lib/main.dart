@@ -490,7 +490,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   
   String _activeDevice = '';
   String _previousDictationText = "";
-  bool _isConnected = false; _activeJobId = null; _activeJobStatus = '';
+  bool _isConnected = false;
   bool _isHealthy = false;
   bool _localAgentConnected = false;
   String _currentAiSubtitle = "";
