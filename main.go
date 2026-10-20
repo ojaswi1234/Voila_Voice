@@ -897,6 +897,17 @@ func (b *Backend) unlockDevice(deviceID, clientID string) error {
 	return nil
 }
 
+func (b *Backend) forceUnlockDevice(deviceID string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	
+	if device, exists := b.devices[deviceID]; exists {
+		device.LockedBy = ""
+		device.LockedAt = time.Time{}
+		log.Printf("Device %s forcibly unlocked", deviceID)
+	}
+}
+
 func (b *Backend) isDeviceLocked(deviceID, clientID string) bool {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
@@ -916,6 +927,10 @@ func generateAuthToken() string {
 
 
 func (b *Backend) stopCommand(deviceID string) (string, error) {
+	return b.stopCommandWithTask(deviceID, "", "")
+}
+
+func (b *Backend) stopCommandWithTask(deviceID, jobID, taskID string) (string, error) {
 	b.mu.RLock()
 	device, exists := b.devices[deviceID]
 	if !exists {
@@ -924,6 +939,7 @@ func (b *Backend) stopCommand(deviceID string) (string, error) {
 	}
 	active := device.Active
 	address := device.Address
+	secretHash := device.SecurityPhraseHash
 	b.mu.RUnlock()
 
 	if !active {
@@ -931,13 +947,17 @@ func (b *Backend) stopCommand(deviceID string) (string, error) {
 	}
 
 	urlStr := address + "/stop"
+	payload, _ := json.Marshal(map[string]interface{}{
+		"job_id":  jobID,
+		"task_id": taskID,
+	})
 	client := safeHTTPClient()
-	req, err := http.NewRequest("POST", urlStr, nil)
+	req, err := http.NewRequest("POST", urlStr, bytes.NewBuffer(payload))
 	if err != nil {
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Exec-Secret", device.SecurityPhraseHash)
+	req.Header.Set("X-Exec-Secret", secretHash)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -1721,16 +1741,23 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				
 
 			case "stop_command":
-				b.lockDevice(deviceID, clientID)
-				result, err := b.stopCommand(deviceID)
-				b.unlockDevice(deviceID, clientID)
-
-				
-				if err != nil {
-					b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: "+err.Error()))
-				} else {
-					b.dispatcher.Dispatch(clientID, messageType, []byte("OK: "+result))
+				jobID, _ := msg["job_id"].(string)
+				taskID, _ := msg["task_id"].(string)
+				if deviceID == "" {
+					dev := b.getActiveDevice()
+					if dev != nil {
+						deviceID = dev.ID
+					}
 				}
+				b.forceUnlockDevice(deviceID)
+				go func(dID, jID, tID string) {
+					result, err := b.stopCommandWithTask(dID, jID, tID)
+					if err != nil {
+						b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: "+err.Error()))
+					} else {
+						b.dispatcher.Dispatch(clientID, messageType, []byte("OK: "+result))
+					}
+				}(deviceID, jobID, taskID)
 
 			case "switch_device":
 				err := b.setActiveDevice(deviceID)
@@ -1766,25 +1793,27 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 					}()
 				}
 				
-			case "cancel_job":
-				b.mu.RLock()
-				device, exists := b.devices[deviceID]
-				b.mu.RUnlock()
-				if exists && device.Active {
-					go func() {
-						cancelUrl := strings.TrimRight(device.Address, "/") + "/stop"
-						payload, _ := json.Marshal(map[string]interface{}{
-							"client_id": clientID,
-						})
-						req, err := http.NewRequest("POST", cancelUrl, bytes.NewBuffer(payload))
-						if err == nil {
-							req.Header.Set("Content-Type", "application/json")
-							req.Header.Set("X-Exec-Secret", device.SecurityPhraseHash)
-							client := safeHTTPClient()
-							client.Do(req)
-						}
-					}()
+			case "cancel_job", "kill_task":
+				jobID, _ := msg["job_id"].(string)
+				taskID, _ := msg["task_id"].(string)
+				if taskID == "" {
+					taskID = jobID
 				}
+				if deviceID == "" {
+					dev := b.getActiveDevice()
+					if dev != nil {
+						deviceID = dev.ID
+					}
+				}
+				b.forceUnlockDevice(deviceID)
+				go func(dID, jID, tID string) {
+					result, err := b.stopCommandWithTask(dID, jID, tID)
+					if err != nil {
+						b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: "+err.Error()))
+					} else {
+						b.dispatcher.Dispatch(clientID, messageType, []byte("OK: "+result))
+					}
+				}(deviceID, jobID, taskID)
 				
 			case "lock_device":
 				err := b.lockDevice(deviceID, clientID)
