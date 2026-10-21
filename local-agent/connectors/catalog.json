@@ -54,20 +54,5 @@
       "-y",
       "@umbertotancorre/youtube-mcp"
     ]
-  },
-  {
-    "id": "canvas_lms",
-    "name": "Canvas LMS",
-    "description": "Canvas LMS integration",
-    "auth_type": "token",
-    "free": true,
-    "mcp_command": "npx",
-    "mcp_args": [
-      "-y",
-      "@r-huijts/canvas-mcp"
-    ],
-    "fields": [
-      {"key": "token", "label": "Canvas API Token", "secret": true}
-    ]
   }
 ]

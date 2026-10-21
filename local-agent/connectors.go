@@ -84,7 +84,7 @@ func connectorsConnect(id, token string) (string, error) {
 
 // connectorsConnectMulti connects using a map of credential key→value pairs.
 // For Gmail: {"client_id": "...", "client_secret": "..."}
-// For GitHub/Canvas: {"token": "..."}
+// For GitHub: {"token": "..."}
 func connectorsConnectMulti(id string, creds map[string]string) (string, error) {
 	catalog, err := loadCatalog()
 	if err != nil {
@@ -122,10 +122,8 @@ func connectorsConnectMulti(id string, creds map[string]string) (string, error) 
 			case "github":
 				envMap["GITHUB_PERSONAL_ACCESS_TOKEN"] = val
 				envMap["GITHUB_TOKEN"] = val
-			case "canvas_lms":
-				envMap["CANVAS_API_TOKEN"] = val
 			default:
-				// Generic: use the field key directly uppercased as env var
+				// Generic: use the field key directly as env var
 				envMap[field.Key] = val
 			}
 		}
@@ -137,8 +135,6 @@ func connectorsConnectMulti(id string, creds map[string]string) (string, error) 
 			case "github":
 				envMap["GITHUB_PERSONAL_ACCESS_TOKEN"] = token
 				envMap["GITHUB_TOKEN"] = token
-			case "canvas_lms":
-				envMap["CANVAS_API_TOKEN"] = token
 			default:
 				envMap["TOKEN"] = token
 			}
