@@ -3660,7 +3660,7 @@ Example full deck:
 	{
 		Type: "function",
 		Function: toolFuncDef{
-			Name:        "docs.templates.list",
+			Name:        "docs_templates_list",
 			Description: "List all available document templates.",
 			Parameters: map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
 		},
@@ -3668,7 +3668,7 @@ Example full deck:
 	{
 		Type: "function",
 		Function: toolFuncDef{
-			Name:        "docs.templates.get",
+			Name:        "docs_templates_get",
 			Description: "Get details and requirements for a specific template.",
 			Parameters: map[string]interface{}{
 				"type": "object",
@@ -3682,7 +3682,7 @@ Example full deck:
 	{
 		Type: "function",
 		Function: toolFuncDef{
-			Name:        "docs.create_from_template",
+			Name:        "docs_create_from_template",
 			Description: "Create a new document from a template.",
 			Parameters: map[string]interface{}{
 				"type": "object",
@@ -3697,7 +3697,7 @@ Example full deck:
 	{
 		Type: "function",
 		Function: toolFuncDef{
-			Name:        "docs.list_recent",
+			Name:        "docs_list_recent",
 			Description: "List recently generated template documents.",
 			Parameters: map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
 		},
@@ -3705,7 +3705,7 @@ Example full deck:
 	{
 		Type: "function",
 		Function: toolFuncDef{
-			Name:        "docs.open_local",
+			Name:        "docs_open_local",
 			Description: "Open a recently generated document locally.",
 			Parameters: map[string]interface{}{
 				"type": "object",
@@ -4244,10 +4244,11 @@ func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMes
 	}
 
 	switch toolName {
-	case "docs.templates.list", "docs.templates.get", "docs.create_from_template", "docs.list_recent", "docs.open_local":
+	case "docs.templates.list", "docs_templates_list", "docs.templates.get", "docs_templates_get", "docs.create_from_template", "docs_create_from_template", "docs.list_recent", "docs_list_recent", "docs.open_local", "docs_open_local":
 		action := strings.TrimPrefix(toolName, "docs.")
-		if action == "templates.list" { action = "list" }
-		if action == "templates.get" { action = "get" }
+		action = strings.TrimPrefix(action, "docs_")
+		if action == "templates.list" || action == "templates_list" { action = "list" }
+		if action == "templates.get" || action == "templates_get" { action = "get" }
 		
 		scriptPath := filepath.Join(getExecutableDir(), "mcp_docs_facade.py")
 		var cmdObj *exec.Cmd
@@ -5910,6 +5911,7 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 				Role      string `json:"role"`
 				Content   string `json:"content"`
 				ToolCalls []struct {
+					ID       string `json:"id"`
 					Function struct {
 						Name      string          `json:"name"`
 						Arguments json.RawMessage `json:"arguments"`
@@ -5974,6 +5976,7 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 		for i, tc := range result.Message.ToolCalls {
 			wg.Add(1)
 			go func(index int, toolCall struct {
+				ID       string `json:"id"`
 				Function struct {
 					Name      string          `json:"name"`
 					Arguments json.RawMessage `json:"arguments"`
@@ -6009,11 +6012,15 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 				
 				res := executeTool(ctx, toolCall.Function.Name, json.RawMessage(argsBytes), streamFileObj)
 				
-				toolResults[index] = map[string]interface{}{
+				trEntry := map[string]interface{}{
 					"role":    "tool",
 					"name":    toolCall.Function.Name,
 					"content": res,
 				}
+				if toolCall.ID != "" {
+					trEntry["tool_call_id"] = toolCall.ID
+				}
+				toolResults[index] = trEntry
 			}(i, tc)
 		}
 		wg.Wait()

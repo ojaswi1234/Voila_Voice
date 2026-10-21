@@ -89,6 +89,7 @@ func connectorsConnect(id, token string) (string, error) {
 	if token != "" {
 		if id == "github" {
 			envMap["GITHUB_PERSONAL_ACCESS_TOKEN"] = token
+			envMap["GITHUB_TOKEN"] = token
 		} else if id == "canvas_lms" {
 			envMap["CANVAS_API_TOKEN"] = token
 		} else {

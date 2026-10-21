@@ -79,6 +79,10 @@ func (h *Host) StartEnabled(cfg *Config) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
+	if h.servers == nil {
+		h.servers = make(map[string]*mcpServerProcess)
+	}
+
 	for _, scfg := range cfg.Servers {
 		if !scfg.Enabled {
 			continue
@@ -172,6 +176,32 @@ func (h *Host) ListServers() []ServerStatus {
 }
 
 func (p *mcpServerProcess) start() error {
+	// Auto-detect GitHub token if missing or empty
+	if p.config.ID == "github" {
+		if p.config.Env == nil {
+			p.config.Env = make(map[string]string)
+		}
+		token := p.config.Env["GITHUB_PERSONAL_ACCESS_TOKEN"]
+		if token == "" {
+			token = p.config.Env["GITHUB_TOKEN"]
+		}
+		if token == "" {
+			token = os.Getenv("GITHUB_PERSONAL_ACCESS_TOKEN")
+		}
+		if token == "" {
+			token = os.Getenv("GITHUB_TOKEN")
+		}
+		if token == "" {
+			if out, err := exec.Command("gh", "auth", "token").Output(); err == nil {
+				token = strings.TrimSpace(string(out))
+			}
+		}
+		if token != "" {
+			p.config.Env["GITHUB_PERSONAL_ACCESS_TOKEN"] = token
+			p.config.Env["GITHUB_TOKEN"] = token
+		}
+	}
+
 	p.cmd = exec.Command(p.config.Command, p.config.Args...)
 
 	env := os.Environ()

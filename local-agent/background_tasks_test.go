@@ -51,13 +51,13 @@ func TestBGTaskLifecycleAndDedup(t *testing.T) {
 	cmd1 := "echo 'hello world'"
 	
 	// Test spawning
-	taskID1, _ := spawnBGTaskSafe(cmd1, "test-label")
+	taskID1, _ := spawnBGTaskSafe(cmd1, "test-label", "test-conv")
 	if taskID1 == "" {
 		t.Fatalf("spawnBGTaskSafe failed, got empty ID")
 	}
 
 	// Test dedup
-	taskID2, _ := spawnBGTaskSafe(cmd1, "test-label")
+	taskID2, _ := spawnBGTaskSafe(cmd1, "test-label", "test-conv")
 	if taskID2 != taskID1 {
 		t.Errorf("Expected dedup to return %s, got %s", taskID1, taskID2)
 	}

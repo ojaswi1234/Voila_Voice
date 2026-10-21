@@ -125,3 +125,5 @@ test_*.xlsx
 # Keep important files
 !mobile-agent/pubspec.yaml
 !mobile-agent/android/app/build.gradle
+
+scratch/

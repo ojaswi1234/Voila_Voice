@@ -51,6 +51,16 @@ func toolListForSession() []toolDef {
 		if params == nil {
 			params = map[string]interface{}{"type": "object", "properties": map[string]interface{}{}}
 		}
+		// Strip meta-schema attributes that Cloud APIs (Groq, OpenAI) reject
+		delete(params, "$schema")
+		delete(params, "$id")
+		delete(params, "$comment")
+		if _, ok := params["type"]; !ok {
+			params["type"] = "object"
+		}
+		if _, ok := params["properties"]; !ok {
+			params["properties"] = map[string]interface{}{}
+		}
 		tools = append(tools, toolDef{
 			Type: "function",
 			Function: toolFuncDef{
