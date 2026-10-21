@@ -52,7 +52,7 @@ def _connect(p, hint=None):
         if i == 5 and not _cdp_ok():
             _launch(hint or "https://www.google.com")
         time.sleep(0.5)
-    raise RuntimeError(f"CDP connect failed: {err}")
+    raise RuntimeError(f"cdp_unavailable: Microsoft Edge remote debugging port {CDP_PORT} is unavailable ({err}).")
 
 def _info(page):
     u = t = ""
@@ -85,60 +85,131 @@ def _err(a, msg, page=None, **k):
         pass
     d.update(k); return d
 
+def _setup_dialog(page, policy="accept"):
+    try:
+        if getattr(page, "_voila_dialog_set", False):
+            return
+        page._voila_dialog_set = True
+        page.on("dialog", lambda d: d.accept() if policy == "accept" else d.dismiss())
+    except Exception:
+        pass
+
 def _page(browser):
     global _active_tab_index
     ctxs = browser.contexts
     if not ctxs:
         p = browser.new_context().new_page()
         _active_tab_index = 0
+        _setup_dialog(p)
         return p
     pages = ctxs[0].pages
     if not pages:
         p = ctxs[0].new_page()
         _active_tab_index = 0
+        _setup_dialog(p)
         return p
     if _active_tab_index < 0 or _active_tab_index >= len(pages):
         _active_tab_index = len(pages) - 1
-    return pages[_active_tab_index]
+    p = pages[_active_tab_index]
+    _setup_dialog(p)
+    return p
 
 
 def _get_loc(page, sel):
-    # 1. Try CSS / xpath selector directly
+    s = (sel or "").strip()
+    if not s:
+        return page.locator("body")
+
+    # 1. Structured locator syntax:
+    # role=button[name="Submit"] or role=button;name=Submit
+    if s.lower().startswith("role="):
+        rest = s[5:].strip()
+        name = ""
+        role = rest
+        if "[" in rest and "name=" in rest:
+            role = rest.split("[")[0].strip()
+            name_part = rest.split("name=")[1].rstrip("]").strip(' "\'')
+            name = name_part
+        elif ";" in rest and "name=" in rest:
+            parts = rest.split(";")
+            role = parts[0].strip()
+            for p in parts[1:]:
+                if p.strip().startswith("name="):
+                    name = p.strip()[5:].strip(' "\'')
+        try:
+            if name:
+                loc = page.get_by_role(role, name=name)
+            else:
+                loc = page.get_by_role(role)
+            if loc.count() > 0:
+                return loc.first
+        except Exception:
+            pass
+
+    if s.lower().startswith("label="):
+        lbl = s[6:].strip(' "\'')
+        try:
+            loc = page.get_by_label(lbl)
+            if loc.count() > 0: return loc.first
+        except Exception: pass
+
+    if s.lower().startswith("placeholder="):
+        ph = s[12:].strip(' "\'')
+        try:
+            loc = page.get_by_placeholder(ph)
+            if loc.count() > 0: return loc.first
+        except Exception: pass
+
+    if s.lower().startswith("testid="):
+        tid = s[7:].strip(' "\'')
+        try:
+            loc = page.get_by_test_id(tid)
+            if loc.count() > 0: return loc.first
+        except Exception: pass
+
+    if s.lower().startswith("text="):
+        txt = s[5:].strip(' "\'')
+        try:
+            loc = page.get_by_text(txt, exact=False)
+            if loc.count() > 0: return loc.first
+        except Exception: pass
+
+    # 2. Try standard CSS / XPath locator directly
     try:
-        loc = page.locator(sel)
-        if loc.count() > 0: return loc
+        loc = page.locator(s)
+        if loc.count() > 0: return loc.first
     except Exception:
         pass
         
-    # 2. Check if sel matches text or accessible role
+    # 3. Check text or accessible roles
     try:
-        loc_text = page.get_by_text(sel, exact=False)
+        loc_text = page.get_by_text(s, exact=False)
         if loc_text.count() > 0: return loc_text.first
     except Exception:
         pass
 
     try:
-        loc_btn = page.get_by_role("button", name=sel)
+        loc_btn = page.get_by_role("button", name=s)
         if loc_btn.count() > 0: return loc_btn.first
-        loc_link = page.get_by_role("link", name=sel)
+        loc_link = page.get_by_role("link", name=s)
         if loc_link.count() > 0: return loc_link.first
     except Exception:
         pass
 
-    # 3. Check inside iframes
+    # 4. Check inside iframes
     for frame in page.frames:
         try:
-            floc = frame.locator(sel).first
+            floc = frame.locator(s).first
             if floc.count() > 0: return floc
         except Exception:
             pass
         try:
-            floc_text = frame.get_by_text(sel, exact=False).first
+            floc_text = frame.get_by_text(s, exact=False).first
             if floc_text.count() > 0: return floc_text
         except Exception:
             pass
             
-    return page.locator(sel)
+    return page.locator(s).first
 
 def _handle(browser, args):
     global _active_tab_index
@@ -146,6 +217,9 @@ def _handle(browser, args):
     page = _page(browser)
     wt = int(args.get("wait_time") or 1000)
     try:
+        if action == "health":
+            return _ok(action, page, cdp_ok=_cdp_ok(0.5))
+
         if action == "goto":
             url = (args.get("url") or "").strip()
             if not url: return _err(action, "url required", page)
@@ -159,14 +233,45 @@ def _handle(browser, args):
             page.goto(url, timeout=45000, wait_until="domcontentloaded")
             try: page.wait_for_timeout(min(wt, 3000))
             except Exception: pass
-            return _ok(action, page, navigated_to=url)
+            return _ok(action, page, navigated_to=url, extract_hint=True)
+
+        if action == "wait_for":
+            target_sel = args.get("selector")
+            target_url = args.get("url")
+            target_text = args.get("text") or args.get("value")
+            target_state = args.get("state") or "visible"
+            timeout = int(args.get("timeout_ms") or args.get("wait_time") or 10000)
+            
+            try:
+                if target_url:
+                    page.wait_for_url(target_url, timeout=timeout)
+                    return _ok(action, page, waited_for=f"url:{target_url}")
+                elif target_sel:
+                    loc = _get_loc(page, target_sel)
+                    loc.wait_for(state=target_state if target_state in ("attached", "visible", "hidden") else "visible", timeout=timeout)
+                    return _ok(action, page, waited_for=f"selector:{target_sel}")
+                elif target_text:
+                    loc = page.get_by_text(target_text, exact=False)
+                    loc.first.wait_for(state="visible", timeout=timeout)
+                    return _ok(action, page, waited_for=f"text:{target_text}")
+                elif target_state in ("load", "domcontentloaded", "networkidle"):
+                    page.wait_for_load_state(target_state, timeout=timeout)
+                    return _ok(action, page, waited_for=f"state:{target_state}")
+                else:
+                    page.wait_for_timeout(min(timeout, 5000))
+                    return _ok(action, page, waited_for=f"timeout:{timeout}ms")
+            except Exception as e:
+                return _err(action, f"wait_for failed or timed out: {e}", page)
+
         if action == "click":
             sel = args.get("selector")
             if not sel: return _err(action, "selector required", page)
             loc = _get_loc(page, sel)
             try:
-                loc.scroll_into_view_if_needed(timeout=3000)
-                loc.click(timeout=5000)
+                # Lean on locator auto-wait (visible, stable, receives events)
+                loc.wait_for(state="visible", timeout=4000)
+                loc.scroll_into_view_if_needed(timeout=2000)
+                loc.click(timeout=4000)
             except Exception as e:
                 # Fallback 1: forced click if obscured by sticky headers/modals
                 try: 
@@ -176,28 +281,30 @@ def _handle(browser, args):
                     try:
                         loc.evaluate("el => el.click()")
                     except Exception:
-                        raise e
+                        return _err(action, f"Click failed on {sel!r}: {e}", page)
             return _ok(action, page, selector=sel)
+
         if action == "type":
             sel, val = args.get("selector"), args.get("value")
             if not sel or val is None: return _err(action, "selector and value required", page)
             loc = _get_loc(page, sel)
             try:
-                loc.scroll_into_view_if_needed(timeout=3000)
+                loc.wait_for(state="visible", timeout=4000)
+                loc.scroll_into_view_if_needed(timeout=2000)
                 try:
                     tag = loc.evaluate("el => el.tagName.toLowerCase()")
                     if tag == "select":
-                        loc.select_option(label=str(val), timeout=5000)
+                        loc.select_option(label=str(val), timeout=4000)
                     elif tag == "input" and loc.evaluate("el => el.type.toLowerCase()") in ("checkbox", "radio"):
-                        if str(val).lower() in ("true", "1", "yes", "on"): loc.check(timeout=5000)
-                        else: loc.uncheck(timeout=5000)
+                        if str(val).lower() in ("true", "1", "yes", "on"): loc.check(timeout=4000)
+                        else: loc.uncheck(timeout=4000)
                     else:
-                        loc.fill(str(val), timeout=5000)
+                        loc.fill(str(val), timeout=4000)
                 except Exception:
-                    loc.fill(str(val), timeout=5000)
+                    loc.fill(str(val), timeout=4000)
             except Exception as e:
                 try: loc.fill(str(val), force=True, timeout=2000)
-                except Exception: raise e
+                except Exception: return _err(action, f"Type failed on {sel!r}: {e}", page)
             return _ok(action, page, selector=sel)
         if action == "press":
             val, sel = args.get("value") or args.get("key"), args.get("selector")
@@ -316,7 +423,6 @@ def _handle(browser, args):
                 
                 const allNodes = getAllElements(document);
                 
-                // Extremely aggressive interactive element detection for modern web apps (filters, custom dropdowns, toggles)
                 const isInteractive = (el) => {
                     const tag = el.tagName.toLowerCase();
                     if (['a', 'button', 'input', 'textarea', 'select', 'summary', 'label'].includes(tag)) return true;
@@ -326,7 +432,6 @@ def _handle(browser, args):
                     if (el.hasAttribute('tabindex') && el.getAttribute('tabindex') !== '-1') return true;
                     const cls = (el.className || '').toString().toLowerCase();
                     if (cls.includes('btn') || cls.includes('button') || cls.includes('toggle') || cls.includes('filter') || cls.includes('dropdown')) {
-                        // Only include custom classes if they have click listeners or cursor: pointer
                         const style = window.getComputedStyle(el);
                         if (style.cursor === 'pointer') return true;
                     }
@@ -340,14 +445,26 @@ def _handle(browser, args):
                     const style = window.getComputedStyle(el);
                     return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.opacity !== '0' && style.display !== 'none';
                 }).slice(0, 300).map(el => {
+                    const tag = el.tagName.toLowerCase();
+                    let role = el.getAttribute('role') || (tag === 'a' ? 'link' : (['button', 'input', 'textarea', 'select'].includes(tag) ? tag : 'generic'));
+                    if (tag === 'input' && el.type) {
+                        if (['button', 'submit', 'reset'].includes(el.type)) role = 'button';
+                        else if (['checkbox', 'radio'].includes(el.type)) role = el.type;
+                        else role = 'textbox';
+                    }
+
                     let text = (el.innerText || el.value || el.placeholder || el.getAttribute('aria-label') || el.getAttribute('title') || '').trim();
-                    if (!text && el.tagName === 'INPUT' && el.type === 'submit') { text = "Submit"; }
-                    if (!text && el.tagName === 'INPUT' && el.type === 'text') { text = "Text Input"; }
-                    if (!text && el.tagName === 'INPUT' && el.type === 'password') { text = "Password"; }
-                    if (!text && el.tagName === 'SELECT') { text = "Dropdown Selection"; }
-                    if (!text && el.tagName === 'TEXTAREA') { text = "Text Area"; }
+                    let testId = el.getAttribute('data-testid') || el.getAttribute('data-test-id') || el.getAttribute('data-qa') || '';
+                    let placeholder = el.getAttribute('placeholder') || '';
+                    let ariaLabel = el.getAttribute('aria-label') || '';
+                    const isDisabled = el.disabled === true || el.getAttribute('aria-disabled') === 'true';
+
+                    if (!text && tag === 'input' && el.type === 'submit') { text = "Submit"; }
+                    if (!text && tag === 'input' && el.type === 'text') { text = "Text Input"; }
+                    if (!text && tag === 'input' && el.type === 'password') { text = "Password"; }
+                    if (!text && tag === 'select') { text = "Dropdown Selection"; }
+                    if (!text && tag === 'textarea') { text = "Text Area"; }
                     
-                    // Fallback for unlabeled popup close buttons (often just SVGs or X icons in divs)
                     if (!text) {
                         const html = el.innerHTML.toLowerCase();
                         const cls = (el.className || '').toString().toLowerCase();
@@ -358,27 +475,46 @@ def _handle(browser, args):
                             if (cls.includes('search') || idStr.includes('search')) text = "[Search Icon]";
                             else if (cls.includes('menu') || idStr.includes('menu')) text = "[Menu Icon]";
                             else text = "[Unlabeled Icon Button]";
-                        } else if (el.getAttribute('role') === 'button' || el.tagName === 'BUTTON') {
+                        } else if (role === 'button' || tag === 'button') {
                             text = "[Unlabeled Button]";
                         }
                     }
                     
-                    text = text.replace(/\\s+/g, ' ').slice(0, 120);
+                    text = text.replace(/\\s+/g, ' ').slice(0, 100);
                     
-                    let sel = '';
-                    if (el.id && /^[A-Za-z][A-Za-z0-9_-]*$/.test(el.id)) {
-                        sel = '#' + el.id;
+                    let suggested = '';
+                    if (testId) {
+                        suggested = 'testid=' + testId;
+                    } else if (ariaLabel && role !== 'generic') {
+                        suggested = 'role=' + role + '[name="' + ariaLabel.replace(/"/g, '') + '"]';
+                    } else if (text && ['button', 'link', 'tab', 'menuitem'].includes(role)) {
+                        suggested = 'role=' + role + '[name="' + text.replace(/"/g, '') + '"]';
+                    } else if (placeholder) {
+                        suggested = 'placeholder="' + placeholder.replace(/"/g, '') + '"';
+                    } else if (text && text.length < 40) {
+                        suggested = 'text="' + text.replace(/"/g, '') + '"';
+                    } else if (el.id && /^[A-Za-z][A-Za-z0-9_-]*$/.test(el.id)) {
+                        suggested = '#' + el.id;
                     } else {
                         if (!el.hasAttribute('data-ai-id')) {
                             aiIdCounter++;
                             el.setAttribute('data-ai-id', 'ai-btn-' + aiIdCounter);
                         }
-                        sel = '[data-ai-id="' + el.getAttribute('data-ai-id') + '"]';
+                        suggested = '[data-ai-id="' + el.getAttribute('data-ai-id') + '"]';
                     }
                     window._aiIdCounter = aiIdCounter;
                     
-                    return { type: el.tagName.toLowerCase(), text: text, selector: sel };
-                }).filter(x => x.text.length > 0 || ['input', 'textarea', 'select'].includes(x.type)).slice(0, 100);
+                    return {
+                        role: role,
+                        name: text,
+                        tag: tag,
+                        testid: testId,
+                        placeholder: placeholder,
+                        suggested_locator: suggested,
+                        selector: suggested,
+                        disabled: isDisabled
+                    };
+                }).filter(x => x.name.length > 0 || ['input', 'textarea', 'select'].includes(x.tag)).slice(0, 100);
             }"""
 
             # Extract from main page and all iframes
@@ -388,9 +524,9 @@ def _handle(browser, args):
                     if frame_links:
                         all_links.extend(frame_links)
                 except Exception:
-                    continue # Ignore cross-origin frame access errors if playwright fails to inject
+                    continue
             
-            # Deduplicate and cap to prevent token explosion
+            # Deduplicate and cap to 100
             seen_selectors = set()
             unique_links = []
             for link in all_links:
@@ -398,19 +534,40 @@ def _handle(browser, args):
                     seen_selectors.add(link['selector'])
                     unique_links.append(link)
             
-            return _ok(action, page, elements=unique_links[:150])
+            # Generate 16-char content signature hash for loop detection
+            import hashlib
+            sig_content = f"{page.url}|{len(unique_links)}|" + "|".join(f"{x.get('role')}:{x.get('name')[:15]}" for x in unique_links[:20])
+            dom_signature = hashlib.md5(sig_content.encode('utf-8')).hexdigest()[:16]
+
+            return _ok(action, page, elements=unique_links[:100], count=len(unique_links[:100]), signature=dom_signature)
+
         if action == "upload":
             sel, val = args.get("selector"), args.get("value")
-            if not sel or not val: return _err(action, "selector and value (file path) required", page)
-            loc = _get_loc(page, sel)
+            if not val: return _err(action, "value (file path) required", page)
+            if not os.path.exists(val): return _err(action, f"File does not exist: {val}", page)
+            
+            loc = _get_loc(page, sel) if sel else None
             try:
-                import os
-                if not os.path.exists(val): return _err(action, f"File does not exist: {val}", page)
-                loc.scroll_into_view_if_needed(timeout=3000)
-                loc.set_input_files(val, timeout=5000)
-                return _ok(action, page, message=f"Uploaded {val}")
+                # 1. Try direct set_input_files on input[type=file]
+                if loc and loc.count() > 0:
+                    try:
+                        tag = loc.evaluate("el => el.tagName.toLowerCase()")
+                        type_attr = loc.evaluate("el => el.type ? el.type.toLowerCase() : ''")
+                        if tag == "input" and type_attr == "file":
+                            loc.set_input_files(val, timeout=5000)
+                            return _ok(action, page, message=f"Uploaded {val} via set_input_files", selector=sel)
+                    except Exception:
+                        pass
+                
+                # 2. Intercept file chooser dialog
+                with page.expect_file_chooser(timeout=5000) as fc_info:
+                    if loc: loc.click(timeout=3000)
+                    else: page.locator("input[type=file]").first.click(timeout=3000)
+                file_chooser = fc_info.value
+                file_chooser.set_files(val)
+                return _ok(action, page, message=f"Uploaded {val} via file_chooser intercept", selector=sel)
             except Exception as e:
-                return _err(action, str(e), page)
+                return _err(action, f"Upload error: {e}. Note: If an OS-native file dialog opened, desktop automation bridge is required.", page)
         if action == "fill_form":
             import json
             val = args.get("value")
@@ -529,7 +686,10 @@ def main():
         print(json.dumps(r, default=str))
         if isinstance(r, dict) and r.get("ok") is False: sys.exit(2)
     except Exception as e:
-        print(json.dumps({"ok": False, "error": str(e), "action": a.action})); sys.exit(1)
+        err_msg = str(e)
+        err_code = "cdp_unavailable" if "cdp_unavailable" in err_msg or "failed to start" in err_msg else "browser_error"
+        print(json.dumps({"ok": False, "error": err_code, "message": err_msg, "action": a.action}))
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

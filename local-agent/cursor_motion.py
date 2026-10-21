@@ -32,11 +32,15 @@ _OVERLAY_PORT: int = int(os.environ.get("VOILA_AGENT_PORT", "19882"))
 
 _overlay_is_running = False
 def _ensure_overlay():
-    import traceback
-    with open("cursor_spawn_debug.log", "a") as f:
-        f.write("--- _ensure_overlay called! Stack ---\n")
-        traceback.print_stack(file=f)
-        f.write("-------------------------------------\n")
+    if os.environ.get("VOILA_DEBUG_SPAWN") == "1":
+        try:
+            import traceback
+            with open("cursor_spawn_debug.log", "a") as f:
+                f.write("--- _ensure_overlay called! Stack ---\n")
+                traceback.print_stack(file=f)
+                f.write("-------------------------------------\n")
+        except Exception:
+            pass
     if "VOILA_AGENT_INDEX" in os.environ:
         return # Managed strictly by Go backend in Graphify mode
     
@@ -107,10 +111,105 @@ def _get_cursor_pos() -> tuple[int, int]:
 def _mouse_event(flags: int, dx: int = 0, dy: int = 0, data: int = 0):
     _user32.mouse_event(flags, dx, dy, data, 0)
 
+MOUSEEVENTF_MOVE       = 0x0001
 MOUSEEVENTF_LEFTDOWN   = 0x0002
 MOUSEEVENTF_LEFTUP     = 0x0004
 MOUSEEVENTF_RIGHTDOWN  = 0x0008
 MOUSEEVENTF_RIGHTUP    = 0x0010
+MOUSEEVENTF_MIDDLEDOWN = 0x0020
+MOUSEEVENTF_MIDDLEUP   = 0x0040
+MOUSEEVENTF_ABSOLUTE   = 0x8000
+MOUSEEVENTF_VIRTUALDESK = 0x4000
+
+class MOUSEINPUT(ctypes.Structure):
+    _fields_ = [
+        ("dx", ctypes.c_long),
+        ("dy", ctypes.c_long),
+        ("mouseData", ctypes.c_ulong),
+        ("dwFlags", ctypes.c_ulong),
+        ("time", ctypes.c_ulong),
+        ("dwExtraInfo", ctypes.c_void_p),
+    ]
+
+class INPUT_UNION(ctypes.Union):
+    _fields_ = [("mi", MOUSEINPUT)]
+
+class INPUT(ctypes.Structure):
+    _fields_ = [("type", ctypes.c_ulong), ("_input", INPUT_UNION)]
+
+def sendinput_click(x: int, y: int, button: str = "left", click_type: str = "single") -> bool:
+    """Send mouse click via Win32 SendInput using virtual desktop normalization.
+    Falls back to mouse_event if SendInput fails or returns 0.
+    """
+    v_left = _user32.GetSystemMetrics(76)
+    v_top = _user32.GetSystemMetrics(77)
+    v_w = _user32.GetSystemMetrics(78) or _user32.GetSystemMetrics(0)
+    v_h = _user32.GetSystemMetrics(79) or _user32.GetSystemMetrics(1)
+
+    norm_x = int(((int(x) - v_left) * 65535) / max(v_w - 1, 1))
+    norm_y = int(((int(y) - v_top) * 65535) / max(v_h - 1, 1))
+
+    flags_base = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK
+    
+    down_flag = MOUSEEVENTF_LEFTDOWN
+    up_flag = MOUSEEVENTF_LEFTUP
+    if button == "right":
+        down_flag = MOUSEEVENTF_RIGHTDOWN
+        up_flag = MOUSEEVENTF_RIGHTUP
+    elif button == "middle":
+        down_flag = MOUSEEVENTF_MIDDLEDOWN
+        up_flag = MOUSEEVENTF_MIDDLEUP
+
+    precision_mode = os.environ.get("VOILA_CURSOR_PRECISION") == "1"
+    down_ms = random.uniform(5, 15) if precision_mode else random.uniform(30, 80)
+
+    try:
+        def _make_input(dw_flags):
+            inp = INPUT()
+            inp.type = 0 # INPUT_MOUSE
+            inp._input.mi.dx = norm_x
+            inp._input.mi.dy = norm_y
+            inp._input.mi.mouseData = 0
+            inp._input.mi.dwFlags = flags_base | dw_flags
+            inp._input.mi.time = 0
+            inp._input.mi.dwExtraInfo = None
+            return inp
+
+        inp_move = _make_input(MOUSEEVENTF_MOVE)
+        if _user32.SendInput(1, ctypes.byref(inp_move), ctypes.sizeof(INPUT)) == 0:
+            raise RuntimeError("SendInput move returned 0")
+
+        inp_down = _make_input(down_flag)
+        if _user32.SendInput(1, ctypes.byref(inp_down), ctypes.sizeof(INPUT)) == 0:
+            raise RuntimeError("SendInput down returned 0")
+
+        time.sleep(down_ms / 1000.0)
+
+        inp_up = _make_input(up_flag)
+        if _user32.SendInput(1, ctypes.byref(inp_up), ctypes.sizeof(INPUT)) == 0:
+            raise RuntimeError("SendInput up returned 0")
+
+        if click_type == "double":
+            inter_ms = random.uniform(15, 30) if precision_mode else random.uniform(40, 80)
+            time.sleep(inter_ms / 1000.0)
+            _user32.SendInput(1, ctypes.byref(inp_down), ctypes.sizeof(INPUT))
+            time.sleep(down_ms / 1000.0)
+            _user32.SendInput(1, ctypes.byref(inp_up), ctypes.sizeof(INPUT))
+
+        return True
+    except Exception as e:
+        _log(f"SendInput failed ({e}), falling back to mouse_event")
+        _user32.SetCursorPos(int(x), int(y))
+        time.sleep(0.01 if precision_mode else 0.04)
+        _mouse_event(down_flag)
+        time.sleep(down_ms / 1000.0)
+        _mouse_event(up_flag)
+        if click_type == "double":
+            time.sleep(0.04)
+            _mouse_event(down_flag)
+            time.sleep(down_ms / 1000.0)
+            _mouse_event(up_flag)
+        return False
 
 # ─── State ────────────────────────────────────────────────────────────────────
 _current_ai_x: int | None = None
@@ -140,6 +239,13 @@ def _compute_steps(dist: float, duration_ms: float) -> int:
     return min(steps, 500)
 
 def _pick_duration(dist: float, requested_ms: int | None) -> int:
+    precision_mode = os.environ.get("VOILA_CURSOR_PRECISION") == "1"
+    if precision_mode:
+        if requested_ms is not None:
+            return max(30, min(150, requested_ms))
+        raw = dist / 2.5
+        return int(max(40, min(150, raw)))
+
     if requested_ms is not None:
         return max(180, min(900, requested_ms))
     raw = dist / 0.5
@@ -153,8 +259,9 @@ def _build_path(x0: float, y0: float, x1: float, y1: float, steps: int) -> list[
     if dist > 0:
         perp_x, perp_y = perp_x / dist, perp_y / dist
 
-    curve_mag = dist * random.uniform(0.06, 0.18) * random.choice([-1, 1])
-    overshoot = random.uniform(0, min(8, dist * 0.04))
+    precision_mode = os.environ.get("VOILA_CURSOR_PRECISION") == "1"
+    curve_mag = 0.0 if precision_mode else dist * random.uniform(0.06, 0.18) * random.choice([-1, 1])
+    overshoot = 0.0 if precision_mode else random.uniform(0, min(8, dist * 0.04))
 
     cp1 = (x0 + dx * 0.25 + perp_x * curve_mag, y0 + dy * 0.25 + perp_y * curve_mag)
     cp2 = (x0 + dx * 0.75 + perp_x * curve_mag * 0.5, y0 + dy * 0.75 + perp_y * curve_mag * 0.5)
@@ -167,8 +274,8 @@ def _build_path(x0: float, y0: float, x1: float, y1: float, steps: int) -> list[
         t = _min_jerk(t_raw)
 
         bx, by = _bezier_point(t, (x0, y0), cp1, cp2, (over_x, over_y))
-        nx = bx + random.gauss(0, 0.4)
-        ny = by + random.gauss(0, 0.4)
+        nx = bx if precision_mode else bx + random.gauss(0, 0.4)
+        ny = by if precision_mode else by + random.gauss(0, 0.4)
         path.append((int(round(nx)), int(round(ny))))
 
     if overshoot > 0.5:
@@ -186,45 +293,33 @@ def _build_path(x0: float, y0: float, x1: float, y1: float, steps: int) -> list[
 # ─── Click helpers ────────────────────────────────────────────────────────────
 
 def _do_click(kind: str, cx: int, cy: int):
+    """Perform a click at AI position by teleporting the real cursor, clicking via SendInput, and restoring."""
+    precision_mode = os.environ.get("VOILA_CURSOR_PRECISION") == "1"
+    hover_ms = random.uniform(5, 20) if precision_mode else random.uniform(30, 120)
+    time.sleep(hover_ms / 1000.0)
 
-    desktop_lock.acquire_mouse()
-    try:
-        """Perform a click at AI position by instantly teleporting the real cursor, clicking, and restoring."""
-        hover_ms = random.uniform(30, 120)
-        time.sleep(hover_ms / 1000)
-    
-    finally:
-        desktop_lock.release_mouse()
+    with desktop_lock.Mouse_Lock():
+        orig_x, orig_y = _get_cursor_pos()
+        _user32.SetCursorPos(int(cx), int(cy))
+        settle_s = 0.01 if precision_mode else 0.04
+        time.sleep(settle_s)
+        try:
+            if kind == "double":
+                sendinput_click(cx, cy, button="left", click_type="double")
+            elif kind == "right":
+                sendinput_click(cx, cy, button="right", click_type="single")
+            else:
+                sendinput_click(cx, cy, button="left", click_type="single")
+        finally:
+            time.sleep(settle_s)
+            _user32.SetCursorPos(int(orig_x), int(orig_y))
 
-    down_ms = random.uniform(30, 80)
-
-    orig_x, orig_y = _get_cursor_pos()
-    _user32.SetCursorPos(int(cx), int(cy))
-    time.sleep(0.04) # CRITICAL: Let OS and apps process physical mouse movement before clicking
-
-    if kind == "left":
-        _mouse_event(MOUSEEVENTF_LEFTDOWN)
-        time.sleep(down_ms / 1000)
-        _mouse_event(MOUSEEVENTF_LEFTUP)
-    elif kind == "right":
-        _mouse_event(MOUSEEVENTF_RIGHTDOWN)
-        time.sleep(down_ms / 1000)
-        _mouse_event(MOUSEEVENTF_RIGHTUP)
-    elif kind == "double":
-        _mouse_event(MOUSEEVENTF_LEFTDOWN)
-        time.sleep(down_ms / 1000)
-        _mouse_event(MOUSEEVENTF_LEFTUP)
-        time.sleep(random.uniform(40, 80) / 1000)
-        _mouse_event(MOUSEEVENTF_LEFTDOWN)
-        time.sleep(down_ms / 1000)
-        _mouse_event(MOUSEEVENTF_LEFTUP)
-
-    time.sleep(0.04) # CRITICAL: Let apps register the click before teleporting physical mouse away
-    _user32.SetCursorPos(int(orig_x), int(orig_y))
     # Pulse the overlay to show click
-    try: _overlay_sock.sendto(b"HIDE", ("127.0.0.1", _OVERLAY_PORT))
-    except: pass
-    time.sleep(0.05)
+    try:
+        _overlay_sock.sendto(b"HIDE", ("127.0.0.1", _OVERLAY_PORT))
+    except:
+        pass
+    time.sleep(0.02 if precision_mode else 0.05)
     _set_cursor_pos(cx, cy)
 
 # ─── Public API ───────────────────────────────────────────────────────────────
@@ -329,22 +424,25 @@ def move_to_goal() -> dict:
         d_steps = _compute_steps(d_dist, d_dur)
         d_path = _build_path(gx, gy, dx2, dy2, d_steps)
         
-        orig_x, orig_y = _get_cursor_pos()
-        _user32.SetCursorPos(int(gx), int(gy))
-        _mouse_event(MOUSEEVENTF_LEFTDOWN)
-        
-        d_delay = d_dur / 1000 / max(len(d_path), 1)
-        for px, py in d_path:
-            _set_cursor_pos(px, py)
-            _user32.SetCursorPos(int(px), int(py))
-            time.sleep(d_delay)
-            
-        _set_cursor_pos(dx2, dy2)
-        _user32.SetCursorPos(int(dx2), int(dy2))
-        time.sleep(0.02)
-        _mouse_event(MOUSEEVENTF_LEFTUP)
-        time.sleep(0.04) # CRITICAL: Let OS register the drop before teleporting away
-        _user32.SetCursorPos(int(orig_x), int(orig_y))
+        with desktop_lock.Mouse_Lock():
+            orig_x, orig_y = _get_cursor_pos()
+            _user32.SetCursorPos(int(gx), int(gy))
+            time.sleep(0.02)
+            _mouse_event(MOUSEEVENTF_LEFTDOWN)
+            try:
+                d_delay = d_dur / 1000 / max(len(d_path), 1)
+                for px, py in d_path:
+                    _set_cursor_pos(px, py)
+                    _user32.SetCursorPos(int(px), int(py))
+                    time.sleep(d_delay)
+                    
+                _set_cursor_pos(dx2, dy2)
+                _user32.SetCursorPos(int(dx2), int(dy2))
+                time.sleep(0.02)
+            finally:
+                _mouse_event(MOUSEEVENTF_LEFTUP)
+                time.sleep(0.04) # CRITICAL: Let OS register the drop before teleporting away
+                _user32.SetCursorPos(int(orig_x), int(orig_y))
 
     elif _goal_click is not None:
         _do_click(_goal_click, gx, gy)

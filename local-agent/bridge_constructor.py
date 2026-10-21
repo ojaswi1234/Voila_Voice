@@ -11,6 +11,34 @@ if sys.platform != "win32":
     print(json.dumps({"ok": False, "error": "platform_unsupported", "message": "Bridge is Windows-first. Unsupported platform."}))
     sys.exit(0)
 
+MAX_DESKTOP_ASSISTS = 2
+ASSIST_COUNTER_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bridge_assist_count.txt")
+
+def _get_assist_count() -> int:
+    try:
+        if os.path.exists(ASSIST_COUNTER_FILE):
+            with open(ASSIST_COUNTER_FILE, "r") as f:
+                return int(f.read().strip())
+    except Exception:
+        pass
+    return 0
+
+def _increment_assist_count() -> int:
+    cnt = _get_assist_count() + 1
+    try:
+        with open(ASSIST_COUNTER_FILE, "w") as f:
+            f.write(str(cnt))
+    except Exception:
+        pass
+    return cnt
+
+def reset_assist_count():
+    try:
+        if os.path.exists(ASSIST_COUNTER_FILE):
+            os.remove(ASSIST_COUNTER_FILE)
+    except Exception:
+        pass
+
 def call_guide(action: str, selector: str = "", value: str = "") -> dict:
     here = os.path.dirname(os.path.abspath(__file__))
     guide_script = os.path.join(here, "browser_guide.py")
@@ -29,6 +57,15 @@ def call_guide(action: str, selector: str = "", value: str = "") -> dict:
         return {"ok": False, "error": "guide_error", "message": str(e)}
 
 def guided_click(selector: str, value: str, verify: bool = True, button: str = "left", min_confidence: float = 0.55) -> dict:
+    # Circuit breaker: max N desktop assists per session task
+    current_assists = _get_assist_count()
+    if current_assists >= MAX_DESKTOP_ASSISTS:
+        return {
+            "ok": False,
+            "error": "circuit_breaker_tripped",
+            "message": f"Circuit breaker tripped: Maximum {MAX_DESKTOP_ASSISTS} desktop assists per task exceeded."
+        }
+
     # 1. Resolve coords
     guide_action = "resolve_selector" if selector else "resolve_text"
     target = selector if selector else value
@@ -49,6 +86,7 @@ def guided_click(selector: str, value: str, verify: bool = True, button: str = "
     
     try:
         motion_res = cursor_motion.go(px, py, click=button)
+        used_assists = _increment_assist_count()
     except Exception as e:
         return {"ok": False, "error": "motion_failed", "message": str(e)}
         
@@ -64,19 +102,32 @@ def guided_click(selector: str, value: str, verify: bool = True, button: str = "
         "target": target,
         "resolve": resolve_res,
         "motion": motion_res,
-        "verify": verify_res
+        "verify": verify_res,
+        "desktop_assists_used": used_assists
     }
 
 def main():
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--action", required=True, choices=["guided_click", "guided_close_popup"])
+    parser.add_argument("--action", choices=["guided_click", "guided_close_popup"])
     parser.add_argument("--selector", type=str, default="")
     parser.add_argument("--value", type=str, default="")
     parser.add_argument("--verify", type=str, default="true")
     parser.add_argument("--button", type=str, default="left")
+    parser.add_argument("--reset-assists", action="store_true", help="Reset circuit breaker counter")
     
     args = parser.parse_args()
+
+    if args.reset_assists:
+        reset_assist_count()
+        if not args.action:
+            print(json.dumps({"ok": True, "action": "reset_assists", "message": "Circuit breaker counter reset."}))
+            return
+
+    if not args.action:
+        print(json.dumps({"ok": False, "error": "action_required"}))
+        return
+
     verify_bool = args.verify.lower() == "true"
     
     if args.action == "guided_click":

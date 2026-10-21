@@ -22,10 +22,39 @@ def _get_page(p):
     except Exception as e:
         return None, str(e)
 
+def _resolve_loc(page, sel: str):
+    s = (sel or "").strip()
+    if s.lower().startswith("role="):
+        rest = s[5:].strip()
+        name = ""
+        role = rest
+        if "[" in rest and "name=" in rest:
+            role = rest.split("[")[0].strip()
+            name = rest.split("name=")[1].rstrip("]").strip(' "\'')
+        try:
+            if name: return page.get_by_role(role, name=name).first
+            return page.get_by_role(role).first
+        except Exception: pass
+    if s.lower().startswith("label="):
+        try: return page.get_by_label(s[6:].strip(' "\'')).first
+        except Exception: pass
+    if s.lower().startswith("placeholder="):
+        try: return page.get_by_placeholder(s[12:].strip(' "\'')).first
+        except Exception: pass
+    if s.lower().startswith("testid="):
+        try: return page.get_by_test_id(s[7:].strip(' "\'')).first
+        except Exception: pass
+    if s.lower().startswith("text="):
+        try: return page.get_by_text(s[5:].strip(' "\''), exact=False).first
+        except Exception: pass
+    try:
+        return page.locator(s).first
+    except Exception:
+        return page.get_by_text(s, exact=False).first
+
 def resolve_selector(page, selector: str):
     try:
-        # Wait a tiny bit if not present, but don't hang
-        loc = page.locator(selector).first
+        loc = _resolve_loc(page, selector)
         loc.wait_for(state="attached", timeout=2000)
         
         if not loc.is_visible():

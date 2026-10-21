@@ -46,26 +46,172 @@ else:
     # ─── Ref registry ──────────────────────────────────────────────────────────
     _ref_store: dict[str, dict] = {}
     _ref_counter = 0
+    _ref_generation = 0
 
-    def _new_ref(ctrl, meta: dict) -> str:
-        global _ref_counter
+    def _new_ref(ctrl, meta: dict, hwnd: int = 0) -> str:
+        global _ref_counter, _ref_generation
         _ref_counter += 1
         ref = f"e{_ref_counter}"
-        _ref_store[ref] = {"ctrl": ctrl, "meta": meta}
+        _ref_store[ref] = {
+            "ctrl": ctrl,
+            "meta": meta,
+            "hwnd": hwnd or _hwnd_from_ctrl(ctrl),
+            "generation": _ref_generation,
+            "created_at": time.time(),
+            "initial_bounds": dict(meta.get("bounds", {}))
+        }
         return ref
 
-    def _resolve_ref(ref: str):
+    def _resolve_ref(ref: str, for_action: bool = False):
         if ref not in _ref_store:
             return None, "ref_stale"
-        ctrl = _ref_store[ref]["ctrl"]
+        entry = _ref_store[ref]
+        ctrl = entry["ctrl"]
         try:
             _ = ctrl.GetRuntimeId()
-            return ctrl, None
         except Exception as e:
-            return None, f"ref_stale_exc_{e}"
+            return None, f"ref_stale_runtime_id_{e}"
+
+        if for_action:
+            try:
+                if not ctrl.IsEnabled:
+                    return None, "target_disabled"
+            except Exception:
+                pass
+
+            try:
+                rect = ctrl.BoundingRectangle
+                curr_bounds = {"x": rect.left, "y": rect.top, "w": rect.width(), "h": rect.height()}
+            except Exception:
+                return None, "target_offscreen"
+
+            role = getattr(ctrl, "ControlTypeName", "")
+            is_container = role in ("PaneControl", "GroupControl", "WindowControl", "CustomControl")
+            if curr_bounds["w"] <= 0 and curr_bounds["h"] <= 0 and not is_container:
+                return None, "target_zero_size"
+
+            init_bounds = entry.get("initial_bounds", {})
+            if init_bounds and "x" in init_bounds and "y" in init_bounds:
+                dx = abs(curr_bounds["x"] - init_bounds["x"])
+                dy = abs(curr_bounds["y"] - init_bounds["y"])
+                if dx > 50 or dy > 50:
+                    return None, "target_moved"
+
+        return ctrl, None
+
+    def _check_policy(ctrl, action_name: str) -> dict | None:
+        """Check control against security policies (e.g. system controls, destructive actions)."""
+        try:
+            if ctrl is None:
+                return None
+            name = (getattr(ctrl, "Name", "") or "").lower()
+            blocked_names = ["format", "delete all", "wipe disk", "factory reset"]
+            if any(b in name for b in blocked_names):
+                return _err(action_name, "security_blocked", f"Interaction with dangerous action {name!r} blocked by policy.")
+            return None
+        except Exception:
+            return None
+
+    def _resolve_click_point(ctrl, meta: dict) -> tuple[tuple[int, int], str, str | None]:
+        """Resolve click coordinate with Microsoft UIA hierarchy:
+        1) Pattern availability check
+        2) Validated GetClickablePoint() (in bounds, on-screen, enabled)
+        3) Small control center (w <= 300, h <= 100)
+        4) Smallest actionable child under large bounds (w > 300 or h > 100)
+        5) Else center with target_warning
+        Returns: ((x, y), method, target_warning)
+        """
+        bounds = meta.get("bounds", {"x": 0, "y": 0, "w": 0, "h": 0})
+        bx, by, bw, bh = bounds["x"], bounds["y"], bounds["w"], bounds["h"]
+
+        # 1. Pattern availability check
+        has_pattern = False
+        try:
+            if (ctrl.GetInvokePattern() is not None or 
+                ctrl.GetTogglePattern() is not None or 
+                ctrl.GetSelectionItemPattern() is not None):
+                has_pattern = True
+        except Exception:
+            pass
+
+        # 2. GetClickablePoint validation
+        try:
+            pt = ctrl.GetClickablePoint()
+            if pt:
+                px, py = int(pt[0]), int(pt[1])
+                in_bounds = (bx - 2 <= px <= bx + max(bw, 1) + 2) and (by - 2 <= py <= by + max(bh, 1) + 2)
+                min_x = _user32.GetSystemMetrics(76)
+                min_y = _user32.GetSystemMetrics(77)
+                vw = _user32.GetSystemMetrics(78) or _user32.GetSystemMetrics(0)
+                vh = _user32.GetSystemMetrics(79) or _user32.GetSystemMetrics(1)
+                on_screen = (min_x <= px <= min_x + vw) and (min_y <= py <= min_y + vh)
+                
+                is_enabled = True
+                try: is_enabled = ctrl.IsEnabled
+                except Exception: pass
+
+                if in_bounds and on_screen and is_enabled:
+                    return (px, py), "clickable_point", None
+        except Exception:
+            pass
+
+        # 3. Small control center
+        if bw > 0 and bh > 0 and bw <= 300 and bh <= 100:
+            cx, cy = bx + bw // 2, by + bh // 2
+            return (cx, cy), "center", None
+
+        # 4. Smallest actionable child under large bounds
+        if bw > 300 or bh > 100:
+            ACTIONABLE_ROLES = {
+                "ButtonControl", "HyperlinkControl", "MenuItemControl",
+                "CheckBoxControl", "RadioButtonControl", "EditControl", "TabItemControl"
+            }
+            best_child_pt = None
+            min_child_area = float("inf")
+            try:
+                child = ctrl.GetFirstChildControl()
+                depth_limit = 0
+                while child and depth_limit < 20:
+                    depth_limit += 1
+                    try:
+                        c_role = child.ControlTypeName
+                        if c_role in ACTIONABLE_ROLES:
+                            c_rect = child.BoundingRectangle
+                            c_area = c_rect.width() * c_rect.height()
+                            if 0 < c_area < min_child_area:
+                                min_child_area = c_area
+                                c_pt = None
+                                try: c_pt = child.GetClickablePoint()
+                                except Exception: pass
+                                if c_pt:
+                                    best_child_pt = (int(c_pt[0]), int(c_pt[1]))
+                                else:
+                                    best_child_pt = (c_rect.left + c_rect.width() // 2, c_rect.top + c_rect.height() // 2)
+                    except Exception:
+                        pass
+                    child = child.GetNextSiblingControl()
+            except Exception:
+                pass
+
+            if best_child_pt:
+                return best_child_pt, "child", None
+
+            cx = bx + bw // 2 if bw > 0 else 0
+            cy = by + bh // 2 if bh > 0 else 0
+            return (cx, cy), "center", "large_pane_center_click_warning"
+
+        cx = bx + bw // 2 if bw > 0 else 0
+        cy = by + bh // 2 if bh > 0 else 0
+        return (cx, cy), "center", None
 
     # ─── Tree walker ───────────────────────────────────────────────────────────
     MAX_NODES = 300
+
+    INTERACTIVE_ROLES = {
+        "ButtonControl", "EditControl", "CheckBoxControl", "RadioButtonControl",
+        "ComboBoxControl", "MenuItemControl", "HyperlinkControl", "TabItemControl",
+        "ListItemControl", "TreeItemControl", "SplitButtonControl", "DocumentControl"
+    }
 
     def _ctrl_meta(ctrl) -> dict:
         try:
@@ -122,12 +268,13 @@ else:
         b = meta["bounds"]
         is_container = meta["role"] in ("PaneControl", "GroupControl", "WindowControl", "CustomControl", "ScrollBarControl", "TitleBarControl", "MenuBarControl")
         has_content = bool(meta["name"] or meta["value"] or meta["automation_id"])
+        is_interactive = meta["role"] in INTERACTIVE_ROLES
         
         # Heuristic: if it's a zero-size container with no content, skip it
         if b["w"] <= 0 and b["h"] <= 0 and is_container and not has_content:
             is_useful = False
         else:
-            is_useful = not is_container or has_content
+            is_useful = not is_container or has_content or is_interactive
         
         if (b["w"] > 0 or b["h"] > 0 or meta["name"]) and is_useful:
             ref = _new_ref(ctrl, meta)
@@ -344,7 +491,10 @@ else:
         return _ok("foreground", wnd)
 
     def act_snapshot(window, depth: int) -> dict:
-        global _ref_store, _ref_counter
+        global _ref_store, _ref_counter, _ref_generation
+        _ref_generation += 1
+        _ref_store.clear()
+        _ref_counter = 0
 
         is_start = _is_start_menu_hint(window or "")
         is_taskbar = (window or "").strip().lower() in ("taskbar", "tray", "system tray", "system_tray")
@@ -373,6 +523,7 @@ else:
         if len(nodes) == 0 and is_start:
             fg = auto.GetForegroundControl()
             if fg:
+                _ref_generation += 1
                 _ref_store.clear()
                 _ref_counter = 0
                 try:
@@ -383,6 +534,7 @@ else:
         r = _ok("snapshot", wnd)
         r["elements"] = nodes
         r["count"] = len(nodes)
+        r["ref_generation"] = _ref_generation
         
         # Inject helpful context for the AI
         if not window:
@@ -390,6 +542,27 @@ else:
             
         return r
 
+    def _score_candidate(node: dict) -> float:
+        score = 0.0
+        role = node.get("role", "")
+        if role in INTERACTIVE_ROLES:
+            score += 100.0
+        states = node.get("states", [])
+        if "disabled" not in states:
+            score += 50.0
+        if "focused" in states:
+            score += 20.0
+        bounds = node.get("bounds", {})
+        area = bounds.get("w", 0) * bounds.get("h", 0)
+        if area > 0:
+            score += 50.0
+            # Prefer smaller, precise controls over huge enclosing panes
+            score += max(0.0, 50.0 - min(50.0, area / 20000.0))
+        if node.get("automation_id"):
+            score += 15.0
+        if node.get("name"):
+            score += 15.0
+        return score
 
     def act_find(window, depth: int, selector: str, value: str) -> dict:
         parts = _parse_selector(selector) if selector else {}
@@ -427,40 +600,29 @@ else:
                         matches.append(node)
                 wnd = _find_window("desktop")
                 
+        matches.sort(key=_score_candidate, reverse=True)
         r = _ok("find", wnd)
         r["elements"] = matches
         r["count"] = len(matches)
+        r["ref_generation"] = _ref_generation
         return r
 
     def _move_to_ref(ref: str, click=None, drag_to=None, duration_ms=None):
-        ctrl, err = _resolve_ref(ref)
+        ctrl, err = _resolve_ref(ref, for_action=True)
         if err:
-            return _err("move", err, f"ref={ref}"), {}
+            return _err("move", err, f"ref={ref}"), {}, "none", None
         
-        # 1. Scroll into view if possible
         try:
-            # Some UI frameworks scroll to the element automatically when SetFocus is called
             ctrl.SetFocus()
         except Exception: pass
             
-        # LIVE UPDATE: UI might have scrolled, moved, or resized since the snapshot!
         meta = _ctrl_meta(ctrl)
-
-        cx, cy = None, None
-        try:
-            pt = ctrl.GetClickablePoint()
-            if pt: cx, cy = int(pt[0]), int(pt[1])
-        except Exception: pass
-
-        if cx is None: cx, cy = _center(meta["bounds"])
-            
-        # CLAMP to screen bounds to prevent hanging on off-screen coordinates
-        import ctypes
+        (cx, cy), method, warning = _resolve_click_point(ctrl, meta)
         cx, cy = _clamp_to_virtual_screen(cx, cy)
             
         with desktop_lock.UIALock_Suspend():
             tel = cursor_motion.go(cx, cy, click=click, drag_to=drag_to, duration_ms=duration_ms)
-        return None, tel
+        return None, tel, method, warning
 
     def _ensure_window_focused(window):
         """Make sure the target window is in the foreground before acting on it."""
@@ -481,68 +643,60 @@ else:
                 cx, cy = _clamp_to_virtual_screen(cx, cy)
                 with desktop_lock.UIALock_Suspend():
                     tel = cursor_motion.go(cx, cy)
-                r = _ok("move_cursor", wnd)
+                r = _ok("move_cursor", wnd, method="coords", retried=False, target_warning=None, ref_generation=_ref_generation)
                 r["cursor"] = tel
                 return r
             except Exception as e:
                 return _err("move_cursor", "invalid_args", f"Invalid coords: {ref}")
         
-        err_r, tel = _move_to_ref(ref)
+        err_r, tel, method, warning = _move_to_ref(ref)
         if err_r:
             return err_r
-        r = _ok("move_cursor", wnd)
+        r = _ok("move_cursor", wnd, method=method, retried=False, target_warning=warning, ref_generation=_ref_generation)
         r["cursor"] = tel
         return r
 
     def act_invoke(ref: str, window, timeout_ms: int) -> dict:
-        # FIX: Ensure the window is in foreground before invoking so focus isn't stolen silently
         wnd = _ensure_window_focused(window)
-        ctrl, err = _resolve_ref(ref)
+        ctrl, err = _resolve_ref(ref, for_action=True)
         if err:
             return _err("invoke", err, f"ref={ref}")
-        # Live update at exact millisecond
+            
+        sec_err = _check_policy(ctrl, "invoke")
+        if sec_err: return sec_err
+
         meta = _ctrl_meta(ctrl)
-
-        cx, cy = None, None
-
-        try:
-
-            pt = ctrl.GetClickablePoint()
-
-            if pt: cx, cy = int(pt[0]), int(pt[1])
-
-        except Exception: pass
-
-        if cx is None: cx, cy = _center(meta["bounds"])
+        (cx, cy), method, warning = _resolve_click_point(ctrl, meta)
+        cx, cy = _clamp_to_virtual_screen(cx, cy)
         
+        invoked = False
         try:
-            # Prefer native UIA Invoke Pattern (doesn't move mouse at all)
             invoke_pat = ctrl.GetInvokePattern()
             if invoke_pat:
                 with desktop_lock.UIALock_Suspend():
                     tel = cursor_motion.go(cx, cy)
                 invoke_pat.Invoke()
-            else:
-                raise NotImplementedError()
+                invoked = True
+                method = "invoke"
         except Exception:
-            # Fallback to our own safe click that restores physical cursor
+            pass
+
+        if not invoked:
             with desktop_lock.UIALock_Suspend():
                 tel = cursor_motion.go(cx, cy, click="left")
             
-        # Re-assert focus after invoke to prevent focus loss on certain dialogs
         try:
             ctrl.SetFocus()
         except Exception:
             pass
             
-        r = _ok("invoke", wnd)
+        r = _ok("invoke", wnd, method=method, retried=False, target_warning=warning, ref_generation=_ref_generation)
         r["cursor"] = tel
         r["cursor"]["moved"] = True
         return r
 
     def act_click_ref(ref: str, window, button: str) -> dict:
         wnd = _find_window(window)
-        
         
         if "," in ref:
             try:
@@ -551,167 +705,182 @@ else:
                 cx, cy = _clamp_to_virtual_screen(cx, cy)
                 with desktop_lock.UIALock_Suspend():
                     tel = cursor_motion.go(cx, cy, click=button)
-                r = _ok("click_ref", wnd)
+                r = _ok("click_ref", wnd, method="coords", retried=False, target_warning=None, ref_generation=_ref_generation)
                 r["cursor"] = tel
                 return r
             except Exception as e:
                 return _err("click_ref", "invalid_args", f"Invalid coords: {ref}")
                 
-        ctrl, _ = _resolve_ref(ref)
-        if ctrl:
-            sec_err = _check_policy(ctrl, "click_ref")
-            if sec_err: return sec_err
-        err_r, tel = _move_to_ref(ref, click=button)
-        if err_r:
-            return err_r
-        r = _ok("click_ref", wnd)
+        ctrl, err = _resolve_ref(ref, for_action=True)
+        if err:
+            return _err("click_ref", err, f"ref={ref}")
+            
+        sec_err = _check_policy(ctrl, "click_ref")
+        if sec_err: return sec_err
+
+        try: ctrl.SetFocus()
+        except Exception: pass
+
+        meta = _ctrl_meta(ctrl)
+        (cx, cy), method, warning = _resolve_click_point(ctrl, meta)
+        cx, cy = _clamp_to_virtual_screen(cx, cy)
+
+        with desktop_lock.UIALock_Suspend():
+            tel = cursor_motion.go(cx, cy, click=button)
+
+        r = _ok("click_ref", wnd, method=method, retried=False, target_warning=warning, ref_generation=_ref_generation)
         r["cursor"] = tel
         return r
 
     def act_right_click(ref: str, window) -> dict:
-        ctrl, err = _resolve_ref(ref)
-        if ctrl:
-            sec_err = _check_policy(ctrl, 'right_click')
-            if sec_err: return sec_err
-
-        """Dedicated right-click action to open context menus."""
         wnd = _ensure_window_focused(window)
-        err_r, tel = _move_to_ref(ref, click="right")
-        if err_r:
-            return err_r
-        r = _ok("right_click", wnd)
+        ctrl, err = _resolve_ref(ref, for_action=True)
+        if err:
+            return _err("right_click", err, f"ref={ref}")
+            
+        sec_err = _check_policy(ctrl, 'right_click')
+        if sec_err: return sec_err
+
+        try: ctrl.SetFocus()
+        except Exception: pass
+
+        meta = _ctrl_meta(ctrl)
+        (cx, cy), method, warning = _resolve_click_point(ctrl, meta)
+        cx, cy = _clamp_to_virtual_screen(cx, cy)
+
+        with desktop_lock.UIALock_Suspend():
+            tel = cursor_motion.go(cx, cy, click="right")
+
+        r = _ok("right_click", wnd, method=method, retried=False, target_warning=warning, ref_generation=_ref_generation)
         r["cursor"] = tel
         return r
 
     def act_scroll(ref: str, window, value: str) -> dict:
         """Scroll a control. value = 'up'|'down'|'left'|'right' or an integer for wheel delta."""
         wnd = _ensure_window_focused(window)
-        ctrl, err = _resolve_ref(ref)
+        ctrl, err = _resolve_ref(ref, for_action=True)
         if err:
             return _err("scroll", err, f"ref={ref}")
-        # Live update at exact millisecond
+            
         meta = _ctrl_meta(ctrl)
-
-        cx, cy = None, None
-
-        try:
-
-            pt = ctrl.GetClickablePoint()
-
-            if pt: cx, cy = int(pt[0]), int(pt[1])
-
-        except Exception: pass
-
-        if cx is None: cx, cy = _center(meta["bounds"])
+        (cx, cy), method, warning = _resolve_click_point(ctrl, meta)
+        cx, cy = _clamp_to_virtual_screen(cx, cy)
         with desktop_lock.UIALock_Suspend():
             tel = cursor_motion.go(cx, cy)
 
         WHEEL_DELTA = 120
-        VK_NEXT    = 0x22   # Page Down
-        VK_PRIOR   = 0x21   # Page Up
-
-        try:
-            delta = int(value)
-        except (ValueError, TypeError):
-            delta = None
+        try: delta = int(value)
+        except (ValueError, TypeError): delta = None
 
         _user32_local = ctypes.windll.user32
-        
-        # We MUST teleport the physical cursor to the target element to scroll it,
-        # otherwise Windows scrolls whatever is under the user's physical mouse!
         pt = ctypes.wintypes.POINT()
         _user32_local.GetCursorPos(ctypes.byref(pt))
         orig_x, orig_y = pt.x, pt.y
-        desktop_lock.acquire_mouse()
-        _user32_local.SetCursorPos(int(cx), int(cy))
-        time.sleep(0.05)
+        
+        with desktop_lock.Mouse_Lock():
+            _user32_local.SetCursorPos(int(cx), int(cy))
+            time.sleep(0.04)
+            try:
+                if delta is not None:
+                    _user32_local.mouse_event(0x0800, 0, 0, ctypes.c_int(delta * WHEEL_DELTA), 0)
+                elif isinstance(value, str) and value.lower() in ("down", ""):
+                    _user32_local.mouse_event(0x0800, 0, 0, ctypes.c_int(-3 * WHEEL_DELTA), 0)
+                elif isinstance(value, str) and value.lower() == "up":
+                    _user32_local.mouse_event(0x0800, 0, 0, ctypes.c_int(3 * WHEEL_DELTA), 0)
+            finally:
+                time.sleep(0.04)
+                _user32_local.SetCursorPos(int(orig_x), int(orig_y))
 
-        try:
-            if delta is not None:
-                # Positive = scroll up (forward), negative = scroll down
-                _user32_local.mouse_event(0x0800, 0, 0, ctypes.c_int(delta * WHEEL_DELTA), 0)
-            elif isinstance(value, str) and value.lower() in ("down", ""):
-                _user32_local.mouse_event(0x0800, 0, 0, ctypes.c_int(-3 * WHEEL_DELTA), 0)
-            elif isinstance(value, str) and value.lower() == "up":
-                _user32_local.mouse_event(0x0800, 0, 0, ctypes.c_int(3 * WHEEL_DELTA), 0)
-        finally:
-            time.sleep(0.05)
-            _user32_local.SetCursorPos(int(orig_x), int(orig_y))
-            desktop_lock.release_mouse()
-
-        r = _ok("scroll", wnd)
+        r = _ok("scroll", wnd, method=method, retried=False, target_warning=warning, ref_generation=_ref_generation)
         r["cursor"] = tel
         return r
 
     def act_set_value(ref: str, value: str, window) -> dict:
-        ctrl, err = _resolve_ref(ref)
-        if ctrl:
-            sec_err = _check_policy(ctrl, 'set_value')
-            if sec_err: return sec_err
-
         wnd = _ensure_window_focused(window)
-        ctrl, err = _resolve_ref(ref)
+        ctrl, err = _resolve_ref(ref, for_action=True)
         if err:
             return _err("set_value", err, f"ref={ref}")
-        # Live update at exact millisecond
+
+        sec_err = _check_policy(ctrl, 'set_value')
+        if sec_err: return sec_err
+
         meta = _ctrl_meta(ctrl)
+        (cx, cy), method, warning = _resolve_click_point(ctrl, meta)
+        cx, cy = _clamp_to_virtual_screen(cx, cy)
 
-        cx, cy = None, None
-
-        try:
-
-            pt = ctrl.GetClickablePoint()
-
-            if pt: cx, cy = int(pt[0]), int(pt[1])
-
-        except Exception: pass
-
-        if cx is None: cx, cy = _center(meta["bounds"])
         with desktop_lock.UIALock_Suspend():
             tel = cursor_motion.go(cx, cy, click="left")
         
         def _escape_sendkeys(text: str) -> str:
-            # uiautomation uses { } for special keys. To type literal { or }, enclose them in {}.
             res = ""
             for c in text:
-                if c in "{}()":
-                    res += f"{{{c}}}"
-                else:
-                    res += c
+                if c in "{}()": res += f"{{{c}}}"
+                else: res += c
             return res
 
+        val_set = False
+        method = "clickable_point"
         try:
-            ctrl.SetValue(value)
+            val_pat = ctrl.GetValuePattern()
+            if val_pat:
+                val_pat.SetValue(value)
+                val_set = True
+                method = "invoke"
         except Exception:
+            pass
+
+        if not val_set:
+            try:
+                ctrl.SetValue(value)
+                val_set = True
+                method = "invoke"
+            except Exception:
+                pass
+
+        if not val_set:
             try:
                 ctrl.SendKeys("{Ctrl}a{Delete}", waitTime=0.05)
                 ctrl.SendKeys(_escape_sendkeys(value), waitTime=0)
+                val_set = True
+                method = "sendkeys"
             except Exception as e:
                 return _err("set_value", "unsupported", str(e))
-        r = _ok("set_value", wnd)
+
+        # Postcondition verify + single retry (B1)
+        retried = False
+        time.sleep(0.06)
+        try:
+            curr_val = ""
+            if hasattr(ctrl, "Value"): curr_val = ctrl.Value or ""
+            elif ctrl.GetValuePattern(): curr_val = ctrl.GetValuePattern().Value or ""
+            if curr_val and curr_val != value:
+                retried = True
+                try:
+                    ctrl.SetFocus()
+                    ctrl.SendKeys("{Ctrl}a{Delete}", waitTime=0.05)
+                    ctrl.SendKeys(_escape_sendkeys(value), waitTime=0)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        r = _ok("set_value", wnd, method=method, retried=retried, target_warning=warning, ref_generation=_ref_generation)
         r["cursor"] = tel
         return r
 
     def act_type_keys(keys: str, ref, window) -> dict:
         wnd = _ensure_window_focused(window)
         tel = {"x": 0, "y": 0, "moved": False, "duration_ms": 0, "distance_px": 0}
+        method = "direct_keys"
+        warning = None
         if ref:
-            ctrl, err = _resolve_ref(ref)
+            ctrl, err = _resolve_ref(ref, for_action=True)
             if err:
                 return _err("type_keys", err, f"ref={ref}")
             meta = _ctrl_meta(ctrl)
+            (cx, cy), method, warning = _resolve_click_point(ctrl, meta)
+            cx, cy = _clamp_to_virtual_screen(cx, cy)
 
-            cx, cy = None, None
-
-            try:
-
-                pt = ctrl.GetClickablePoint()
-
-                if pt: cx, cy = int(pt[0]), int(pt[1])
-
-            except Exception: pass
-
-            if cx is None: cx, cy = _center(meta["bounds"])
             with desktop_lock.UIALock_Suspend():
                 tel = cursor_motion.go(cx, cy, click="left")
             try:
@@ -722,99 +891,105 @@ else:
             auto.SendKeys(keys)
         if "{ENTER}" in keys.upper():
             time.sleep(0.8)
-        r = _ok("type_keys", wnd)
+        r = _ok("type_keys", wnd, method=method, retried=False, target_warning=warning, ref_generation=_ref_generation)
         r["cursor"] = tel
         return r
 
     def act_toggle(ref: str, window) -> dict:
-        ctrl, err = _resolve_ref(ref)
-        if ctrl:
-            sec_err = _check_policy(ctrl, 'toggle')
-            if sec_err: return sec_err
-
         wnd = _ensure_window_focused(window)
-        ctrl, err = _resolve_ref(ref)
+        ctrl, err = _resolve_ref(ref, for_action=True)
         if err:
             return _err("toggle", err, f"ref={ref}")
-        # Live update at exact millisecond
+
+        sec_err = _check_policy(ctrl, 'toggle')
+        if sec_err: return sec_err
+
         meta = _ctrl_meta(ctrl)
+        (cx, cy), method, warning = _resolve_click_point(ctrl, meta)
+        cx, cy = _clamp_to_virtual_screen(cx, cy)
 
-        cx, cy = None, None
-
+        initial_state = None
+        toggled = False
         try:
-
-            pt = ctrl.GetClickablePoint()
-
-            if pt: cx, cy = int(pt[0]), int(pt[1])
-
-        except Exception: pass
-
-        if cx is None: cx, cy = _center(meta["bounds"])
-        with desktop_lock.UIALock_Suspend():
-            tel = cursor_motion.go(cx, cy, click="left")
-        try:
-            ctrl.Toggle()
+            pat = ctrl.GetTogglePattern()
+            if pat:
+                initial_state = pat.ToggleState
+                with desktop_lock.UIALock_Suspend():
+                    tel = cursor_motion.go(cx, cy)
+                pat.Toggle()
+                toggled = True
+                method = "invoke"
         except Exception:
             pass
-        r = _ok("toggle", wnd)
+
+        if not toggled:
+            with desktop_lock.UIALock_Suspend():
+                tel = cursor_motion.go(cx, cy, click="left")
+
+        # Postcondition verify + single retry (B1)
+        retried = False
+        time.sleep(0.08)
+        try:
+            pat = ctrl.GetTogglePattern()
+            if pat and initial_state is not None:
+                if pat.ToggleState == initial_state:
+                    retried = True
+                    with desktop_lock.UIALock_Suspend():
+                        tel = cursor_motion.go(cx, cy, click="left")
+        except Exception:
+            pass
+
+        r = _ok("toggle", wnd, method=method, retried=retried, target_warning=warning, ref_generation=_ref_generation)
         r["cursor"] = tel
         return r
 
     def act_focus(ref: str, window) -> dict:
         wnd = _ensure_window_focused(window)
-        ctrl, err = _resolve_ref(ref)
+        ctrl, err = _resolve_ref(ref, for_action=True)
         if err:
             return _err("focus", err, f"ref={ref}")
-        # Live update at exact millisecond
         meta = _ctrl_meta(ctrl)
-
-        cx, cy = None, None
-
-        try:
-
-            pt = ctrl.GetClickablePoint()
-
-            if pt: cx, cy = int(pt[0]), int(pt[1])
-
-        except Exception: pass
-
-        if cx is None: cx, cy = _center(meta["bounds"])
+        (cx, cy), method, warning = _resolve_click_point(ctrl, meta)
+        cx, cy = _clamp_to_virtual_screen(cx, cy)
         with desktop_lock.UIALock_Suspend():
             tel = cursor_motion.go(cx, cy, click="left")
         try:
             ctrl.SetFocus()
         except Exception:
             pass
-        r = _ok("focus", wnd)
+        r = _ok("focus", wnd, method=method, retried=False, target_warning=warning, ref_generation=_ref_generation)
         r["cursor"] = tel
         return r
 
     def act_select(ref: str, window) -> dict:
         wnd = _ensure_window_focused(window)
-        ctrl, err = _resolve_ref(ref)
+        ctrl, err = _resolve_ref(ref, for_action=True)
         if err:
             return _err("select", err, f"ref={ref}")
-        # Live update at exact millisecond
         meta = _ctrl_meta(ctrl)
-
-        cx, cy = None, None
-
+        (cx, cy), method, warning = _resolve_click_point(ctrl, meta)
+        cx, cy = _clamp_to_virtual_screen(cx, cy)
+        
+        selected = False
         try:
-
-            pt = ctrl.GetClickablePoint()
-
-            if pt: cx, cy = int(pt[0]), int(pt[1])
-
-        except Exception: pass
-
-        if cx is None: cx, cy = _center(meta["bounds"])
-        with desktop_lock.UIALock_Suspend():
-            tel = cursor_motion.go(cx, cy, click="left")
-        try:
-            ctrl.Select()
+            sel_pat = ctrl.GetSelectionItemPattern()
+            if sel_pat:
+                with desktop_lock.UIALock_Suspend():
+                    tel = cursor_motion.go(cx, cy)
+                sel_pat.Select()
+                selected = True
+                method = "invoke"
         except Exception:
             pass
-        r = _ok("select", wnd)
+            
+        if not selected:
+            with desktop_lock.UIALock_Suspend():
+                tel = cursor_motion.go(cx, cy, click="left")
+            try:
+                ctrl.Select()
+            except Exception:
+                pass
+        r = _ok("select", wnd, method=method, retried=False, target_warning=warning, ref_generation=_ref_generation)
         r["cursor"] = tel
         return r
 
@@ -830,18 +1005,13 @@ else:
             except:
                 return _err("drag_ref", "invalid_args", f"Invalid source coords: {ref}")
         else:
-            ctrl, err = _resolve_ref(ref)
+            ctrl, err = _resolve_ref(ref, for_action=True)
             if err:
                 return _err("drag_ref", err, f"ref={ref}")
             try: ctrl.SetFocus()
             except Exception: pass
             meta = _ctrl_meta(ctrl)
-            sx, sy = None, None
-            try:
-                pt = ctrl.GetClickablePoint()
-                if pt: sx, sy = int(pt[0]), int(pt[1])
-            except Exception: pass
-            if sx is None: sx, sy = _center(meta["bounds"])
+            (sx, sy), _, _ = _resolve_click_point(ctrl, meta)
             
         sx, sy = _clamp_to_virtual_screen(sx, sy)
             
@@ -853,16 +1023,13 @@ else:
             except Exception:
                 return _err("drag_ref", "invalid_args", f"drag value must be 'x,y': {value!r}")
         elif value and value in _ref_store:
-            dest_ctrl = _ref_store[value]["ctrl"]
+            dest_ctrl, err_d = _resolve_ref(value, for_action=True)
+            if err_d:
+                return _err("drag_ref", err_d, f"dest_ref={value}")
             try: dest_ctrl.SetFocus()
             except Exception: pass
             dest_meta = _ctrl_meta(dest_ctrl)
-            dx, dy = None, None
-            try:
-                pt = dest_ctrl.GetClickablePoint()
-                if pt: dx, dy = int(pt[0]), int(pt[1])
-            except Exception: pass
-            if dx is None: dx, dy = _center(dest_meta["bounds"])
+            (dx, dy), _, _ = _resolve_click_point(dest_ctrl, dest_meta)
             drag_dest = (dx, dy)
         else:
             return _err("drag_ref", "invalid_args", f"drag value unresolvable: {value!r}")
@@ -872,7 +1039,7 @@ else:
             
         with desktop_lock.UIALock_Suspend():
             tel = cursor_motion.go(sx, sy, drag_to=drag_dest)
-        r = _ok("drag_ref", wnd)
+        r = _ok("drag_ref", wnd, ref_generation=_ref_generation)
         r["cursor"] = tel
         return r
 
