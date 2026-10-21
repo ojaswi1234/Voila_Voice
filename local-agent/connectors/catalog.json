@@ -22,18 +22,25 @@
     "mcp_args": [
       "-y",
       "@modelcontextprotocol/server-github"
+    ],
+    "fields": [
+      {"key": "token", "label": "Personal Access Token", "secret": true}
     ]
   },
   {
     "id": "gmail",
     "name": "Gmail",
-    "description": "Gmail integration",
+    "description": "Gmail integration via Google OAuth2",
     "auth_type": "oauth2",
     "free": true,
     "mcp_command": "npx",
     "mcp_args": [
       "-y",
       "@mcp-z/mcp-gmail"
+    ],
+    "fields": [
+      {"key": "client_id",     "label": "Google Client ID",     "secret": false},
+      {"key": "client_secret", "label": "Google Client Secret", "secret": true}
     ]
   },
   {
@@ -58,6 +65,9 @@
     "mcp_args": [
       "-y",
       "@r-huijts/canvas-mcp"
+    ],
+    "fields": [
+      {"key": "token", "label": "Canvas API Token", "secret": true}
     ]
   }
 ]

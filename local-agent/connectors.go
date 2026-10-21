@@ -9,14 +9,22 @@ import (
 	"time"
 )
 
+// ConnectorField describes a single credential field for a connector.
+type ConnectorField struct {
+	Key    string `json:"key"`
+	Label  string `json:"label"`
+	Secret bool   `json:"secret"`
+}
+
 type ConnectorEntry struct {
-	ID          string   `json:"id"`
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	AuthType    string   `json:"auth_type"`
-	Free        bool     `json:"free"`
-	MCPCommand  string   `json:"mcp_command"`
-	MCPArgs     []string `json:"mcp_args"`
+	ID          string           `json:"id"`
+	Name        string           `json:"name"`
+	Description string           `json:"description"`
+	AuthType    string           `json:"auth_type"`
+	Free        bool             `json:"free"`
+	MCPCommand  string           `json:"mcp_command"`
+	MCPArgs     []string         `json:"mcp_args"`
+	Fields      []ConnectorField `json:"fields,omitempty"` // multi-field credentials
 }
 
 type ConnectorState struct {
@@ -69,7 +77,15 @@ func saveConnectorStates(states []ConnectorState) error {
 	return os.WriteFile(filepath.Join(getLocalAgentDir(), "connectors", "connectors_state.json"), data, 0644)
 }
 
+// connectorsConnect connects using a single token (legacy / simple connectors).
 func connectorsConnect(id, token string) (string, error) {
+	return connectorsConnectMulti(id, map[string]string{"token": token})
+}
+
+// connectorsConnectMulti connects using a map of credential key→value pairs.
+// For Gmail: {"client_id": "...", "client_secret": "..."}
+// For GitHub/Canvas: {"token": "..."}
+func connectorsConnectMulti(id string, creds map[string]string) (string, error) {
 	catalog, err := loadCatalog()
 	if err != nil {
 		return "", err
@@ -86,14 +102,46 @@ func connectorsConnect(id, token string) (string, error) {
 	}
 
 	envMap := make(map[string]string)
-	if token != "" {
-		if id == "github" {
-			envMap["GITHUB_PERSONAL_ACCESS_TOKEN"] = token
-			envMap["GITHUB_TOKEN"] = token
-		} else if id == "canvas_lms" {
-			envMap["CANVAS_API_TOKEN"] = token
-		} else {
-			envMap["TOKEN"] = token
+
+	// If catalog defines explicit fields, map them to env vars.
+	// Otherwise fall back to the legacy single-token heuristic.
+	if len(entry.Fields) > 0 {
+		for _, field := range entry.Fields {
+			val, ok := creds[field.Key]
+			if !ok || val == "" {
+				continue
+			}
+			switch id {
+			case "gmail":
+				switch field.Key {
+				case "client_id":
+					envMap["GOOGLE_CLIENT_ID"] = val
+				case "client_secret":
+					envMap["GOOGLE_CLIENT_SECRET"] = val
+				}
+			case "github":
+				envMap["GITHUB_PERSONAL_ACCESS_TOKEN"] = val
+				envMap["GITHUB_TOKEN"] = val
+			case "canvas_lms":
+				envMap["CANVAS_API_TOKEN"] = val
+			default:
+				// Generic: use the field key directly uppercased as env var
+				envMap[field.Key] = val
+			}
+		}
+	} else {
+		// Legacy fallback: single token
+		token := creds["token"]
+		if token != "" {
+			switch id {
+			case "github":
+				envMap["GITHUB_PERSONAL_ACCESS_TOKEN"] = token
+				envMap["GITHUB_TOKEN"] = token
+			case "canvas_lms":
+				envMap["CANVAS_API_TOKEN"] = token
+			default:
+				envMap["TOKEN"] = token
+			}
 		}
 	}
 
@@ -212,7 +260,7 @@ func connectorsStatus(id string) (string, error) {
 		if s.ID == id {
 			if s.Enabled {
 				appendConnectorAudit("connector_connect", fmt.Sprintf("id: %s", id))
-	return "connected", nil
+				return "connected", nil
 			}
 			return "disconnected", nil
 		}

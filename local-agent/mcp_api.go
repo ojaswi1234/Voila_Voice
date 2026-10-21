@@ -34,15 +34,16 @@ func mcpApiHandler(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method == http.MethodPost {
 		var req struct {
-			Action       string `json:"action"`
-			ID           string `json:"id"`
-			Command      string `json:"command"`
-			Args         string `json:"args"`
-			EnvJSON      string `json:"env_json"`
-			AllowedPaths string `json:"allowed_paths"`
-			Timeout      int    `json:"timeout"`
-			Token        string `json:"token"`
-			SourceURL    string `json:"source_url"`
+			Action       string            `json:"action"`
+			ID           string            `json:"id"`
+			Command      string            `json:"command"`
+			Args         string            `json:"args"`
+			EnvJSON      string            `json:"env_json"`
+			AllowedPaths string            `json:"allowed_paths"`
+			Timeout      int               `json:"timeout"`
+			Token        string            `json:"token"`
+			Credentials  map[string]string `json:"credentials"` // multi-field auth (e.g. Gmail)
+			SourceURL    string            `json:"source_url"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, err.Error(), 400)
@@ -111,7 +112,15 @@ func mcpApiHandler(w http.ResponseWriter, r *http.Request) {
 			mcp.GlobalHost.Reload(cfg)
 
 		case "connect_connector":
-			_, err := connectorsConnect(req.ID, req.Token)
+			// Prefer the multi-field credentials map; fall back to single token for legacy callers.
+			creds := req.Credentials
+			if creds == nil {
+				creds = map[string]string{}
+			}
+			if req.Token != "" && creds["token"] == "" {
+				creds["token"] = req.Token
+			}
+			_, err := connectorsConnectMulti(req.ID, creds)
 			if err != nil {
 				http.Error(w, err.Error(), 500)
 				return

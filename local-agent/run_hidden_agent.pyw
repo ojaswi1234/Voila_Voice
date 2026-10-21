@@ -3475,25 +3475,59 @@ def _show_mcp_widgets():
             tk.Label(bot, text=c.get('description', ''), fg='#9CA3AF', bg='#1A1D23', font=('Segoe UI', 9)).pack(side='left')
 
             if auth_type != 'none':
-                # Inline Auth management form
+                # Inline Auth management form - supports multi-field credentials (e.g. Gmail)
                 auth_frame = tk.Frame(item, bg='#16171C', bd=1, relief='solid')
                 auth_frame.pack(fill='x', padx=10, pady=(5, 10))
-                
-                tk.Label(auth_frame, text="Credentials:", fg='#9CA3AF', bg='#16171C', font=('Segoe UI', 9)).pack(side='left', padx=10, pady=5)
-                token_entry = tk.Entry(auth_frame, bg='#2A2D35', fg='#FFFFFF', insertbackground='#FFFFFF', relief='flat', show='*')
-                token_entry.pack(side='left', fill='x', expand=True, pady=5)
-                
-                if is_connected:
-                    token_entry.insert(0, "********")
-                
-                def _save_auth(cid=c.get('id'), ent=token_entry, is_conn=is_connected):
-                    val = ent.get().strip()
-                    if val == "********" and is_conn:
-                        return # No change
-                    _api_call('POST', '/mcp-api', {'action': 'connect_connector', 'id': cid, 'token': val})
+
+                fields = c.get('fields') or []
+                field_entries = {}  # key -> Entry widget
+
+                if fields:
+                    for field in fields:
+                        frow = tk.Frame(auth_frame, bg='#16171C')
+                        frow.pack(fill='x', padx=10, pady=3)
+                        lbl_text = field.get('label', field.get('key', 'Value'))
+                        tk.Label(frow, text=lbl_text + ':', fg='#9CA3AF', bg='#16171C',
+                                 font=('Segoe UI', 9), width=22, anchor='w').pack(side='left')
+                        show_char = '*' if field.get('secret', True) else ''
+                        ent = tk.Entry(frow, bg='#2A2D35', fg='#FFFFFF', insertbackground='#FFFFFF',
+                                       relief='flat', show=show_char)
+                        ent.pack(side='left', fill='x', expand=True)
+                        if is_connected:
+                            ent.insert(0, '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022' if field.get('secret', True) else '(saved)')
+                        field_entries[field.get('key')] = ent
+                else:
+                    frow = tk.Frame(auth_frame, bg='#16171C')
+                    frow.pack(fill='x', padx=10, pady=5)
+                    tk.Label(frow, text='Token:', fg='#9CA3AF', bg='#16171C',
+                             font=('Segoe UI', 9), width=22, anchor='w').pack(side='left')
+                    ent = tk.Entry(frow, bg='#2A2D35', fg='#FFFFFF', insertbackground='#FFFFFF',
+                                   relief='flat', show='*')
+                    ent.pack(side='left', fill='x', expand=True)
+                    if is_connected:
+                        ent.insert(0, '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022')
+                    field_entries['token'] = ent
+
+                btn_row = tk.Frame(auth_frame, bg='#16171C')
+                btn_row.pack(fill='x', padx=10, pady=(4, 8))
+
+                def _save_auth(cid=c.get('id'), fents=field_entries, is_conn=is_connected):
+                    PLACEHOLDER = ('\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022', '(saved)', '')
+                    creds = {}
+                    all_placeholder = True
+                    for k, e in fents.items():
+                        v = e.get().strip()
+                        if v not in PLACEHOLDER:
+                            all_placeholder = False
+                        creds[k] = v
+                    if is_conn and all_placeholder:
+                        return
+                    creds = {k: v for k, v in creds.items() if v not in PLACEHOLDER}
+                    _api_call('POST', '/mcp-api', {'action': 'connect_connector', 'id': cid, 'credentials': creds})
                     _show_mcp_widgets()
-                        
-                tk.Button(auth_frame, text="Save & Connect", bg='#3B82F6', fg='white', relief='flat', bd=0, command=_save_auth).pack(side='right', padx=10, pady=5)
+
+                tk.Button(btn_row, text='Save & Connect', bg='#3B82F6', fg='white', relief='flat',
+                          bd=0, command=_save_auth, font=('Segoe UI', 9, 'bold')).pack(side='right', ipadx=6, ipady=2)
 
     def render_skills():
         for widget in content_frame.winfo_children():
