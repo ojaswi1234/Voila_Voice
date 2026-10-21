@@ -47,6 +47,7 @@ else:
     _ref_store: dict[str, dict] = {}
     _ref_counter = 0
     _ref_generation = 0
+    REF_TTL_MS = int(os.environ.get("VOILA_REF_TTL_MS", "800"))
 
     def _new_ref(ctrl, meta: dict, hwnd: int = 0) -> str:
         global _ref_counter, _ref_generation
@@ -62,10 +63,82 @@ else:
         }
         return ref
 
-    def _resolve_ref(ref: str, for_action: bool = False):
+    def _rebind_control(entry: dict):
+        """Attempt ONE silent re-bind by AutomationId then Name+Role under same HWND."""
+        hwnd = entry.get("hwnd", 0)
+        meta = entry.get("meta", {})
+        target_aid = meta.get("automation_id", "")
+        target_name = meta.get("name", "")
+        target_role = meta.get("role", "")
+
+        if not hwnd:
+            return None
+        try:
+            if not _user32.IsWindow(hwnd):
+                return None
+            wnd_ctrl = auto.ControlFromHandle(hwnd)
+            if not wnd_ctrl:
+                return None
+
+            stack = [(wnd_ctrl, 0)]
+            found = None
+            nodes_checked = 0
+            while stack and nodes_checked < 120:
+                curr, depth = stack.pop()
+                nodes_checked += 1
+                if depth > 10:
+                    continue
+                try:
+                    c_aid = getattr(curr, "AutomationId", "")
+                    c_name = getattr(curr, "Name", "")
+                    c_role = getattr(curr, "ControlTypeName", "")
+                    if target_aid and c_aid == target_aid:
+                        found = curr
+                        break
+                    if target_name and target_role and c_name == target_name and c_role == target_role:
+                        found = curr
+                        break
+                except Exception:
+                    pass
+                try:
+                    child = curr.GetFirstChildControl()
+                    while child:
+                        stack.append((child, depth + 1))
+                        child = child.GetNextSiblingControl()
+                except Exception:
+                    pass
+
+            if found:
+                entry["ctrl"] = found
+                try:
+                    r = found.BoundingRectangle
+                    entry["initial_bounds"] = {"x": r.left, "y": r.top, "w": r.width(), "h": r.height()}
+                except Exception:
+                    pass
+                entry["created_at"] = time.time()
+                return found
+        except Exception:
+            pass
+        return None
+
+    def _resolve_ref(ref: str, for_action: bool = False, expected_generation: int = None):
+        if not _ref_store:
+            return None, "snapshot_required"
         if ref not in _ref_store:
             return None, "ref_stale"
         entry = _ref_store[ref]
+
+        # Generation check (if expected_generation specified and positive)
+        if expected_generation is not None and expected_generation > 0:
+            if entry.get("generation", 0) != expected_generation:
+                return None, "ref_generation_mismatch"
+
+        # TTL check (default 800ms)
+        if REF_TTL_MS > 0:
+            age_ms = (time.time() - entry.get("created_at", 0)) * 1000.0
+            if age_ms > REF_TTL_MS:
+                return None, "ref_expired"
+
         ctrl = entry["ctrl"]
         try:
             _ = ctrl.GetRuntimeId()
@@ -76,6 +149,13 @@ else:
             try:
                 if not ctrl.IsEnabled:
                     return None, "target_disabled"
+            except Exception:
+                pass
+
+            # Offscreen check
+            try:
+                if getattr(ctrl, "IsOffscreen", False):
+                    return None, "ref_offscreen"
             except Exception:
                 pass
 
@@ -92,10 +172,27 @@ else:
 
             init_bounds = entry.get("initial_bounds", {})
             if init_bounds and "x" in init_bounds and "y" in init_bounds:
+                bw = max(1.0, float(init_bounds.get("w", 1)))
+                bh = max(1.0, float(init_bounds.get("h", 1)))
                 dx = abs(curr_bounds["x"] - init_bounds["x"])
                 dy = abs(curr_bounds["y"] - init_bounds["y"])
-                if dx > 50 or dy > 50:
-                    return None, "target_moved"
+                curr_cx = curr_bounds["x"] + curr_bounds["w"] / 2.0
+                curr_cy = curr_bounds["y"] + curr_bounds["h"] / 2.0
+                init_cx = init_bounds["x"] + init_bounds["w"] / 2.0
+                init_cy = init_bounds["y"] + init_bounds["h"] / 2.0
+                dc = ((curr_cx - init_cx) ** 2 + (curr_cy - init_cy) ** 2) ** 0.5
+
+                moved = (
+                    dx > max(50.0, 0.35 * bw) or
+                    dy > max(50.0, 0.35 * bh) or
+                    dc > max(40.0, 0.25 * max(bw, bh))
+                )
+                if moved:
+                    rebound = _rebind_control(entry)
+                    if rebound:
+                        ctrl = rebound
+                    else:
+                        return None, "target_moved"
 
         return ctrl, None
 
@@ -175,7 +272,13 @@ else:
                     depth_limit += 1
                     try:
                         c_role = child.ControlTypeName
-                        if c_role in ACTIONABLE_ROLES:
+                        has_pat = False
+                        try:
+                            if child.GetInvokePattern() is not None or child.GetTogglePattern() is not None:
+                                has_pat = True
+                        except Exception:
+                            pass
+                        if c_role in ACTIONABLE_ROLES or has_pat:
                             c_rect = child.BoundingRectangle
                             c_area = c_rect.width() * c_rect.height()
                             if 0 < c_area < min_child_area:
@@ -607,8 +710,8 @@ else:
         r["ref_generation"] = _ref_generation
         return r
 
-    def _move_to_ref(ref: str, click=None, drag_to=None, duration_ms=None):
-        ctrl, err = _resolve_ref(ref, for_action=True)
+    def _move_to_ref(ref: str, click=None, drag_to=None, duration_ms=None, expected_gen: int = None):
+        ctrl, err = _resolve_ref(ref, for_action=True, expected_generation=expected_gen)
         if err:
             return _err("move", err, f"ref={ref}"), {}, "none", None
         
@@ -633,7 +736,7 @@ else:
                 _bring_window_to_foreground(hwnd)
         return wnd
 
-    def act_move_cursor(ref: str, window) -> dict:
+    def act_move_cursor(ref: str, window, expected_gen: int = None) -> dict:
         wnd = _find_window(window)
         
         if "," in ref:
@@ -649,41 +752,39 @@ else:
             except Exception as e:
                 return _err("move_cursor", "invalid_args", f"Invalid coords: {ref}")
         
-        err_r, tel, method, warning = _move_to_ref(ref)
+        err_r, tel, method, warning = _move_to_ref(ref, expected_gen=expected_gen)
         if err_r:
             return err_r
         r = _ok("move_cursor", wnd, method=method, retried=False, target_warning=warning, ref_generation=_ref_generation)
         r["cursor"] = tel
         return r
 
-    def act_invoke(ref: str, window, timeout_ms: int) -> dict:
+    def act_invoke(ref: str, window, timeout_ms: int, expected_gen: int = None) -> dict:
         wnd = _ensure_window_focused(window)
-        ctrl, err = _resolve_ref(ref, for_action=True)
+        ctrl, err = _resolve_ref(ref, for_action=True, expected_generation=expected_gen)
         if err:
             return _err("invoke", err, f"ref={ref}")
             
         sec_err = _check_policy(ctrl, "invoke")
         if sec_err: return sec_err
 
-        meta = _ctrl_meta(ctrl)
-        (cx, cy), method, warning = _resolve_click_point(ctrl, meta)
-        cx, cy = _clamp_to_virtual_screen(cx, cy)
-        
-        invoked = False
+        # Pattern short-circuit: if InvokePattern available and succeeds, zero-pixel path
         try:
             invoke_pat = ctrl.GetInvokePattern()
             if invoke_pat:
-                with desktop_lock.UIALock_Suspend():
-                    tel = cursor_motion.go(cx, cy)
                 invoke_pat.Invoke()
-                invoked = True
-                method = "invoke"
+                try: ctrl.SetFocus()
+                except Exception: pass
+                return _ok("invoke", wnd, method="invoke", retried=False, target_warning=None, ref_generation=_ref_generation)
         except Exception:
             pass
 
-        if not invoked:
-            with desktop_lock.UIALock_Suspend():
-                tel = cursor_motion.go(cx, cy, click="left")
+        meta = _ctrl_meta(ctrl)
+        (cx, cy), method, warning = _resolve_click_point(ctrl, meta)
+        cx, cy = _clamp_to_virtual_screen(cx, cy)
+
+        with desktop_lock.UIALock_Suspend():
+            tel = cursor_motion.go(cx, cy, click="left")
             
         try:
             ctrl.SetFocus()
@@ -695,7 +796,7 @@ else:
         r["cursor"]["moved"] = True
         return r
 
-    def act_click_ref(ref: str, window, button: str) -> dict:
+    def act_click_ref(ref: str, window, button: str, expected_gen: int = None) -> dict:
         wnd = _find_window(window)
         
         if "," in ref:
@@ -711,12 +812,24 @@ else:
             except Exception as e:
                 return _err("click_ref", "invalid_args", f"Invalid coords: {ref}")
                 
-        ctrl, err = _resolve_ref(ref, for_action=True)
+        ctrl, err = _resolve_ref(ref, for_action=True, expected_generation=expected_gen)
         if err:
             return _err("click_ref", err, f"ref={ref}")
             
         sec_err = _check_policy(ctrl, "click_ref")
         if sec_err: return sec_err
+
+        # Pattern short-circuit for left-click: InvokePattern first
+        if button == "left":
+            try:
+                invoke_pat = ctrl.GetInvokePattern()
+                if invoke_pat:
+                    invoke_pat.Invoke()
+                    try: ctrl.SetFocus()
+                    except Exception: pass
+                    return _ok("click_ref", wnd, method="invoke", retried=False, target_warning=None, ref_generation=_ref_generation)
+            except Exception:
+                pass
 
         try: ctrl.SetFocus()
         except Exception: pass
@@ -732,9 +845,9 @@ else:
         r["cursor"] = tel
         return r
 
-    def act_right_click(ref: str, window) -> dict:
+    def act_right_click(ref: str, window, expected_gen: int = None) -> dict:
         wnd = _ensure_window_focused(window)
-        ctrl, err = _resolve_ref(ref, for_action=True)
+        ctrl, err = _resolve_ref(ref, for_action=True, expected_generation=expected_gen)
         if err:
             return _err("right_click", err, f"ref={ref}")
             
@@ -755,10 +868,10 @@ else:
         r["cursor"] = tel
         return r
 
-    def act_scroll(ref: str, window, value: str) -> dict:
+    def act_scroll(ref: str, window, value: str, expected_gen: int = None) -> dict:
         """Scroll a control. value = 'up'|'down'|'left'|'right' or an integer for wheel delta."""
         wnd = _ensure_window_focused(window)
-        ctrl, err = _resolve_ref(ref, for_action=True)
+        ctrl, err = _resolve_ref(ref, for_action=True, expected_generation=expected_gen)
         if err:
             return _err("scroll", err, f"ref={ref}")
             
@@ -795,37 +908,29 @@ else:
         r["cursor"] = tel
         return r
 
-    def act_set_value(ref: str, value: str, window) -> dict:
+    def _escape_sendkeys(text: str) -> str:
+        res = ""
+        for c in text:
+            if c in "{}()": res += f"{{{c}}}"
+            else: res += c
+        return res
+
+    def act_set_value(ref: str, value: str, window, expected_gen: int = None) -> dict:
         wnd = _ensure_window_focused(window)
-        ctrl, err = _resolve_ref(ref, for_action=True)
+        ctrl, err = _resolve_ref(ref, for_action=True, expected_generation=expected_gen)
         if err:
             return _err("set_value", err, f"ref={ref}")
 
         sec_err = _check_policy(ctrl, 'set_value')
         if sec_err: return sec_err
 
-        meta = _ctrl_meta(ctrl)
-        (cx, cy), method, warning = _resolve_click_point(ctrl, meta)
-        cx, cy = _clamp_to_virtual_screen(cx, cy)
-
-        with desktop_lock.UIALock_Suspend():
-            tel = cursor_motion.go(cx, cy, click="left")
-        
-        def _escape_sendkeys(text: str) -> str:
-            res = ""
-            for c in text:
-                if c in "{}()": res += f"{{{c}}}"
-                else: res += c
-            return res
-
+        # ValuePattern (or SetValue) first WITHOUT cursor motion
         val_set = False
-        method = "clickable_point"
         try:
             val_pat = ctrl.GetValuePattern()
             if val_pat:
                 val_pat.SetValue(value)
                 val_set = True
-                method = "invoke"
         except Exception:
             pass
 
@@ -833,20 +938,41 @@ else:
             try:
                 ctrl.SetValue(value)
                 val_set = True
-                method = "invoke"
             except Exception:
                 pass
 
-        if not val_set:
+        if val_set:
+            retried = False
+            time.sleep(0.06)
             try:
-                ctrl.SendKeys("{Ctrl}a{Delete}", waitTime=0.05)
-                ctrl.SendKeys(_escape_sendkeys(value), waitTime=0)
-                val_set = True
-                method = "sendkeys"
-            except Exception as e:
-                return _err("set_value", "unsupported", str(e))
+                curr_val = ""
+                if hasattr(ctrl, "Value"): curr_val = ctrl.Value or ""
+                elif ctrl.GetValuePattern(): curr_val = ctrl.GetValuePattern().Value or ""
+                if curr_val and curr_val != value:
+                    retried = True
+                    ctrl.SetFocus()
+                    ctrl.SendKeys("{Ctrl}a{Delete}", waitTime=0.05)
+                    ctrl.SendKeys(_escape_sendkeys(value), waitTime=0)
+            except Exception:
+                pass
+            return _ok("set_value", wnd, method="value_pattern", retried=retried, target_warning=None, ref_generation=_ref_generation)
 
-        # Postcondition verify + single retry (B1)
+        # Fallback to pixel movement and typing
+        meta = _ctrl_meta(ctrl)
+        (cx, cy), method, warning = _resolve_click_point(ctrl, meta)
+        cx, cy = _clamp_to_virtual_screen(cx, cy)
+
+        with desktop_lock.UIALock_Suspend():
+            tel = cursor_motion.go(cx, cy, click="left")
+
+        try:
+            ctrl.SendKeys("{Ctrl}a{Delete}", waitTime=0.05)
+            ctrl.SendKeys(_escape_sendkeys(value), waitTime=0)
+            method = "sendkeys"
+        except Exception as e:
+            return _err("set_value", "unsupported", str(e))
+
+        # Postcondition verify + single retry forcing precision mode (F7 / O5)
         retried = False
         time.sleep(0.06)
         try:
@@ -855,12 +981,15 @@ else:
             elif ctrl.GetValuePattern(): curr_val = ctrl.GetValuePattern().Value or ""
             if curr_val and curr_val != value:
                 retried = True
+                old_prec = os.environ.get("VOILA_CURSOR_PRECISION")
+                os.environ["VOILA_CURSOR_PRECISION"] = "1"
                 try:
                     ctrl.SetFocus()
                     ctrl.SendKeys("{Ctrl}a{Delete}", waitTime=0.05)
                     ctrl.SendKeys(_escape_sendkeys(value), waitTime=0)
-                except Exception:
-                    pass
+                finally:
+                    if old_prec is None: del os.environ["VOILA_CURSOR_PRECISION"]
+                    else: os.environ["VOILA_CURSOR_PRECISION"] = old_prec
         except Exception:
             pass
 
@@ -868,13 +997,13 @@ else:
         r["cursor"] = tel
         return r
 
-    def act_type_keys(keys: str, ref, window) -> dict:
+    def act_type_keys(keys: str, ref, window, expected_gen: int = None) -> dict:
         wnd = _ensure_window_focused(window)
         tel = {"x": 0, "y": 0, "moved": False, "duration_ms": 0, "distance_px": 0}
         method = "direct_keys"
         warning = None
         if ref:
-            ctrl, err = _resolve_ref(ref, for_action=True)
+            ctrl, err = _resolve_ref(ref, for_action=True, expected_generation=expected_gen)
             if err:
                 return _err("type_keys", err, f"ref={ref}")
             meta = _ctrl_meta(ctrl)
@@ -895,18 +1024,14 @@ else:
         r["cursor"] = tel
         return r
 
-    def act_toggle(ref: str, window) -> dict:
+    def act_toggle(ref: str, window, expected_gen: int = None) -> dict:
         wnd = _ensure_window_focused(window)
-        ctrl, err = _resolve_ref(ref, for_action=True)
+        ctrl, err = _resolve_ref(ref, for_action=True, expected_generation=expected_gen)
         if err:
             return _err("toggle", err, f"ref={ref}")
 
         sec_err = _check_policy(ctrl, 'toggle')
         if sec_err: return sec_err
-
-        meta = _ctrl_meta(ctrl)
-        (cx, cy), method, warning = _resolve_click_point(ctrl, meta)
-        cx, cy = _clamp_to_virtual_screen(cx, cy)
 
         initial_state = None
         toggled = False
@@ -914,19 +1039,42 @@ else:
             pat = ctrl.GetTogglePattern()
             if pat:
                 initial_state = pat.ToggleState
-                with desktop_lock.UIALock_Suspend():
-                    tel = cursor_motion.go(cx, cy)
                 pat.Toggle()
                 toggled = True
-                method = "invoke"
         except Exception:
             pass
 
-        if not toggled:
-            with desktop_lock.UIALock_Suspend():
-                tel = cursor_motion.go(cx, cy, click="left")
+        if toggled:
+            retried = False
+            time.sleep(0.08)
+            try:
+                pat = ctrl.GetTogglePattern()
+                if pat and initial_state is not None:
+                    if pat.ToggleState == initial_state:
+                        retried = True
+                        old_prec = os.environ.get("VOILA_CURSOR_PRECISION")
+                        os.environ["VOILA_CURSOR_PRECISION"] = "1"
+                        try:
+                            meta = _ctrl_meta(ctrl)
+                            (cx, cy), _, _ = _resolve_click_point(ctrl, meta)
+                            cx, cy = _clamp_to_virtual_screen(cx, cy)
+                            with desktop_lock.UIALock_Suspend():
+                                cursor_motion.go(cx, cy, click="left")
+                        finally:
+                            if old_prec is None: del os.environ["VOILA_CURSOR_PRECISION"]
+                            else: os.environ["VOILA_CURSOR_PRECISION"] = old_prec
+            except Exception:
+                pass
+            return _ok("toggle", wnd, method="toggle", retried=retried, target_warning=None, ref_generation=_ref_generation)
 
-        # Postcondition verify + single retry (B1)
+        meta = _ctrl_meta(ctrl)
+        (cx, cy), method, warning = _resolve_click_point(ctrl, meta)
+        cx, cy = _clamp_to_virtual_screen(cx, cy)
+
+        with desktop_lock.UIALock_Suspend():
+            tel = cursor_motion.go(cx, cy, click="left")
+
+        # Postcondition verify + single retry forcing precision mode
         retried = False
         time.sleep(0.08)
         try:
@@ -934,8 +1082,14 @@ else:
             if pat and initial_state is not None:
                 if pat.ToggleState == initial_state:
                     retried = True
-                    with desktop_lock.UIALock_Suspend():
-                        tel = cursor_motion.go(cx, cy, click="left")
+                    old_prec = os.environ.get("VOILA_CURSOR_PRECISION")
+                    os.environ["VOILA_CURSOR_PRECISION"] = "1"
+                    try:
+                        with desktop_lock.UIALock_Suspend():
+                            tel = cursor_motion.go(cx, cy, click="left")
+                    finally:
+                        if old_prec is None: del os.environ["VOILA_CURSOR_PRECISION"]
+                        else: os.environ["VOILA_CURSOR_PRECISION"] = old_prec
         except Exception:
             pass
 
@@ -943,9 +1097,9 @@ else:
         r["cursor"] = tel
         return r
 
-    def act_focus(ref: str, window) -> dict:
+    def act_focus(ref: str, window, expected_gen: int = None) -> dict:
         wnd = _ensure_window_focused(window)
-        ctrl, err = _resolve_ref(ref, for_action=True)
+        ctrl, err = _resolve_ref(ref, for_action=True, expected_generation=expected_gen)
         if err:
             return _err("focus", err, f"ref={ref}")
         meta = _ctrl_meta(ctrl)
@@ -961,41 +1115,38 @@ else:
         r["cursor"] = tel
         return r
 
-    def act_select(ref: str, window) -> dict:
+    def act_select(ref: str, window, expected_gen: int = None) -> dict:
         wnd = _ensure_window_focused(window)
-        ctrl, err = _resolve_ref(ref, for_action=True)
+        ctrl, err = _resolve_ref(ref, for_action=True, expected_generation=expected_gen)
         if err:
             return _err("select", err, f"ref={ref}")
-        meta = _ctrl_meta(ctrl)
-        (cx, cy), method, warning = _resolve_click_point(ctrl, meta)
-        cx, cy = _clamp_to_virtual_screen(cx, cy)
-        
-        selected = False
+
         try:
             sel_pat = ctrl.GetSelectionItemPattern()
             if sel_pat:
-                with desktop_lock.UIALock_Suspend():
-                    tel = cursor_motion.go(cx, cy)
                 sel_pat.Select()
-                selected = True
-                method = "invoke"
+                return _ok("select", wnd, method="select", retried=False, target_warning=None, ref_generation=_ref_generation)
         except Exception:
             pass
-            
-        if not selected:
-            with desktop_lock.UIALock_Suspend():
-                tel = cursor_motion.go(cx, cy, click="left")
-            try:
-                ctrl.Select()
-            except Exception:
-                pass
+
+        try:
+            ctrl.Select()
+            return _ok("select", wnd, method="select", retried=False, target_warning=None, ref_generation=_ref_generation)
+        except Exception:
+            pass
+
+        meta = _ctrl_meta(ctrl)
+        (cx, cy), method, warning = _resolve_click_point(ctrl, meta)
+        cx, cy = _clamp_to_virtual_screen(cx, cy)
+        with desktop_lock.UIALock_Suspend():
+            tel = cursor_motion.go(cx, cy, click="left")
+
         r = _ok("select", wnd, method=method, retried=False, target_warning=warning, ref_generation=_ref_generation)
         r["cursor"] = tel
         return r
 
-    def act_drag_ref(ref: str, value: str, window) -> dict:
+    def act_drag_ref(ref: str, value: str, window, expected_gen: int = None) -> dict:
         wnd = _find_window(window)
-        
         
         # Source coords
         if "," in ref:
@@ -1005,7 +1156,7 @@ else:
             except:
                 return _err("drag_ref", "invalid_args", f"Invalid source coords: {ref}")
         else:
-            ctrl, err = _resolve_ref(ref, for_action=True)
+            ctrl, err = _resolve_ref(ref, for_action=True, expected_generation=expected_gen)
             if err:
                 return _err("drag_ref", err, f"ref={ref}")
             try: ctrl.SetFocus()
@@ -1023,7 +1174,7 @@ else:
             except Exception:
                 return _err("drag_ref", "invalid_args", f"drag value must be 'x,y': {value!r}")
         elif value and value in _ref_store:
-            dest_ctrl, err_d = _resolve_ref(value, for_action=True)
+            dest_ctrl, err_d = _resolve_ref(value, for_action=True, expected_generation=expected_gen)
             if err_d:
                 return _err("drag_ref", err_d, f"dest_ref={value}")
             try: dest_ctrl.SetFocus()
@@ -1432,6 +1583,15 @@ else:
         timeout  = args.timeout
         button   = getattr(args, "button", "left") or "left"
         monitor  = getattr(args, "monitor", 0) or 0
+        
+        ref_gen = getattr(args, "ref_generation", None) or getattr(args, "expected_generation", None)
+        try:
+            if ref_gen is not None and str(ref_gen).strip() != "":
+                ref_gen = int(ref_gen)
+            else:
+                ref_gen = None
+        except (ValueError, TypeError):
+            ref_gen = None
 
         # Defense-in-depth policy check
         policy_violation = _enforce_policy(action, window, value)
@@ -1448,47 +1608,47 @@ else:
 
         if action == "move_cursor":
             if not ref: return _err(action, "ref_missing_or_stale", "ref required. call snapshot/find first.")
-            return act_move_cursor(ref, window)
+            return act_move_cursor(ref, window, expected_gen=ref_gen)
 
         if action == "invoke":
             if not ref: return _err(action, "ref_missing_or_stale", "ref required. call snapshot/find first.")
-            return act_invoke(ref, window, timeout)
+            return act_invoke(ref, window, timeout, expected_gen=ref_gen)
 
         if action == "click_ref":
             if not ref: return _err(action, "ref_missing_or_stale", "ref required. call snapshot/find first.")
-            return act_click_ref(ref, window, button)
+            return act_click_ref(ref, window, button, expected_gen=ref_gen)
 
         if action == "right_click":
             if not ref: return _err(action, "ref_missing_or_stale", "ref required. call snapshot/find first.")
-            return act_right_click(ref, window)
+            return act_right_click(ref, window, expected_gen=ref_gen)
 
         if action == "scroll":
             if not ref: return _err(action, "ref_missing_or_stale", "ref required. call snapshot/find first.")
-            return act_scroll(ref, window, value)
+            return act_scroll(ref, window, value, expected_gen=ref_gen)
 
         if action == "set_value":
             if not ref: return _err(action, "ref_missing_or_stale", "ref required. call snapshot/find first.")
-            return act_set_value(ref, value, window)
+            return act_set_value(ref, value, window, expected_gen=ref_gen)
 
         if action == "type_keys":
             if not value: return _err(action, "invalid_args", "value (keys) required")
-            return act_type_keys(value, ref or None, window)
+            return act_type_keys(value, ref or None, window, expected_gen=ref_gen)
 
         if action == "toggle":
             if not ref: return _err(action, "ref_missing_or_stale", "ref required. call snapshot/find first.")
-            return act_toggle(ref, window)
+            return act_toggle(ref, window, expected_gen=ref_gen)
 
         if action == "focus":
             if not ref: return _err(action, "ref_missing_or_stale", "ref required. call snapshot/find first.")
-            return act_focus(ref, window)
+            return act_focus(ref, window, expected_gen=ref_gen)
 
         if action == "select":
             if not ref: return _err(action, "ref_missing_or_stale", "ref required. call snapshot/find first.")
-            return act_select(ref, window)
+            return act_select(ref, window, expected_gen=ref_gen)
 
         if action == "drag_ref":
             if not ref or not value: return _err(action, "invalid_args", "ref and value required")
-            return act_drag_ref(ref, value, window)
+            return act_drag_ref(ref, value, window, expected_gen=ref_gen)
 
         # ── New window/tab/desktop actions ──
         if action == "focus_window":

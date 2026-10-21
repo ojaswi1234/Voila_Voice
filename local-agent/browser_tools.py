@@ -9,9 +9,41 @@ except Exception:
     pass
 from playwright.sync_api import sync_playwright
 
+import re, urllib.parse, hashlib
+
 DAEMON_PORT, CDP_URL, CDP_PORT = 19879, "http://127.0.0.1:9222", 9222
 USER_DATA_DIR = os.environ.get("VOILA_BROWSER_PROFILE", r"C:\tmp\ai_browser_profile")
 _active_tab_index = 0
+
+_NOISE_RE = re.compile(r"time|clock|counter|spinner|timestamp|\b\d{1,2}:\d{2}(?::\d{2})?\b", re.IGNORECASE)
+
+def clean_url_for_sig(url: str) -> str:
+    """Strip churn-inducing query strings or hash fragments for deterministic signatures."""
+    try:
+        parsed = urllib.parse.urlparse(url or "")
+        return f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+    except Exception:
+        return url or ""
+
+def build_dom_signature(url: str, elements: list) -> str:
+    """Build a deterministic, noise-resilient 16-character MD5 DOM signature."""
+    clean_u = clean_url_for_sig(url)
+    tuples = []
+    for el in elements:
+        name = str(el.get("name") or "").strip()
+        testid = str(el.get("testid") or "").strip()
+        role = str(el.get("role") or "").strip()
+        href = str(el.get("href") or el.get("suggested_locator") or "").strip()
+
+        # Filter out noisy ephemeral widgets (clocks, counters, spinners, timestamps)
+        if _NOISE_RE.search(name) or _NOISE_RE.search(testid):
+            continue
+
+        tuples.append((role, name[:40], testid, clean_url_for_sig(href)))
+
+    tuples.sort()
+    sig_content = f"{clean_u}|{len(tuples)}|" + "|".join(f"{r}:{n}:{t}:{h[:20]}" for r, n, t, h in tuples[:50])
+    return hashlib.md5(sig_content.encode('utf-8')).hexdigest()[:16]
 
 def _cdp_ok(t=1.0):
     try:
@@ -230,7 +262,9 @@ def _handle(browser, args):
             u_lower = url.lower()
             if any(engine in u_lower for engine in ("google.com/search", "bing.com/search", "duckduckgo.com/?q", "search.yahoo.com/search")):
                 return _err(action, "Search engine URL blocked in browser_automation to prevent token waste. Use the 'web_research' tool instead, or MCP tools for GitHub/YouTube/Notion/Gmail.", page)
-            page.goto(url, timeout=45000, wait_until="domcontentloaded")
+            wait_networkidle = args.get("wait_networkidle") in (True, "true", "1", 1)
+            wait_until_state = "networkidle" if wait_networkidle else "domcontentloaded"
+            page.goto(url, timeout=45000, wait_until=wait_until_state)
             try: page.wait_for_timeout(min(wt, 3000))
             except Exception: pass
             return _ok(action, page, navigated_to=url, extract_hint=True)
@@ -267,22 +301,30 @@ def _handle(browser, args):
             sel = args.get("selector")
             if not sel: return _err(action, "selector required", page)
             loc = _get_loc(page, sel)
+            click_path = "normal"
+            warning = None
+            s_sel = str(sel)
+            if len(s_sel) > 80 or s_sel.count("nth-child") > 1:
+                warning = "brittle_selector_warning"
             try:
                 # Lean on locator auto-wait (visible, stable, receives events)
                 loc.wait_for(state="visible", timeout=4000)
                 loc.scroll_into_view_if_needed(timeout=2000)
                 loc.click(timeout=4000)
+                click_path = "normal"
             except Exception as e:
                 # Fallback 1: forced click if obscured by sticky headers/modals
                 try: 
                     loc.click(force=True, timeout=2000)
+                    click_path = "force"
                 except Exception:
                     # Fallback 2: direct JS click dispatch
                     try:
                         loc.evaluate("el => el.click()")
+                        click_path = "js"
                     except Exception:
-                        return _err(action, f"Click failed on {sel!r}: {e}", page)
-            return _ok(action, page, selector=sel)
+                        return _err(action, f"Click failed on {sel!r}: {e}", page, selector=sel, click_path="failed", warning=warning)
+            return _ok(action, page, selector=sel, click_path=click_path, warning=warning)
 
         if action == "type":
             sel, val = args.get("selector"), args.get("value")
@@ -399,8 +441,10 @@ def _handle(browser, args):
             if sel: return _ok(action, page, texts=page.locator(sel).all_inner_texts()[:50])
             return _ok(action, page, text=(page.inner_text("body") or "")[:8000])
         if action in ("snapshot", "extract_links", "extract_interactive"):
-            try: page.wait_for_timeout(1000) # Give frames & dynamic JS extra time to settle
-            except Exception: pass
+            settle_ms = int(os.environ.get("VOILA_BROWSER_SETTLE_MS", "150"))
+            if settle_ms > 0:
+                try: page.wait_for_timeout(settle_ms)
+                except Exception: pass
             
             all_links = []
             
@@ -535,9 +579,7 @@ def _handle(browser, args):
                     unique_links.append(link)
             
             # Generate 16-char content signature hash for loop detection
-            import hashlib
-            sig_content = f"{page.url}|{len(unique_links)}|" + "|".join(f"{x.get('role')}:{x.get('name')[:15]}" for x in unique_links[:20])
-            dom_signature = hashlib.md5(sig_content.encode('utf-8')).hexdigest()[:16]
+            dom_signature = build_dom_signature(page.url, unique_links)
 
             return _ok(action, page, elements=unique_links[:100], count=len(unique_links[:100]), signature=dom_signature)
 
@@ -546,8 +588,8 @@ def _handle(browser, args):
             if not val: return _err(action, "value (file path) required", page)
             if not os.path.exists(val): return _err(action, f"File does not exist: {val}", page)
             
-            loc = _get_loc(page, sel) if sel else None
             try:
+                loc = _get_loc(page, sel) if sel else None
                 # 1. Try direct set_input_files on input[type=file]
                 if loc and loc.count() > 0:
                     try:
@@ -567,7 +609,7 @@ def _handle(browser, args):
                 file_chooser.set_files(val)
                 return _ok(action, page, message=f"Uploaded {val} via file_chooser intercept", selector=sel)
             except Exception as e:
-                return _err(action, f"Upload error: {e}. Note: If an OS-native file dialog opened, desktop automation bridge is required.", page)
+                return _err(action, "needs_desktop_assist", page, message=f"Upload error: {e}. Note: If an OS-native file dialog opened, desktop automation bridge is required.")
         if action == "fill_form":
             import json
             val = args.get("value")
@@ -672,13 +714,14 @@ def main():
     ap.add_argument("--action")
     ap.add_argument("--serve-daemon", action="store_true")
     ap.add_argument("--selector"); ap.add_argument("--value"); ap.add_argument("--wait_time", type=int, default=1000)
+    ap.add_argument("--wait-networkidle", action="store_true", dest="wait_networkidle")
     a = ap.parse_args()
     if a.serve_daemon:
         _daemon(a.url)
         return
     if not a.action:
         print(json.dumps({"ok": False, "error": "action required"})); sys.exit(1)
-    req = {"action": a.action, "url": a.url, "selector": a.selector, "value": a.value, "wait_time": a.wait_time}
+    req = {"action": a.action, "url": a.url, "selector": a.selector, "value": a.value, "wait_time": a.wait_time, "wait_networkidle": a.wait_networkidle}
     try:
         if not _running():
             _start_detached(a.url if a.action in ("goto", "new_tab") else None)

@@ -12,12 +12,17 @@ if sys.platform != "win32":
     sys.exit(0)
 
 MAX_DESKTOP_ASSISTS = 2
-ASSIST_COUNTER_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bridge_assist_count.txt")
+
+def _get_counter_path() -> str:
+    job_id = os.environ.get("VOILA_JOB_ID") or os.environ.get("CONVERSATION_ID") or os.environ.get("VOILA_SESSION_ID") or "default"
+    safe_job = "".join(c for c in job_id if c.isalnum() or c in ("-", "_"))
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), f"bridge_assist_count_{safe_job}.txt")
 
 def _get_assist_count() -> int:
     try:
-        if os.path.exists(ASSIST_COUNTER_FILE):
-            with open(ASSIST_COUNTER_FILE, "r") as f:
+        path = _get_counter_path()
+        if os.path.exists(path):
+            with open(path, "r") as f:
                 return int(f.read().strip())
     except Exception:
         pass
@@ -26,7 +31,8 @@ def _get_assist_count() -> int:
 def _increment_assist_count() -> int:
     cnt = _get_assist_count() + 1
     try:
-        with open(ASSIST_COUNTER_FILE, "w") as f:
+        path = _get_counter_path()
+        with open(path, "w") as f:
             f.write(str(cnt))
     except Exception:
         pass
@@ -34,8 +40,9 @@ def _increment_assist_count() -> int:
 
 def reset_assist_count():
     try:
-        if os.path.exists(ASSIST_COUNTER_FILE):
-            os.remove(ASSIST_COUNTER_FILE)
+        path = _get_counter_path()
+        if os.path.exists(path):
+            os.remove(path)
     except Exception:
         pass
 
@@ -109,7 +116,7 @@ def guided_click(selector: str, value: str, verify: bool = True, button: str = "
 def main():
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--action", choices=["guided_click", "guided_close_popup"])
+    parser.add_argument("--action", choices=["guided_click", "guided_close_popup", "reset_assists"])
     parser.add_argument("--selector", type=str, default="")
     parser.add_argument("--value", type=str, default="")
     parser.add_argument("--verify", type=str, default="true")
@@ -118,11 +125,10 @@ def main():
     
     args = parser.parse_args()
 
-    if args.reset_assists:
+    if args.reset_assists or args.action == "reset_assists":
         reset_assist_count()
-        if not args.action:
-            print(json.dumps({"ok": True, "action": "reset_assists", "message": "Circuit breaker counter reset."}))
-            return
+        print(json.dumps({"ok": True, "action": "reset_assists", "message": "Circuit breaker counter reset."}))
+        return
 
     if not args.action:
         print(json.dumps({"ok": False, "error": "action_required"}))

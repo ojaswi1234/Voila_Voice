@@ -159,6 +159,8 @@ def main():
     # NEW: monitor / desktop index for switch_desktop
     parser.add_argument("--monitor",  type=int, default=0,
                         help="Virtual desktop index for switch_desktop (0-based)")
+    parser.add_argument("--ref-generation", type=int, default=0,
+                        help="Expected ref generation for stale cache validation")
     args = parser.parse_args()
 
     
@@ -170,19 +172,21 @@ def main():
             return
 
     req = {
-        "action":     args.action,
-        "ref":        args.ref,
-        "selector":   args.selector,
-        "value":      args.value,
-        "window":     args.window or None,
-        "depth":      args.depth,
-        "timeout_ms": args.timeout,
-        "button":     args.button,
-        "monitor":    args.monitor,
+        "action":         args.action,
+        "ref":            args.ref,
+        "selector":       args.selector,
+        "value":          args.value,
+        "window":         args.window or None,
+        "depth":          args.depth,
+        "timeout_ms":     args.timeout,
+        "button":         args.button,
+        "monitor":        args.monitor,
+        "ref_generation": args.ref_generation,
     }
 
     result = _proxy(req)
-    if 'cursor' in result: del result['cursor']
+    if 'cursor' in result and os.environ.get("VOILA_AUTOMATION_DEBUG") != "1" and os.environ.get("VOILA_CURSOR_DEBUG") != "1":
+        del result['cursor']
     print(json.dumps(result, ensure_ascii=False))
 
 if __name__ == "__main__":

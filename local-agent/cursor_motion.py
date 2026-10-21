@@ -137,9 +137,44 @@ class INPUT_UNION(ctypes.Union):
 class INPUT(ctypes.Structure):
     _fields_ = [("type", ctypes.c_ulong), ("_input", INPUT_UNION)]
 
+def sendinput_move(x: int, y: int) -> bool:
+    """Move physical cursor via Win32 SendInput using virtual desktop normalization."""
+    v_left = _user32.GetSystemMetrics(76)
+    v_top = _user32.GetSystemMetrics(77)
+    v_w = _user32.GetSystemMetrics(78) or _user32.GetSystemMetrics(0)
+    v_h = _user32.GetSystemMetrics(79) or _user32.GetSystemMetrics(1)
+
+    norm_x = int(((int(x) - v_left) * 65535) / max(v_w - 1, 1))
+    norm_y = int(((int(y) - v_top) * 65535) / max(v_h - 1, 1))
+
+    flags_base = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK
+
+    try:
+        inp = INPUT()
+        inp.type = 0  # INPUT_MOUSE
+        inp._input.mi.dx = norm_x
+        inp._input.mi.dy = norm_y
+        inp._input.mi.mouseData = 0
+        inp._input.mi.dwFlags = flags_base | MOUSEEVENTF_MOVE
+        inp._input.mi.time = 0
+        inp._input.mi.dwExtraInfo = None
+
+        if _user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT)) == 0:
+            _user32.SetCursorPos(int(x), int(y))
+            return False
+        return True
+    except Exception as e:
+        _log(f"sendinput_move failed ({e}), falling back to SetCursorPos")
+        try:
+            _user32.SetCursorPos(int(x), int(y))
+        except Exception:
+            pass
+        return False
+
 def sendinput_click(x: int, y: int, button: str = "left", click_type: str = "single") -> bool:
     """Send mouse click via Win32 SendInput using virtual desktop normalization.
-    Falls back to mouse_event if SendInput fails or returns 0.
+    Batches move + down into a single SendInput call to eliminate movement-click races.
+    Falls back to SetCursorPos + mouse_event if SendInput fails or returns 0.
     """
     v_left = _user32.GetSystemMetrics(76)
     v_top = _user32.GetSystemMetrics(77)
@@ -176,12 +211,13 @@ def sendinput_click(x: int, y: int, button: str = "left", click_type: str = "sin
             return inp
 
         inp_move = _make_input(MOUSEEVENTF_MOVE)
-        if _user32.SendInput(1, ctypes.byref(inp_move), ctypes.sizeof(INPUT)) == 0:
-            raise RuntimeError("SendInput move returned 0")
-
         inp_down = _make_input(down_flag)
-        if _user32.SendInput(1, ctypes.byref(inp_down), ctypes.sizeof(INPUT)) == 0:
-            raise RuntimeError("SendInput down returned 0")
+
+        # Batch MOVE + DOWN into a single SendInput dispatch
+        batch_move_down = (INPUT * 2)(inp_move, inp_down)
+        sent = _user32.SendInput(2, batch_move_down, ctypes.sizeof(INPUT))
+        if sent < 2:
+            raise RuntimeError(f"SendInput batch move+down dispatched {sent} of 2")
 
         time.sleep(down_ms / 1000.0)
 
@@ -192,9 +228,11 @@ def sendinput_click(x: int, y: int, button: str = "left", click_type: str = "sin
         if click_type == "double":
             inter_ms = random.uniform(15, 30) if precision_mode else random.uniform(40, 80)
             time.sleep(inter_ms / 1000.0)
-            _user32.SendInput(1, ctypes.byref(inp_down), ctypes.sizeof(INPUT))
+            if _user32.SendInput(1, ctypes.byref(inp_down), ctypes.sizeof(INPUT)) == 0:
+                raise RuntimeError("SendInput double down returned 0")
             time.sleep(down_ms / 1000.0)
-            _user32.SendInput(1, ctypes.byref(inp_up), ctypes.sizeof(INPUT))
+            if _user32.SendInput(1, ctypes.byref(inp_up), ctypes.sizeof(INPUT)) == 0:
+                raise RuntimeError("SendInput double up returned 0")
 
         return True
     except Exception as e:

@@ -323,5 +323,226 @@ class TestDesktopAutomation(unittest.TestCase):
         """E2: Verify tree walker budget limit is strictly enforced."""
         self.assertEqual(desktop_core.MAX_NODES, 300)
 
+    def test_U1_target_moved_formula_scaling(self):
+        """U1: Verify target_moved formula scales with control width/height (50px floor vs 0.35*dim)."""
+        class MockCtrl:
+            ControlTypeName = "ButtonControl"
+            IsEnabled = True
+            NativeWindowHandle = 0
+            def GetRuntimeId(self): return (1, 2, 3)
+            class Rect:
+                left = 100; top = 100
+                def width(self): return 40
+                def height(self): return 30
+            BoundingRectangle = Rect()
+
+        # 1. Small control (40x30): max(50, 0.35*40)=50px; max(40, 0.25*40)=40px center threshold.
+        # Moving by 35px: dx=35 <= 50 and dc=35 <= 40 -> NOT moved.
+        ctrl = MockCtrl()
+        meta = {"bounds": {"x": 100, "y": 100, "w": 40, "h": 30}}
+        ref = desktop_core._new_ref(ctrl, meta)
+
+        ctrl.BoundingRectangle.left = 135
+        c, err = desktop_core._resolve_ref(ref, for_action=True)
+        self.assertIsNone(err)
+
+        # Moving by 45px: dc=45 > 40px center threshold -> MOVED.
+        ctrl.BoundingRectangle.left = 145
+        c, err = desktop_core._resolve_ref(ref, for_action=True)
+        self.assertEqual(err, "target_moved")
+
+        # 2. Large pane (400x200): max(50, 0.35*400)=140px; max(40, 0.25*400)=100px.
+        # Moving by 70px: delta = 70px, which is > 50px old threshold but <= 100px new threshold!
+        class MockLargeCtrl:
+            ControlTypeName = "PaneControl"
+            IsEnabled = True
+            NativeWindowHandle = 0
+            def GetRuntimeId(self): return (4, 5, 6)
+            class Rect:
+                left = 100; top = 100
+                def width(self): return 400
+                def height(self): return 200
+            BoundingRectangle = Rect()
+
+        ctrl_large = MockLargeCtrl()
+        meta_large = {"bounds": {"x": 100, "y": 100, "w": 400, "h": 200}}
+        ref_l = desktop_core._new_ref(ctrl_large, meta_large)
+
+        ctrl_large.BoundingRectangle.left = 170 # dx=70 <= 140, dc=70 <= 100
+        c, err = desktop_core._resolve_ref(ref_l, for_action=True)
+        self.assertIsNone(err, "Large control should not falsely trip target_moved on small 70px shift")
+
+        ctrl_large.BoundingRectangle.left = 220 # dc=120 > 100px
+        c, err = desktop_core._resolve_ref(ref_l, for_action=True)
+        self.assertEqual(err, "target_moved")
+
+    def test_U2_ref_expired_ttl(self):
+        """U2: Verify ref expiration when age exceeds REF_TTL_MS."""
+        class MockCtrl:
+            ControlTypeName = "ButtonControl"
+            IsEnabled = True
+            def GetRuntimeId(self): return (1, 2)
+            class Rect:
+                left = 10; top = 10
+                def width(self): return 20
+                def height(self): return 20
+            BoundingRectangle = Rect()
+
+        ctrl = MockCtrl()
+        meta = {"bounds": {"x": 10, "y": 10, "w": 20, "h": 20}}
+        ref = desktop_core._new_ref(ctrl, meta)
+
+        # Force age to be past TTL
+        desktop_core._ref_store[ref]["created_at"] = time.time() - 5.0
+        c, err = desktop_core._resolve_ref(ref, for_action=True)
+        self.assertIsNone(c)
+        self.assertEqual(err, "ref_expired")
+
+    def test_U3_ref_generation_mismatch_and_empty_store(self):
+        """U3: Verify ref_generation_mismatch and snapshot_required on empty store."""
+        # Empty store -> snapshot_required
+        desktop_core._ref_store.clear()
+        c, err = desktop_core._resolve_ref("e1", for_action=True)
+        self.assertIsNone(c)
+        self.assertEqual(err, "snapshot_required")
+
+        # Ref exists with generation 1
+        class MockCtrl:
+            ControlTypeName = "ButtonControl"
+            IsEnabled = True
+            def GetRuntimeId(self): return (1, 2)
+            class Rect:
+                left = 10; top = 10
+                def width(self): return 20
+                def height(self): return 20
+            BoundingRectangle = Rect()
+
+        ctrl = MockCtrl()
+        meta = {"bounds": {"x": 10, "y": 10, "w": 20, "h": 20}}
+        desktop_core._ref_generation = 1
+        ref = desktop_core._new_ref(ctrl, meta)
+
+        # Expected generation 2 mismatches generation 1
+        c, err = desktop_core._resolve_ref(ref, for_action=True, expected_generation=2)
+        self.assertIsNone(c)
+        self.assertEqual(err, "ref_generation_mismatch")
+
+        # Matching generation succeeds
+        c, err = desktop_core._resolve_ref(ref, for_action=True, expected_generation=1)
+        self.assertIsNotNone(c)
+        self.assertIsNone(err)
+
+    def test_U4_dom_signature_stability_with_ephemeral_noise(self):
+        """U4: Verify DOM signature remains stable when dynamic noise (clocks, counters) updates."""
+        url = "https://app.example.com/dashboard?session_id=12345"
+        url2 = "https://app.example.com/dashboard?session_id=67890"
+
+        # State 1 at 10:15
+        elements1 = [
+            {"role": "button", "name": "Deploy", "testid": "btn-deploy"},
+            {"role": "link", "name": "Settings", "suggested_locator": "/settings"},
+            {"role": "text", "name": "10:15 AM", "testid": "live-clock"},
+            {"role": "text", "name": "Request counter: 42", "testid": "counter-widget"},
+        ]
+
+        # State 2 at 10:16 with changed timer, counter, and query param
+        elements2 = [
+            {"role": "button", "name": "Deploy", "testid": "btn-deploy"},
+            {"role": "link", "name": "Settings", "suggested_locator": "/settings"},
+            {"role": "text", "name": "10:16 AM", "testid": "live-clock"},
+            {"role": "text", "name": "Request counter: 58", "testid": "counter-widget"},
+        ]
+
+        sig1 = browser_tools.build_dom_signature(url, elements1)
+        sig2 = browser_tools.build_dom_signature(url2, elements2)
+
+        self.assertEqual(len(sig1), 16)
+        self.assertEqual(sig1, sig2, "DOM signature must be immune to clock/counter churn and query param jitter")
+
+    def test_U5_pattern_short_circuit_zero_pixel(self):
+        """U5: Verify InvokePattern short-circuits without calling cursor_motion."""
+        class MockInvokePat:
+            def __init__(self): self.invoked = False
+            def Invoke(self): self.invoked = True
+
+        pat = MockInvokePat()
+        class MockButton:
+            ControlTypeName = "ButtonControl"
+            Name = "OK"
+            IsEnabled = True
+            NativeWindowHandle = 0
+            def GetRuntimeId(self): return (10, 20)
+            def GetInvokePattern(self): return pat
+            def GetTogglePattern(self): return None
+            def GetSelectionItemPattern(self): return None
+            def SetFocus(self): pass
+            class Rect:
+                left = 50; top = 50
+                def width(self): return 80
+                def height(self): return 30
+            BoundingRectangle = Rect()
+
+        ctrl = MockButton()
+        meta = {"bounds": {"x": 50, "y": 50, "w": 80, "h": 30}}
+        ref = desktop_core._new_ref(ctrl, meta)
+
+        motion_called = []
+        orig_go = cursor_motion.go
+        def fake_go(*args, **kwargs):
+            motion_called.append((args, kwargs))
+            return orig_go(*args, **kwargs)
+
+        cursor_motion.go = fake_go
+        try:
+            res = desktop_core.act_invoke(ref, None, 1000)
+            self.assertTrue(res["ok"])
+            self.assertEqual(res["method"], "invoke")
+            self.assertTrue(pat.invoked)
+            self.assertEqual(len(motion_called), 0, "cursor_motion.go must NOT be called when InvokePattern succeeds")
+        finally:
+            cursor_motion.go = orig_go
+
+    def test_L1_live_or_mock_notepad_flow(self):
+        """L1: Integration check for window listing and focus/find on Notepad or active shell."""
+        res = desktop_core.act_list_windows()
+        self.assertTrue(res["ok"])
+        self.assertIn("windows", res)
+        has_notepad = any("notepad" in w["title"].lower() for w in res["windows"])
+        if not has_notepad:
+            self.skipTest("Notepad is not currently running. Runbook: launch notepad.exe to run live L1 test.")
+        else:
+            snap = desktop_core.act_snapshot("Notepad", depth=3)
+            self.assertTrue(snap["ok"])
+
+    def test_L2_live_or_mock_edge_cdp_flow(self):
+        """L2: Integration check for browser CDP daemon communication."""
+        if not browser_tools._cdp_ok(0.3):
+            self.skipTest("Edge CDP on port 9222 is offline. Runbook: launch msedge --remote-debugging-port=9222 to test live L2.")
+        else:
+            res = browser_tools._send({"action": "health"})
+            self.assertTrue(res.get("ok"))
+
+    def test_L3_file_upload_desktop_assist_flow(self):
+        """L3: Verify file upload error returns needs_desktop_assist on dialog requirement."""
+        class MockPage:
+            url = "http://example.com"
+            context = None
+            frames = []
+            def title(self): return "Example"
+            def locator(self, sel):
+                raise RuntimeError("OS native file dialog intercepted")
+        class MockContext:
+            pages = [MockPage()]
+        class MockBrowser:
+            contexts = [MockContext()]
+
+        here = os.path.dirname(os.path.abspath(__file__))
+        test_file = os.path.join(here, "test_automation_suite.py")
+        args = {"action": "upload", "value": test_file, "selector": "input[type=file]"}
+        res = browser_tools._handle(MockBrowser(), args)
+        self.assertFalse(res["ok"])
+        self.assertEqual(res["error"], "needs_desktop_assist")
+        self.assertIn("desktop automation bridge is required", res["message"])
+
 if __name__ == "__main__":
     unittest.main()
