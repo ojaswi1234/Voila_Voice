@@ -512,6 +512,17 @@ canvas.tag_bind(pill, '<Enter>', on_enter_pill)
 canvas.tag_bind(pill, '<Leave>', on_leave_pill)
 
 ai_state = "IDLE"
+desktop_active_in_current_task = False
+
+# Ensure cursor_is_out.txt starts clean on agent launch
+try:
+    _init_here = os.path.dirname(os.path.abspath(__file__))
+    _init_cflag = os.path.join(_init_here, "cursor_is_out.txt")
+    with open(_init_cflag, "w") as _cf:
+        _cf.write("0")
+except Exception:
+    pass
+
 mobile_clients = 0
 backend_status = 'Active'
 anim_frame = 0
@@ -2604,9 +2615,10 @@ def trigger_black_hole():
     animate_hole()
 
 def send_cursor_home():
+    global desktop_active_in_current_task
+    here = os.path.dirname(os.path.abspath(__file__))
+    cursor_flag = os.path.join(here, "cursor_is_out.txt")
     try:
-        here = os.path.dirname(os.path.abspath(__file__))
-        cursor_flag = os.path.join(here, "cursor_is_out.txt")
         is_out = False
         if os.path.exists(cursor_flag):
             try:
@@ -2615,28 +2627,38 @@ def send_cursor_home():
             except Exception:
                 pass
 
-        # Only bring cursor home & show black hole IF desktop tools actually spawned the cursor out!
-        if is_out or ai_state == "DESKTOP":
-            import socket
-            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            x = root.winfo_x() + 40
-            y = root.winfo_y() + 32
-            sock.sendto(f"HOME,{x},{y}".encode(), ("127.0.0.1", 19882))
-            trigger_black_hole()
+        # STRICT GUARD: Only bring cursor home & show black hole IF desktop tools
+        # were ACTUALLY invoked during this task AND cursor was physically spawned!
+        if desktop_active_in_current_task and (is_out or ai_state == "DESKTOP"):
             try:
-                with open(cursor_flag, "w") as f:
-                    f.write("0")
+                import socket
+                sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                sock.settimeout(0.5)
+                x = root.winfo_x() + 40
+                y = root.winfo_y() + 32
+                sock.sendto(f"HOME,{x},{y}".encode(), ("127.0.0.1", 19882))
+                sock.close()
             except Exception:
                 pass
+            trigger_black_hole()
     except Exception:
         pass
+    finally:
+        desktop_active_in_current_task = False
+        # GUARANTEED RESET: Always ensure cursor_is_out.txt is reset to 0
+        try:
+            with open(cursor_flag, "w") as f:
+                f.write("0")
+        except Exception:
+            pass
 
 def parse_line(line):
-    global ai_state, mobile_clients, glow_timer, current_mode, backend_status
+    global ai_state, mobile_clients, glow_timer, current_mode, backend_status, desktop_active_in_current_task
 
     if ("[DEBUG_LIFECYCLE:" in line and "THINKING PHASE STARTED" in line) or ("[executeOllamaCommand] iter=" in line) or ("[executeGroqCommand] iter=" in line):
         if glow_timer: root.after_cancel(glow_timer)
         ai_state = "THINKING"
+        desktop_active_in_current_task = False
         return
 
 
@@ -2705,6 +2727,7 @@ def parse_line(line):
     if "STATUS: RUNNING" in line:
         if glow_timer: root.after_cancel(glow_timer)
         ai_state = "RUNNING"
+        desktop_active_in_current_task = False
         return
 
     # Real command outcome tracking (from Go's /execute goroutine)
@@ -2763,11 +2786,12 @@ def parse_line(line):
             ai_state = "BROWSER"
         elif "web_search" in tool or "search" in tool:
             ai_state = "SEARCH"
-        elif "desktop_automation" in tool or "desktop" in tool:
+        elif tool == "desktop_automation" or tool.startswith("desktop_automation"):
             ai_state = "DESKTOP"
+            desktop_active_in_current_task = True
         elif "check_bg_task" in tool or "bg_task" in tool:
             ai_state = "BGTASK"
-        elif "mcp_" in tool or "github" in tool or "youtube" in tool:
+        elif "mcp_" in tool or "github" in tool or "youtube" in tool or "notion" in tool or "gmail" in tool:
             ai_state = "MCP"
         elif "run_terminal" in tool or "terminal" in tool:
             ai_state = "BASH"

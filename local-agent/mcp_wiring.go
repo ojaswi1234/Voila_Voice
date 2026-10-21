@@ -335,6 +335,50 @@ func dispatchMCPAndExtras(ctx context.Context, toolName string, argsJSON json.Ra
 			}
 		}
 
+		// Auto-resolve Notion page parent if missing page_id/database_id or set to workspace
+		if toolName == "mcp__notion__API-post-page" {
+			var parsedArgs map[string]interface{}
+			if err := json.Unmarshal(argsJSON, &parsedArgs); err == nil {
+				needParent := true
+				if parent, ok := parsedArgs["parent"].(map[string]interface{}); ok {
+					if pid, _ := parent["page_id"].(string); pid != "" {
+						needParent = false
+					}
+					if dbid, _ := parent["database_id"].(string); dbid != "" {
+						needParent = false
+					}
+				}
+				if needParent {
+					// Query Notion search to discover the first accessible parent page
+					searchArgs, _ := json.Marshal(map[string]interface{}{"query": ""})
+					searchRes, sErr := mcp.GlobalHost.Call(ctx, "mcp__notion__API-post-search", searchArgs)
+					if sErr == nil {
+						var sObj struct {
+							Results []struct {
+								ID     string `json:"id"`
+								Object string `json:"object"`
+							} `json:"results"`
+						}
+						if json.Unmarshal([]byte(searchRes), &sObj) == nil && len(sObj.Results) > 0 {
+							for _, r := range sObj.Results {
+								if r.ID != "" && (r.Object == "page" || r.Object == "database") {
+									if r.Object == "database" {
+										parsedArgs["parent"] = map[string]interface{}{"database_id": r.ID}
+									} else {
+										parsedArgs["parent"] = map[string]interface{}{"page_id": r.ID}
+									}
+									if newArgs, mErr := json.Marshal(parsedArgs); mErr == nil {
+										argsJSON = newArgs
+									}
+									break
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+
 		appendSecurityAudit("mcp_call", fmt.Sprintf("tool: %s, args: %s", toolName, string(argsJSON)))
 		result, err := mcp.GlobalHost.Call(ctx, toolName, argsJSON)
 

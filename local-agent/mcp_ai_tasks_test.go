@@ -276,3 +276,145 @@ func TestAITask_YouTubeLiveExecution(t *testing.T) {
 		}
 	})
 }
+
+// TestAITask_NotionLiveExecution tests Notion search and page creation workflow.
+func TestAITask_NotionLiveExecution(t *testing.T) {
+	cwd, _ := os.Getwd()
+	realConfigPath := filepath.Join(cwd, "mcp_servers.json")
+	if _, err := os.Stat(realConfigPath); err != nil {
+		realConfigPath = filepath.Join(cwd, "local-agent", "mcp_servers.json")
+	}
+
+	cfg, err := mcp.LoadConfig(realConfigPath)
+	if err != nil || len(cfg.Servers) == 0 {
+		t.Skipf("mcp_servers.json not found at %s, skipping live test", realConfigPath)
+	}
+
+	hasNotion := false
+	for _, s := range cfg.Servers {
+		if s.ID == "notion" && s.Enabled {
+			hasNotion = true
+			break
+		}
+	}
+	if !hasNotion {
+		t.Skip("Notion MCP server is not enabled in mcp_servers.json")
+	}
+
+	mcp.GlobalHost.StopAll()
+	if err := mcp.GlobalHost.StartEnabled(cfg); err != nil {
+		t.Fatalf("Failed to start MCP host: %v", err)
+	}
+	defer mcp.GlobalHost.StopAll()
+
+	ctx := context.Background()
+
+	// 1. Search for accessible pages/databases
+	t.Run("Task1_SearchNotion", func(t *testing.T) {
+		args, _ := json.Marshal(map[string]interface{}{
+			"query": "",
+		})
+		result, handled := dispatchMCPAndExtras(ctx, "mcp__notion__API-post-search", args, nil)
+		if !handled {
+			t.Fatalf("Expected tool call to be handled by dispatchMCPAndExtras")
+		}
+		t.Logf("Notion Search Result:\n%s", result)
+		if strings.HasPrefix(result, "error:") {
+			t.Fatalf("search failed: %s", result)
+		}
+	})
+
+	// 2. Create a child page under the found accessible parent page
+	t.Run("Task2_CreateChildPage", func(t *testing.T) {
+		parentID := "4005830e-591f-80d4-b5f2-ce2b81ac451f"
+		args, _ := json.Marshal(map[string]interface{}{
+			"parent": map[string]interface{}{
+				"page_id": parentID,
+			},
+			"properties": map[string]interface{}{
+				"title": []map[string]interface{}{
+					{
+						"type": "text",
+						"text": map[string]interface{}{
+							"content": "Sprint 4 Planning",
+						},
+					},
+				},
+			},
+			"children": []map[string]interface{}{
+				{
+					"object": "block",
+					"type":   "heading_2",
+					"heading_2": map[string]interface{}{
+						"rich_text": []map[string]interface{}{
+							{
+								"type": "text",
+								"text": map[string]interface{}{
+									"content": "Agenda",
+								},
+							},
+						},
+					},
+				},
+				{
+					"object": "block",
+					"type":   "to_do",
+					"to_do": map[string]interface{}{
+						"rich_text": []map[string]interface{}{
+							{
+								"type": "text",
+								"text": map[string]interface{}{
+									"content": "Review backlog & assign tasks",
+								},
+							},
+						},
+						"checked": false,
+					},
+				},
+			},
+		})
+		result, handled := dispatchMCPAndExtras(ctx, "mcp__notion__API-post-page", args, nil)
+		if !handled {
+			t.Fatalf("Expected tool call to be handled by dispatchMCPAndExtras")
+		}
+		t.Logf("Notion Create Page Result:\n%s", result)
+		if strings.HasPrefix(result, "error:") {
+			t.Fatalf("create child page failed: %s", result)
+		}
+		if !strings.Contains(result, "Sprint 4 Planning") && !strings.Contains(result, "id") {
+			t.Errorf("Expected created page JSON in result, got: %s", result)
+		}
+	})
+
+	// 3. Test Auto-Healing: LLM passes workspace: true parent (which would otherwise 400 Bad Request)
+	// Our auto-resolver automatically injects the accessible parent page_id!
+	t.Run("Task3_CreatePageWithWorkspaceParentAutoHealed", func(t *testing.T) {
+		args, _ := json.Marshal(map[string]interface{}{
+			"parent": map[string]interface{}{
+				"type":      "workspace",
+				"workspace": true,
+			},
+			"properties": map[string]interface{}{
+				"title": []map[string]interface{}{
+					{
+						"type": "text",
+						"text": map[string]interface{}{
+							"content": "Sprint 4 Agenda & Goals",
+						},
+					},
+				},
+			},
+		})
+		result, handled := dispatchMCPAndExtras(ctx, "mcp__notion__API-post-page", args, nil)
+		if !handled {
+			t.Fatalf("Expected tool call to be handled by dispatchMCPAndExtras")
+		}
+		t.Logf("Notion Auto-Healed Result: %s", result)
+		if strings.HasPrefix(result, "error:") {
+			t.Fatalf("auto-healed page creation failed: %s", result)
+		}
+		if !strings.Contains(result, "Sprint 4 Agenda & Goals") && !strings.Contains(result, "id") {
+			t.Errorf("Expected page creation output, got: %s", result)
+		}
+	})
+}

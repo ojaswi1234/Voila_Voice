@@ -60,6 +60,7 @@ TIER 1 (INSTANT STRUCTURED DATA & SPECIALIZED APIS - ALWAYS PREFERRED):
 - For GitHub tasks (find repos, search code, issues, PRs, commits, user activity) -> ALWAYS use 'mcp__github__*' tools (e.g. 'mcp__github__search_repositories', 'mcp__github__get_file_contents'). NEVER open a browser to search GitHub!
 - For YouTube tasks (search videos, get metadata, extract transcripts) -> ALWAYS use 'mcp__youtube__*' tools (e.g. 'mcp__youtube__search_videos', 'mcp__youtube__get_metadata'). NEVER open a browser to search YouTube!
 - For Notion tasks (search notes, create pages, update databases) -> ALWAYS use 'mcp__notion__*' tools.
+  CRITICAL NOTION RULE: When creating a page or note in Notion ('mcp__notion__API-post-page'), NEVER use workspace parent ('{"parent": {"type": "workspace", "workspace": true}}') because Notion API rejects workspace root creation with 400 Bad Request. Instead, you MUST FIRST call 'mcp__notion__API-post-search' with query="" to discover the accessible parent page ID, then supply that ID: '{"parent": {"page_id": "<page_id>"}}'. Format title property as '{"title": [{"text": {"content": "<title>"}}]}'.
 - For Gmail tasks (search emails, read messages, send replies) -> ALWAYS use 'mcp__gmail__*' tools.
 - For General Web Research (facts, news, documentation, finding URLs) -> ALWAYS use 'web_research' (instant, headless, zero token waste).
 COMBINE Tier 1 tools freely! For example: use 'web_research' to discover trending topics or repo names, and use 'mcp__github__*' or 'mcp__youtube__*' to fetch deep metadata and analyze the content.
