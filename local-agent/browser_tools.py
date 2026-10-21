@@ -103,18 +103,42 @@ def _page(browser):
 
 
 def _get_loc(page, sel):
-    loc = page.locator(sel)
+    # 1. Try CSS / xpath selector directly
     try:
+        loc = page.locator(sel)
         if loc.count() > 0: return loc
     except Exception:
         pass
+        
+    # 2. Check if sel matches text or accessible role
+    try:
+        loc_text = page.get_by_text(sel, exact=False)
+        if loc_text.count() > 0: return loc_text.first
+    except Exception:
+        pass
+
+    try:
+        loc_btn = page.get_by_role("button", name=sel)
+        if loc_btn.count() > 0: return loc_btn.first
+        loc_link = page.get_by_role("link", name=sel)
+        if loc_link.count() > 0: return loc_link.first
+    except Exception:
+        pass
+
+    # 3. Check inside iframes
     for frame in page.frames:
         try:
             floc = frame.locator(sel).first
             if floc.count() > 0: return floc
         except Exception:
             pass
-    return loc
+        try:
+            floc_text = frame.get_by_text(sel, exact=False).first
+            if floc_text.count() > 0: return floc_text
+        except Exception:
+            pass
+            
+    return page.locator(sel)
 
 def _handle(browser, args):
     global _active_tab_index
@@ -128,6 +152,10 @@ def _handle(browser, args):
             if url.lower() in ("about:blank", "blank"):
                 return _err(action, "Refusing about:blank — use real https URL", page)
             if not url.startswith("http"): url = "https://" + url
+            # Guard against redundant search engine browsing that wastes tokens
+            u_lower = url.lower()
+            if any(engine in u_lower for engine in ("google.com/search", "bing.com/search", "duckduckgo.com/?q", "search.yahoo.com/search")):
+                return _err(action, "Search engine URL blocked in browser_automation to prevent token waste. Use the 'web_research' tool instead, or MCP tools for GitHub/YouTube/Notion/Gmail.", page)
             page.goto(url, timeout=45000, wait_until="domcontentloaded")
             try: page.wait_for_timeout(min(wt, 3000))
             except Exception: pass
@@ -140,9 +168,15 @@ def _handle(browser, args):
                 loc.scroll_into_view_if_needed(timeout=3000)
                 loc.click(timeout=5000)
             except Exception as e:
-                # Fallback to forced click if obscured by sticky headers/modals
-                try: loc.click(force=True, timeout=2000)
-                except Exception: raise e
+                # Fallback 1: forced click if obscured by sticky headers/modals
+                try: 
+                    loc.click(force=True, timeout=2000)
+                except Exception:
+                    # Fallback 2: direct JS click dispatch
+                    try:
+                        loc.evaluate("el => el.click()")
+                    except Exception:
+                        raise e
             return _ok(action, page, selector=sel)
         if action == "type":
             sel, val = args.get("selector"), args.get("value")
