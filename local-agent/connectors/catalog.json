@@ -15,7 +15,7 @@
   {
     "id": "github",
     "name": "GitHub",
-    "description": "GitHub integration",
+    "description": "GitHub integration — repos, issues, PRs, files, commits",
     "auth_type": "token",
     "free": true,
     "mcp_command": "npx",
@@ -46,13 +46,28 @@
   {
     "id": "youtube",
     "name": "YouTube",
-    "description": "YouTube integration",
+    "description": "YouTube integration — metadata, transcripts, search",
     "auth_type": "none",
     "free": true,
     "mcp_command": "npx",
     "mcp_args": [
       "-y",
       "@umbertotancorre/youtube-mcp"
+    ]
+  },
+  {
+    "id": "notion",
+    "name": "Notion",
+    "description": "Notion workspace — search pages, read/create/update databases & notes",
+    "auth_type": "token",
+    "free": true,
+    "mcp_command": "npx",
+    "mcp_args": [
+      "-y",
+      "@notionhq/notion-mcp-server"
+    ],
+    "fields": [
+      {"key": "token", "label": "Notion Integration Token (ntn_...)", "secret": true}
     ]
   }
 ]

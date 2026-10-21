@@ -122,6 +122,9 @@ func connectorsConnectMulti(id string, creds map[string]string) (string, error) 
 			case "github":
 				envMap["GITHUB_PERSONAL_ACCESS_TOKEN"] = val
 				envMap["GITHUB_TOKEN"] = val
+			case "notion":
+				// Notion MCP server reads auth via OPENAPI_MCP_HEADERS JSON string
+				envMap["OPENAPI_MCP_HEADERS"] = `{"Authorization": "Bearer ` + val + `", "Notion-Version": "2022-06-28"}`
 			default:
 				// Generic: use the field key directly as env var
 				envMap[field.Key] = val
@@ -135,6 +138,8 @@ func connectorsConnectMulti(id string, creds map[string]string) (string, error) 
 			case "github":
 				envMap["GITHUB_PERSONAL_ACCESS_TOKEN"] = token
 				envMap["GITHUB_TOKEN"] = token
+			case "notion":
+				envMap["OPENAPI_MCP_HEADERS"] = `{"Authorization": "Bearer ` + token + `", "Notion-Version": "2022-06-28"}`
 			default:
 				envMap["TOKEN"] = token
 			}
