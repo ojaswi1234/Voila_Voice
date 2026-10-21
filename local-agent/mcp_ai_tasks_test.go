@@ -220,3 +220,59 @@ func minInt(a, b int) int {
 	}
 	return b
 }
+
+
+// TestAITask_YouTubeLiveExecution verifies that YouTube MCP tools run live without requiring
+// authentication tokens and return valid video metadata.
+func TestAITask_YouTubeLiveExecution(t *testing.T) {
+	cwd, _ := os.Getwd()
+	realConfigPath := filepath.Join(cwd, "mcp_servers.json")
+	if _, err := os.Stat(realConfigPath); err != nil {
+		realConfigPath = filepath.Join(cwd, "local-agent", "mcp_servers.json")
+	}
+
+	cfg, err := mcp.LoadConfig(realConfigPath)
+	if err != nil || len(cfg.Servers) == 0 {
+		t.Skipf("mcp_servers.json not found at %s, skipping live test", realConfigPath)
+	}
+
+	hasYouTube := false
+	for _, s := range cfg.Servers {
+		if s.ID == "youtube" && s.Enabled {
+			hasYouTube = true
+			break
+		}
+	}
+	if !hasYouTube {
+		t.Skip("YouTube MCP server is not enabled in mcp_servers.json")
+	}
+
+	mcp.GlobalHost.StopAll()
+	if err := mcp.GlobalHost.StartEnabled(cfg); err != nil {
+		t.Fatalf("Failed to start MCP host: %v", err)
+	}
+	defer mcp.GlobalHost.StopAll()
+
+	ctx := context.Background()
+
+	// ---------------------------------------------------------
+	// AI Task: Fetch YouTube Video Metadata (Me at the zoo)
+	// User prompt: "Fetch the metadata for YouTube video jNQXAC9IVRw"
+	// Model emits tool call: mcp__youtube__get_metadata
+	// ---------------------------------------------------------
+	t.Run("Task_GetMetadata", func(t *testing.T) {
+		args, _ := json.Marshal(map[string]interface{}{
+			"url": "jNQXAC9IVRw",
+		})
+		result, handled := dispatchMCPAndExtras(ctx, "mcp__youtube__get_metadata", args, nil)
+		if !handled {
+			t.Fatalf("Expected tool call to be handled by dispatchMCPAndExtras")
+		}
+		if strings.HasPrefix(result, "error:") {
+			t.Fatalf("get_metadata failed: %s", result)
+		}
+		if !strings.Contains(result, "Me at the zoo") || !strings.Contains(result, "jawed") {
+			t.Errorf("Expected metadata to contain 'Me at the zoo' and 'jawed', got:\n%s", result[:minInt(len(result), 300)])
+		}
+	})
+}

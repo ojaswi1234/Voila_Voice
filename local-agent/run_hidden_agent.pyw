@@ -968,6 +968,10 @@ def _show_settings_widgets():
         canvas_s.itemconfig(inner_win, width=e.width)
     inner.bind('<Configure>', _on_frame_configure)
     canvas_s.bind('<Configure>', _on_canvas_configure)
+    def _on_mw_settings(event):
+        canvas_s.yview_scroll(int(-1 * (event.delta / 120)), "units")
+    canvas_s.bind('<Enter>', lambda e: canvas_s.bind_all('<MouseWheel>', _on_mw_settings))
+    canvas_s.bind('<Leave>', lambda e: canvas_s.unbind_all('<MouseWheel>'))
 
     PAD = dict(padx=16, pady=6, sticky='w')
 
@@ -3274,10 +3278,16 @@ def _show_mcp_widgets():
         inner = tk.Frame(canvas_s, bg='#0F1115')
         inner_win = canvas_s.create_window((0, 0), window=inner, anchor='nw')
 
-        def on_configure(event):
+        def _on_servers_frame_cfg(e):
             canvas_s.configure(scrollregion=canvas_s.bbox('all'))
-            canvas_s.itemconfig(inner_win, width=event.width)
-        canvas_s.bind('<Configure>', on_configure)
+        def _on_servers_canvas_cfg(e):
+            canvas_s.itemconfig(inner_win, width=e.width)
+        inner.bind('<Configure>', _on_servers_frame_cfg)
+        canvas_s.bind('<Configure>', _on_servers_canvas_cfg)
+        def _on_mw_servers(event):
+            canvas_s.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        canvas_s.bind('<Enter>', lambda e: canvas_s.bind_all('<MouseWheel>', _on_mw_servers))
+        canvas_s.bind('<Leave>', lambda e: canvas_s.unbind_all('<MouseWheel>'))
 
         add_form_frame = tk.Frame(inner, bg='#16171C', bd=1, relief='solid')
         
@@ -3424,10 +3434,16 @@ def _show_mcp_widgets():
         inner = tk.Frame(canvas_s, bg='#0F1115')
         inner_win = canvas_s.create_window((0, 0), window=inner, anchor='nw')
 
-        def on_configure(event):
+        def _on_conn_frame_cfg(e):
             canvas_s.configure(scrollregion=canvas_s.bbox('all'))
-            canvas_s.itemconfig(inner_win, width=event.width)
-        canvas_s.bind('<Configure>', on_configure)
+        def _on_conn_canvas_cfg(e):
+            canvas_s.itemconfig(inner_win, width=e.width)
+        inner.bind('<Configure>', _on_conn_frame_cfg)
+        canvas_s.bind('<Configure>', _on_conn_canvas_cfg)
+        def _on_mw_conn(event):
+            canvas_s.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        canvas_s.bind('<Enter>', lambda e: canvas_s.bind_all('<MouseWheel>', _on_mw_conn))
+        canvas_s.bind('<Leave>', lambda e: canvas_s.unbind_all('<MouseWheel>'))
         
         catalog = data.get('catalog') or []
         states = data.get('connector_states') or {}
@@ -3507,10 +3523,16 @@ def _show_mcp_widgets():
         inner = tk.Frame(canvas_s, bg='#0F1115')
         inner_win = canvas_s.create_window((0, 0), window=inner, anchor='nw')
 
-        def on_configure(event):
+        def _on_skills_frame_cfg(e):
             canvas_s.configure(scrollregion=canvas_s.bbox('all'))
-            canvas_s.itemconfig(inner_win, width=event.width)
-        canvas_s.bind('<Configure>', on_configure)
+        def _on_skills_canvas_cfg(e):
+            canvas_s.itemconfig(inner_win, width=e.width)
+        inner.bind('<Configure>', _on_skills_frame_cfg)
+        canvas_s.bind('<Configure>', _on_skills_canvas_cfg)
+        def _on_mw_skills(event):
+            canvas_s.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        canvas_s.bind('<Enter>', lambda e: canvas_s.bind_all('<MouseWheel>', _on_mw_skills))
+        canvas_s.bind('<Leave>', lambda e: canvas_s.unbind_all('<MouseWheel>'))
 
         skills = data.get('skills') or []
         if not skills:
