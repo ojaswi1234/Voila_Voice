@@ -1,7 +1,7 @@
 # Browser Automation Tool — Voila Local Agent
 
 Drives Chromium / Microsoft Edge via Chrome DevTools Protocol (CDP) and Playwright.  
-Focuses on semantic locators, actionability auto-waits, smart multi-control form filling, spreadsheet data entry, table extraction, and bounded desktop bridge fallback.
+Focuses on semantic locators, actionability auto-waits, frame-aware element extraction, smart multi-control form filling, spreadsheet data entry, table extraction, and dedicated **Payment Guardrails (Deny by Default)**.
 
 ---
 
@@ -14,19 +14,31 @@ python browser_tools.py --action health
 # Navigate to URL (returns extract_hint=true)
 python browser_tools.py --action goto --url "https://example.com"
 
-# Extract interactive elements with suggested locators & DOM signature hash
+# Extract interactive elements with suggested locators, frame tags & DOM signature hash
 python browser_tools.py --action extract_interactive
 
 # Click using accessible locator
 python browser_tools.py --action click --selector 'role=button[name="Submit"]'
 
-# Smart multi-control form filling
+# Smart multi-control form filling (skips/blocks payment fields)
 python browser_tools.py --action fill_form --value '{"First Name": "Jane", "Email": "jane@example.com", "Country": "Canada", "Subscribe": true}'
+
+# Select native dropdown option by label, value, or index
+python browser_tools.py --action select_option --selector "select#country" --label "Canada"
+
+# Read-only structured scrape (title, meta description, main text, tables, price displays)
+python browser_tools.py --action scrape_structured
+
+# Multi-tab research helper (opens tab, extracts structured data, auto-closes tab)
+python browser_tools.py --action research_extract --url "https://en.wikipedia.org/wiki/Robotics" --close true
+
+# Wait for and intercept file download
+python browser_tools.py --action wait_download --selector 'button#export-report'
 
 # Bulk tabular data entry into Google Sheets / Excel Online / Airtable / Datagrids
 python browser_tools.py --action enter_table_data --value '[["Product", "Price", "Qty"], ["Widget A", "19.99", "5"], ["Widget B", "29.99", "2"]]'
 
-# Extract table data into JSON and Markdown
+# Extract table data into JSON records and Markdown table
 python browser_tools.py --action extract_table --selector "table.data-table"
 
 # Select or jump to a spreadsheet cell (e.g. "B5" in Google Sheets via Name Box)
@@ -38,61 +50,138 @@ python browser_tools.py --action upload --selector 'input[type=file]' --value 'C
 
 ---
 
-## Architectural Principles & Advanced Capabilities
+## Action Capability Matrix
 
-### 1. Smart Form Filling Engine (`fill_form` & `type`)
-- **Intelligent Label & Input Mapping (`_resolve_form_field`)**:
-  - Resolves standard `<label for="id">` attributes to their associated `<input>` or `<textarea>`.
-  - Resolves `<label>` tags wrapping inputs `<label>Name <input/></label>` to their inner interactive elements.
-  - Resolves labels immediately preceding form elements in the DOM.
-- **Multi-Control Support**:
-  - **Native `<select>`**: Matches by option text label, value, or index.
-  - **Checkboxes & Custom ARIA Switches**: Handles `<input type="checkbox">` as well as custom `[role="checkbox"]` and `[role="switch"]` widgets based on `aria-checked`.
-  - **Custom Dropdowns & Comboboxes**: Interacts with Radix UI, MUI, React-Select, and Ant Design `[role="combobox"]` by clicking the trigger, opening the option list, and selecting the matching option.
-  - **ContentEditable & Rich Text Editors**: Targets Notion, Google Docs, Slack, and Jira rich text fields using `document.execCommand('insertText')` with full focus retention.
-  - **Date, Time, & Range Controls**: Injects values and dispatches synthetic `input` and `change` events.
-  - **Verification Post-fill**: Clears inputs before typing, asserts `input_value()`, and returns detailed per-field results `{field: {method: "...", value: "...", verified: true}}`.
-  - **Auto-Submission**: Supports `"submit": true` or `"submit_selector": "..."` to automatically find and submit the form.
-
----
-
-### 2. Spreadsheet & Grid Data Entry (`enter_table_data`)
-- **Universal Spreadsheet Support**: Designed for Google Sheets, Microsoft Excel Online, Airtable, Notion Tables, Handsontable, and AG Grid.
-- **Flexible Data Ingestion**: Accepts 2D arrays (`[["A", "B"], ["C", "D"]]`), lists of dictionaries (`[{"Col1": "Val1", "Col2": "Val2"}]`), or raw TSV/CSV text strings.
-- **Dual Entry Modes**:
-  - **`clipboard` (Bulk TSV Paste — Default for Spreadsheets)**: Formats data into a Tab-Separated Values matrix and dispatches a synthetic `Ctrl+V` paste into the selected cell. This mimics native human paste behavior, instantly populating dozens or hundreds of rows without keystroke lag.
-  - **`keyboard` (Sequential Tab/Enter Navigation)**: Focuses the starting cell, types values, presses `Tab` between columns, and presses `Enter` between rows.
-- **Cell Jumping (`select_cell`)**: On Google Sheets, automatically uses the Name Box (`input#t-name-box`) to jump directly to any cell coordinate (e.g., `"C10"`).
-
----
-
-### 3. Structured Table Extraction (`extract_table`)
-- Automatically parses HTML `<table>`, `[role="table"]`, and `[role="grid"]` elements.
-- Extracts headers from `<th>` and `[role="columnheader"]`.
-- Extracts rows from `<tbody>` and `[role="row"]`.
-- Returns structured JSON records (`data`), a raw 2D array (`matrix`), and a ready-to-display GitHub-flavored Markdown table (`markdown`).
+| Action | Description | Primary Parameters | Key Guarantees & Safeguards |
+| :--- | :--- | :--- | :--- |
+| `health` | Checks CDP connectivity on port 9222 | None | Fast probe (0.5s timeout) |
+| `ensure` | Confirms browser window readiness | None | Ensures active page |
+| `goto` | Navigates current tab to URL | `--url`, `--wait_time`, `--wait-networkidle` | Payment URL deny gate; search engine URL block; returns `extract_hint=true` |
+| `new_tab` | Opens new tab and navigates | `--url` | Payment URL deny gate; auto-switches active tab index |
+| `list_tabs` | Lists all open tabs across contexts | None | Reports tab index, active tab, URL, title |
+| `switch_tab` | Switches active focus to tab | `--value` (index or title/URL fragment) | Brings target page to front |
+| `close_tab` | Closes active or target tab | `--value` (optional tab index) | Safe close; adjusts active index |
+| `wait_for` | Waits for selector, text, state, or timeout | `--selector`, `--text`, `--state`, `--wait_time` | Supports `load`, `domcontentloaded`, `networkidle` |
+| `click` | Clicks element with 3-tier fallback | `--selector` | Payment CTA / field deny; reports `click_path` (`normal`, `force`, `js`) |
+| `type` | Types into input with auto-clear | `--selector`, `--value` | Blocks PAN card numbers & payment fields; label-to-input mapping |
+| `press` | Presses keyboard key | `--value` (key name), `--selector` (optional) | Blocks Enter on payment controls |
+| `scroll` | Scrolls window or element | `--value` (`up`, `down`, pixels) | Smooth scrolling |
+| `hover` | Hovers mouse pointer over element | `--selector` | Triggers hover flyouts/menus |
+| `search_word` | Finds word on page & scrolls into view | `--value` | Pierces iframes; reports occurrence count |
+| `extract_interactive` | Scans page for clickable/input elements | None | Frame-aware (up to 10 frames); shadow DOM piercing; ranked by reliability |
+| `scrape` | Scrapes text or element texts | `--selector` (optional) | Fast text capture |
+| `scrape_structured` | Extracts rich document metadata | None | Read-only title, meta description, main text, tables, price displays |
+| `select_option` | Selects dropdown option | `--selector`, `--value`/`--label`/`--index` | Native `<select>` manipulation |
+| `fill_form` | Smart form filling across multiple widgets | `--value` (JSON field dictionary) | Skips/blocks payment fields; supports native, ARIA, and rich text editors |
+| `submit_form` | Submits form or clicks primary submit | `--selector` (optional) | Identifies submit button or falls back to Enter |
+| `wait_download` | Intercepts browser file download | `--selector` or `--url`, `--timeout_ms` | Saves to `%LOCALAPPDATA%\Voila\downloads`; reports path & size |
+| `research_extract` | Background research across tabs | `--url`, `--close` (default true) | Payment gate on URL; opens tab, scrapes structured data, auto-closes |
+| `enter_table_data` | Bulk/sequential spreadsheet data entry | `--value` (2D array, dict list, TSV), `--mode` | High-throughput TSV clipboard paste (`Ctrl+V`) for Google Sheets/Excel |
+| `extract_table` | Extracts table/grid to JSON & Markdown | `--selector` (optional) | Structured extraction from `<table>`, `[role=table]`, `[role=grid]` |
+| `select_cell` | Jumps to spreadsheet cell coordinate | `--value` (e.g. `"B5"`) | Uses Name Box on Google Sheets/Excel Online |
+| `upload` | Uploads file to `<input type=file>` | `--selector`, `--value` (local path) | Gated on payment pages; falls back to `needs_desktop_assist` for OS dialogs |
+| `eval` | Executes JavaScript expression in page | `--value` (script) | Gated by `VOILA_ALLOW_BROWSER_EVAL`; blocks script writing to payment fields |
 
 ---
 
-### 4. Semantic Locator Priority
+## Payment Guardrails Policy (P0 — Deny by Default)
+
+Voila enforces a strict **Deny by Default** security policy on all commercial transactions and payment operations.
+
+### 1. Hard Restrictions
+- **No Checkout Completion**: The agent will NOT click final purchase buttons or complete checkouts.
+- **No Card / Bank Entry**: The agent will NOT enter Primary Account Numbers (PAN), CVVs, expiry dates, IBANs, or bank routing numbers.
+- **No Silent Purchases**: The agent refuses all auto-buy, subscription renewals, or payment confirmation tasks.
+- **Pay Manually Requirement**: All payment steps must be performed directly and manually by the user in their browser.
+
+### 2. Guardrail Heuristics
+- **Payment & Checkout URLs**:
+  `checkout`, `/cart/checkout`, `/payment`, `/billing`, `/pay/`, `placeorder`,
+  `stripe.com`, `paypal.com`, `razorpay`, `paytm`, `squareup`, `adyen`, `braintree`,
+  `checkout.shopify`, `payments.amazon`, `buy.google`, `apple.com/shop/buy`.
+- **Payment CTAs & Buttons**:
+  `"pay now"`, `"place order"`, `"complete purchase"`, `"confirm payment"`,
+  `"buy now"`, `"pay with"`, `"submit payment"`, `"authorize payment"`,
+  `"add card and pay"`, `"confirm order and pay"`.
+- **Payment Fields**:
+  `card number`, `cardnumber`, `cc-number`, `pan`,
+  `cvv`, `cvc`, `cid`, `security code`,
+  `expiry`, `exp-date`, `cc-exp`,
+  `iban`, `routing number`, `account number`,
+  `otp` (when present on payment or checkout URLs).
+
+### 3. Masking Protection
+Any 13-19 digit PAN-like number appearing in tool logs or returns is automatically masked before output:
+```text
+4111222233334444  ->  ************4444
+```
+
+### 4. Desktop Bridge Prohibition
+The cross-platform desktop automation bridge **MUST NOT** be used to bypass a `payment_blocked` error. When an action is rejected under `payment_blocked`, `needs_desktop_assist` is strictly suppressed.
+
+---
+
+## Frame-Aware Extraction & Ranking (`extract_interactive`)
+
+1. **Multi-Frame Scanning**:
+   - Automatically traverses `page.main_frame` and up to 10 child iframes.
+   - Pierces Shadow DOM trees recursively using `TreeWalker`.
+2. **Rich Element Metadata**:
+   Each extracted element includes:
+   - `frame_name` (`"main"` or iframe name) & `frame_url`
+   - `role`, `name`, `tag`, `testid`, `placeholder`
+   - `suggested_locator`: semantic locator recommendation
+   - `disabled`: boolean flag
+   - `area`: bounding box area in pixels (`width * height`)
+   - `rank_tier`: priority tier (1 to 4)
+3. **Deterministic Ranking**:
+   Elements are sorted by:
+   - **Tier 1**: Explicit `testid` (most resilient)
+   - **Tier 2**: Accessible `role` and non-empty `name`
+   - **Tier 3**: Visible and enabled controls
+   - **Secondary Sort**: Bounding box `area` ascending (prioritizes specific, clickable buttons and inputs over giant wrapping layout containers).
+
+---
+
+## Structured Scrape (`scrape_structured`)
+
+Designed for token-efficient web research without loading excessive HTML:
+- `title`: Page document title.
+- `url`: Current page URL.
+- `meta_description`: Extracted from `<meta name="description">` or `<meta property="og:description">`.
+- `main_text`: Bounded excerpt (up to 2000 characters) extracted from `<article>`, `<main>`, or `.content`.
+- `tables`: Up to 3 tables parsed into list of row dictionaries (`[{"Feature": "Battery", "Value": "24h"}]`).
+- `price_display`: Read-only list of currency and price strings found on page (e.g. `["$49.99", "USD 50"]`).
+- **Safety Guarantee**: Explicitly marked `READ ONLY — display text only, not checkout. Never auto-click buy.`
+
+---
+
+## File Downloads (`wait_download`)
+
+- Automatically expects and intercepts browser downloads triggered via button clicks or direct download URLs.
+- Saves downloaded files to the dedicated agent downloads folder:
+  - Windows: `%LOCALAPPDATA%\Voila\downloads`
+  - Fallback: `~/.voila/downloads`
+- Returns structured file details: `path`, `size`, `suggested_filename`.
+- Blocked if the download trigger or URL matches a payment completion flow.
+
+---
+
+## Semantic Locator Priority
+
 `getByRole` (`role=button[name="..."]`) → `getByLabel` (`label="..."`) → `getByPlaceholder` (`placeholder="..."`) → `getByText` (`text="..."`) → `getByTestId` (`testid="..."`) → CSS selectors.
 
----
-
-### 5. Loop Detection Signature & Noise Filtering
-`extract_interactive` generates a 16-character MD5 `signature` based on the sanitized page URL and sorted stable element tuples `(role, name[:40], testid, href_clean)`.
-Dynamic noise elements matching timestamps, clocks, counters, spinners, tickers, live counters, or relative times ("seconds ago") are filtered out by regex:
-`r"time|clock|counter|spinner|timestamp|ticker|live count|seconds ago|\b\d{1,2}:\d{2}(?::\d{2})?\b"`.
+Brittle absolute XPaths and dynamic CSS classes are avoided.
 
 ---
 
-### 6. Action Diagnostics & Auto-Wait
-- Leans on Playwright actionability auto-waits (visible, stable, enabled, receiving events).
-- `click` reports `click_path` (`"normal"`, `"force"`, or `"js"`).
-- Deep CSS selectors with multiple `nth-child` or `nth-of-type` clauses trigger `warning="brittle_selector_warning"`.
+## Environment Variables & Configuration
 
----
-
-### 7. Bridge Coordination & Per-Job Circuit Breaker
-- **Circuit Breaker**: Capped at a strict maximum of **2 desktop assists** per task (`MAX_DESKTOP_ASSISTS = 2`).
-- **Job Isolation**: Isolated per `VOILA_JOB_ID` or `CONVERSATION_ID`, with auto-reset when the job ID changes (`bridge_last_job_id.txt`).
+| Variable | Default | Purpose |
+| :--- | :--- | :--- |
+| `VOILA_BROWSER_SETTLE_MS` | `150` | Settle delay in milliseconds before snapshot/extract (replaces blind 1000ms sleeps). |
+| `VOILA_ALLOW_BROWSER_EVAL` | `1` | Set to `0` to globally disable JavaScript execution via the `eval` action. |
+| `VOILA_REQUIRE_OBSERVE` | `0` | When set to `1`, warns if mutating actions (`click`, `type`) occur without prior `extract_interactive`. |
+| `VOILA_JOB_ID` / `CONVERSATION_ID` | `default` | Isolates desktop assist circuit breakers across concurrent agent sessions. |
+| `VOILA_EDGE_PATH` | (auto-detected) | Custom path to Microsoft Edge or Chromium binary. |
+| `VOILA_BROWSER_PROFILE` | `C:\tmp\ai_browser_profile` | Edge user data directory for session persistence. |

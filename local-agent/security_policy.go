@@ -85,6 +85,12 @@ type typeKeysPattern struct {
 	Reason  string `json:"reason"`
 }
 
+type browserPaymentRules struct {
+	DenyURLs        []string `json:"deny_urls"`
+	DenyCTAKeywords []string `json:"deny_cta_keywords"`
+	DenyFields      []string `json:"deny_fields"`
+}
+
 type securityRules struct {
 	Terminal struct {
 		Deny    []terminalRule `json:"deny"`
@@ -96,6 +102,7 @@ type securityRules struct {
 		DestructiveControlKeywords []destructiveKeyword `json:"destructive_control_keywords"`
 		TypeKeysPatterns           []typeKeysPattern    `json:"type_keys_patterns"`
 	} `json:"desktop"`
+	Browser browserPaymentRules `json:"browser"`
 }
 
 // ── Singleton ────────────────────────────────────────────────────────────────
@@ -109,10 +116,11 @@ func init() {
 		log.Printf("[SECURITY_POLICY] WARNING: could not load security_rules.json: %v — using embedded fallback", _rulesLoadErr)
 		_rules = embeddedFallbackRules()
 	} else {
-		log.Printf("[SECURITY_POLICY] Loaded security_rules.json OK (%d terminal deny, %d terminal approve, %d desktop windows)",
+		log.Printf("[SECURITY_POLICY] Loaded security_rules.json OK (%d terminal deny, %d terminal approve, %d desktop windows, %d browser deny URLs)",
 			len(_rules.Terminal.Deny),
 			len(_rules.Terminal.Approve),
 			len(_rules.Desktop.ProtectedWindows),
+			len(_rules.Browser.DenyURLs),
 		)
 	}
 }
@@ -260,6 +268,130 @@ func EvaluateDesktopAction(action, ref, selector, value, window, controlName, co
 	}
 
 	return PolicyDecision{Level: PolicyAllow, ActionType: "desktop_action"}
+}
+
+// ── EvaluateBrowserAction ────────────────────────────────────────────────────
+
+var panRegex = regexp.MustCompile(`\b\d{13,19}\b`)
+
+// MaskPAN replaces PAN-like 13-19 digit sequences with ************1234
+func MaskPAN(s string) string {
+	return panRegex.ReplaceAllStringFunc(s, func(m string) string {
+		if len(m) >= 4 {
+			return strings.Repeat("*", len(m)-4) + m[len(m)-4:]
+		}
+		return m
+	})
+}
+
+// EvaluateBrowserAction enforces payment guardrails on browser automation actions.
+// Returns PolicyDeny on checkout/payment URLs, payment CTA clicks, payment fields, or card data entry.
+func EvaluateBrowserAction(action, url, selector, value string) PolicyDecision {
+	actionLower := strings.ToLower(action)
+	urlLower := strings.ToLower(url)
+	selLower := strings.ToLower(selector)
+	valLower := strings.ToLower(value)
+
+	// Check PAN pattern in typed value or arguments
+	if panRegex.MatchString(value) {
+		return PolicyDecision{
+			Level:       PolicyDeny,
+			RiskLevel:   "critical",
+			Category:    "browser_payment",
+			Reason:      "Payment card numbers (PAN) must not be entered via browser automation.",
+			Summary:     "BLOCKED: Payment card number detected",
+			ActionType:  "browser_" + actionLower,
+			MatchedRule: "pan_number_pattern",
+		}
+	}
+
+	// 1. Navigation actions (goto, new_tab, research_extract)
+	if actionLower == "goto" || actionLower == "new_tab" || actionLower == "research_extract" {
+		for _, denyURL := range _rules.Browser.DenyURLs {
+			if strings.Contains(urlLower, strings.ToLower(denyURL)) {
+				return PolicyDecision{
+					Level:       PolicyDeny,
+					RiskLevel:   "critical",
+					Category:    "browser_payment",
+					Reason:      fmt.Sprintf("Navigation to payment/checkout URL (%s) is blocked by safety guardrails. Please complete payments manually in your browser.", denyURL),
+					Summary:     "BLOCKED: Payment URL navigation",
+					ActionType:  "browser_" + actionLower,
+					MatchedRule: denyURL,
+				}
+			}
+		}
+	}
+
+	// 2. Click actions (click, press)
+	if actionLower == "click" || actionLower == "press" {
+		combinedSel := selLower + " " + valLower
+		for _, cta := range _rules.Browser.DenyCTAKeywords {
+			if strings.Contains(combinedSel, strings.ToLower(cta)) {
+				return PolicyDecision{
+					Level:       PolicyDeny,
+					RiskLevel:   "critical",
+					Category:    "browser_payment",
+					Reason:      fmt.Sprintf("Clicking payment completion button '%s' is blocked by payment guardrails. Please complete payments manually.", cta),
+					Summary:     "BLOCKED: Payment CTA click",
+					ActionType:  "browser_" + actionLower,
+					MatchedRule: cta,
+				}
+			}
+		}
+		for _, fld := range _rules.Browser.DenyFields {
+			if strings.Contains(combinedSel, strings.ToLower(fld)) {
+				return PolicyDecision{
+					Level:       PolicyDeny,
+					RiskLevel:   "critical",
+					Category:    "browser_payment",
+					Reason:      fmt.Sprintf("Interacting with payment field '%s' is blocked by payment guardrails.", fld),
+					Summary:     "BLOCKED: Payment field interaction",
+					ActionType:  "browser_" + actionLower,
+					MatchedRule: fld,
+				}
+			}
+		}
+	}
+
+	// 3. Form input actions (type, fill_form)
+	if actionLower == "type" || actionLower == "fill_form" {
+		combinedInput := selLower + " " + valLower
+		for _, fld := range _rules.Browser.DenyFields {
+			if strings.Contains(combinedInput, strings.ToLower(fld)) {
+				return PolicyDecision{
+					Level:       PolicyDeny,
+					RiskLevel:   "critical",
+					Category:    "browser_payment",
+					Reason:      fmt.Sprintf("Entering payment details for '%s' is blocked by payment guardrails.", fld),
+					Summary:     "BLOCKED: Payment data entry",
+					ActionType:  "browser_" + actionLower,
+					MatchedRule: fld,
+				}
+			}
+		}
+	}
+
+	// 4. Eval action: block script attempting to set payment fields
+	if actionLower == "eval" {
+		evalScript := strings.ToLower(value)
+		if strings.Contains(evalScript, "value") || strings.Contains(evalScript, "innertext") {
+			for _, fld := range _rules.Browser.DenyFields {
+			if strings.Contains(evalScript, strings.ToLower(fld)) {
+				return PolicyDecision{
+					Level:       PolicyDeny,
+					RiskLevel:   "critical",
+					Category:    "browser_payment",
+					Reason:      fmt.Sprintf("Script modification of payment field '%s' is blocked by payment guardrails.", fld),
+					Summary:     "BLOCKED: Payment field script eval",
+					ActionType:  "browser_eval",
+					MatchedRule: fld,
+				}
+			}
+		}
+	}
+	}
+
+	return PolicyDecision{Level: PolicyAllow, ActionType: "browser_" + actionLower}
 }
 
 // ── Enhanced mobile approval with rich payload ────────────────────────────────
@@ -477,6 +609,22 @@ func embeddedFallbackRules() *securityRules {
 		{Pattern: "diskpart", Risk: "critical", Reason: "Diskpart typed into UI."},
 		{Pattern: "net user", Risk: "high", Reason: "User management typed."},
 		{Pattern: "iex (", Risk: "critical", Reason: "Remote exec typed."},
+	}
+	r.Browser.DenyURLs = []string{
+		"checkout", "/cart/checkout", "/payment", "/billing", "/pay/", "placeorder",
+		"stripe.com", "paypal.com", "razorpay", "paytm", "squareup", "adyen", "braintree",
+		"checkout.shopify", "payments.amazon", "buy.google", "apple.com/shop/buy",
+	}
+	r.Browser.DenyCTAKeywords = []string{
+		"pay now", "place order", "complete purchase", "confirm payment",
+		"buy now", "pay with", "submit payment", "authorize payment",
+		"add card and pay", "confirm order and pay",
+	}
+	r.Browser.DenyFields = []string{
+		"card number", "cardnumber", "cc-number", "pan",
+		"cvv", "cvc", "cid", "security code",
+		"expiry", "exp-date", "cc-exp",
+		"iban", "routing number", "account number",
 	}
 	return r
 }

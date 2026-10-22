@@ -915,5 +915,190 @@ class TestDesktopAutomation(unittest.TestCase):
         self.assertEqual(res["data"][1]["Name"], "Bob")
         self.assertIn("| Alice | Engineer | Infrastructure |", res["markdown"])
 
+    def test_P1_payment_url_blocking(self):
+        """P1: Verify goto and new_tab block checkout and payment URLs."""
+        class MockPage:
+            url = "https://example.com"
+            title = lambda self: "Example"
+        class MockBrowser:
+            contexts = [type("MockContext", (), {"pages": [MockPage()]})()]
+
+        # 1. Denied checkout URL on goto
+        res_goto = browser_tools._handle(MockBrowser(), {"action": "goto", "url": "https://checkout.stripe.com/c/pay/cs_live_123"})
+        self.assertFalse(res_goto["ok"])
+        self.assertEqual(res_goto["error"], "payment_blocked")
+        self.assertIn(res_goto["matched_rule"], ("checkout", "stripe.com"))
+        self.assertNotIn("needs_desktop_assist", res_goto)
+
+        # 3. Permitted safe URL
+        class MockSafePage:
+            url = "https://example.com/docs"
+            title = lambda self: "Docs"
+            def goto(self, url, **k): pass
+            def wait_for_timeout(self, ms): pass
+        safe_browser = type("MockSafeBrowser", (), {"contexts": [type("MockContext", (), {"pages": [MockSafePage()]})()]})()
+        res_safe = browser_tools._handle(safe_browser, {"action": "goto", "url": "https://example.com/docs"})
+        self.assertTrue(res_safe["ok"])
+
+        # 2. Denied cart checkout URL on new_tab
+        res_tab = browser_tools._handle(MockBrowser(), {"action": "new_tab", "url": "https://store.myshopify.com/cart/checkout"})
+        self.assertFalse(res_tab["ok"])
+        self.assertEqual(res_tab["error"], "payment_blocked")
+
+    def test_P2_payment_cta_and_field_blocking(self):
+        """P2: Verify click on payment buttons and typing into card fields are blocked."""
+        class MockPage:
+            url = "https://example.com/checkout_preview"
+            title = lambda self: "Preview"
+        class MockBrowser:
+            contexts = [type("MockContext", (), {"pages": [MockPage()]})()]
+
+        # 1. Click on payment CTA button
+        res_click = browser_tools._handle(MockBrowser(), {"action": "click", "selector": "role=button[name='Pay now']"})
+        self.assertFalse(res_click["ok"])
+        self.assertEqual(res_click["error"], "payment_blocked")
+        self.assertEqual(res_click["matched_rule"], "pay now")
+        self.assertFalse(res_click.get("needs_desktop_assist", False))
+
+        # 2. Type into payment field
+        res_type = browser_tools._handle(MockBrowser(), {"action": "type", "selector": "input#cc-number", "value": "1234"})
+        self.assertFalse(res_type["ok"])
+        self.assertEqual(res_type["error"], "payment_blocked")
+        self.assertEqual(res_type["matched_rule"], "cc-number")
+
+        # 3. Type card number (PAN)
+        res_pan = browser_tools._handle(MockBrowser(), {"action": "type", "selector": "input#generic", "value": "4111222233334444"})
+        self.assertFalse(res_pan["ok"])
+        self.assertEqual(res_pan["error"], "payment_blocked")
+        self.assertEqual(res_pan["matched_rule"], "pan_number_pattern")
+
+    def test_P3_pan_masking(self):
+        """P3: Verify 13-19 digit PAN sequences are masked in results."""
+        from browser_payment_rules import mask_pan, mask_sensitive
+        # Raw 16-digit PAN
+        self.assertEqual(mask_pan("Order with card 4111222233334444 confirmed"), "Order with card ************4444 confirmed")
+        # Formatted PAN with dashes
+        self.assertEqual(mask_pan("Card 4111-2222-3333-4444 on file"), "Card ************4444 on file")
+        # In nested dict
+        nested = {"user": "Alice", "meta": {"account_card": "5500000000001234", "amount": "$99"}}
+        masked = mask_sensitive(nested)
+        self.assertEqual(masked["meta"]["account_card"], "************1234")
+        self.assertEqual(masked["meta"]["amount"], "$99")
+
+    def test_P4_frame_aware_extraction_and_ranking(self):
+        """P4: Verify extract_interactive extracts from frames and ranks by testid and area."""
+        class MockFrame1:
+            name = "main"
+            url = "https://example.com"
+            def evaluate(self, script, meta):
+                return [
+                    {"role": "generic", "name": "Big Container", "area": 500000, "rank_tier": 4, "selector": "div.container", "frame_name": "main"},
+                    {"role": "button", "name": "Submit", "testid": "submit-btn", "area": 1200, "rank_tier": 1, "selector": "testid=submit-btn", "frame_name": "main"}
+                ]
+        class MockFrame2:
+            name = "iframe_widget"
+            url = "https://example.com/widget"
+            def evaluate(self, script, meta):
+                return [
+                    {"role": "button", "name": "Help", "area": 800, "rank_tier": 2, "selector": "button#help", "frame_name": "iframe_widget"}
+                ]
+        class MockPage:
+            url = "https://example.com"
+            title = lambda self: "Example"
+            main_frame = MockFrame1()
+            frames = [MockFrame1(), MockFrame2()]
+            def wait_for_timeout(self, ms): pass
+
+        class MockBrowser:
+            contexts = [type("MockContext", (), {"pages": [MockPage()]})()]
+
+        res = browser_tools._handle(MockBrowser(), {"action": "extract_interactive"})
+        self.assertTrue(res["ok"])
+        elements = res["elements"]
+        self.assertGreaterEqual(len(elements), 3)
+        # Element with testid (rank_tier 1) should be ranked first
+        self.assertEqual(elements[0]["testid"], "submit-btn")
+        self.assertEqual(elements[0]["frame_name"], "main")
+        # Second should be semantic role button (Help) with smaller area
+        self.assertEqual(elements[1]["name"], "Help")
+        self.assertEqual(elements[1]["frame_name"], "iframe_widget")
+
+    def test_P5_structured_scrape_read_only(self):
+        """P5: Verify scrape_structured returns title, text, tables, and price display."""
+        class MockPage:
+            url = "https://example.com/item"
+            title = lambda self: "Product Page"
+            def evaluate(self, script, *args):
+                if "description" in script:
+                    return "Best product description"
+                if "article" in script:
+                    return "Detailed product excerpt text."
+                if "tbls" in script:
+                    return [{"index": 0, "headers": ["Feature", "Value"], "rows": [{"Feature": "Battery", "Value": "24h"}]}]
+                if "matches" in script:
+                    return ["$49.99", "USD 50"]
+                return ""
+
+        class MockBrowser:
+            contexts = [type("MockContext", (), {"pages": [MockPage()]})()]
+
+        res = browser_tools._handle(MockBrowser(), {"action": "scrape_structured"})
+        self.assertTrue(res["ok"])
+        self.assertEqual(res["title"], "Product Page")
+        self.assertEqual(res["meta_description"], "Best product description")
+        self.assertEqual(res["main_text"], "Detailed product excerpt text.")
+        self.assertEqual(len(res["tables"]), 1)
+        self.assertIn("$49.99", res["price_display"])
+        self.assertIn("READ ONLY", res["notice"])
+
+    def test_P6_select_option_widget(self):
+        """P6: Verify select_option selects by value, label, or index."""
+        selected_args = {}
+        class MockSelectLoc:
+            def count(self): return 1
+            @property
+            def first(self): return self
+            def is_visible(self): return True
+            def wait_for(self, **k): pass
+            def scroll_into_view_if_needed(self, **k): pass
+            def evaluate(self, expr, *a):
+                if "tagName" in expr: return "select"
+                return ""
+            def select_option(self, **k):
+                selected_args.update(k)
+
+        class MockPage:
+            url = "https://example.com"
+            title = lambda self: "Example"
+            def get_by_label(self, *a, **k): return MockSelectLoc()
+            def locator(self, *a, **k): return MockSelectLoc()
+            frames = []
+
+        class MockBrowser:
+            contexts = [type("MockContext", (), {"pages": [MockPage()]})()]
+
+        res = browser_tools._handle(MockBrowser(), {"action": "select_option", "selector": "select#country", "label": "Canada"})
+        self.assertTrue(res["ok"])
+        self.assertEqual(selected_args.get("label"), "Canada")
+
+    def test_P7_eval_payment_guardrail(self):
+        """P7: Verify eval action blocks payment field modifications."""
+        class MockPage:
+            url = "https://example.com"
+            title = lambda self: "Example"
+            def evaluate(self, expr): return "eval_result"
+        class MockBrowser:
+            contexts = [type("MockContext", (), {"pages": [MockPage()]})()]
+
+        # Payment setter in eval
+        res_eval = browser_tools._handle(MockBrowser(), {"action": "eval", "value": "document.querySelector('#card-number').value = '4111222233334444'"})
+        self.assertFalse(res_eval["ok"])
+        self.assertEqual(res_eval["error"], "payment_blocked")
+
+        # Safe read eval allowed
+        res_safe = browser_tools._handle(MockBrowser(), {"action": "eval", "value": "document.title"})
+        self.assertTrue(res_safe["ok"])
+        self.assertEqual(res_safe["result"], "eval_result")
+
 if __name__ == "__main__":
     unittest.main()

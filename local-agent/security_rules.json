@@ -195,5 +195,54 @@
         "reason": "Remote exec typed."
       }
     ]
+  },
+  "browser": {
+    "deny_urls": [
+      "checkout",
+      "/cart/checkout",
+      "/payment",
+      "/billing",
+      "/pay/",
+      "placeorder",
+      "stripe.com",
+      "paypal.com",
+      "razorpay",
+      "paytm",
+      "squareup",
+      "adyen",
+      "braintree",
+      "checkout.shopify",
+      "payments.amazon",
+      "buy.google",
+      "apple.com/shop/buy"
+    ],
+    "deny_cta_keywords": [
+      "pay now",
+      "place order",
+      "complete purchase",
+      "confirm payment",
+      "buy now",
+      "pay with",
+      "submit payment",
+      "authorize payment",
+      "add card and pay",
+      "confirm order and pay"
+    ],
+    "deny_fields": [
+      "card number",
+      "cardnumber",
+      "cc-number",
+      "pan",
+      "cvv",
+      "cvc",
+      "cid",
+      "security code",
+      "expiry",
+      "exp-date",
+      "cc-exp",
+      "iban",
+      "routing number",
+      "account number"
+    ]
   }
-}
+}

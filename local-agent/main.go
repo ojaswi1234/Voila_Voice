@@ -4803,6 +4803,25 @@ case "browser_automation":
 		selector := getString("selector")
 		value := getString("value")
 
+		// ── Security Policy: gate payment and checkout actions ──────────────────
+		{
+			browserDecision := EvaluateBrowserAction(action, url, selector, value)
+			if browserDecision.Level == PolicyDeny {
+				writeAuditLog(AuditEntry{
+					Timestamp:   time.Now().UTC().Format(time.RFC3339),
+					Tool:        "browser_automation",
+					Action:      action,
+					Level:       "deny",
+					Risk:        browserDecision.RiskLevel,
+					Decision:    "auto_deny",
+					Summary:     browserDecision.Summary,
+					MatchedRule: browserDecision.MatchedRule,
+				})
+				return fmt.Sprintf(`{"ok":false,"error":"payment_blocked","message":"%s","matched_rule":"%s"}`,
+					browserDecision.Reason, browserDecision.MatchedRule)
+			}
+		}
+
 		exeDir, _ := os.Executable()
 		scriptPath := filepath.Join(filepath.Dir(exeDir), "browser_tools.py")
 		if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
@@ -4835,6 +4854,7 @@ case "browser_automation":
 		if len(res) > 8000 {
 			res = res[:8000] + "\n... (truncated)"
 		}
+		res = MaskPAN(res)
 		return res
 
 	case "desktop_automation":

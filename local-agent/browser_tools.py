@@ -11,6 +11,28 @@ from playwright.sync_api import sync_playwright
 
 import re, urllib.parse, hashlib
 
+try:
+    from browser_payment_rules import (
+        is_payment_url, is_payment_cta, is_payment_field,
+        is_pan_number, mask_pan, mask_sensitive, is_payment_eval
+    )
+except ImportError:
+    try:
+        from .browser_payment_rules import (
+            is_payment_url, is_payment_cta, is_payment_field,
+            is_pan_number, mask_pan, mask_sensitive, is_payment_eval
+        )
+    except Exception:
+        import sys
+        sys.path.insert(0, os.path.dirname(__file__))
+        from browser_payment_rules import (
+            is_payment_url, is_payment_cta, is_payment_field,
+            is_pan_number, mask_pan, mask_sensitive, is_payment_eval
+        )
+
+_last_observed_url = None
+_last_observed_signature = None
+
 DAEMON_PORT, CDP_URL, CDP_PORT = 19879, "http://127.0.0.1:9222", 9222
 USER_DATA_DIR = os.environ.get("VOILA_BROWSER_PROFILE", r"C:\tmp\ai_browser_profile")
 _active_tab_index = 0
@@ -423,6 +445,10 @@ def _handle(browser, args):
             if url.lower() in ("about:blank", "blank"):
                 return _err(action, "Refusing about:blank — use real https URL", page)
             if not url.startswith("http"): url = "https://" + url
+            # Payment guardrail
+            m_url, r_url = is_payment_url(url)
+            if m_url:
+                return _err(action, "payment_blocked", page, message=f"Navigation to payment/checkout URL ({r_url}) is blocked by safety guardrails. Please complete payments manually in your browser.", matched_rule=r_url)
             # Guard against redundant search engine browsing that wastes tokens
             u_lower = url.lower()
             if any(engine in u_lower for engine in ("google.com/search", "bing.com/search", "duckduckgo.com/?q", "search.yahoo.com/search")):
@@ -465,7 +491,30 @@ def _handle(browser, args):
         if action == "click":
             sel = args.get("selector")
             if not sel: return _err(action, "selector required", page)
+
+            # Payment guardrail on selector and page
+            on_pay, _ = is_payment_url(page.url)
+            m_cta, r_cta = is_payment_cta(sel)
+            if m_cta:
+                return _err(action, "payment_blocked", page, message=f"Clicking payment control '{r_cta}' is blocked by payment guardrails. Please complete payments manually.", matched_rule=r_cta)
+            m_fld, r_fld = is_payment_field(sel, on_pay)
+            if m_fld:
+                return _err(action, "payment_blocked", page, message=f"Interacting with payment field '{r_fld}' is blocked by payment guardrails.", matched_rule=r_fld)
+
             loc = _get_loc(page, sel)
+
+            # Inspect target element attributes for payment indicators
+            try:
+                elem_info = loc.evaluate("el => ({ text: (el.innerText || el.value || '').trim(), aria: el.getAttribute('aria-label') || '', name: el.getAttribute('name') || '', id: el.id || '' })")
+                comb = f"{elem_info.get('text', '')} {elem_info.get('aria', '')} {elem_info.get('name', '')} {elem_info.get('id', '')}"
+                m_c, r_c = is_payment_cta(comb)
+                if m_c:
+                    return _err(action, "payment_blocked", page, message=f"Clicking payment button '{r_c}' is blocked by payment guardrails. Please complete payments manually.", matched_rule=r_c)
+                m_f, r_f = is_payment_field(comb, on_pay)
+                if m_f:
+                    return _err(action, "payment_blocked", page, message=f"Interacting with payment control '{r_f}' is blocked by payment guardrails.", matched_rule=r_f)
+            except Exception:
+                pass
             click_path = "normal"
             warning = None
             s_sel = str(sel)
@@ -494,7 +543,24 @@ def _handle(browser, args):
         if action == "type":
             sel, val = args.get("selector"), args.get("value")
             if not sel or val is None: return _err(action, "selector and value required", page)
+
+            # Payment guardrails
+            if is_pan_number(str(val)):
+                return _err(action, "payment_blocked", page, message="Entering payment card numbers (PAN) is blocked by safety guardrails.", matched_rule="pan_number_pattern")
+            on_pay, _ = is_payment_url(page.url)
+            m_fld, r_fld = is_payment_field(sel, on_pay)
+            if m_fld:
+                return _err(action, "payment_blocked", page, message=f"Entering details into payment field '{r_fld}' is blocked by payment guardrails.", matched_rule=r_fld)
+
             loc = _resolve_form_field(page, sel)
+            try:
+                f_info = loc.evaluate("el => ({ name: el.getAttribute('name') || '', id: el.id || '', auto: el.getAttribute('autocomplete') || '', aria: el.getAttribute('aria-label') || '', placeholder: el.getAttribute('placeholder') || '' })")
+                comb = f"{f_info.get('name', '')} {f_info.get('id', '')} {f_info.get('auto', '')} {f_info.get('aria', '')} {f_info.get('placeholder', '')}"
+                m_el, r_el = is_payment_field(comb, on_pay)
+                if m_el:
+                    return _err(action, "payment_blocked", page, message=f"Entering details into payment field '{r_el}' is blocked by payment guardrails.", matched_rule=r_el)
+            except Exception:
+                pass
             try:
                 res = _smart_fill_element(page, loc, val, timeout=4000)
                 return _ok(action, page, selector=sel, detail=res)
@@ -503,6 +569,13 @@ def _handle(browser, args):
         if action == "press":
             val, sel = args.get("value") or args.get("key"), args.get("selector")
             if not val: return _err(action, "value (key) required", page)
+            if str(val).lower() in ("enter", "return"):
+                on_pay, _ = is_payment_url(page.url)
+                if sel:
+                    m_cta, r_cta = is_payment_cta(sel)
+                    m_fld, r_fld = is_payment_field(sel, on_pay)
+                    if m_cta or m_fld:
+                        return _err(action, "payment_blocked", page, message="Pressing Enter on payment controls is blocked by payment guardrails.", matched_rule=r_cta or r_fld)
             if sel: 
                 loc = _get_loc(page, sel)
                 loc.scroll_into_view_if_needed(timeout=2000)
@@ -551,6 +624,9 @@ def _handle(browser, args):
             if not url or url.lower() in ("about:blank", "blank"):
                 return _err(action, "Refusing about:blank — use real https URL", page)
             if not url.startswith("http"): url = "https://" + url
+            m_url, r_url = is_payment_url(url)
+            if m_url:
+                return _err(action, "payment_blocked", page, message=f"Navigation to payment/checkout URL ({r_url}) is blocked by safety guardrails. Please complete payments manually in your browser.", matched_rule=r_url)
             ctx = browser.contexts[0] if browser.contexts else browser.new_context()
             np = ctx.new_page()
             _active_tab_index = len(ctx.pages) - 1
@@ -601,7 +677,7 @@ def _handle(browser, args):
             all_links = []
             
             # Helper JS to extract from a specific frame context, piercing Shadow DOMs
-            js_script = """() => {
+            js_script = r"""(frameMeta) => {
                 let aiIdCounter = window._aiIdCounter || 0;
                 
                 function getAllElements(root) {
@@ -636,11 +712,13 @@ def _handle(browser, args):
                 
                 const elements = allNodes.filter(isInteractive);
                 
-                return elements.filter(el => {
+                return elements.map(el => {
                     const rect = el.getBoundingClientRect();
                     const style = window.getComputedStyle(el);
-                    return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.opacity !== '0' && style.display !== 'none';
-                }).slice(0, 300).map(el => {
+                    const isHidden = rect.width <= 0 || rect.height <= 0 || style.visibility === 'hidden' || style.opacity === '0' || style.display === 'none';
+                    const isDisabled = el.disabled === true || el.getAttribute('aria-disabled') === 'true';
+                    const area = Math.round(rect.width * rect.height);
+
                     const tag = el.tagName.toLowerCase();
                     let role = el.getAttribute('role') || (tag === 'a' ? 'link' : (['button', 'input', 'textarea', 'select'].includes(tag) ? tag : 'generic'));
                     if (tag === 'input' && el.type) {
@@ -653,7 +731,6 @@ def _handle(browser, args):
                     let testId = el.getAttribute('data-testid') || el.getAttribute('data-test-id') || el.getAttribute('data-qa') || '';
                     let placeholder = el.getAttribute('placeholder') || '';
                     let ariaLabel = el.getAttribute('aria-label') || '';
-                    const isDisabled = el.disabled === true || el.getAttribute('aria-disabled') === 'true';
 
                     if (!text && tag === 'input' && el.type === 'submit') { text = "Submit"; }
                     if (!text && tag === 'input' && el.type === 'text') { text = "Text Input"; }
@@ -676,7 +753,7 @@ def _handle(browser, args):
                         }
                     }
                     
-                    text = text.replace(/\\s+/g, ' ').slice(0, 100);
+                    text = text.replace(/\s+/g, ' ').slice(0, 100);
                     
                     let suggested = '';
                     if (testId) {
@@ -700,6 +777,11 @@ def _handle(browser, args):
                     }
                     window._aiIdCounter = aiIdCounter;
                     
+                    let rankTier = 4;
+                    if (testId) rankTier = 1;
+                    else if (role !== 'generic' && text) rankTier = 2;
+                    else if (!isHidden && !isDisabled) rankTier = 3;
+
                     return {
                         role: role,
                         name: text,
@@ -708,36 +790,64 @@ def _handle(browser, args):
                         placeholder: placeholder,
                         suggested_locator: suggested,
                         selector: suggested,
-                        disabled: isDisabled
+                        disabled: isDisabled,
+                        hidden: isHidden,
+                        area: area,
+                        rank_tier: rankTier,
+                        frame_name: (frameMeta && frameMeta.name) || "main",
+                        frame_url: (frameMeta && frameMeta.url) || ""
                     };
-                }).filter(x => x.name.length > 0 || ['input', 'textarea', 'select'].includes(x.tag)).slice(0, 100);
+                }).filter(x => !x.hidden && (x.name.length > 0 || ['input', 'textarea', 'select'].includes(x.tag)));
             }"""
 
-            # Extract from main page and all iframes
-            for frame in page.frames:
+            # Walk main frame and child frames (capped at 10 frames)
+            frames_to_walk = []
+            if hasattr(page, "main_frame") and page.main_frame:
+                frames_to_walk.append(page.main_frame)
+            if hasattr(page, "frames"):
+                for f in page.frames:
+                    if f not in frames_to_walk and len(frames_to_walk) < 10:
+                        frames_to_walk.append(f)
+            if not frames_to_walk:
+                frames_to_walk = [page]
+
+            for frame in frames_to_walk:
                 try:
-                    frame_links = frame.evaluate(js_script)
+                    f_name = getattr(frame, "name", "") or "main"
+                    f_url = getattr(frame, "url", "") or ""
+                    frame_meta = {"name": f_name, "url": f_url}
+                    frame_links = frame.evaluate(js_script, frame_meta)
                     if frame_links:
                         all_links.extend(frame_links)
                 except Exception:
                     continue
             
-            # Deduplicate and cap to 100
+            # Rank elements: rank_tier ascending, then area ascending (smaller specific controls prioritized)
+            all_links.sort(key=lambda x: (x.get("rank_tier", 4), x.get("area", 9999999)))
+
+            # Deduplicate while preserving rank order
             seen_selectors = set()
             unique_links = []
             for link in all_links:
-                if link['selector'] not in seen_selectors:
-                    seen_selectors.add(link['selector'])
+                sel_key = (link.get("frame_name", ""), link.get("selector", ""))
+                if sel_key not in seen_selectors:
+                    seen_selectors.add(sel_key)
                     unique_links.append(link)
             
             # Generate 16-char content signature hash for loop detection
             dom_signature = build_dom_signature(page.url, unique_links)
+            global _last_observed_url, _last_observed_signature
+            _last_observed_url = page.url
+            _last_observed_signature = dom_signature
 
             return _ok(action, page, elements=unique_links[:100], count=len(unique_links[:100]), signature=dom_signature)
 
         if action == "upload":
             sel, val = args.get("selector"), args.get("value")
             if not val: return _err(action, "value (file path) required", page)
+            on_pay, r_url = is_payment_url(page.url)
+            if on_pay:
+                return _err(action, "payment_blocked", page, message=f"File upload on payment and checkout pages ({r_url}) is blocked by safety guardrails.", matched_rule="payment_page_upload")
             if not os.path.exists(val): return _err(action, f"File does not exist: {val}", page)
             
             try:
@@ -770,8 +880,27 @@ def _handle(browser, args):
                 except Exception: return _err(action, "value must be valid JSON dictionary for fill_form", page)
             if not isinstance(val, dict): return _err(action, "value must be a dictionary", page)
             
+            on_pay, _ = is_payment_url(page.url)
             results = {}
+            skipped_payment_fields = []
             for sel, text_val in val.items():
+                m_fld, r_fld = is_payment_field(str(sel), on_pay)
+                if m_fld or is_pan_number(str(text_val)):
+                    skipped_payment_fields.append({"field": sel, "rule": r_fld or "pan_number"})
+                    continue
+                try:
+                    f_loc = _resolve_form_field(page, sel)
+                    try:
+                        f_info = f_loc.evaluate("el => ({ name: el.getAttribute('name') || '', id: el.id || '', auto: el.getAttribute('autocomplete') || '', aria: el.getAttribute('aria-label') || '' })")
+                        comb = f"{f_info.get('name', '')} {f_info.get('id', '')} {f_info.get('auto', '')} {f_info.get('aria', '')}"
+                        m_el, r_el = is_payment_field(comb, on_pay)
+                        if m_el:
+                            skipped_payment_fields.append({"field": sel, "rule": r_el})
+                            continue
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
                 try:
                     loc = _resolve_form_field(page, sel)
                     res = _smart_fill_element(page, loc, text_val, timeout=4000)
@@ -971,6 +1100,156 @@ def _handle(browser, args):
                 
             return _ok(action, page, cell=val)
 
+        if action == "select_option":
+            sel = args.get("selector")
+            val = args.get("value")
+            label = args.get("label")
+            idx = args.get("index")
+            if not sel: return _err(action, "selector required", page)
+            loc = _resolve_form_field(page, sel)
+            try:
+                kwargs = {}
+                if label is not None: kwargs["label"] = str(label)
+                elif val is not None: kwargs["value"] = str(val)
+                elif idx is not None: kwargs["index"] = int(idx)
+                else: return _err(action, "value, label, or index required", page)
+                
+                loc.wait_for(state="visible", timeout=4000)
+                loc.scroll_into_view_if_needed(timeout=2000)
+                loc.select_option(**kwargs)
+                return _ok(action, page, selector=sel, selected=kwargs)
+            except Exception as e:
+                return _err(action, f"select_option failed on {sel!r}: {e}", page)
+
+        if action in ("scrape_structured", "structured_scrape") or (action == "scrape" and args.get("mode") == "structured"):
+            title = page.title() if callable(page.title) else (page.title or "")
+            u = page.url or ""
+            meta_desc = ""
+            try:
+                meta_desc = page.evaluate("() => { const el = document.querySelector('meta[name=\"description\"], meta[property=\"og:description\"]'); return el ? (el.getAttribute('content') || '').trim() : ''; }") or ""
+            except Exception: pass
+            main_text = ""
+            try:
+                main_text = page.evaluate("() => { const article = document.querySelector('article, main, [role=main], #content, .content'); const root = article || document.body; return (root ? (root.innerText || '') : '').replace(/\\s+/g, ' ').trim().slice(0, 2000); }") or ""
+            except Exception: pass
+            tables = []
+            try:
+                tables = page.evaluate("""() => {
+                    const results = [];
+                    const tbls = document.querySelectorAll('table, [role=table]');
+                    for (let t = 0; t < Math.min(tbls.length, 3); t++) {
+                        const tbl = tbls[t];
+                        let headers = Array.from(tbl.querySelectorAll('thead th, tr:first-child th')).map(th => th.innerText.trim());
+                        const rows = [];
+                        const trs = tbl.querySelectorAll('tbody tr, tr');
+                        for (let r = 0; r < Math.min(trs.length, 30); r++) {
+                            const tr = trs[r];
+                            if (headers.length > 0 && r === 0 && tr.querySelector('th')) continue;
+                            const cells = Array.from(tr.querySelectorAll('td, th')).map(c => c.innerText.trim());
+                            if (cells.length > 0) {
+                                if (headers.length === 0) headers = cells.map((_, i) => `Col_${i + 1}`);
+                                const rowDict = {};
+                                cells.forEach((c, idx) => {
+                                    const h = headers[idx] || `Col_${idx + 1}`;
+                                    rowDict[h] = c;
+                                });
+                                rows.push(rowDict);
+                            }
+                        }
+                        if (rows.length > 0) results.push({ index: t, headers: headers, rows: rows });
+                    }
+                    return results;
+                }""") or []
+            except Exception: pass
+            price_displays = []
+            try:
+                price_displays = page.evaluate("""() => {
+                    const text = (document.body ? document.body.innerText : '') || '';
+                    const matches = text.match(/(?:\\$|€|£|¥|₹|USD|EUR|GBP|CAD|AUD)\\s*\\d+(?:[.,]\\d{2})?/gi) || [];
+                    return Array.from(new Set(matches)).slice(0, 10);
+                }""") or []
+            except Exception: pass
+            return _ok(
+                action, page,
+                title=title,
+                url=u,
+                meta_description=meta_desc,
+                main_text=main_text,
+                tables=tables,
+                price_display=price_displays,
+                notice="READ ONLY — display text only, not checkout. Never auto-click buy."
+            )
+
+        if action in ("wait_download", "download"):
+            sel = args.get("selector")
+            down_timeout = int(args.get("timeout_ms") or args.get("wait_time") or 30000)
+            downloads_dir = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "Voila", "downloads")
+            os.makedirs(downloads_dir, exist_ok=True)
+            try:
+                with page.expect_download(timeout=down_timeout) as download_info:
+                    if sel:
+                        m_cta, r_cta = is_payment_cta(sel)
+                        if m_cta:
+                            return _err(action, "payment_blocked", page, message=f"Download trigger matches payment CTA '{r_cta}'.", matched_rule=r_cta)
+                        loc = _get_loc(page, sel)
+                        loc.scroll_into_view_if_needed(timeout=2000)
+                        loc.click(timeout=5000)
+                    elif args.get("url"):
+                        dl_url = args.get("url")
+                        m_url, r_url = is_payment_url(dl_url)
+                        if m_url:
+                            return _err(action, "payment_blocked", page, message=f"Download URL matches payment destination '{r_url}'.", matched_rule=r_url)
+                        page.goto(dl_url, timeout=down_timeout)
+                    else:
+                        return _err(action, "selector (to click) or url (to download) required", page)
+                download = download_info.value
+                suggested = download.suggested_filename
+                dest_path = os.path.join(downloads_dir, suggested)
+                download.save_as(dest_path)
+                file_size = os.path.getsize(dest_path) if os.path.exists(dest_path) else 0
+                return _ok(action, page, path=dest_path, size=file_size, suggested_filename=suggested)
+            except Exception as e:
+                return _err(action, f"Download failed or timed out: {e}", page)
+
+        if action == "research_extract":
+            url = (args.get("url") or "").strip()
+            if not url: return _err(action, "url required", page)
+            m_url, r_url = is_payment_url(url)
+            if m_url:
+                return _err(action, "payment_blocked", page, message=f"Navigation to payment/checkout URL ({r_url}) is blocked by safety guardrails.", matched_rule=r_url)
+            if not url.startswith("http"): url = "https://" + url
+            should_close = args.get("close", True) in (True, "true", "1", 1)
+            ctx = page.context if hasattr(page, "context") and page.context else None
+            research_page = ctx.new_page() if ctx else page
+            try:
+                research_page.goto(url, timeout=30000, wait_until="domcontentloaded")
+                time.sleep(0.2)
+                title = research_page.title() if callable(research_page.title) else (research_page.title or "")
+                meta_desc = ""
+                try:
+                    meta_desc = research_page.evaluate("() => { const el = document.querySelector('meta[name=\"description\"], meta[property=\"og:description\"]'); return el ? (el.getAttribute('content') || '').trim() : ''; }") or ""
+                except Exception: pass
+                main_text = ""
+                try:
+                    main_text = research_page.evaluate("() => { const article = document.querySelector('article, main, [role=main], #content, .content'); const root = article || document.body; return (root ? (root.innerText || '') : '').replace(/\\s+/g, ' ').trim().slice(0, 2000); }") or ""
+                except Exception: pass
+                price_displays = []
+                try:
+                    price_displays = research_page.evaluate("() => { const text = (document.body ? document.body.innerText : '') || ''; const matches = text.match(/(?:\\$|€|£|¥|₹|USD|EUR|GBP|CAD|AUD)\\s*\\d+(?:[.,]\\d{2})?/gi) || []; return Array.from(new Set(matches)).slice(0, 10); }") or []
+                except Exception: pass
+                result_data = {
+                    "title": title,
+                    "url": url,
+                    "meta_description": meta_desc,
+                    "main_text": main_text,
+                    "price_display": price_displays,
+                }
+                return _ok(action, page, research=result_data, closed=should_close)
+            finally:
+                if should_close and research_page != page:
+                    try: research_page.close()
+                    except Exception: pass
+
         if action in ("submit_form", "submit"):
             """Submit the active form or click the primary submit button."""
             sub_sel = args.get("selector") or "button[type=submit], input[type=submit], button:has-text('Submit'), button:has-text('Save'), button:has-text('Send'), button:has-text('Log in'), button:has-text('Sign in')"
@@ -985,9 +1264,18 @@ def _handle(browser, args):
             except Exception as e:
                 return _err(action, f"Submit failed: {e}", page)
         if action == "eval":
-            expr = args.get("value")
+            expr = args.get("value") or args.get("expression")
             if not expr: return _err(action, "value required", page)
-            return _ok(action, page, result=page.evaluate(expr))
+            if os.environ.get("VOILA_ALLOW_BROWSER_EVAL", "1").lower() in ("0", "false", "no"):
+                return _err(action, "eval_disabled", page, message="Browser script evaluation is disabled by VOILA_ALLOW_BROWSER_EVAL=0")
+            m_ev, r_ev = is_payment_eval(expr)
+            if m_ev:
+                return _err(action, "payment_blocked", page, message=f"Script modification of payment fields is blocked by payment guardrails ({r_ev}).", matched_rule=r_ev)
+            try:
+                res = page.evaluate(expr)
+                return _ok(action, page, result=res)
+            except Exception as e:
+                return _err(action, f"Eval failed: {e}", page)
         if action == "ensure":
             return _ok(action, page, cdp=True)
         return _err(action or "unknown", f"Unknown action: {action}", page)
@@ -1073,7 +1361,7 @@ def main():
         if not _running():
             _start_detached(a.url if a.action in ("goto", "new_tab") else None)
         r = _send(req)
-        print(json.dumps(r, default=str))
+        print(json.dumps(mask_sensitive(r), default=str))
         if isinstance(r, dict) and r.get("ok") is False: sys.exit(2)
     except Exception as e:
         err_msg = str(e)
