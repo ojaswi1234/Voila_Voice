@@ -20,6 +20,24 @@ else:
 
     # ─── Win32 helpers for window management ──────────────────────────────────
     _user32 = ctypes.windll.user32
+    _kernel32 = ctypes.windll.kernel32
+
+    def _ensure_default_desktop():
+        """Ensure current thread is attached to user's interactive 'default' desktop."""
+        try:
+            hdesk = _user32.GetThreadDesktop(_kernel32.GetCurrentThreadId())
+            buf = ctypes.create_unicode_buffer(256)
+            if _user32.GetUserObjectInformationW(hdesk, 2, buf, 256, None):
+                if buf.value.lower() == "default":
+                    return True
+            h_default = _user32.OpenDesktopW("default", 0, False, 0x1FF)
+            if h_default:
+                return bool(_user32.SetThreadDesktop(h_default))
+        except Exception:
+            pass
+        return False
+
+    _ensure_default_desktop()
 
     def _bring_window_to_foreground(hwnd: int):
         """Reliably bring a window to foreground, handling focus-deny quirks."""
@@ -590,6 +608,7 @@ else:
 
     # ─── Actions ───────────────────────────────────────────────────────────────
     def act_list_windows() -> dict:
+        _ensure_default_desktop()
         results = []
         try:
             wnd = auto.GetRootControl().GetFirstChildControl()

@@ -504,23 +504,49 @@ class TestDesktopAutomation(unittest.TestCase):
 
     def test_L1_live_or_mock_notepad_flow(self):
         """L1: Integration check for window listing and focus/find on Notepad or active shell."""
+        desktop_core._ensure_default_desktop()
         res = desktop_core.act_list_windows()
         self.assertTrue(res["ok"])
         self.assertIn("windows", res)
-        has_notepad = any("notepad" in w["title"].lower() for w in res["windows"])
-        if not has_notepad:
-            self.skipTest("Notepad is not currently running. Runbook: launch notepad.exe to run live L1 test.")
+        target_win = None
+        for w in res.get("windows", []):
+            title = w.get("title", "")
+            if "notepad" in title.lower():
+                target_win = title
+                break
+        if not target_win:
+            for w in res.get("windows", []):
+                title = w.get("title", "")
+                if title and title not in ("Taskbar", "Program Manager", "DesktopWindowXamlSource"):
+                    target_win = title
+                    break
+        if not target_win:
+            self.skipTest("No active application window found on desktop. Runbook: launch notepad.exe to run live L1 test.")
         else:
-            snap = desktop_core.act_snapshot("Notepad", depth=3)
+            snap = desktop_core.act_snapshot(target_win, depth=3)
             self.assertTrue(snap["ok"])
+            self.assertGreaterEqual(snap.get("count", 0), 1)
 
     def test_L2_live_or_mock_edge_cdp_flow(self):
         """L2: Integration check for browser CDP daemon communication."""
-        if not browser_tools._cdp_ok(0.3):
+        if not browser_tools._cdp_ok(1.0):
+            try:
+                browser_tools._launch()
+                for _ in range(10):
+                    time.sleep(0.5)
+                    if browser_tools._cdp_ok(0.5):
+                        break
+            except Exception:
+                pass
+
+        if not browser_tools._cdp_ok(1.0):
             self.skipTest("Edge CDP on port 9222 is offline. Runbook: launch msedge --remote-debugging-port=9222 to test live L2.")
         else:
+            if not browser_tools._running():
+                browser_tools._start_detached()
             res = browser_tools._send({"action": "health"})
             self.assertTrue(res.get("ok"))
+            self.assertTrue(res.get("cdp_ok"))
 
     def test_L3_file_upload_desktop_assist_flow(self):
         """L3: Verify file upload error returns needs_desktop_assist on dialog requirement."""

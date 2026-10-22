@@ -79,6 +79,7 @@ import queue
 _q = queue.Queue()
 
 def _worker():
+    dt._ensure_default_desktop()
     _com_init()
     while True:
         conn, req = _q.get()
