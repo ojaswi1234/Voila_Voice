@@ -13,8 +13,32 @@ if sys.platform != "win32":
 
 MAX_DESKTOP_ASSISTS = 2
 
-def _get_counter_path() -> str:
+def _resolve_job_id() -> tuple[str, bool]:
     job_id = os.environ.get("VOILA_JOB_ID") or os.environ.get("CONVERSATION_ID") or os.environ.get("VOILA_SESSION_ID") or "default"
+    is_default = (job_id == "default")
+    return job_id, is_default
+
+def _check_and_update_job_id(job_id: str):
+    here = os.path.dirname(os.path.abspath(__file__))
+    last_job_file = os.path.join(here, "bridge_last_job_id.txt")
+    last_job = None
+    if os.path.exists(last_job_file):
+        try:
+            with open(last_job_file, "r", encoding="utf-8") as f:
+                last_job = f.read().strip()
+        except Exception:
+            pass
+    if last_job is not None and last_job != job_id:
+        reset_assist_count()
+    if last_job != job_id:
+        try:
+            with open(last_job_file, "w", encoding="utf-8") as f:
+                f.write(job_id)
+        except Exception:
+            pass
+
+def _get_counter_path() -> str:
+    job_id, _ = _resolve_job_id()
     safe_job = "".join(c for c in job_id if c.isalnum() or c in ("-", "_"))
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), f"bridge_assist_count_{safe_job}.txt")
 
@@ -29,6 +53,8 @@ def _get_assist_count() -> int:
     return 0
 
 def _increment_assist_count() -> int:
+    job_id, _ = _resolve_job_id()
+    _check_and_update_job_id(job_id)
     cnt = _get_assist_count() + 1
     try:
         path = _get_counter_path()
@@ -39,10 +65,18 @@ def _increment_assist_count() -> int:
     return cnt
 
 def reset_assist_count():
+    job_id, _ = _resolve_job_id()
     try:
         path = _get_counter_path()
         if os.path.exists(path):
             os.remove(path)
+    except Exception:
+        pass
+    try:
+        here = os.path.dirname(os.path.abspath(__file__))
+        last_job_file = os.path.join(here, "bridge_last_job_id.txt")
+        with open(last_job_file, "w", encoding="utf-8") as f:
+            f.write(job_id)
     except Exception:
         pass
 
@@ -64,14 +98,21 @@ def call_guide(action: str, selector: str = "", value: str = "") -> dict:
         return {"ok": False, "error": "guide_error", "message": str(e)}
 
 def guided_click(selector: str, value: str, verify: bool = True, button: str = "left", min_confidence: float = 0.55) -> dict:
+    job_id, is_default = _resolve_job_id()
+    _check_and_update_job_id(job_id)
+
     # Circuit breaker: max N desktop assists per session task
     current_assists = _get_assist_count()
     if current_assists >= MAX_DESKTOP_ASSISTS:
-        return {
+        res = {
             "ok": False,
             "error": "circuit_breaker_tripped",
-            "message": f"Circuit breaker tripped: Maximum {MAX_DESKTOP_ASSISTS} desktop assists per task exceeded."
+            "message": f"Circuit breaker tripped: Maximum {MAX_DESKTOP_ASSISTS} desktop assists per task exceeded.",
+            "assist_job_id": job_id
         }
+        if is_default:
+            res["warning"] = "assist_job_id_default"
+        return res
 
     # 1. Resolve coords
     guide_action = "resolve_selector" if selector else "resolve_text"
@@ -80,11 +121,17 @@ def guided_click(selector: str, value: str, verify: bool = True, button: str = "
     resolve_res = call_guide(guide_action, selector, value)
     
     if not resolve_res.get("ok"):
-        return {"ok": False, "error": "resolve_failed", "detail": resolve_res}
+        res = {"ok": False, "error": "resolve_failed", "detail": resolve_res, "assist_job_id": job_id}
+        if is_default:
+            res["warning"] = "assist_job_id_default"
+        return res
         
     conf = resolve_res.get("confidence", 0.0)
     if conf < min_confidence:
-        return {"ok": False, "error": "low_confidence", "confidence": conf, "detail": resolve_res}
+        res = {"ok": False, "error": "low_confidence", "confidence": conf, "detail": resolve_res, "assist_job_id": job_id}
+        if is_default:
+            res["warning"] = "assist_job_id_default"
+        return res
         
     # 2. Click using cursor_motion
     import cursor_motion
@@ -95,7 +142,10 @@ def guided_click(selector: str, value: str, verify: bool = True, button: str = "
         motion_res = cursor_motion.go(px, py, click=button)
         used_assists = _increment_assist_count()
     except Exception as e:
-        return {"ok": False, "error": "motion_failed", "message": str(e)}
+        res = {"ok": False, "error": "motion_failed", "message": str(e), "assist_job_id": job_id}
+        if is_default:
+            res["warning"] = "assist_job_id_default"
+        return res
         
     # 3. Optional Verify
     verify_res = None
@@ -103,15 +153,19 @@ def guided_click(selector: str, value: str, verify: bool = True, button: str = "
         v_action = "verify_selector" if selector else "verify_text"
         verify_res = call_guide(v_action, selector, value)
         
-    return {
+    res = {
         "ok": True,
         "action": "guided_click",
         "target": target,
         "resolve": resolve_res,
         "motion": motion_res,
         "verify": verify_res,
-        "desktop_assists_used": used_assists
+        "desktop_assists_used": used_assists,
+        "assist_job_id": job_id
     }
+    if is_default:
+        res["warning"] = "assist_job_id_default"
+    return res
 
 def main():
     import argparse

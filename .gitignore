@@ -127,3 +127,8 @@ test_*.xlsx
 !mobile-agent/android/app/build.gradle
 
 scratch/
+
+# Automation bridge runtime state
+local-agent/bridge_last_job_id.txt
+local-agent/bridge_assist_count_*.txt
+local-agent/cursor_pos_*.txt

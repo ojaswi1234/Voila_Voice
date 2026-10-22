@@ -544,5 +544,168 @@ class TestDesktopAutomation(unittest.TestCase):
         self.assertEqual(res["error"], "needs_desktop_assist")
         self.assertIn("desktop automation bridge is required", res["message"])
 
+    def test_U6_matching_generation_bypasses_ttl(self):
+        """U6: Matching ref_generation bypasses TTL expiry."""
+        desktop_core._ref_generation = 1
+        class MockCtrl:
+            ControlTypeName = "ButtonControl"
+            def GetRuntimeId(self): return (1, 2)
+            class Rect:
+                left = 10; top = 10
+                def width(self): return 50
+                def height(self): return 20
+            BoundingRectangle = Rect()
+        ctrl = MockCtrl()
+        meta = {"bounds": {"x": 10, "y": 10, "w": 50, "h": 20}}
+        ref = desktop_core._new_ref(ctrl, meta)
+        gen = desktop_core._ref_generation
+
+        # Simulate ref created 10 seconds ago (far exceeding 2500ms TTL)
+        desktop_core._ref_store[ref]["created_at"] = time.time() - 10.0
+
+        # Without generation -> ref_expired
+        c_res, err = desktop_core._resolve_ref(ref, for_action=True, expected_generation=0)
+        self.assertIsNone(c_res)
+        self.assertEqual(err, "ref_expired")
+
+        # With matching generation -> bypasses TTL expiry and resolves successfully
+        c_res, err = desktop_core._resolve_ref(ref, for_action=True, expected_generation=gen)
+        self.assertIsNotNone(c_res)
+        self.assertIsNone(err)
+
+    def test_U7_generation_mismatch_fails_regardless_of_age(self):
+        """U7: Mismatched ref_generation returns ref_generation_mismatch immediately."""
+        class MockCtrl:
+            ControlTypeName = "ButtonControl"
+            def GetRuntimeId(self): return (1, 2)
+            class Rect:
+                left = 10; top = 10
+                def width(self): return 50
+                def height(self): return 20
+            BoundingRectangle = Rect()
+        ctrl = MockCtrl()
+        meta = {"bounds": {"x": 10, "y": 10, "w": 50, "h": 20}}
+        ref = desktop_core._new_ref(ctrl, meta)
+        gen = desktop_core._ref_generation
+
+        c_res, err = desktop_core._resolve_ref(ref, for_action=True, expected_generation=gen + 1)
+        self.assertIsNone(c_res)
+        self.assertEqual(err, "ref_generation_mismatch")
+
+    def test_U8_default_ttl_constant_is_2500(self):
+        """U8: Default TTL constant is 2500ms."""
+        self.assertEqual(desktop_core.REF_TTL_MS, 2500)
+
+    def test_U9_strict_generation_mode(self):
+        """U9: VOILA_REQUIRE_REF_GENERATION=1 returns ref_generation_required when omitted."""
+        class MockCtrl:
+            ControlTypeName = "ButtonControl"
+            def GetRuntimeId(self): return (1, 2)
+            class Rect:
+                left = 10; top = 10
+                def width(self): return 50
+                def height(self): return 20
+            BoundingRectangle = Rect()
+        ctrl = MockCtrl()
+        meta = {"bounds": {"x": 10, "y": 10, "w": 50, "h": 20}}
+        ref = desktop_core._new_ref(ctrl, meta)
+
+        orig_env = os.environ.get("VOILA_REQUIRE_REF_GENERATION")
+        os.environ["VOILA_REQUIRE_REF_GENERATION"] = "1"
+        try:
+            c_res, err = desktop_core._resolve_ref(ref, for_action=True, expected_generation=0)
+            self.assertIsNone(c_res)
+            self.assertEqual(err, "ref_generation_required")
+        finally:
+            if orig_env is None:
+                os.environ.pop("VOILA_REQUIRE_REF_GENERATION", None)
+            else:
+                os.environ["VOILA_REQUIRE_REF_GENERATION"] = orig_env
+
+    def test_U10_rebind_using_runtime_id(self):
+        """U10: _rebind_control matches by RuntimeId when AutomationId and Name are absent/changed."""
+        class MockFreshChild:
+            AutomationId = ""
+            Name = ""
+            ControlTypeName = "ButtonControl"
+            def GetRuntimeId(self): return (42, 999)
+            def GetFirstChildControl(self): return None
+            def GetNextSiblingControl(self): return None
+
+        class MockWindow:
+            def GetFirstChildControl(self): return MockFreshChild()
+
+        entry = {
+            "hwnd": 12345,
+            "meta": {
+                "automation_id": "old_auto_id_changed",
+                "name": "OldName",
+                "role": "ButtonControl"
+            },
+            "runtime_id": (42, 999)
+        }
+
+        orig_from_handle = desktop_core.auto.ControlFromHandle
+        orig_is_window = desktop_core._user32.IsWindow
+        try:
+            desktop_core._user32.IsWindow = lambda h: True
+            desktop_core.auto.ControlFromHandle = lambda h: MockWindow()
+            rebound = desktop_core._rebind_control(entry)
+            self.assertIsNotNone(rebound)
+            self.assertEqual(rebound.GetRuntimeId(), (42, 999))
+        finally:
+            desktop_core.auto.ControlFromHandle = orig_from_handle
+            desktop_core._user32.IsWindow = orig_is_window
+
+    def test_U11_bridge_job_id_warning_and_reset(self):
+        """U11: Bridge constructor job ID handling, warning on default, and reset on switch."""
+        orig_job = os.environ.get("VOILA_JOB_ID")
+        os.environ["VOILA_JOB_ID"] = "default"
+        try:
+            job_id, is_default = bridge_constructor._resolve_job_id()
+            self.assertEqual(job_id, "default")
+            self.assertTrue(is_default)
+
+            # Guided click with default emits warning
+            res = bridge_constructor.guided_click("", "Test", verify=False)
+            self.assertEqual(res.get("assist_job_id"), "default")
+            self.assertEqual(res.get("warning"), "assist_job_id_default")
+
+            # Switch job id to task_A -> reset called
+            bridge_constructor._increment_assist_count()
+            self.assertGreaterEqual(bridge_constructor._get_assist_count(), 1)
+
+            os.environ["VOILA_JOB_ID"] = "task_new_99"
+            job_id2, is_default2 = bridge_constructor._resolve_job_id()
+            self.assertEqual(job_id2, "task_new_99")
+            self.assertFalse(is_default2)
+            bridge_constructor._check_and_update_job_id(job_id2)
+            self.assertEqual(bridge_constructor._get_assist_count(), 0)
+        finally:
+            if orig_job is None:
+                os.environ.pop("VOILA_JOB_ID", None)
+            else:
+                os.environ["VOILA_JOB_ID"] = orig_job
+            bridge_constructor.reset_assist_count()
+
+    def test_U12_signature_ignores_ticker_and_seconds_ago(self):
+        """U12: DOM signature ignores tickers, live counters, and 'seconds ago' strings."""
+        url = "https://app.example.com/dashboard"
+        elements_clean = [
+            {"role": "button", "name": "Refresh", "testid": "btn-refresh"},
+            {"role": "heading", "name": "Overview", "testid": "h1-overview"},
+        ]
+        elements_noisy = [
+            {"role": "button", "name": "Refresh", "testid": "btn-refresh"},
+            {"role": "heading", "name": "Overview", "testid": "h1-overview"},
+            {"role": "text", "name": "Updated 3 seconds ago", "testid": "last-seen"},
+            {"role": "text", "name": "BTC Stock ticker: $65,000", "testid": "ticker-stream"},
+            {"role": "text", "name": "Live count: 1,420 users", "testid": "live-counter"},
+        ]
+
+        sig1 = browser_tools.build_dom_signature(url, elements_clean)
+        sig2 = browser_tools.build_dom_signature(url, elements_noisy)
+        self.assertEqual(sig1, sig2, "DOM signature must strip tickers, live counts, and seconds ago")
+
 if __name__ == "__main__":
     unittest.main()

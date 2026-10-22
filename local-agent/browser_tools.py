@@ -15,7 +15,14 @@ DAEMON_PORT, CDP_URL, CDP_PORT = 19879, "http://127.0.0.1:9222", 9222
 USER_DATA_DIR = os.environ.get("VOILA_BROWSER_PROFILE", r"C:\tmp\ai_browser_profile")
 _active_tab_index = 0
 
-_NOISE_RE = re.compile(r"time|clock|counter|spinner|timestamp|\b\d{1,2}:\d{2}(?::\d{2})?\b", re.IGNORECASE)
+if "VOILA_JOB_ID" not in os.environ:
+    os.environ["VOILA_JOB_ID"] = (
+        os.environ.get("CONVERSATION_ID")
+        or os.environ.get("VOILA_CONV_ID")
+        or "default"
+    )
+
+_NOISE_RE = re.compile(r"time|clock|counter|spinner|timestamp|ticker|live count|seconds ago|\b\d{1,2}:\d{2}(?::\d{2})?\b", re.IGNORECASE)
 
 def clean_url_for_sig(url: str) -> str:
     """Strip churn-inducing query strings or hash fragments for deterministic signatures."""
@@ -304,7 +311,7 @@ def _handle(browser, args):
             click_path = "normal"
             warning = None
             s_sel = str(sel)
-            if len(s_sel) > 80 or s_sel.count("nth-child") > 1:
+            if len(s_sel) > 80 or s_sel.count("nth-child") > 1 or s_sel.count("nth-of-type") > 1:
                 warning = "brittle_selector_warning"
             try:
                 # Lean on locator auto-wait (visible, stable, receives events)

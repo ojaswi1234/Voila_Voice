@@ -3351,7 +3351,7 @@ var availableTools = []toolDef{
 		Type: "function",
 		Function: toolFuncDef{
 			Name:        "desktop_automation",
-			Description: "Control native Windows desktop UI via accessibility tree (UIA). ALWAYS use this tool when the user wants to click, type, or automate anything on their screen. Workflow: (1) snapshot or find to get element refs, (2) invoke/click_ref/set_value/toggle/right_click/scroll using ref. Cursor moves human-like. Do NOT use run_terminal for UI tasks. Do NOT output raw coordinates. ACTIONS: list_windows, foreground, snapshot, find, move_cursor, invoke, click_ref (left/right/double via button param), right_click, set_value, type_keys, toggle, focus, select, drag_ref, scroll (value=up/down/integer), focus_window, close_window, minimize_window, maximize_window, switch_tab (value=next/prev/close/new), switch_window (value=next/prev), switch_desktop (value=next/prev/new/integer index. Use new to create desktop 2), open_start_menu.",
+			Description: "Control native Windows desktop UI via accessibility tree (UIA). ALWAYS use this tool when the user wants to click, type, or automate anything on their screen. Workflow: (1) snapshot or find to get element refs, (2) pass the returned ref_generation on every ref act (invoke/click_ref/set_value/toggle/right_click/scroll) using ref. Cursor moves human-like. Do NOT use run_terminal for UI tasks. Do NOT output raw coordinates. ACTIONS: list_windows, foreground, snapshot, find, move_cursor, invoke, click_ref (left/right/double via button param), right_click, set_value, type_keys, toggle, focus, select, drag_ref, scroll (value=up/down/integer), focus_window, close_window, minimize_window, maximize_window, switch_tab (value=next/prev/close/new), switch_window (value=next/prev), switch_desktop (value=next/prev/new/integer index. Use new to create desktop 2), open_start_menu.",
 			Parameters: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -3362,7 +3362,8 @@ var availableTools = []toolDef{
 					"window":     map[string]interface{}{"type": "string", "description": "Window title substring; default foreground. Also used as target for focus_window/close_window/minimize_window/maximize_window"},
 					"depth":      map[string]interface{}{"type": "integer", "description": "Tree depth 1-15 (default 8)"},
 					"timeout_ms": map[string]interface{}{"type": "integer", "description": "Timeout ms (default 5000)"},
-					"button":     map[string]interface{}{"type": "string", "description": "Mouse button for click_ref: left (default) | right | double"},
+					"button":         map[string]interface{}{"type": "string", "description": "Mouse button for click_ref: left (default) | right | double"},
+					"ref_generation": map[string]interface{}{"type": "integer", "description": "Optional snapshot generation ID returned by snapshot/find. Always pass this back on ref actions for zero-stale validation."},
 				},
 				"required": []string{"action"},
 			},
@@ -4865,6 +4866,7 @@ case "browser_automation":
 		timeoutStr := getString("timeout_ms")
 		button     := getString("button")
 		monitorStr := getString("monitor")
+		refGenStr  := getString("ref_generation")
 		depth   := 8
 		timeout := 5000
 		if d, err2 := strconv.Atoi(depthStr);   err2 == nil && d > 0 { depth   = d }
@@ -4878,6 +4880,10 @@ case "browser_automation":
 		if window   != "" { dtArgs = append(dtArgs, "--window", window) }
 		if button   != "" { dtArgs = append(dtArgs, "--button", button) }
 		if monitorStr != "" { dtArgs = append(dtArgs, "--monitor", monitorStr) }
+		refGenTrimmed := strings.Trim(refGenStr, "\"")
+		if refGenTrimmed != "" && refGenTrimmed != "0" && refGenTrimmed != "null" {
+			dtArgs = append(dtArgs, "--ref-generation", refGenTrimmed)
+		}
 
 		dtCmd := exec.Command("python", dtArgs...)
 		if runtime.GOOS == "windows" {
@@ -4902,6 +4908,9 @@ case "browser_automation":
 		}
 		if desktopPort := os.Getenv("VOILA_DESKTOP_PORT"); desktopPort != "" {
 			dtEnv = append(dtEnv, "VOILA_DESKTOP_PORT="+desktopPort)
+		}
+		if jobID := os.Getenv("VOILA_JOB_ID"); jobID != "" {
+			dtEnv = append(dtEnv, "VOILA_JOB_ID="+jobID)
 		}
 		dtCmd.Env = dtEnv
 		dtOut, dtErr := runTrackedCommand(dtCmd)

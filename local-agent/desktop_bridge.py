@@ -24,12 +24,16 @@ ctypes.windll.ole32.CoInitializeEx(None, 0x2)  # COINIT_APARTMENTTHREADED
 # ── Force DPI Awareness ──
 # Ensures UIA coordinates match physical screen coordinates on scaled displays (>100% DPI).
 try:
-    ctypes.windll.shcore.SetProcessDpiAwareness(2) # PROCESS_PER_MONITOR_DPI_AWARE
+    # DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = -4
+    ctypes.windll.user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))
 except Exception:
     try:
-        ctypes.windll.user32.SetProcessDPIAware()
+        ctypes.windll.shcore.SetProcessDpiAwareness(2) # PROCESS_PER_MONITOR_DPI_AWARE
     except Exception:
-        pass
+        try:
+            ctypes.windll.user32.SetProcessDPIAware()
+        except Exception:
+            pass
 
 import desktop_core as dt
 import desktop_lock
@@ -89,6 +93,7 @@ def _worker():
             timeout  = int(req.get("timeout_ms", 5000))
             button   = req.get("button", "left") or "left"
             monitor  = int(req.get("monitor", 0))
+            ref_gen  = int(req.get("ref_generation", 0) or 0)
 
             class NS: pass
             args = NS()
@@ -124,6 +129,7 @@ def _worker():
             args.timeout  = timeout
             args.button   = button
             args.monitor  = monitor
+            args.ref_generation = ref_gen
 
             with desktop_lock.UIA_Lock():
                 result = dt.dispatch(args)

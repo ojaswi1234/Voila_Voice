@@ -47,29 +47,37 @@ else:
     _ref_store: dict[str, dict] = {}
     _ref_counter = 0
     _ref_generation = 0
-    REF_TTL_MS = int(os.environ.get("VOILA_REF_TTL_MS", "800"))
+    REF_TTL_MS = int(os.environ.get("VOILA_REF_TTL_MS", "2500"))
 
     def _new_ref(ctrl, meta: dict, hwnd: int = 0) -> str:
         global _ref_counter, _ref_generation
         _ref_counter += 1
         ref = f"e{_ref_counter}"
+        rid = None
+        try:
+            rid = ctrl.GetRuntimeId()
+        except Exception:
+            pass
         _ref_store[ref] = {
             "ctrl": ctrl,
             "meta": meta,
             "hwnd": hwnd or _hwnd_from_ctrl(ctrl),
             "generation": _ref_generation,
             "created_at": time.time(),
-            "initial_bounds": dict(meta.get("bounds", {}))
+            "initial_bounds": dict(meta.get("bounds", {})),
+            "runtime_id": rid,
+            "rebound": False
         }
         return ref
 
     def _rebind_control(entry: dict):
-        """Attempt ONE silent re-bind by AutomationId then Name+Role under same HWND."""
+        """Attempt ONE silent re-bind by AutomationId, RuntimeId, then Name+Role under same HWND."""
         hwnd = entry.get("hwnd", 0)
         meta = entry.get("meta", {})
         target_aid = meta.get("automation_id", "")
         target_name = meta.get("name", "")
         target_role = meta.get("role", "")
+        target_rid = entry.get("runtime_id")
 
         if not hwnd:
             return None
@@ -83,23 +91,36 @@ else:
             stack = [(wnd_ctrl, 0)]
             found = None
             nodes_checked = 0
-            while stack and nodes_checked < 120:
+            while stack and nodes_checked < 200:
                 curr, depth = stack.pop()
                 nodes_checked += 1
                 if depth > 10:
                     continue
                 try:
                     c_aid = getattr(curr, "AutomationId", "")
-                    c_name = getattr(curr, "Name", "")
-                    c_role = getattr(curr, "ControlTypeName", "")
                     if target_aid and c_aid == target_aid:
                         found = curr
                         break
+                except Exception:
+                    pass
+
+                if target_rid is not None:
+                    try:
+                        if curr.GetRuntimeId() == target_rid:
+                            found = curr
+                            break
+                    except Exception:
+                        pass
+
+                try:
+                    c_name = getattr(curr, "Name", "")
+                    c_role = getattr(curr, "ControlTypeName", "")
                     if target_name and target_role and c_name == target_name and c_role == target_role:
                         found = curr
                         break
                 except Exception:
                     pass
+
                 try:
                     child = curr.GetFirstChildControl()
                     while child:
@@ -116,6 +137,7 @@ else:
                 except Exception:
                     pass
                 entry["created_at"] = time.time()
+                entry["rebound"] = True
                 return found
         except Exception:
             pass
@@ -128,13 +150,19 @@ else:
             return None, "ref_stale"
         entry = _ref_store[ref]
 
+        # Strict mode check: require ref_generation when VOILA_REQUIRE_REF_GENERATION=1
+        if for_action and os.environ.get("VOILA_REQUIRE_REF_GENERATION") == "1" and (expected_generation is None or expected_generation <= 0):
+            return None, "ref_generation_required"
+
         # Generation check (if expected_generation specified and positive)
+        gen_matches = False
         if expected_generation is not None and expected_generation > 0:
             if entry.get("generation", 0) != expected_generation:
                 return None, "ref_generation_mismatch"
+            gen_matches = True
 
-        # TTL check (default 800ms)
-        if REF_TTL_MS > 0:
+        # TTL check (default 2500ms): if generation matches, skip TTL check (generation is proof of freshness)
+        if not gen_matches and REF_TTL_MS > 0:
             age_ms = (time.time() - entry.get("created_at", 0)) * 1000.0
             if age_ms > REF_TTL_MS:
                 return None, "ref_expired"
@@ -527,7 +555,7 @@ else:
 
     # ─── Response builders ─────────────────────────────────────────────────────
     def _ok(action: str, wnd=None, **kwargs) -> dict:
-        r: dict[str, Any] = {"ok": True, "action": action, "error": None}
+        r: dict[str, Any] = {"ok": True, "action": action, "error": None, "ref_generation": _ref_generation}
         r["window"] = _window_info(wnd) if wnd else {}
         r["elements"] = []
         r["count"] = 0
@@ -768,14 +796,38 @@ else:
         sec_err = _check_policy(ctrl, "invoke")
         if sec_err: return sec_err
 
-        # Pattern short-circuit: if InvokePattern available and succeeds, zero-pixel path
+        rebound = _ref_store.get(ref, {}).get("rebound", False)
+        extra = {"rebound": True} if (rebound and os.environ.get("VOILA_AUTOMATION_DEBUG") == "1") else {}
+
+        # Pattern short-circuit: if InvokePattern available and succeeds, zero-pixel path without motion planning
         try:
             invoke_pat = ctrl.GetInvokePattern()
             if invoke_pat:
                 invoke_pat.Invoke()
                 try: ctrl.SetFocus()
                 except Exception: pass
-                return _ok("invoke", wnd, method="invoke", retried=False, target_warning=None, ref_generation=_ref_generation)
+                return _ok("invoke", wnd, method="invoke", retried=False, target_warning=None, ref_generation=_ref_generation, **extra)
+        except Exception:
+            pass
+
+        # Also support Toggle or SelectionItem if InvokePattern is not implemented on the control
+        try:
+            toggle_pat = ctrl.GetTogglePattern()
+            if toggle_pat:
+                toggle_pat.Toggle()
+                try: ctrl.SetFocus()
+                except Exception: pass
+                return _ok("invoke", wnd, method="toggle", retried=False, target_warning=None, ref_generation=_ref_generation, **extra)
+        except Exception:
+            pass
+
+        try:
+            sel_pat = ctrl.GetSelectionItemPattern()
+            if sel_pat:
+                sel_pat.Select()
+                try: ctrl.SetFocus()
+                except Exception: pass
+                return _ok("invoke", wnd, method="select", retried=False, target_warning=None, ref_generation=_ref_generation, **extra)
         except Exception:
             pass
 
@@ -791,7 +843,7 @@ else:
         except Exception:
             pass
             
-        r = _ok("invoke", wnd, method=method, retried=False, target_warning=warning, ref_generation=_ref_generation)
+        r = _ok("invoke", wnd, method=method, retried=False, target_warning=warning, ref_generation=_ref_generation, **extra)
         r["cursor"] = tel
         r["cursor"]["moved"] = True
         return r
@@ -819,7 +871,10 @@ else:
         sec_err = _check_policy(ctrl, "click_ref")
         if sec_err: return sec_err
 
-        # Pattern short-circuit for left-click: InvokePattern first
+        rebound = _ref_store.get(ref, {}).get("rebound", False)
+        extra = {"rebound": True} if (rebound and os.environ.get("VOILA_AUTOMATION_DEBUG") == "1") else {}
+
+        # Pattern short-circuit for left-click: Invoke, Toggle, or SelectionItem pattern first
         if button == "left":
             try:
                 invoke_pat = ctrl.GetInvokePattern()
@@ -827,7 +882,27 @@ else:
                     invoke_pat.Invoke()
                     try: ctrl.SetFocus()
                     except Exception: pass
-                    return _ok("click_ref", wnd, method="invoke", retried=False, target_warning=None, ref_generation=_ref_generation)
+                    return _ok("click_ref", wnd, method="invoke", retried=False, target_warning=None, ref_generation=_ref_generation, **extra)
+            except Exception:
+                pass
+
+            try:
+                toggle_pat = ctrl.GetTogglePattern()
+                if toggle_pat:
+                    toggle_pat.Toggle()
+                    try: ctrl.SetFocus()
+                    except Exception: pass
+                    return _ok("click_ref", wnd, method="toggle", retried=False, target_warning=None, ref_generation=_ref_generation, **extra)
+            except Exception:
+                pass
+
+            try:
+                sel_pat = ctrl.GetSelectionItemPattern()
+                if sel_pat:
+                    sel_pat.Select()
+                    try: ctrl.SetFocus()
+                    except Exception: pass
+                    return _ok("click_ref", wnd, method="select", retried=False, target_warning=None, ref_generation=_ref_generation, **extra)
             except Exception:
                 pass
 
@@ -841,7 +916,7 @@ else:
         with desktop_lock.UIALock_Suspend():
             tel = cursor_motion.go(cx, cy, click=button)
 
-        r = _ok("click_ref", wnd, method=method, retried=False, target_warning=warning, ref_generation=_ref_generation)
+        r = _ok("click_ref", wnd, method=method, retried=False, target_warning=warning, ref_generation=_ref_generation, **extra)
         r["cursor"] = tel
         return r
 

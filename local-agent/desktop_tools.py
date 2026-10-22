@@ -34,6 +34,13 @@ import os, json, socket, subprocess, time, argparse
 BRIDGE_PORT = int(os.environ.get("VOILA_DESKTOP_PORT", "19881"))
 BRIDGE_HOST = "127.0.0.1"
 
+if "VOILA_JOB_ID" not in os.environ:
+    os.environ["VOILA_JOB_ID"] = (
+        os.environ.get("CONVERSATION_ID")
+        or os.environ.get("VOILA_CONV_ID")
+        or "default"
+    )
+
 # ─── Platform guard ────────────────────────────────────────────────────────────
 if sys.platform != "win32":
     print(json.dumps({"ok": False, "error": "platform",

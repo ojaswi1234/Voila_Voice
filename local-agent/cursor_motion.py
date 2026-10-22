@@ -9,9 +9,13 @@ import os, sys, math, time, random, ctypes, socket, subprocess
 import desktop_lock
 
 try:
-    ctypes.windll.shcore.SetProcessDpiAwareness(2)
+    # Try Per-Monitor V2 awareness context first (Win10 Creators Update 1703+)
+    ctypes.windll.user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))
 except Exception:
-    pass
+    try:
+        ctypes.windll.shcore.SetProcessDpiAwareness(2)
+    except Exception:
+        pass
 
 # ─── Debug logging ────────────────────────────────────────────────────────────
 def _log(msg: str):
