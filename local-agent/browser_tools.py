@@ -250,6 +250,164 @@ def _get_loc(page, sel):
             
     return page.locator(s).first
 
+def _resolve_form_field(page, sel: str):
+    """Smart resolver that targets the actual interactive input element for a field.
+    Handles labels with 'for', aria-labels, placeholders, nearby inputs, contenteditable, comboboxes, and custom controls.
+    """
+    s = str(sel or "").strip()
+    if not s:
+        return page.locator("body")
+
+    # 1. Direct accessible label match
+    try:
+        loc = page.get_by_label(s, exact=False)
+        if loc.count() > 0 and loc.first.is_visible():
+            return loc.first
+    except Exception:
+        pass
+
+    # 2. Try _get_loc
+    loc = _get_loc(page, s)
+
+    # 3. Inspect if the returned element is a container/label rather than the actual input
+    try:
+        if loc.count() > 0:
+            el = loc.first
+            tag = el.evaluate("el => el.tagName.toLowerCase()")
+            is_editable = el.evaluate("el => el.isContentEditable || el.getAttribute('contenteditable') === 'true'")
+            role = el.evaluate("el => (el.getAttribute('role') || '').toLowerCase()")
+
+            # If it's already an interactive input element, return it directly
+            if tag in ("input", "textarea", "select") or is_editable or role in ("combobox", "textbox", "searchbox", "spinbutton", "checkbox", "switch", "radio", "listbox"):
+                return el
+
+            # If it's a <label>, follow the 'for' attribute to find target input ID
+            if tag == "label":
+                for_id = el.evaluate("el => el.getAttribute('for')")
+                if for_id:
+                    cand = page.locator(f"#{for_id}").first
+                    if cand.count() > 0:
+                        return cand
+
+            # Check if this container encloses a fillable child
+            nested = el.locator("input, textarea, select, [contenteditable='true'], [role=combobox], [role=textbox]").first
+            if nested.count() > 0 and nested.is_visible():
+                return nested
+
+            # Check immediate following sibling / nearby input
+            try:
+                following = el.locator("xpath=following::input[1] | following::textarea[1] | following::select[1] | following::*[@contenteditable='true'][1]").first
+                if following.count() > 0 and following.is_visible():
+                    return following
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    return loc
+
+def _smart_fill_element(page, loc, val, timeout: int = 4000) -> dict:
+    """Smart fill helper handling:
+    - Native inputs & textareas (with auto-clear, type, and verification)
+    - Native <select> (by label, value, or index)
+    - Custom comboboxes / select dropdowns (Radix, MUI, AntD, React-Select)
+    - Checkboxes & custom ARIA switches
+    - Contenteditable / Rich Text editors (Notion, Google Docs, Slack, Jira)
+    - Date / time / color / range inputs
+    """
+    loc.wait_for(state="visible", timeout=timeout)
+    loc.scroll_into_view_if_needed(timeout=2000)
+
+    tag = loc.evaluate("el => el.tagName.toLowerCase()")
+    role = loc.evaluate("el => (el.getAttribute('role') || '').toLowerCase()")
+    input_type = loc.evaluate("el => (el.getAttribute('type') || '').toLowerCase()") if tag == "input" else ""
+    is_contenteditable = loc.evaluate("el => el.isContentEditable || el.getAttribute('contenteditable') === 'true'")
+
+    # 1. Native Select
+    if tag == "select":
+        s_val = str(val)
+        try:
+            loc.select_option(label=s_val, timeout=timeout)
+            return {"method": "select_label", "value": s_val}
+        except Exception:
+            try:
+                loc.select_option(value=s_val, timeout=timeout)
+                return {"method": "select_value", "value": s_val}
+            except Exception:
+                if s_val.isdigit():
+                    loc.select_option(index=int(s_val), timeout=timeout)
+                    return {"method": "select_index", "value": s_val}
+                raise
+
+    # 2. Checkboxes and Switches (Native or ARIA)
+    if input_type in ("checkbox", "radio") or role in ("checkbox", "switch", "radio"):
+        should_check = str(val).lower() in ("true", "1", "yes", "on", "checked")
+        if input_type in ("checkbox", "radio"):
+            if should_check: loc.check(timeout=timeout)
+            else: loc.uncheck(timeout=timeout)
+        else:
+            curr_checked = loc.evaluate("el => el.getAttribute('aria-checked') === 'true'")
+            if curr_checked != should_check:
+                loc.click(timeout=timeout)
+        return {"method": "check" if should_check else "uncheck", "value": should_check}
+
+    # 3. Custom Combobox / Accessible Dropdown (Radix, MUI, AntD, Select2)
+    if role == "combobox" or (tag == "div" and loc.evaluate("el => el.getAttribute('aria-haspopup') === 'listbox'")):
+        s_val = str(val)
+        try:
+            if tag == "input":
+                loc.fill(s_val, timeout=2000)
+                page.keyboard.press("Enter")
+                return {"method": "combobox_input_enter", "value": s_val}
+        except Exception:
+            pass
+        loc.click(timeout=2000)
+        time.sleep(0.15)
+        option_loc = page.get_by_role("option", name=s_val)
+        if option_loc.count() > 0:
+            option_loc.first.click(timeout=3000)
+            return {"method": "combobox_option_click", "value": s_val}
+        else:
+            page.keyboard.type(s_val)
+            time.sleep(0.1)
+            page.keyboard.press("Enter")
+            return {"method": "combobox_type_enter", "value": s_val}
+
+    # 4. Contenteditable / Rich Text editors (Notion, Google Docs, Slack, Jira)
+    if is_contenteditable:
+        s_val = str(val)
+        loc.click(timeout=timeout)
+        loc.evaluate("(el, v) => { el.focus(); document.execCommand('selectAll', false, null); document.execCommand('insertText', false, v); }", s_val)
+        return {"method": "contenteditable_insert", "value": s_val}
+
+    # 5. Date / Time inputs
+    if input_type in ("date", "time", "datetime-local", "month"):
+        s_val = str(val)
+        loc.fill(s_val, timeout=timeout)
+        loc.evaluate("el => { el.dispatchEvent(new Event('input', {bubbles: true})); el.dispatchEvent(new Event('change', {bubbles: true})); }")
+        return {"method": "date_fill", "value": s_val}
+
+    # 6. Standard Input / Textarea
+    s_val = str(val)
+    fill_ok = False
+    try:
+        loc.fill(s_val, timeout=timeout)
+        fill_ok = True
+    except Exception:
+        loc.click(force=True, timeout=2000)
+        page.keyboard.press("Control+A")
+        page.keyboard.press("Backspace")
+        page.keyboard.type(s_val, delay=10)
+        fill_ok = True
+
+    current_val = ""
+    try:
+        current_val = loc.input_value(timeout=1000) if tag in ("input", "textarea") else ""
+    except Exception:
+        pass
+
+    return {"method": "fill", "value": s_val, "verified": (current_val == s_val if current_val else fill_ok)}
+
 def _handle(browser, args):
     global _active_tab_index
     action = (args.get("action") or "").strip().lower()
@@ -336,25 +494,12 @@ def _handle(browser, args):
         if action == "type":
             sel, val = args.get("selector"), args.get("value")
             if not sel or val is None: return _err(action, "selector and value required", page)
-            loc = _get_loc(page, sel)
+            loc = _resolve_form_field(page, sel)
             try:
-                loc.wait_for(state="visible", timeout=4000)
-                loc.scroll_into_view_if_needed(timeout=2000)
-                try:
-                    tag = loc.evaluate("el => el.tagName.toLowerCase()")
-                    if tag == "select":
-                        loc.select_option(label=str(val), timeout=4000)
-                    elif tag == "input" and loc.evaluate("el => el.type.toLowerCase()") in ("checkbox", "radio"):
-                        if str(val).lower() in ("true", "1", "yes", "on"): loc.check(timeout=4000)
-                        else: loc.uncheck(timeout=4000)
-                    else:
-                        loc.fill(str(val), timeout=4000)
-                except Exception:
-                    loc.fill(str(val), timeout=4000)
+                res = _smart_fill_element(page, loc, val, timeout=4000)
+                return _ok(action, page, selector=sel, detail=res)
             except Exception as e:
-                try: loc.fill(str(val), force=True, timeout=2000)
-                except Exception: return _err(action, f"Type failed on {sel!r}: {e}", page)
-            return _ok(action, page, selector=sel)
+                return _err(action, f"Type failed on {sel!r}: {e}", page)
         if action == "press":
             val, sel = args.get("value") or args.get("key"), args.get("selector")
             if not val: return _err(action, "value (key) required", page)
@@ -628,22 +773,217 @@ def _handle(browser, args):
             results = {}
             for sel, text_val in val.items():
                 try:
-                    loc = _get_loc(page, sel)
-                    loc.scroll_into_view_if_needed(timeout=2000)
-                    try:
-                        tag = loc.evaluate("el => el.tagName.toLowerCase()")
-                        if tag == "select": loc.select_option(label=str(text_val), timeout=3000)
-                        elif tag == "input" and loc.evaluate("el => el.type.toLowerCase()") in ("checkbox", "radio"):
-                            if str(text_val).lower() in ("true", "1", "yes", "on"): loc.check(timeout=3000)
-                            else: loc.uncheck(timeout=3000)
-                        else:
-                            loc.fill(str(text_val), timeout=3000)
-                    except Exception:
-                        loc.fill(str(text_val), timeout=3000)
-                    results[sel] = "OK"
+                    loc = _resolve_form_field(page, sel)
+                    res = _smart_fill_element(page, loc, text_val, timeout=4000)
+                    results[sel] = res
                 except Exception as e:
-                    results[sel] = str(e)
-            return _ok(action, page, results=results)
+                    results[sel] = {"status": "failed", "error": str(e)}
+
+            # Optional submit
+            submitted = False
+            submit_arg = args.get("submit") or args.get("submit_form")
+            if submit_arg:
+                sub_sel = args.get("submit_selector") or "button[type=submit], input[type=submit], button:has-text('Submit'), button:has-text('Save'), button:has-text('Send'), button:has-text('Log in'), button:has-text('Sign in')"
+                try:
+                    sub_btn = page.locator(sub_sel).first
+                    if sub_btn.count() > 0:
+                        sub_btn.click(timeout=4000)
+                        submitted = True
+                    else:
+                        page.keyboard.press("Enter")
+                        submitted = True
+                except Exception:
+                    pass
+
+            return _ok(action, page, results=results, submitted=submitted)
+
+        if action in ("enter_table_data", "fill_table", "spreadsheet_entry"):
+            """Bulk or sequential tabular data entry for Google Sheets, Excel Online, Airtable, Notion tables, and web datagrids."""
+            import json
+            raw_data = args.get("value") or args.get("data")
+            if isinstance(raw_data, str):
+                try:
+                    raw_data = json.loads(raw_data)
+                except Exception:
+                    lines = [ln.strip() for ln in raw_data.strip().splitlines() if ln.strip()]
+                    parsed = []
+                    for ln in lines:
+                        delimiter = "\t" if "\t" in ln else ","
+                        parsed.append([cell.strip() for cell in ln.split(delimiter)])
+                    raw_data = parsed
+
+            # Normalize to 2D list of strings: list[list[str]]
+            table_2d = []
+            if isinstance(raw_data, list):
+                if len(raw_data) > 0 and isinstance(raw_data[0], dict):
+                    headers = list(raw_data[0].keys())
+                    include_headers = args.get("include_headers", True)
+                    if include_headers:
+                        table_2d.append(headers)
+                    for row_dict in raw_data:
+                        table_2d.append([str(row_dict.get(h, "")) for h in headers])
+                elif len(raw_data) > 0 and isinstance(raw_data[0], list):
+                    table_2d = [[str(cell) for cell in row] for row in raw_data]
+                else:
+                    table_2d = [[str(cell)] for cell in raw_data]
+
+            if not table_2d:
+                return _err(action, "data/value must be a non-empty 2D array, list of dicts, or CSV/TSV string", page)
+
+            sel = args.get("selector")
+            mode = (args.get("mode") or "auto").lower()
+
+            if sel:
+                loc = _get_loc(page, sel)
+                try:
+                    loc.scroll_into_view_if_needed(timeout=2000)
+                    loc.click(timeout=3000)
+                except Exception:
+                    pass
+
+            row_count = len(table_2d)
+            col_count = max(len(r) for r in table_2d) if table_2d else 0
+
+            u_lower = (page.url or "").lower()
+            is_spreadsheet = any(host in u_lower for host in ("docs.google.com/spreadsheets", "office.com", "office.live.com", "airtable.com", "notion.so"))
+            use_clipboard = (mode == "clipboard") or (mode == "auto" and (is_spreadsheet or not sel))
+
+            method_used = "keyboard"
+            if use_clipboard:
+                tsv_text = "\n".join("\t".join(str(cell) for cell in row) for row in table_2d)
+                try:
+                    if hasattr(page, "context") and page.context:
+                        try: page.context.grant_permissions(["clipboard-read", "clipboard-write"])
+                        except Exception: pass
+                    page.evaluate("(text) => navigator.clipboard.writeText(text)", tsv_text)
+                    time.sleep(0.1)
+                    page.keyboard.press("Control+V")
+                    method_used = "clipboard_tsv_paste"
+                    return _ok(action, page, rows=row_count, cols=col_count, method=method_used)
+                except Exception:
+                    method_used = "keyboard"
+
+            # Sequential keyboard navigation: Type cell -> Tab -> next cell -> Enter -> next row
+            delay_ms = int(args.get("delay_ms") or 15)
+            for r_idx, row in enumerate(table_2d):
+                for c_idx, cell_val in enumerate(row):
+                    s_cell = str(cell_val)
+                    if s_cell:
+                        page.keyboard.type(s_cell, delay=delay_ms)
+                    if c_idx < len(row) - 1:
+                        page.keyboard.press("Tab")
+                        time.sleep(0.05)
+                if r_idx < len(table_2d) - 1:
+                    page.keyboard.press("Enter")
+                    time.sleep(0.08)
+
+            return _ok(action, page, rows=row_count, cols=col_count, method=method_used)
+
+        if action in ("extract_table", "scrape_table"):
+            """Extract structured tabular data from HTML table, [role=table], [role=grid], or datagrid into JSON, matrix, and Markdown."""
+            sel = args.get("selector") or "table, [role=table], [role=grid]"
+            script = """(selector) => {
+                const root = document.querySelector(selector) || document.querySelector('table') || document.querySelector('[role=table], [role=grid]');
+                if (!root) return null;
+                
+                let headers = [];
+                const ths = root.querySelectorAll('thead th, [role=columnheader], tr:first-child th');
+                if (ths.length > 0) {
+                    headers = Array.from(ths).map(th => th.innerText.trim());
+                }
+                
+                let rows = [];
+                const trs = root.querySelectorAll('tbody tr, [role=row]');
+                const targetTrs = trs.length > 0 ? trs : root.querySelectorAll('tr');
+                
+                for (let i = 0; i < targetTrs.length; i++) {
+                    const tr = targetTrs[i];
+                    if (ths.length > 0 && i === 0 && tr.querySelector('th')) continue;
+                    const cells = tr.querySelectorAll('td, th, [role=gridcell], [role=cell]');
+                    if (cells.length > 0) {
+                        rows.push(Array.from(cells).map(c => c.innerText.trim()));
+                    }
+                }
+                
+                if (headers.length === 0 && rows.length > 0) {
+                    const maxCols = Math.max(...rows.map(r => r.length));
+                    headers = Array.from({length: maxCols}, (_, i) => `Col_${i + 1}`);
+                }
+                
+                return { headers, rows };
+            }"""
+            res = page.evaluate(script, sel)
+            if not res:
+                return _err(action, f"No table found matching {sel!r}", page)
+                
+            headers = res.get("headers", [])
+            matrix = res.get("rows", [])
+            
+            dict_data = []
+            for row in matrix:
+                row_dict = {}
+                for idx, cell in enumerate(row):
+                    h_name = headers[idx] if idx < len(headers) else f"Col_{idx + 1}"
+                    row_dict[h_name] = cell
+                dict_data.append(row_dict)
+                
+            md_lines = []
+            if headers:
+                md_lines.append("| " + " | ".join(headers) + " |")
+                md_lines.append("| " + " | ".join(["---"] * len(headers)) + " |")
+            for row in matrix[:50]:
+                padded = row + [""] * (len(headers) - len(row))
+                md_lines.append("| " + " | ".join(padded[:len(headers)]) + " |")
+            md_table = "\n".join(md_lines)
+            
+            return _ok(
+                action, page,
+                headers=headers,
+                row_count=len(matrix),
+                col_count=len(headers),
+                data=dict_data[:100],
+                matrix=matrix[:100],
+                markdown=md_table
+            )
+
+        if action in ("select_cell", "focus_cell"):
+            """Select or focus a specific spreadsheet/grid cell by coordinates (e.g. 'B3') or row/col index."""
+            val = (args.get("value") or "").strip()
+            sel = args.get("selector")
+            u_lower = (page.url or "").lower()
+            
+            if "docs.google.com/spreadsheets" in u_lower and val:
+                try:
+                    name_box = page.locator("#t-name-box, input[aria-label='Name box']").first
+                    if name_box.count() > 0:
+                        name_box.click(timeout=2000)
+                        name_box.fill(val)
+                        page.keyboard.press("Enter")
+                        return _ok(action, page, cell=val, method="name_box")
+                except Exception:
+                    pass
+            
+            if sel:
+                loc = _get_loc(page, sel)
+                loc.scroll_into_view_if_needed(timeout=2000)
+                loc.click(timeout=3000)
+                return _ok(action, page, selector=sel)
+                
+            return _ok(action, page, cell=val)
+
+        if action in ("submit_form", "submit"):
+            """Submit the active form or click the primary submit button."""
+            sub_sel = args.get("selector") or "button[type=submit], input[type=submit], button:has-text('Submit'), button:has-text('Save'), button:has-text('Send'), button:has-text('Log in'), button:has-text('Sign in')"
+            try:
+                btn = page.locator(sub_sel).first
+                if btn.count() > 0 and btn.is_visible():
+                    btn.click(timeout=4000)
+                    return _ok(action, page, method="submit_button_click", selector=sub_sel)
+                else:
+                    page.keyboard.press("Enter")
+                    return _ok(action, page, method="enter_key")
+            except Exception as e:
+                return _err(action, f"Submit failed: {e}", page)
         if action == "eval":
             expr = args.get("value")
             if not expr: return _err(action, "value required", page)

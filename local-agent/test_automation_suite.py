@@ -733,5 +733,187 @@ class TestDesktopAutomation(unittest.TestCase):
         sig2 = browser_tools.build_dom_signature(url, elements_noisy)
         self.assertEqual(sig1, sig2, "DOM signature must strip tickers, live counts, and seconds ago")
 
+    def test_F1_smart_form_label_for_resolution(self):
+        """F1: Verify _resolve_form_field maps <label for='id'> to <input id='id'>."""
+        class MockInputLocator:
+            def count(self): return 1
+            @property
+            def first(self): return self
+            def is_visible(self): return True
+            def evaluate(self, expr, *args):
+                if "tagName" in expr: return "input"
+                if "type" in expr: return "text"
+                if "role" in expr: return ""
+                if "isContentEditable" in expr: return False
+                return ""
+
+        class MockLabelLocator:
+            def count(self): return 1
+            @property
+            def first(self): return self
+            def is_visible(self): return True
+            def evaluate(self, expr, *args):
+                if "tagName" in expr: return "label"
+                if "role" in expr: return ""
+                if "isContentEditable" in expr: return False
+                if "getAttribute('for')" in expr: return "username_input"
+                return ""
+            def locator(self, sel):
+                class Empty:
+                    def count(self): return 0
+                return Empty()
+
+        class MockPage:
+            def get_by_label(self, name, exact=False):
+                class Empty:
+                    def count(self): return 0
+                return Empty()
+            def locator(self, sel):
+                if sel == "#username_input":
+                    return MockInputLocator()
+                return MockLabelLocator()
+            frames = []
+
+        page = MockPage()
+        resolved = browser_tools._resolve_form_field(page, "label.user-label")
+        self.assertIsNotNone(resolved)
+        self.assertEqual(resolved.evaluate("el => el.tagName"), "input", "Label with 'for' attribute must resolve to target input element")
+
+    def test_F2_smart_fill_select_and_checkbox_and_contenteditable(self):
+        """F2: Verify _smart_fill_element handles native select, checkbox, and contenteditable."""
+        class MockSelect:
+            selected_label = None
+            def wait_for(self, **k): pass
+            def scroll_into_view_if_needed(self, **k): pass
+            def evaluate(self, expr, *a):
+                if "tagName" in expr: return "select"
+                if "role" in expr: return ""
+                if "isContentEditable" in expr: return False
+                return ""
+            def select_option(self, label=None, value=None, index=None, **k):
+                self.selected_label = label
+
+        ms = MockSelect()
+        res_sel = browser_tools._smart_fill_element(None, ms, "California")
+        self.assertEqual(res_sel["method"], "select_label")
+        self.assertEqual(ms.selected_label, "California")
+
+        class MockCheckbox:
+            checked = False
+            def wait_for(self, **k): pass
+            def scroll_into_view_if_needed(self, **k): pass
+            def evaluate(self, expr, *a):
+                if "tagName" in expr: return "input"
+                if "type" in expr: return "checkbox"
+                if "role" in expr: return ""
+                if "isContentEditable" in expr: return False
+                return ""
+            def check(self, **k): self.checked = True
+            def uncheck(self, **k): self.checked = False
+
+        mc = MockCheckbox()
+        res_chk = browser_tools._smart_fill_element(None, mc, True)
+        self.assertEqual(res_chk["method"], "check")
+        self.assertTrue(mc.checked)
+
+        class MockContentEditable:
+            inserted_text = None
+            def wait_for(self, **k): pass
+            def scroll_into_view_if_needed(self, **k): pass
+            def click(self, **k): pass
+            def evaluate(self, expr, *a):
+                if "tagName" in expr: return "div"
+                if "role" in expr: return "textbox"
+                if "isContentEditable" in expr: return True
+                if "insertText" in expr and len(a) > 0:
+                    self.inserted_text = a[0]
+                return ""
+
+        mce = MockContentEditable()
+        res_ce = browser_tools._smart_fill_element(None, mce, "Notion Page Title")
+        self.assertEqual(res_ce["method"], "contenteditable_insert")
+        self.assertEqual(mce.inserted_text, "Notion Page Title")
+
+    def test_F3_enter_table_data_parsing_and_tsv_generation(self):
+        """F3: Verify enter_table_data parses 2D arrays and lists of dicts."""
+        class MockContext:
+            def grant_permissions(self, perms): pass
+
+        class MockPage:
+            url = "https://docs.google.com/spreadsheets/d/123/edit"
+            context = None
+            clipboard_text = None
+            def evaluate(self, expr, *a):
+                if "writeText" in expr and len(a) > 0:
+                    self.clipboard_text = a[0]
+                return None
+            class Keyboard:
+                def press(self, k): pass
+                def type(self, t, **k): pass
+            keyboard = Keyboard()
+
+        page = MockPage()
+        ctx = MockContext()
+        ctx.pages = [page]
+        page.context = ctx
+
+        class MockBrowser:
+            contexts = [ctx]
+
+        # 1. Test 2D array input
+        args_2d = {
+            "action": "enter_table_data",
+            "value": [["Product", "Price"], ["Item 1", "9.99"], ["Item 2", "19.99"]]
+        }
+        res_2d = browser_tools._handle(MockBrowser(), args_2d)
+        self.assertTrue(res_2d["ok"])
+        self.assertEqual(res_2d["rows"], 3)
+        self.assertEqual(res_2d["cols"], 2)
+        self.assertEqual(res_2d["method"], "clipboard_tsv_paste")
+        self.assertEqual(page.clipboard_text, "Product\tPrice\nItem 1\t9.99\nItem 2\t19.99")
+
+        # 2. Test list of dicts input
+        args_dicts = {
+            "action": "enter_table_data",
+            "value": [
+                {"Name": "Alice", "Score": 95},
+                {"Name": "Bob", "Score": 88}
+            ],
+            "include_headers": True
+        }
+        res_dict = browser_tools._handle(MockBrowser(), args_dicts)
+        self.assertTrue(res_dict["ok"])
+        self.assertEqual(res_dict["rows"], 3)
+        self.assertEqual(res_dict["cols"], 2)
+        self.assertEqual(page.clipboard_text, "Name\tScore\nAlice\t95\nBob\t88")
+
+    def test_F4_extract_table_data_parsing(self):
+        """F4: Verify extract_table extracts JSON records and Markdown tables."""
+        mock_headers = ["Name", "Role", "Department"]
+        mock_rows = [
+            ["Alice", "Engineer", "Infrastructure"],
+            ["Bob", "Manager", "Product"]
+        ]
+
+        class MockPage:
+            def evaluate(self, script, sel):
+                return {"headers": mock_headers, "rows": mock_rows}
+
+        class MockContext:
+            pages = [MockPage()]
+        class MockBrowser:
+            contexts = [MockContext()]
+
+        args = {"action": "extract_table", "selector": "table#team"}
+        res = browser_tools._handle(MockBrowser(), args)
+        self.assertTrue(res["ok"])
+        self.assertEqual(res["row_count"], 2)
+        self.assertEqual(res["col_count"], 3)
+        self.assertEqual(res["headers"], ["Name", "Role", "Department"])
+        self.assertEqual(res["data"][0]["Name"], "Alice")
+        self.assertEqual(res["data"][0]["Role"], "Engineer")
+        self.assertEqual(res["data"][1]["Name"], "Bob")
+        self.assertIn("| Alice | Engineer | Infrastructure |", res["markdown"])
+
 if __name__ == "__main__":
     unittest.main()

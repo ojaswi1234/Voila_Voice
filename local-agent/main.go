@@ -3191,14 +3191,14 @@ var availableTools = []toolDef{
 		Type: "function",
 		Function: toolFuncDef{
 			Name:        "browser_automation",
-			Description: "Control Edge browser for VISUAL display or interactive web forms. NEVER use this tool to search Google/Bing or look up facts/links — use 'web_research' or MCP tools instead! Workflow: action=goto (with direct target URL) or new_tab. Then action=extract_interactive to observe clickable elements before clicking/typing/filling forms. Use fill_form with JSON dict for multi-field inputs. Returns ok, url, title, tab_index, tabs_count, error",
+			Description: "Control Edge browser for VISUAL display, interactive web forms, or spreadsheet/table entry. NEVER use this tool to search Google/Bing or look up facts/links - use 'web_research' or MCP tools instead! Workflow: action=goto (with direct target URL) or new_tab. Then action=extract_interactive to observe elements before clicking/typing/filling forms. ACTIONS: goto, new_tab, switch_tab, close_tab, list_tabs, extract_interactive (or snapshot), click, type, press, scroll, hover, scrape, extract_links, search_word, eval, upload, fill_form (multi-field dict with smart label/select/checkbox handling), enter_table_data (bulk spreadsheet/grid data entry with TSV clipboard paste or keyboard Tab/Enter), extract_table (extract table into JSON & Markdown), select_cell, submit_form.",
 			Parameters: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
-					"action":   map[string]interface{}{"type": "string", "description": "Action to perform: 'goto' (navigate to URL in current tab), 'new_tab' (open URL in new tab), 'switch_tab', 'close_tab', 'list_tabs', 'extract_interactive' (OBSERVE PAGE: returns all clickable elements with CSS selectors — call this after EVERY goto/new_tab before clicking anything), 'snapshot' (alias for extract_interactive), 'click', 'type', 'press', 'scroll', 'hover', 'scrape', 'extract_links', 'search_word', 'eval', 'upload', 'fill_form'"},
+					"action":   map[string]interface{}{"type": "string", "description": "Action: goto|new_tab|switch_tab|close_tab|list_tabs|extract_interactive|click|type|press|scroll|hover|scrape|extract_links|search_word|eval|upload|fill_form|enter_table_data|extract_table|select_cell|submit_form"},
 					"url":      map[string]interface{}{"type": "string", "description": "URL to navigate to (required for 'goto' and 'new_tab')"},
 					"selector": map[string]interface{}{"type": "string", "description": "CSS selector to click or type into"},
-					"value":    map[string]interface{}{"type": "string", "description": "Text to type, key to press (e.g. 'Enter'), tab index/URL for switch_tab, or scroll direction ('up'/'down')/pixels (e.g. '500')"},
+					"value":    map[string]interface{}{"type": "string", "description": "Text to type / JSON dict for fill_form / 2D JSON array or CSV/TSV for enter_table_data / key for press / direction for scroll"},
 				},
 				"required": []string{"action"},
 			},
