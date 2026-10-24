@@ -1450,6 +1450,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
             _isConnected = true;
             _reconnectAttempts = 0;
           });
+          _fetchConversations();
           if (_fcmToken != null && _activeDevice.isNotEmpty) {
             _sendFCMToken(_fcmToken!);
           }
@@ -1528,6 +1529,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                 if (firstOnlineDesktop != null) {
                   _activeDevice = firstOnlineDesktop;
                   debugPrint('Auto-selected device: $_activeDevice');
+                  _fetchConversations();
                 } else {
                   _activeDevice = '';
                   debugPrint('No online desktop devices available');
@@ -2301,6 +2303,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
         'content': 'Switched to device: $deviceId',
         'timestamp': DateTime.now().toString(),
       });
+      _fetchConversations();
     });
   }
 
@@ -2782,19 +2785,173 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
             child: ListView(
               padding: const EdgeInsets.symmetric(vertical: 8),
               children: [
-                ListTile(
-                  leading: const Icon(Icons.add_circle_rounded, color: AppTokens.accentSecondary),
-                  title: Text('New Conversation', style: GoogleFonts.inter(color: AppTokens.textPrimary(isDark), fontWeight: FontWeight.w600)),
-                  onTap: () {
-                    Navigator.pop(context);
-                    _startNewConversation();
-                  },
+                // 1. Prominent + New Conversation button (Gemini/Claude standard)
+                Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFFFF4500), Color(0xFFFF6A00)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFFFF4500).withOpacity(0.3),
+                        blurRadius: 10,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  child: ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.add_rounded, color: Colors.white, size: 22),
+                    title: Text(
+                      'New Conversation',
+                      style: GoogleFonts.spaceGrotesk(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _startNewConversation();
+                    },
+                  ),
                 ),
+
+                const SizedBox(height: 8),
+
+                // 2. RECENT CHATS Section Header
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+                  child: Row(
+                    children: [
+                      Text(
+                        'RECENT CHATS',
+                        style: GoogleFonts.spaceGrotesk(
+                          color: AppTokens.textSecondary(isDark),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                      const Spacer(),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: AppTokens.accentSecondary.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '${_conversations.length}',
+                          style: GoogleFonts.inter(
+                            color: AppTokens.accentSecondary,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // 3. Conversation List OR Helpful Empty State (always visible!)
+                if (_conversations.isEmpty)
+                  Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: AppTokens.card(isDark).withOpacity(0.5),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: AppTokens.border(isDark).withOpacity(0.5)),
+                    ),
+                    child: Column(
+                      children: [
+                        Icon(Icons.chat_bubble_outline_rounded, size: 30, color: AppTokens.textSecondary(isDark).withOpacity(0.4)),
+                        const SizedBox(height: 8),
+                        Text(
+                          'No conversations yet',
+                          style: GoogleFonts.inter(
+                            color: AppTokens.textPrimary(isDark),
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Tap "+ New Conversation" or speak to start chatting with Voila.',
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.inter(
+                            color: AppTokens.textSecondary(isDark),
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                else
+                  ..._conversations.map((conv) {
+                    final isSelected = _currentConversationId == conv['id'];
+                    final title = conv['title'] ?? 'New Conversation';
+                    final snippet = conv['last_snippet'] ?? '';
+
+                    return Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: isSelected ? AppTokens.accentSecondary.withOpacity(0.16) : Colors.transparent,
+                        borderRadius: BorderRadius.circular(12),
+                        border: isSelected ? Border.all(color: AppTokens.accentSecondary.withOpacity(0.6), width: 1.2) : null,
+                      ),
+                      child: ListTile(
+                        dense: true,
+                        contentPadding: const EdgeInsets.only(left: 12, right: 4),
+                        leading: Icon(
+                          isSelected ? Icons.auto_awesome : Icons.chat_bubble_outline_rounded,
+                          size: 18,
+                          color: isSelected ? AppTokens.accentSecondary : AppTokens.textSecondary(isDark),
+                        ),
+                        title: Text(
+                          title, 
+                          style: GoogleFonts.inter(
+                            color: isSelected ? AppTokens.textPrimary(isDark) : AppTokens.textSecondary(isDark),
+                            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                            fontSize: 13.5,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        subtitle: snippet.isNotEmpty
+                            ? Text(
+                                snippet,
+                                style: GoogleFonts.inter(
+                                  color: AppTokens.textSecondary(isDark).withOpacity(0.7),
+                                  fontSize: 11,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              )
+                            : null,
+                        trailing: IconButton(
+                          icon: Icon(Icons.delete_outline_rounded, size: 16, color: AppTokens.textSecondary(isDark).withOpacity(0.5)),
+                          tooltip: 'Delete Chat',
+                          onPressed: () => _confirmDeleteConversation(conv['id']!, title),
+                        ),
+                        onTap: () {
+                          _resumeConversation(conv['id']!, title);
+                        },
+                      ),
+                    );
+                  }).toList(),
+
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   child: Divider(color: AppTokens.border(isDark)),
                 ),
-                
+
+                // 4. Auxiliary Navigation Items (Secondary)
                 _buildDrawerItem(Icons.dashboard_customize_rounded, 'Artifacts', () async {
                   if (!await _ensureUnlocked()) return;
                   if (mounted) Navigator.pop(context);
@@ -2827,12 +2984,8 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                   });
                   Navigator.pop(context);
                 }),
-                
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  child: Divider(color: AppTokens.border(isDark)),
-                ),
-                
+
+                // 5. Session Status Card
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   child: Container(
@@ -2881,79 +3034,6 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                     ),
                   ),
                 ),
-                
-                if (_conversations.isNotEmpty) ...[
-                  Padding(
-                    padding: const EdgeInsets.only(left: 20, top: 16, bottom: 8),
-                    child: Row(
-                      children: [
-                        Text('RECENT CHATS', style: GoogleFonts.spaceGrotesk(color: AppTokens.textSecondary(isDark), fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 1.2)),
-                        const Spacer(),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: AppTokens.accentSecondary.withOpacity(0.15),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Text('${_conversations.length}', style: GoogleFonts.inter(color: AppTokens.accentSecondary, fontSize: 10, fontWeight: FontWeight.w700)),
-                        ),
-                        const SizedBox(width: 16),
-                      ],
-                    ),
-                  ),
-                  ..._conversations.map((conv) {
-                    final isSelected = _currentConversationId == conv['id'];
-                    final title = conv['title'] ?? 'New Conversation';
-                    final snippet = conv['last_snippet'] ?? '';
-
-                    return Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: isSelected ? AppTokens.accentSecondary.withOpacity(0.16) : Colors.transparent,
-                        borderRadius: BorderRadius.circular(10),
-                        border: isSelected ? Border.all(color: AppTokens.accentSecondary.withOpacity(0.5), width: 1) : null,
-                      ),
-                      child: ListTile(
-                        dense: true,
-                        contentPadding: const EdgeInsets.only(left: 12, right: 4),
-                        leading: Icon(
-                          isSelected ? Icons.auto_awesome : Icons.chat_bubble_outline_rounded,
-                          size: 18,
-                          color: isSelected ? AppTokens.accentSecondary : AppTokens.textSecondary(isDark),
-                        ),
-                        title: Text(
-                          title, 
-                          style: GoogleFonts.inter(
-                            color: isSelected ? AppTokens.textPrimary(isDark) : AppTokens.textSecondary(isDark),
-                            fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                            fontSize: 13.5,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        subtitle: snippet.isNotEmpty
-                            ? Text(
-                                snippet,
-                                style: GoogleFonts.inter(
-                                  color: AppTokens.textSecondary(isDark).withOpacity(0.7),
-                                  fontSize: 11,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              )
-                            : null,
-                        trailing: IconButton(
-                          icon: Icon(Icons.delete_outline_rounded, size: 16, color: AppTokens.textSecondary(isDark).withOpacity(0.5)),
-                          tooltip: 'Delete Chat',
-                          onPressed: () => _confirmDeleteConversation(conv['id']!, title),
-                        ),
-                        onTap: () {
-                          _resumeConversation(conv['id']!, title);
-                        },
-                      ),
-                    );
-                  }).toList(),
-                ],
               ],
             ),
           ),
@@ -3016,6 +3096,11 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     final colorScheme = theme.colorScheme;
     
     return Scaffold(
+      onDrawerChanged: (isOpen) {
+        if (isOpen) {
+          _fetchConversations();
+        }
+      },
       drawer: _isAssistant ? null : _buildDrawer(),
       endDrawer: _isAssistant ? null : _buildBgTasksSidebar(),
       backgroundColor: _isAssistant ? Colors.transparent : AppTokens.bg(appThemeMode.value == ThemeMode.dark),

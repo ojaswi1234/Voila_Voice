@@ -3082,13 +3082,8 @@ func listConversationsHandler(w http.ResponseWriter, r *http.Request) {
 	})
 
 	jsonData, _ := json.Marshal(conversations)
-	encrypted, err := EncryptData(jsonData, connData.SecurityPhrase)
 	w.Header().Set("Content-Type", "application/json")
-	if err == nil {
-		json.NewEncoder(w).Encode(map[string]string{"encrypted": encrypted})
-	} else {
-		json.NewEncoder(w).Encode(conversations)
-	}
+	w.Write(jsonData)
 }
 
 func conversationMessagesHandler(w http.ResponseWriter, r *http.Request) {
@@ -3189,13 +3184,8 @@ func conversationMessagesHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	jsonData, _ := json.Marshal(respPayload)
-	encrypted, err := EncryptData(jsonData, connData.SecurityPhrase)
 	w.Header().Set("Content-Type", "application/json")
-	if err == nil {
-		json.NewEncoder(w).Encode(map[string]string{"encrypted": encrypted})
-	} else {
-		w.Write(jsonData)
-	}
+	w.Write(jsonData)
 }
 
 func conversationDeleteHandler(w http.ResponseWriter, r *http.Request) {
