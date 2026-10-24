@@ -384,6 +384,65 @@ func handleIncomingCommandViaGRPC(cmd *voilav1.ExecutionCommand, connData Connec
 		return
 	}
 
+	if cmd.Command == "__GET_CONVERSATIONS__" {
+		convs := listConversationsInternal()
+		jsonData, _ := json.Marshal(convs)
+		SendTelemetry(&voilav1.AgentTelemetry{
+			DeviceId:    connData.DeviceID,
+			Status:      "IDLE",
+			TimestampMs: time.Now().UnixMilli(),
+			Payload: &voilav1.AgentTelemetry_FinalResult{
+				FinalResult: &voilav1.ExecutionResult{
+					CommandId: cmd.CommandId,
+					Output:    string(jsonData),
+					Summary:   "conversations_list",
+					Status:    "conversations_list",
+				},
+			},
+		})
+		return
+	}
+
+	if strings.HasPrefix(cmd.Command, "__GET_CONVERSATION_MESSAGES__:") {
+		targetConvID := strings.TrimPrefix(cmd.Command, "__GET_CONVERSATION_MESSAGES__:")
+		payload := getConversationMessagesInternal(targetConvID)
+		jsonData, _ := json.Marshal(payload)
+		SendTelemetry(&voilav1.AgentTelemetry{
+			DeviceId:    connData.DeviceID,
+			Status:      "IDLE",
+			TimestampMs: time.Now().UnixMilli(),
+			Payload: &voilav1.AgentTelemetry_FinalResult{
+				FinalResult: &voilav1.ExecutionResult{
+					CommandId:         cmd.CommandId,
+					Output:            string(jsonData),
+					Summary:           "conversation_messages",
+					Status:            "conversation_messages",
+					NewConversationId: targetConvID,
+				},
+			},
+		})
+		return
+	}
+
+	if strings.HasPrefix(cmd.Command, "__DELETE_CONVERSATION__:") {
+		targetConvID := strings.TrimPrefix(cmd.Command, "__DELETE_CONVERSATION__:")
+		deleteConversationInternal(targetConvID)
+		SendTelemetry(&voilav1.AgentTelemetry{
+			DeviceId:    connData.DeviceID,
+			Status:      "IDLE",
+			TimestampMs: time.Now().UnixMilli(),
+			Payload: &voilav1.AgentTelemetry_FinalResult{
+				FinalResult: &voilav1.ExecutionResult{
+					CommandId:         cmd.CommandId,
+					Summary:           "conversation_deleted",
+					Status:            "conversation_deleted",
+					NewConversationId: targetConvID,
+				},
+			},
+		})
+		return
+	}
+
 	currentModeMu.Lock()
 	globalMode := strings.ToUpper(currentMode)
 	currentModeMu.Unlock()

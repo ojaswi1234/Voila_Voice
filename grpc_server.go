@@ -185,14 +185,45 @@ func (s *TunnelServer) EstablishTunnel(stream voilav1.DesktopTunnelService_Estab
 
 		case *voilav1.AgentTelemetry_FinalResult:
 			res := p.FinalResult
+			if res.Summary == "conversations_list" {
+				resp := map[string]interface{}{
+					"type": "conversations_list",
+					"data": json.RawMessage(res.Output),
+				}
+				if b, err := json.Marshal(resp); err == nil && s.backend != nil {
+					s.backend.broadcastToClients(websocket.TextMessage, b)
+				}
+				continue
+			} else if res.Summary == "conversation_messages" {
+				resp := map[string]interface{}{
+					"type":            "conversation_messages",
+					"conversation_id": res.NewConversationId,
+					"data":            json.RawMessage(res.Output),
+				}
+				if b, err := json.Marshal(resp); err == nil && s.backend != nil {
+					s.backend.broadcastToClients(websocket.TextMessage, b)
+				}
+				continue
+			} else if res.Summary == "conversation_deleted" {
+				resp := map[string]interface{}{
+					"type":            "conversation_deleted",
+					"conversation_id": res.NewConversationId,
+				}
+				if b, err := json.Marshal(resp); err == nil && s.backend != nil {
+					s.backend.broadcastToClients(websocket.TextMessage, b)
+				}
+				continue
+			}
+
 			resp := map[string]interface{}{
-				"type":          "result",
-				"command_id":    res.CommandId,
-				"output":        res.Output,
-				"summary":       res.Summary,
-				"status":        res.Status,
-				"artifact_path": res.ArtifactPath,
-				"mode":          telemetry.Status,
+				"type":                "result",
+				"command_id":          res.CommandId,
+				"output":              res.Output,
+				"summary":             res.Summary,
+				"status":              res.Status,
+				"artifact_path":       res.ArtifactPath,
+				"mode":                telemetry.Status,
+				"new_conversation_id": res.NewConversationId,
 			}
 			if b, err := json.Marshal(resp); err == nil && s.backend != nil {
 				s.backend.broadcastToClients(websocket.TextMessage, b)

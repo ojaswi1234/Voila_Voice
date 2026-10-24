@@ -1681,6 +1681,19 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 					b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: No active online desktop device"))
 					continue
 				}
+
+				if globalTunnelManager != nil && globalTunnelManager.HasTunnel(deviceID) {
+					cmdID := fmt.Sprintf("convs-%d", time.Now().UnixNano())
+					execCmd := &voilav1.ExecutionCommand{
+						CommandId:   cmdID,
+						Command:     "__GET_CONVERSATIONS__",
+						ClientId:    clientID,
+						TimestampMs: time.Now().UnixMilli(),
+					}
+					if ok := globalTunnelManager.SendCommand(deviceID, execCmd); ok {
+						continue
+					}
+				}
 				
 				b.mu.RLock()
 				device, exists := b.devices[deviceID]
@@ -1741,6 +1754,20 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				if deviceID == "" {
 					b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: No active online desktop device"))
 					continue
+				}
+
+				if globalTunnelManager != nil && globalTunnelManager.HasTunnel(deviceID) {
+					cmdID := fmt.Sprintf("conv-msgs-%d", time.Now().UnixNano())
+					execCmd := &voilav1.ExecutionCommand{
+						CommandId:      cmdID,
+						Command:        "__GET_CONVERSATION_MESSAGES__:" + convID,
+						ConversationId: convID,
+						ClientId:       clientID,
+						TimestampMs:    time.Now().UnixMilli(),
+					}
+					if ok := globalTunnelManager.SendCommand(deviceID, execCmd); ok {
+						continue
+					}
 				}
 				
 				b.mu.RLock()
@@ -1804,6 +1831,20 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				if deviceID == "" {
 					b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: No active online desktop device"))
 					continue
+				}
+
+				if globalTunnelManager != nil && globalTunnelManager.HasTunnel(deviceID) {
+					cmdID := fmt.Sprintf("conv-del-%d", time.Now().UnixNano())
+					execCmd := &voilav1.ExecutionCommand{
+						CommandId:      cmdID,
+						Command:        "__DELETE_CONVERSATION__:" + convID,
+						ConversationId: convID,
+						ClientId:       clientID,
+						TimestampMs:    time.Now().UnixMilli(),
+					}
+					if ok := globalTunnelManager.SendCommand(deviceID, execCmd); ok {
+						continue
+					}
 				}
 				
 				b.mu.RLock()

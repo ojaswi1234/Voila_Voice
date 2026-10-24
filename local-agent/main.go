@@ -3014,30 +3014,7 @@ func findConversationDir(convID string) (string, string) {
 	return getBrainDir(), filepath.Join(getBrainDir(), convID)
 }
 
-func listConversationsHandler(w http.ResponseWriter, r *http.Request) {
-	// Zero-friction mode: Authenticate using SecurityPhraseHash
-	connData, err := loadConnectionData()
-	if err != nil || connData.SecurityPhrase == "" {
-		http.Error(w, "Agent not configured", http.StatusServiceUnavailable)
-		return
-	}
-	expectedSecret := hashPhrase(connData.SecurityPhrase, connData.DeviceID)
-	providedSecret := r.Header.Get("X-Exec-Secret")
-	if subtle.ConstantTimeCompare([]byte(providedSecret), []byte(expectedSecret)) != 1 {
-		cmd := "unknown"
-		bodyBytes, _ := io.ReadAll(r.Body)
-		r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
-		var req struct {
-			Command string `json:"command"`
-		}
-		json.Unmarshal(bodyBytes, &req)
-		if req.Command != "" {
-			cmd = req.Command
-		}
-		handleLocalMockExecution(w, r, cmd, connData, r.URL.Path)
-		return
-	}
-
+func listConversationsInternal() []Conversation {
 	seenIDs := make(map[string]bool)
 	var conversations []Conversation
 
@@ -3209,30 +3186,10 @@ func listConversationsHandler(w http.ResponseWriter, r *http.Request) {
 		return conversations[i].UpdatedAt > conversations[j].UpdatedAt
 	})
 
-	jsonData, _ := json.Marshal(conversations)
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(jsonData)
+	return conversations
 }
 
-func conversationMessagesHandler(w http.ResponseWriter, r *http.Request) {
-	connData, err := loadConnectionData()
-	if err != nil || connData.SecurityPhrase == "" {
-		http.Error(w, "Agent not configured", http.StatusServiceUnavailable)
-		return
-	}
-	expectedSecret := hashPhrase(connData.SecurityPhrase, connData.DeviceID)
-	providedSecret := r.Header.Get("X-Exec-Secret")
-	if subtle.ConstantTimeCompare([]byte(providedSecret), []byte(expectedSecret)) != 1 {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	convID := strings.TrimSpace(r.URL.Query().Get("id"))
-	if convID == "" || strings.Contains(convID, "..") || strings.Contains(convID, "/") || strings.Contains(convID, "\\") {
-		http.Error(w, "Invalid conversation ID", http.StatusBadRequest)
-		return
-	}
-
+func getConversationMessagesInternal(convID string) map[string]interface{} {
 	_, convDir := findConversationDir(convID)
 
 	meta, _ := loadConversationMetadata(convID)
@@ -3287,28 +3244,84 @@ func conversationMessagesHandler(w http.ResponseWriter, r *http.Request) {
 			var rawTurns []map[string]interface{}
 			if json.Unmarshal(data, &rawTurns) == nil {
 				for i, turn := range rawTurns {
-					role, _ := turn["role"].(string)
-					content, _ := turn["content"].(string)
-					msgType := "user"
-					if role == "assistant" {
-						msgType = "response"
-					}
-					messages = append(messages, map[string]interface{}{
-						"id":        fmt.Sprintf("%s_%d", convID, i),
-						"type":      msgType,
-						"content":   content,
-						"timestamp": time.Now().Format("2006-01-02 15:04:05"),
-					})
+				role, _ := turn["role"].(string)
+				content, _ := turn["content"].(string)
+				msgType := "user"
+				if role == "assistant" {
+					msgType = "response"
 				}
+				messages = append(messages, map[string]interface{}{
+					"id":        fmt.Sprintf("%s_%d", convID, i),
+					"type":      msgType,
+					"content":   content,
+					"timestamp": time.Now().Format("2006-01-02 15:04:05"),
+				})
 			}
 		}
 	}
+	}
 
-	respPayload := map[string]interface{}{
+	return map[string]interface{}{
 		"conversation_id": convID,
 		"title":           title,
 		"messages":        messages,
 	}
+}
+
+func deleteConversationInternal(convID string) {
+	deleteConversationInternal(convID)
+}
+
+func listConversationsHandler(w http.ResponseWriter, r *http.Request) {
+	// Zero-friction mode: Authenticate using SecurityPhraseHash
+	connData, err := loadConnectionData()
+	if err != nil || connData.SecurityPhrase == "" {
+		http.Error(w, "Agent not configured", http.StatusServiceUnavailable)
+		return
+	}
+	expectedSecret := hashPhrase(connData.SecurityPhrase, connData.DeviceID)
+	providedSecret := r.Header.Get("X-Exec-Secret")
+	if subtle.ConstantTimeCompare([]byte(providedSecret), []byte(expectedSecret)) != 1 {
+		cmd := "unknown"
+		bodyBytes, _ := io.ReadAll(r.Body)
+		r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+		var req struct {
+			Command string `json:"command"`
+		}
+		json.Unmarshal(bodyBytes, &req)
+		if req.Command != "" {
+			cmd = req.Command
+		}
+		handleLocalMockExecution(w, r, cmd, connData, r.URL.Path)
+		return
+	}
+
+	conversations := listConversationsInternal()
+	jsonData, _ := json.Marshal(conversations)
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(jsonData)
+}
+
+func conversationMessagesHandler(w http.ResponseWriter, r *http.Request) {
+	connData, err := loadConnectionData()
+	if err != nil || connData.SecurityPhrase == "" {
+		http.Error(w, "Agent not configured", http.StatusServiceUnavailable)
+		return
+	}
+	expectedSecret := hashPhrase(connData.SecurityPhrase, connData.DeviceID)
+	providedSecret := r.Header.Get("X-Exec-Secret")
+	if subtle.ConstantTimeCompare([]byte(providedSecret), []byte(expectedSecret)) != 1 {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	convID := strings.TrimSpace(r.URL.Query().Get("id"))
+	if convID == "" || strings.Contains(convID, "..") || strings.Contains(convID, "/") || strings.Contains(convID, "\\") {
+		http.Error(w, "Invalid conversation ID", http.StatusBadRequest)
+		return
+	}
+
+	respPayload := getConversationMessagesInternal(convID)
 
 	jsonData, _ := json.Marshal(respPayload)
 	w.Header().Set("Content-Type", "application/json")

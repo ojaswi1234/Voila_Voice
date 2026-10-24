@@ -456,6 +456,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   Timer? _assistantImageTimer;
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final _storage = const FlutterSecureStorage();
   List<String> _modelsList = [];
   String _selectedModel = '';
@@ -630,6 +631,126 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
         await file.delete();
       }
     } catch (_) {}
+  }
+
+  void _closeDrawerSafely() {
+    if (_scaffoldKey.currentState?.isDrawerOpen ?? false) {
+      _scaffoldKey.currentState?.closeDrawer();
+    } else if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
+  }
+
+  void _upsertActiveConversation(String userText) {
+    if (_currentConversationId.isEmpty) {
+      _currentConversationId = 'conv_' + const Uuid().v4().substring(0, 8);
+    }
+    final cleanPrompt = userText.trim().replaceAll('\n', ' ');
+    final shortTitle = cleanPrompt.length > 35 ? cleanPrompt.substring(0, 32) + '...' : cleanPrompt;
+    final snippet = cleanPrompt.length > 55 ? cleanPrompt.substring(0, 52) + '...' : cleanPrompt;
+    final nowMs = DateTime.now().millisecondsSinceEpoch.toString();
+
+    final existingIndex = _conversations.indexWhere((c) => c['id'] == _currentConversationId);
+    if (existingIndex >= 0) {
+      final existing = Map<String, String>.from(_conversations[existingIndex]);
+      existing['updated_at'] = nowMs;
+      existing['last_snippet'] = snippet;
+      final count = int.tryParse(existing['message_count'] ?? '1') ?? 1;
+      existing['message_count'] = (count + 1).toString();
+      _conversations.removeAt(existingIndex);
+      _conversations.insert(0, existing);
+    } else {
+      _conversations.insert(0, {
+        'id': _currentConversationId,
+        'title': shortTitle.isNotEmpty ? shortTitle : 'New Conversation',
+        'updated_at': nowMs,
+        'created_at': nowMs,
+        'message_count': '1',
+        'last_snippet': snippet,
+      });
+    }
+    _saveConversationsToDiskCache(_conversations);
+  }
+
+  void _updateActiveConversationSnippet(String assistantResponse) {
+    if (_currentConversationId.isEmpty) return;
+    final cleanResp = assistantResponse.trim().replaceAll('\n', ' ');
+    final snippet = cleanResp.length > 60 ? cleanResp.substring(0, 57) + '...' : cleanResp;
+    final nowMs = DateTime.now().millisecondsSinceEpoch.toString();
+
+    final idx = _conversations.indexWhere((c) => c['id'] == _currentConversationId);
+    if (idx >= 0) {
+      final item = Map<String, String>.from(_conversations[idx]);
+      item['last_snippet'] = snippet;
+      item['updated_at'] = nowMs;
+      final count = int.tryParse(item['message_count'] ?? '1') ?? 1;
+      item['message_count'] = (count + 1).toString();
+      if (mounted) {
+        setState(() {
+          _conversations.removeAt(idx);
+          _conversations.insert(0, item);
+        });
+      }
+      _saveConversationsToDiskCache(_conversations);
+    }
+  }
+
+  String _getActiveConversationTitle() {
+    if (_currentConversationId.isEmpty) return 'Active Chat';
+    final found = _conversations.firstWhere((c) => c['id'] == _currentConversationId, orElse: () => {});
+    if (found.isNotEmpty && found['title'] != null && found['title']!.isNotEmpty) {
+      return found['title']!;
+    }
+    return 'Chat ' + (_currentConversationId.length > 10 ? _currentConversationId.substring(0, 9) : _currentConversationId);
+  }
+
+  DateTime _parseConversationDate(String? raw) {
+    if (raw == null || raw.isEmpty) return DateTime.now();
+    final ms = int.tryParse(raw);
+    if (ms != null && ms > 0) {
+      if (ms < 10000000000) {
+        return DateTime.fromMillisecondsSinceEpoch(ms * 1000);
+      }
+      return DateTime.fromMillisecondsSinceEpoch(ms);
+    }
+    return DateTime.tryParse(raw) ?? DateTime.now();
+  }
+
+  void _sortConversations() {
+    _conversations.sort((a, b) {
+      final aTime = _parseConversationDate(a['updated_at'] ?? a['created_at']);
+      final bTime = _parseConversationDate(b['updated_at'] ?? b['created_at']);
+      return bTime.compareTo(aTime);
+    });
+  }
+
+  Map<String, List<Map<String, String>>> _categorizeConversations() {
+    final now = DateTime.now();
+    final todayStart = DateTime(now.year, now.month, now.day);
+    final yesterdayStart = todayStart.subtract(const Duration(days: 1));
+    final sevenDaysAgo = todayStart.subtract(const Duration(days: 7));
+
+    final Map<String, List<Map<String, String>>> categorized = {
+      'Today': [],
+      'Yesterday': [],
+      'Previous 7 Days': [],
+      'Older': [],
+    };
+
+    for (final conv in _conversations) {
+      final d = _parseConversationDate(conv['updated_at'] ?? conv['created_at']);
+      if (d.isAfter(todayStart) || d.isAtSameMomentAs(todayStart)) {
+        categorized['Today']!.add(conv);
+      } else if (d.isAfter(yesterdayStart)) {
+        categorized['Yesterday']!.add(conv);
+      } else if (d.isAfter(sevenDaysAgo)) {
+        categorized['Previous 7 Days']!.add(conv);
+      } else {
+        categorized['Older']!.add(conv);
+      }
+    }
+
+    return categorized;
   }
   List<Map<String, dynamic>> _securityAlerts = [];
   Map<String, dynamic> _lastTokenUsage = {};
@@ -972,12 +1093,13 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   }
   
   void _startNewConversation() {
+    _closeDrawerSafely();
     if (mounted) setState(() {
       _currentConversationId = 'conv_' + const Uuid().v4().substring(0, 8);
       _messagesAgent.clear();
       _messagesAgent.insert(0, {
         'type': 'system',
-        'content': 'Started a new conversation.',
+        'content': 'Started a new conversation. What would you like help with?',
         'timestamp': DateTime.now().toString(),
       });
     });
@@ -1028,7 +1150,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       _channel?.sink.add(msg);
     }
 
-    Navigator.pop(context); // close drawer
+    _closeDrawerSafely();
   }
 
   void _deleteConversation(String id) {
@@ -1049,6 +1171,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
           _startNewConversation();
         }
       });
+      _saveConversationsToDiskCache(_conversations);
     }
   }
 
@@ -1591,10 +1714,15 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
               }).where((m) => m.isNotEmpty && m.containsKey('id')).toList();
 
               if (mounted) setState(() {
-                _conversations = mapped;
+                final existingMap = { for (var c in _conversations) c['id']!: c };
+                for (var m in mapped) {
+                  existingMap[m['id']!] = m;
+                }
+                _conversations = existingMap.values.toList();
+                _sortConversations();
               });
-              if (mapped.isNotEmpty) {
-                _saveConversationsToDiskCache(mapped);
+              if (_conversations.isNotEmpty) {
+                _saveConversationsToDiskCache(_conversations);
               }
             } else if (jsonResponse is Map && jsonResponse['type'] == 'conversation_messages') {
               final convId = jsonResponse['conversation_id']?.toString() ?? '';
@@ -1815,6 +1943,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
               if (rawOutput.startsWith('__IMAGE__:')) {
                 contentStr = rawOutput;
               }
+              _updateActiveConversationSnippet(contentStr);
               _interceptImageForAssistant(contentStr);
               _addMessage({
                 'type': 'response',
@@ -2275,6 +2404,11 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     if (!await _ensureUnlocked()) {
       return; // Kept in controller so user does not lose input
     }
+
+    if (_currentConversationId.isEmpty) {
+      _currentConversationId = 'conv_' + const Uuid().v4().substring(0, 8);
+    }
+    _upsertActiveConversation(text);
 
     final deviceInfo = await DeviceIdentity.getDeviceInfo();
     if (!mounted) return;
@@ -2785,8 +2919,15 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
 
   Widget _buildDrawer() {
     bool isDark = appThemeMode.value == ThemeMode.dark;
-    final colorScheme = Theme.of(context).colorScheme;
-    
+    final categorized = _categorizeConversations();
+    final totalCount = _conversations.length;
+
+    // Active conversation object
+    final activeConv = _conversations.firstWhere(
+      (c) => c['id'] == _currentConversationId,
+      orElse: () => <String, String>{},
+    );
+
     return Drawer(
       backgroundColor: AppTokens.bg(isDark),
       child: SafeArea(
@@ -2804,17 +2945,25 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                 children: [
                   const Icon(Icons.graphic_eq_rounded, color: AppTokens.accent, size: 26),
                   const SizedBox(width: 10),
-                  Text('VOILA VOICE', style: GoogleFonts.spaceGrotesk(color: AppTokens.textPrimary(isDark), fontSize: 19, fontWeight: FontWeight.w800, letterSpacing: -0.8)),
+                  Text(
+                    'VOILA VOICE',
+                    style: GoogleFonts.spaceGrotesk(
+                      color: AppTokens.textPrimary(isDark),
+                      fontSize: 19,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.8,
+                    ),
+                  ),
                   const Spacer(),
                   IconButton(
                     icon: Icon(Icons.refresh, color: AppTokens.textSecondary(isDark), size: 20),
                     onPressed: _fetchConversations,
                     tooltip: 'Sync Conversations',
-                  )
+                  ),
                 ],
               ),
             ),
-            
+
             // 2. Fixed Prominent + New Conversation button
             Container(
               margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -2846,19 +2995,18 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                   ),
                 ),
                 onTap: () {
-                  Navigator.pop(context); // Close the drawer cleanly
                   _startNewConversation();
                 },
               ),
             ),
 
-            // 3. Fixed RECENT CHATS Header with Count Badge
+            // 3. Header Summary: CONVERSATIONS with Live Badge
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
               child: Row(
                 children: [
                   Text(
-                    'RECENT CHATS',
+                    'CONVERSATIONS',
                     style: GoogleFonts.spaceGrotesk(
                       color: AppTokens.textSecondary(isDark),
                       fontSize: 11,
@@ -2874,7 +3022,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Text(
-                      '${_conversations.length}',
+                      '$totalCount',
                       style: GoogleFonts.inter(
                         color: AppTokens.accentSecondary,
                         fontSize: 10,
@@ -2886,9 +3034,9 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
               ),
             ),
 
-            // 4. Dedicated Scrollable Conversation List with Smooth Scrolling Physics and Native Scrollbar
+            // 4. Dedicated Scrollable Categorized Conversation List
             Expanded(
-              child: _conversations.isEmpty
+              child: totalCount == 0 && _currentConversationId.isEmpty
                 ? Center(
                     child: SingleChildScrollView(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -2931,63 +3079,25 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                     thickness: 4,
                     radius: const Radius.circular(8),
                     thumbColor: AppTokens.accentSecondary.withOpacity(0.5),
-                    child: ListView.builder(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: ListView(
+                      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 10),
                       physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
-                      itemCount: _conversations.length,
-                      itemBuilder: (context, index) {
-                        final conv = _conversations[index];
-                        final isSelected = _currentConversationId == conv['id'];
-                        final title = conv['title'] ?? 'New Conversation';
-                        final snippet = conv['last_snippet'] ?? '';
+                      children: [
+                        // Active Session Card (if any active)
+                        if (_currentConversationId.isNotEmpty) ...[
+                          _buildActiveConversationCard(activeConv, isDark),
+                          const SizedBox(height: 8),
+                        ],
 
-                        return Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: isSelected ? AppTokens.accentSecondary.withOpacity(0.16) : Colors.transparent,
-                            borderRadius: BorderRadius.circular(12),
-                            border: isSelected ? Border.all(color: AppTokens.accentSecondary.withOpacity(0.6), width: 1.2) : null,
-                          ),
-                          child: ListTile(
-                            dense: true,
-                            contentPadding: const EdgeInsets.only(left: 12, right: 4),
-                            leading: Icon(
-                              isSelected ? Icons.auto_awesome : Icons.chat_bubble_outline_rounded,
-                              size: 18,
-                              color: isSelected ? AppTokens.accentSecondary : AppTokens.textSecondary(isDark),
-                            ),
-                            title: Text(
-                              title, 
-                              style: GoogleFonts.inter(
-                                color: isSelected ? AppTokens.textPrimary(isDark) : AppTokens.textSecondary(isDark),
-                                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                                fontSize: 13,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            subtitle: snippet.isNotEmpty
-                                ? Text(
-                                    snippet,
-                                    style: GoogleFonts.inter(
-                                      color: AppTokens.textSecondary(isDark).withOpacity(0.7),
-                                      fontSize: 11,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  )
-                                : null,
-                            trailing: IconButton(
-                              icon: Icon(Icons.delete_outline_rounded, size: 16, color: AppTokens.textSecondary(isDark).withOpacity(0.5)),
-                              tooltip: 'Delete Chat',
-                              onPressed: () => _confirmDeleteConversation(conv['id']!, title),
-                            ),
-                            onTap: () {
-                              _resumeConversation(conv['id']!, title);
-                            },
-                          ),
-                        );
-                      },
+                        // Categorized Groups
+                        for (final category in ['Today', 'Yesterday', 'Previous 7 Days', 'Older'])
+                          if ((categorized[category] ?? []).isNotEmpty) ...[
+                            _buildCategoryHeader(category, categorized[category]!.length, isDark),
+                            for (final conv in categorized[category]!)
+                              _buildConversationTile(conv, isDark),
+                            const SizedBox(height: 6),
+                          ],
+                      ],
                     ),
                   ),
             ),
@@ -3005,16 +3115,16 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                   children: [
                     _buildDrawerItem(Icons.dashboard_customize_rounded, 'Artifacts', () async {
                       if (!await _ensureUnlocked()) return;
-                      if (mounted) Navigator.pop(context);
+                      _closeDrawerSafely();
                       if (mounted) Navigator.push(context, MaterialPageRoute(builder: (context) => const ArtifactsPage()));
                     }),
                     _buildDrawerItem(Icons.shield_rounded, 'Security Alerts', () {
-                      Navigator.pop(context);
+                      _closeDrawerSafely();
                       _showSecurityAlerts();
                     }),
                     _buildDrawerItem(Icons.camera_outdoor_rounded, 'Surveillance', () async {
                       if (!await _ensureUnlocked()) return;
-                      if (mounted) Navigator.pop(context);
+                      _closeDrawerSafely();
                       if (mounted) showModalBottomSheet(
                         context: context,
                         isScrollControlled: true,
@@ -3026,14 +3136,14 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                       );
                     }),
                     _buildDrawerItem(Icons.tune_rounded, 'Settings', () {
-                      Navigator.pop(context);
+                      _closeDrawerSafely();
                       _showSettingsSheet(context);
                     }),
                     _buildDrawerItem(Icons.image_not_supported_rounded, 'Clear Screenshots', () {
                       if (mounted) setState(() {
                         _messages.removeWhere((m) => (m['content'] as String? ?? '').startsWith('__IMAGE__:'));
                       });
-                      Navigator.pop(context);
+                      _closeDrawerSafely();
                     }),
 
                     // Session Status Card
@@ -3095,6 +3205,205 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     );
   }
 
+  Widget _buildActiveConversationCard(Map<String, String> conv, bool isDark) {
+    final title = (conv['title'] != null && conv['title']!.isNotEmpty)
+        ? conv['title']!
+        : (_messagesAgent.isNotEmpty && _messagesAgent.any((m) => m['type'] == 'user')
+            ? _messagesAgent.firstWhere((m) => m['type'] == 'user')['content'].toString()
+            : 'Active Conversation');
+    final snippet = conv['last_snippet'] ?? '';
+
+    return Container(
+      decoration: BoxDecoration(
+        color: AppTokens.accentSecondary.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppTokens.accentSecondary, width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: AppTokens.accentSecondary.withOpacity(0.15),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: ListTile(
+        dense: true,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+        leading: Stack(
+          alignment: Alignment.center,
+          children: [
+            Container(
+              width: 28,
+              height: 28,
+              decoration: BoxDecoration(
+                color: AppTokens.accentSecondary.withOpacity(0.2),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.bolt_rounded, size: 18, color: AppTokens.accentSecondary),
+            ),
+          ],
+        ),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+              decoration: BoxDecoration(
+                color: const Color(0xFF10B981).withOpacity(0.2),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: const Color(0xFF10B981), width: 0.8),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 5,
+                    height: 5,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF10B981),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    'ACTIVE NOW',
+                    style: GoogleFonts.inter(
+                      color: const Color(0xFF10B981),
+                      fontSize: 9,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: GoogleFonts.inter(
+                  color: AppTokens.textPrimary(isDark),
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              if (snippet.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(
+                    snippet,
+                    style: GoogleFonts.inter(
+                      color: AppTokens.textSecondary(isDark),
+                      fontSize: 11,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+            ],
+          ),
+        ),
+        onTap: () {
+          _closeDrawerSafely();
+        },
+      ),
+    );
+  }
+
+  Widget _buildCategoryHeader(String title, int count, bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 6, top: 10, bottom: 4, right: 6),
+      child: Row(
+        children: [
+          Text(
+            title.toUpperCase(),
+            style: GoogleFonts.spaceGrotesk(
+              color: AppTokens.textSecondary(isDark).withOpacity(0.8),
+              fontSize: 10.5,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 1.0,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+            decoration: BoxDecoration(
+              color: AppTokens.border(isDark).withOpacity(0.5),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              '$count',
+              style: GoogleFonts.inter(
+                color: AppTokens.textSecondary(isDark),
+                fontSize: 9,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildConversationTile(Map<String, String> conv, bool isDark) {
+    final isSelected = _currentConversationId == conv['id'];
+    final title = conv['title'] ?? 'Conversation';
+    final snippet = conv['last_snippet'] ?? '';
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 2),
+      decoration: BoxDecoration(
+        color: isSelected ? AppTokens.accentSecondary.withOpacity(0.14) : Colors.transparent,
+        borderRadius: BorderRadius.circular(10),
+        border: isSelected ? Border.all(color: AppTokens.accentSecondary.withOpacity(0.5), width: 1.2) : null,
+      ),
+      child: ListTile(
+        dense: true,
+        contentPadding: const EdgeInsets.only(left: 10, right: 4),
+        leading: Icon(
+          isSelected ? Icons.auto_awesome : Icons.chat_bubble_outline_rounded,
+          size: 16,
+          color: isSelected ? AppTokens.accentSecondary : AppTokens.textSecondary(isDark).withOpacity(0.7),
+        ),
+        title: Text(
+          title,
+          style: GoogleFonts.inter(
+            color: isSelected ? AppTokens.textPrimary(isDark) : AppTokens.textSecondary(isDark),
+            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+            fontSize: 12.5,
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: snippet.isNotEmpty
+            ? Text(
+                snippet,
+                style: GoogleFonts.inter(
+                  color: AppTokens.textSecondary(isDark).withOpacity(0.6),
+                  fontSize: 10.5,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              )
+            : null,
+        trailing: IconButton(
+          icon: Icon(Icons.delete_outline_rounded, size: 15, color: AppTokens.textSecondary(isDark).withOpacity(0.4)),
+          tooltip: 'Delete Chat',
+          onPressed: () => _confirmDeleteConversation(conv['id']!, title),
+        ),
+        onTap: () {
+          _resumeConversation(conv['id']!, title);
+        },
+      ),
+    );
+  }
+
   Widget _buildDrawerItem(IconData icon, String title, VoidCallback onTap) {
     bool isDark = appThemeMode.value == ThemeMode.dark;
     return ListTile(
@@ -3148,36 +3457,48 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     
-    return Scaffold(
-      onDrawerChanged: (isOpen) {
-        if (isOpen) {
-          _fetchConversations();
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        if (_scaffoldKey.currentState?.isDrawerOpen ?? false) {
+          _scaffoldKey.currentState?.closeDrawer();
+        } else if (_scaffoldKey.currentState?.isEndDrawerOpen ?? false) {
+          _scaffoldKey.currentState?.closeEndDrawer();
         }
       },
-      drawer: _isAssistant ? null : _buildDrawer(),
-      endDrawer: _isAssistant ? null : _buildBgTasksSidebar(),
-      backgroundColor: _isAssistant ? Colors.transparent : AppTokens.bg(appThemeMode.value == ThemeMode.dark),
-      body: _isAssistant
-        ? SafeArea(
-            child: Stack(
-              children: [
-                Positioned(
-                  bottom: 0,
-                  left: 0,
-                  right: 0,
-                  child: _buildMainContent(colorScheme),
-                ),
-              ],
+      child: Scaffold(
+        key: _scaffoldKey,
+        onDrawerChanged: (isOpen) {
+          if (isOpen) {
+            _fetchConversations();
+          }
+        },
+        drawer: _isAssistant ? null : _buildDrawer(),
+        endDrawer: _isAssistant ? null : _buildBgTasksSidebar(),
+        backgroundColor: _isAssistant ? Colors.transparent : AppTokens.bg(appThemeMode.value == ThemeMode.dark),
+        body: _isAssistant
+          ? SafeArea(
+              child: Stack(
+                children: [
+                  Positioned(
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    child: _buildMainContent(colorScheme),
+                  ),
+                ],
+              ),
+            )
+          : SafeArea(
+              child: Container(
+                width: double.infinity,
+                height: double.infinity,
+                color: Colors.transparent,
+                child: _buildMainContent(colorScheme),
+              ),
             ),
-          )
-        : SafeArea(
-            child: Container(
-              width: double.infinity,
-              height: double.infinity,
-              color: Colors.transparent,
-              child: _buildMainContent(colorScheme),
-            ),
-          ),
+      ),
     );
   }
 
@@ -3419,15 +3740,59 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
           ),
           child: Row(
             children: [
-              Builder(
-                builder: (BuildContext ctx) => IconButton(
-                  icon: Icon(Icons.menu_rounded, size: 22, color: AppTokens.textPrimary(appThemeMode.value == ThemeMode.dark)),
-                  onPressed: () => Scaffold.of(ctx).openDrawer(),
-                ),
+              IconButton(
+                icon: Icon(Icons.menu_rounded, size: 22, color: AppTokens.textPrimary(appThemeMode.value == ThemeMode.dark)),
+                onPressed: () => _scaffoldKey.currentState?.openDrawer(),
               ),
-              Text(
-                'VOILA VOICE',
-                style: GoogleFonts.spaceGrotesk(fontSize: 22, fontWeight: FontWeight.w800, letterSpacing: -1.0, color: AppTokens.textPrimary(appThemeMode.value == ThemeMode.dark)),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'VOILA VOICE',
+                    style: GoogleFonts.spaceGrotesk(fontSize: 20, fontWeight: FontWeight.w800, letterSpacing: -1.0, color: AppTokens.textPrimary(appThemeMode.value == ThemeMode.dark)),
+                  ),
+                  if (_currentConversationId.isNotEmpty)
+                    GestureDetector(
+                      onTap: () => _scaffoldKey.currentState?.openDrawer(),
+                      child: Container(
+                        margin: const EdgeInsets.only(top: 2),
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                        decoration: BoxDecoration(
+                          color: AppTokens.accentSecondary.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: AppTokens.accentSecondary.withOpacity(0.3)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 5,
+                              height: 5,
+                              decoration: const BoxDecoration(
+                                color: Color(0xFF10B981),
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 110),
+                              child: Text(
+                                _getActiveConversationTitle(),
+                                style: GoogleFonts.inter(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppTokens.accentSecondary,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
               ),
               const Spacer(),
               if (_currentMode.toUpperCase() == 'AGENT')
