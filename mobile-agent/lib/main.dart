@@ -880,7 +880,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   
   void _startNewConversation() {
     if (mounted) setState(() {
-      _currentConversationId = '';
+      _currentConversationId = 'conv_' + const Uuid().v4().substring(0, 8);
       _messagesAgent.clear();
       _messagesAgent.insert(0, {'text': 'Started a new conversation.', 'isUser': false});
     });
@@ -2039,6 +2039,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       'session_token': _sessionToken,
       'command': text,
       'mode': _currentMode,
+      'conversation_id': _currentConversationId,
       'graphify_enabled': _graphifyEnabled,
       'idempotency_key': const Uuid().v4(),
       'client_timestamp': DateTime.now().millisecondsSinceEpoch,

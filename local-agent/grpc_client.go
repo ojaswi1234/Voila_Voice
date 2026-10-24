@@ -458,9 +458,14 @@ func handleIncomingCommandViaGRPC(cmd *voilav1.ExecutionCommand, connData Connec
 	var err error
 
 	taskID := fmt.Sprintf("Agent-%x", time.Now().UnixNano()%0xFFFF)
+	effectiveConvID := getOrCreateConversationID(cmd.ConversationId)
 
 	if cmd.GraphifyEnabled {
 		output, err = executeGraphifyDAG(ctx, cmd.Command)
+		newConvID = effectiveConvID
+		if err == nil && output != "" {
+			saveCloudHistory(effectiveConvID, cmd.Command, output)
+		}
 	} else {
 		switch effectiveMode {
 		case "GROQ":
@@ -468,19 +473,19 @@ func handleIncomingCommandViaGRPC(cmd *voilav1.ExecutionCommand, connData Connec
 			if m == "" {
 				m = "openai/gpt-oss-120b"
 			}
-			output, err = executeGroqCommand(ctx, cmd.Command, connData.GroqAPIKey, m, cmd.ClientId, nil, taskID, cmd.ConversationId)
-			newConvID = cmd.ConversationId
+			output, err = executeGroqCommand(ctx, cmd.Command, connData.GroqAPIKey, m, cmd.ClientId, nil, taskID, effectiveConvID)
+			newConvID = effectiveConvID
 		case "OLLAMA":
 			ollamaModel := connData.OllamaModel
 			if ollamaModel == "" {
 				ollamaModel = "gemma4:31b"
 			}
 			ollamaSemaphore <- struct{}{}
-			output, err = executeOllamaCommand(ctx, cmd.Command, connData.OllamaBaseURL, ollamaModel, connData.OllamaAPIKey, nil, taskID, cmd.ConversationId)
+			output, err = executeOllamaCommand(ctx, cmd.Command, connData.OllamaBaseURL, ollamaModel, connData.OllamaAPIKey, nil, taskID, effectiveConvID)
 			<-ollamaSemaphore
-			newConvID = cmd.ConversationId
+			newConvID = effectiveConvID
 		default:
-			output, newConvID, err = executeCommand(ctx, cmd.Command, effectiveMode, cmd.ConversationId, "")
+			output, newConvID, err = executeCommand(ctx, cmd.Command, effectiveMode, effectiveConvID, "")
 		}
 	}
 

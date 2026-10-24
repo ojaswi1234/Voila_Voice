@@ -2407,10 +2407,7 @@ func startHTTPServer() {
 		command := getString("command")
 		mode := getString("mode")
 		clientID := getString("client_id")
-		conversationID := getString("conversation_id")
-		if conversationID == "" {
-			conversationID = "conv_" + generateUUID()[:8]
-		}
+		conversationID := getOrCreateConversationID(getString("conversation_id"))
 		modelName := getString("model")
 		graphifyEnabled := getBool("graphify_enabled")
 
@@ -2553,6 +2550,9 @@ if ($LASTEXITCODE -ne 0) {
 				jobRegistryMu.Unlock()
 
 				output, err := executeGraphifyDAG(ctx, command)
+				if err == nil && output != "" {
+					saveCloudHistory(conversationID, command, output)
+				}
 				
 				jobRegistryMu.Lock()
 				if j, ok := jobRegistry[jobID]; ok {
@@ -3002,6 +3002,26 @@ func listConversationsHandler(w http.ResponseWriter, r *http.Request) {
 					}
 					file.Close()
 				}
+				if title == "Unknown Task" {
+					cloudHistPath := filepath.Join(brainDir, id, "cloud_history.json")
+					if data, err := os.ReadFile(cloudHistPath); err == nil {
+						var turns []map[string]interface{}
+						if json.Unmarshal(data, &turns) == nil {
+							for _, turn := range turns {
+								if turn["role"] == "user" {
+									if c, ok := turn["content"].(string); ok {
+										title = strings.TrimSpace(c)
+										if len(title) > 40 {
+											title = title[:37] + "..."
+										}
+										title = strings.ReplaceAll(title, "\n", " ")
+										break
+									}
+								}
+							}
+						}
+					}
+				}
 				conversations = append(conversations, Conversation{ID: id, Title: title})
 			}
 		}
@@ -3053,6 +3073,22 @@ func executeCommand(ctx context.Context, command string, mode string, conversati
 			}
 		}
 		prompt = contextHeader + "\n" + prompt
+		if conversationID != "" {
+			priorTurns := loadCloudHistory(conversationID)
+			if len(priorTurns) > 0 {
+				var historyStr strings.Builder
+				historyStr.WriteString("\n[PREVIOUS CONVERSATION TURNS IN THIS SESSION]:\n")
+				for _, t := range priorTurns {
+					role, _ := t["role"].(string)
+					content, _ := t["content"].(string)
+					if len(content) > 600 {
+						content = content[:597] + "..."
+					}
+					historyStr.WriteString(fmt.Sprintf("%s: %s\n", strings.ToUpper(role), content))
+				}
+				prompt = historyStr.String() + "\n" + prompt
+			}
+		}
 
 
 		// Short preview of the user's command (max 60 chars)
@@ -3124,7 +3160,8 @@ func executeCommand(ctx context.Context, command string, mode string, conversati
 		if outStr == "" {
 			outStr = "(no output)"
 		}
-		return outStr, "", nil
+		saveCloudHistory(conversationID, command, outStr)
+		return outStr, conversationID, nil
 
 	} else {
 		decision := EvaluateTerminalCommand(command)
@@ -3211,6 +3248,7 @@ func executeCommand(ctx context.Context, command string, mode string, conversati
 	if outStr == "" {
 		outStr = "Command executed successfully with no output."
 	}
+	saveCloudHistory(conversationID, command, outStr)
 	return outStr, conversationID, nil
 }
 
@@ -5572,6 +5610,38 @@ func asyncUpdateSessionSummary(convID string, fullHistory []map[string]interface
 	}
 }
 
+var (
+	activeConvMu   sync.Mutex
+	lastActiveConv string
+	lastActiveTime time.Time
+)
+
+// getOrCreateConversationID ensures conversation continuity across turns.
+// If clientConvID is non-empty, it adopts it and updates the active conversation timestamp.
+// If clientConvID is empty, it reuses the last active conversation if it was active within 30 minutes.
+// Otherwise, it generates a fresh conversation ID: "conv_" + generateUUID()[:8].
+func getOrCreateConversationID(clientConvID string) string {
+	activeConvMu.Lock()
+	defer activeConvMu.Unlock()
+
+	clientConvID = strings.TrimSpace(clientConvID)
+	if clientConvID != "" && clientConvID != "new" {
+		lastActiveConv = clientConvID
+		lastActiveTime = time.Now()
+		return clientConvID
+	}
+
+	if clientConvID != "new" && lastActiveConv != "" && time.Since(lastActiveTime) < 30*time.Minute {
+		lastActiveTime = time.Now()
+		return lastActiveConv
+	}
+
+	newID := "conv_" + generateUUID()[:8]
+	lastActiveConv = newID
+	lastActiveTime = time.Now()
+	return newID
+}
+
 func loadCloudHistory(convID string) []map[string]interface{} {
 	var history []map[string]interface{}
 	if convID == "" {
@@ -6175,11 +6245,15 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 				} `json:"choices"`
 			}
 			if json.NewDecoder(summaryResp.Body).Decode(&summaryResult) == nil && len(summaryResult.Choices) > 0 {
-				return "[TASK LIMIT REACHED - PROGRESS SUMMARY]\n" + summaryResult.Choices[0].Message.Content, nil
+				finalAnswer := "[TASK LIMIT REACHED - PROGRESS SUMMARY]\n" + summaryResult.Choices[0].Message.Content
+				saveCloudHistory(convID, command, finalAnswer)
+				return finalAnswer, nil
 			}
 		}
 	}
-	return "(max tool iterations reached — consider breaking this task into smaller steps)", nil
+	fallback := "(max tool iterations reached — consider breaking this task into smaller steps)"
+	saveCloudHistory(convID, command, fallback)
+	return fallback, nil
 }
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ Ollama executor with tool-calling loop Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
@@ -6612,7 +6686,9 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 	}
 
 	logBGWarn("Ollama", "max iterations reached")
-	return "(max tool iterations reached)", nil
+	fallbackOllama := "(max tool iterations reached)"
+	saveCloudHistory(convID, command, fallbackOllama)
+	return fallbackOllama, nil
 }
 
 // Save/Load connection data
