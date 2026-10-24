@@ -77,6 +77,30 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
 final ValueNotifier<ThemeMode> appThemeMode = ValueNotifier(ThemeMode.light);
 
+Future<void> saveThemeMode(ThemeMode mode) async {
+  appThemeMode.value = mode;
+  try {
+    const storage = FlutterSecureStorage();
+    await storage.write(key: 'app_theme_mode', value: mode == ThemeMode.dark ? 'dark' : 'light');
+  } catch (e) {
+    debugPrint('Error persisting theme mode: $e');
+  }
+}
+
+Future<void> loadThemeMode() async {
+  try {
+    const storage = FlutterSecureStorage();
+    final saved = await storage.read(key: 'app_theme_mode');
+    if (saved == 'dark') {
+      appThemeMode.value = ThemeMode.dark;
+    } else if (saved == 'light') {
+      appThemeMode.value = ThemeMode.light;
+    }
+  } catch (e) {
+    debugPrint('Error loading saved theme mode: $e');
+  }
+}
+
 class AppTokens {
   static const Color accent = Color(0xFFFF4500); // Blazing Orange / Coral
   static const Color accentSecondary = Color(0xFF00E5FF); // Electric Cyan
@@ -116,6 +140,7 @@ void main() async {
     await Firebase.initializeApp();
   }
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+  await loadThemeMode();
   
   runApp(const VoiceCliApp());
 }
@@ -373,6 +398,506 @@ class _PulseWaveVisualizerState extends State<PulseWaveVisualizer> with SingleTi
                       widget.isSpeaking ? Icons.graphic_eq_rounded : Icons.mic_rounded,
                       color: Colors.white,
                       size: iconSize,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+
+
+
+// ─── LIGHTWEIGHT FLUID & RIPPLE PHYSICS ENGINE ───
+
+class FluidPhysicsScope extends InheritedWidget {
+  final Animation<double> animation;
+  final bool isListening;
+  final bool isSpeaking;
+  final bool isThinking;
+  final bool isDark;
+
+  const FluidPhysicsScope({
+    Key? key,
+    required this.animation,
+    required this.isListening,
+    required this.isSpeaking,
+    required this.isThinking,
+    required this.isDark,
+    required Widget child,
+  }) : super(key: key, child: child);
+
+  static FluidPhysicsScope? of(BuildContext context) {
+    return context.dependOnInheritedWidgetOfExactType<FluidPhysicsScope>();
+  }
+
+  @override
+  bool updateShouldNotify(FluidPhysicsScope oldWidget) {
+    return animation != oldWidget.animation ||
+        isListening != oldWidget.isListening ||
+        isSpeaking != oldWidget.isSpeaking ||
+        isThinking != oldWidget.isThinking ||
+        isDark != oldWidget.isDark;
+  }
+}
+
+class FloatingWaterElement extends StatelessWidget {
+  final double distanceFactor; // -1.0 (top) to +1.0 (bottom), 0.0 is center
+  final Widget child;
+
+  const FloatingWaterElement({
+    Key? key,
+    required this.distanceFactor,
+    required this.child,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    final scope = FluidPhysicsScope.of(context);
+    if (scope == null) return child;
+
+    return AnimatedBuilder(
+      animation: scope.animation,
+      builder: (context, _) {
+        final double t = scope.animation.value;
+        final bool active = scope.isListening || scope.isSpeaking || scope.isThinking;
+
+        // Dynamic wave physics parameters:
+        final double amp = active ? 3.5 : 1.2;
+        final double maxTilt = active ? 0.015 : 0.005;
+
+        // Wave propagation phase lag from mic center:
+        final double phase = (t * 2 * math.pi) - (distanceFactor.abs() * 2.2);
+
+        final double dy = math.sin(phase) * amp;
+        final double tilt = math.cos(phase) * maxTilt * (distanceFactor < 0 ? -1.0 : 1.0);
+        final double dx = math.sin(phase * 0.5) * (amp * 0.35);
+
+        return Transform(
+          transform: Matrix4.identity()
+            ..translate(dx, dy)
+            ..rotateZ(tilt),
+          alignment: Alignment.center,
+          child: child,
+        );
+      },
+    );
+  }
+}
+
+class FluidWaterOverlayContainer extends StatefulWidget {
+  final bool isDark;
+  final bool isListening;
+  final bool isSpeaking;
+  final bool isThinking;
+  final Widget child;
+
+  const FluidWaterOverlayContainer({
+    Key? key,
+    required this.isDark,
+    required this.isListening,
+    required this.isSpeaking,
+    required this.isThinking,
+    required this.child,
+  }) : super(key: key);
+
+  @override
+  _FluidWaterOverlayContainerState createState() => _FluidWaterOverlayContainerState();
+}
+
+class _FluidWaterOverlayContainerState extends State<FluidWaterOverlayContainer> with SingleTickerProviderStateMixin {
+  late AnimationController _fluidController;
+
+  @override
+  void initState() {
+    super.initState();
+    _fluidController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2800),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _fluidController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FluidPhysicsScope(
+      animation: _fluidController,
+      isListening: widget.isListening,
+      isSpeaking: widget.isSpeaking,
+      isThinking: widget.isThinking,
+      isDark: widget.isDark,
+      child: Stack(
+        children: [
+          // Background liquid canvas with water ripples and caustic refractions
+          Positioned.fill(
+            child: AnimatedBuilder(
+              animation: _fluidController,
+              builder: (context, _) {
+                return CustomPaint(
+                  painter: FluidLiquidPainter(
+                    progress: _fluidController.value,
+                    isListening: widget.isListening,
+                    isSpeaking: widget.isSpeaking,
+                    isThinking: widget.isThinking,
+                    isDark: widget.isDark,
+                  ),
+                );
+              },
+            ),
+          ),
+          // Content layer with floating buoyant elements
+          widget.child,
+        ],
+      ),
+    );
+  }
+}
+
+class FluidLiquidPainter extends CustomPainter {
+  final double progress;
+  final bool isListening;
+  final bool isSpeaking;
+  final bool isThinking;
+  final bool isDark;
+
+  FluidLiquidPainter({
+    required this.progress,
+    required this.isListening,
+    required this.isSpeaking,
+    required this.isThinking,
+    required this.isDark,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final bool active = isListening || isSpeaking || isThinking;
+    final Offset center = Offset(size.width / 2, size.height * 0.52);
+
+    // 1. Ambient fluid glow radiating from the mic position
+    final Color glowColor = isThinking
+        ? const Color(0xFFEF4444)
+        : (isSpeaking
+            ? AppTokens.accentSecondary
+            : (isListening ? AppTokens.accent : (isDark ? const Color(0xFF6366F1) : const Color(0xFF00E5FF))));
+
+    final Paint glowPaint = Paint()
+      ..shader = RadialGradient(
+        colors: [
+          glowColor.withOpacity(active ? (isDark ? 0.22 : 0.16) : (isDark ? 0.08 : 0.05)),
+          Colors.transparent,
+        ],
+        radius: 0.75,
+      ).createShader(Rect.fromCircle(center: center, radius: size.width * 0.65));
+    canvas.drawRect(Offset.zero & size, glowPaint);
+
+    // 2. Concentric harmonic water ripples with fluid turbulence
+    final double maxRadius = size.width * 0.62;
+    const double minRadius = 36.0;
+
+    for (int i = 0; i < 3; i++) {
+      final double ringProgress = (progress + (i / 3.0)) % 1.0;
+      final double r = minRadius + (ringProgress * (maxRadius - minRadius));
+      final double alpha = (1.0 - ringProgress) * (active ? 0.36 : 0.16);
+
+      final Path wavePath = Path();
+      const int segments = 28;
+      for (int s = 0; s <= segments; s++) {
+        final double theta = (s / segments) * 2 * math.pi;
+        final double wobble = math.sin((theta * 4) + (progress * 2 * math.pi)) * (active ? 3.0 : 1.2) +
+            math.cos((theta * 2) - (progress * 2 * math.pi)) * (active ? 1.8 : 0.8);
+        final double rad = r + wobble;
+        final double px = center.dx + rad * math.cos(theta);
+        final double py = center.dy + rad * math.sin(theta);
+        if (s == 0) {
+          wavePath.moveTo(px, py);
+        } else {
+          wavePath.lineTo(px, py);
+        }
+      }
+      wavePath.close();
+
+      // Specular highlight crest
+      final Paint crestPaint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.4
+        ..color = isDark
+            ? Colors.white.withOpacity(alpha * 0.70)
+            : Colors.white.withOpacity(alpha * 0.90);
+      canvas.drawPath(wavePath, crestPaint);
+
+      // Liquid refraction body
+      final Paint tintPaint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.8
+        ..color = glowColor.withOpacity(alpha * 0.35);
+      canvas.drawPath(wavePath, tintPaint);
+    }
+
+    // 3. Gentle fluid caustic contour lines across the water surface
+    for (int w = 0; w < 2; w++) {
+      final double waveY = (size.height * (0.32 + (w * 0.40))) + math.sin((progress * 2 * math.pi) + w) * 3.5;
+      final Path causticPath = Path();
+      causticPath.moveTo(0, waveY);
+      for (double x = 0; x <= size.width; x += 16) {
+        final double cy = waveY + math.sin((x / size.width * 3 * math.pi) + (progress * 2 * math.pi) + (w * 1.5)) * 3.8;
+        causticPath.lineTo(x, cy);
+      }
+      final Paint causticPaint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.0
+        ..color = (isDark ? Colors.white : Colors.cyanAccent).withOpacity(isDark ? 0.04 : 0.10);
+      canvas.drawPath(causticPath, causticPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant FluidLiquidPainter oldDelegate) {
+    return oldDelegate.progress != progress ||
+        oldDelegate.isListening != isListening ||
+        oldDelegate.isSpeaking != isSpeaking ||
+        oldDelegate.isThinking != isThinking ||
+        oldDelegate.isDark != isDark;
+  }
+}
+
+class Volumetric3DMicButton extends StatefulWidget {
+  final bool isListening;
+  final bool isSpeaking;
+  final bool isThinking;
+  final bool isDark;
+  final VoidCallback onTap;
+
+  const Volumetric3DMicButton({
+    Key? key,
+    required this.isListening,
+    required this.isSpeaking,
+    required this.isThinking,
+    required this.isDark,
+    required this.onTap,
+  }) : super(key: key);
+
+  @override
+  _Volumetric3DMicButtonState createState() => _Volumetric3DMicButtonState();
+}
+
+class _Volumetric3DMicButtonState extends State<Volumetric3DMicButton> with SingleTickerProviderStateMixin {
+  late AnimationController _pulseController;
+  bool _isPressed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    );
+    if (widget.isListening || widget.isSpeaking || widget.isThinking) {
+      _pulseController.repeat();
+    }
+  }
+
+  @override
+  void didUpdateWidget(Volumetric3DMicButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isListening || widget.isSpeaking || widget.isThinking) {
+      if (!_pulseController.isAnimating) {
+        _pulseController.repeat();
+      }
+    } else {
+      if (_pulseController.isAnimating) {
+        _pulseController.stop();
+        _pulseController.reset();
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool active = widget.isListening || widget.isSpeaking || widget.isThinking;
+    final Color activeAccent = widget.isThinking
+        ? const Color(0xFFEF4444)
+        : (widget.isSpeaking ? AppTokens.accentSecondary : AppTokens.accent);
+
+    const double outerBoxSize = 120.0;
+    const double domeSize = 64.0;
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: (_) => setState(() => _isPressed = true),
+      onTapUp: (_) {
+        setState(() => _isPressed = false);
+        widget.onTap();
+      },
+      onTapCancel: () => setState(() => _isPressed = false),
+      child: AnimatedBuilder(
+        animation: _pulseController,
+        builder: (context, _) {
+          final double t = _pulseController.value;
+
+          return SizedBox(
+            width: outerBoxSize,
+            height: outerBoxSize,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                // Layer 1: Expanding underwater shockwaves / ripples
+                if (active) ...[
+                  for (int i = 0; i < 2; i++)
+                    Transform.scale(
+                      scale: 1.0 + (((t + (i * 0.5)) % 1.0) * 0.75),
+                      child: Container(
+                        width: domeSize + 10,
+                        height: domeSize + 10,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: activeAccent.withOpacity((1.0 - ((t + (i * 0.5)) % 1.0)) * 0.35),
+                            width: 2.0,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+
+                // Layer 2: 3D Outer Bevel Ring & Deep Fluid Ambient Shadow
+                AnimatedScale(
+                  scale: _isPressed ? 0.92 : 1.0,
+                  duration: const Duration(milliseconds: 120),
+                  curve: Curves.easeOutCubic,
+                  child: Container(
+                    width: domeSize + 10,
+                    height: domeSize + 10,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: widget.isDark
+                            ? [
+                                Colors.white.withOpacity(0.35),
+                                Colors.white.withOpacity(0.05),
+                                Colors.black.withOpacity(0.65),
+                              ]
+                            : [
+                                Colors.white.withOpacity(0.95),
+                                Colors.white.withOpacity(0.40),
+                                const Color(0xFF94A3B8).withOpacity(0.60),
+                              ],
+                        stops: const [0.0, 0.4, 1.0],
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(widget.isDark ? 0.55 : 0.22),
+                          blurRadius: 18,
+                          offset: const Offset(0, 8),
+                        ),
+                        if (active)
+                          BoxShadow(
+                            color: activeAccent.withOpacity(0.45),
+                            blurRadius: 22,
+                            spreadRadius: 2 + (math.sin(t * 2 * math.pi) * 3),
+                          ),
+                      ],
+                    ),
+                    child: Center(
+                      // Layer 3: 3D Spherical Dome Body
+                      child: Container(
+                        width: domeSize,
+                        height: domeSize,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: RadialGradient(
+                            center: const Alignment(-0.35, -0.42),
+                            radius: 0.88,
+                            colors: widget.isDark
+                                ? (active
+                                    ? [
+                                        activeAccent.withOpacity(0.95),
+                                        activeAccent,
+                                        activeAccent.withRed(activeAccent.red ~/ 1.4).withGreen(activeAccent.green ~/ 1.4),
+                                        const Color(0xFF0F111A),
+                                      ]
+                                    : [
+                                        const Color(0xFF4A526D),
+                                        const Color(0xFF282D3E),
+                                        const Color(0xFF181B26),
+                                        const Color(0xFF0C0E14),
+                                      ])
+                                : (active
+                                    ? [
+                                        Colors.white,
+                                        activeAccent.withOpacity(0.92),
+                                        activeAccent,
+                                        activeAccent.withOpacity(0.85),
+                                      ]
+                                    : [
+                                        Colors.white,
+                                        const Color(0xFFF1F5F9),
+                                        const Color(0xFFCBD5E1),
+                                        const Color(0xFF94A3B8),
+                                      ]),
+                            stops: const [0.0, 0.32, 0.72, 1.0],
+                          ),
+                        ),
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            // Layer 4: Glass specular curved crest reflection
+                            Positioned(
+                              top: 6,
+                              child: Container(
+                                width: domeSize * 0.52,
+                                height: domeSize * 0.24,
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(100),
+                                  gradient: LinearGradient(
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                    colors: [
+                                      Colors.white.withOpacity(widget.isDark ? 0.45 : 0.85),
+                                      Colors.white.withOpacity(0.0),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+
+                            // Layer 5: Embossed 3D Center Icon
+                            Icon(
+                              widget.isThinking
+                                  ? Icons.stop_rounded
+                                  : (widget.isSpeaking ? Icons.graphic_eq_rounded : Icons.mic_rounded),
+                              color: active
+                                  ? Colors.white
+                                  : (widget.isDark ? Colors.white70 : const Color(0xFF334155)),
+                              size: 28,
+                              shadows: [
+                                Shadow(
+                                  color: Colors.black.withOpacity(0.55),
+                                  offset: const Offset(0, 1.5),
+                                  blurRadius: 4,
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -1005,6 +1530,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     _initBackground();
     _initTts();
     _loadSession();
+    loadThemeMode();
     _storage.read(key: 'security_phrase').then((val) => _cachedSecurityPhrase = val ?? '');
     _storage.read(key: 'quiet_hours_enabled').then((val) {
       if (val != null && mounted) {
@@ -4124,262 +4650,333 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xF2151821) : const Color(0xF7FFFFFF),
         borderRadius: BorderRadius.circular(32),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: isDark
+              ? [
+                  Colors.white.withOpacity(0.18),
+                  const Color(0xFF131722).withOpacity(0.72),
+                  const Color(0xFF0B0D14).withOpacity(0.88),
+                ]
+              : [
+                  Colors.white.withOpacity(0.85),
+                  const Color(0xFFF8FAFC).withOpacity(0.75),
+                  const Color(0xFFE2E8F0).withOpacity(0.85),
+                ],
+          stops: const [0.0, 0.40, 1.0],
+        ),
         border: Border.all(
-          color: isDark ? Colors.white.withOpacity(0.10) : Colors.black.withOpacity(0.08),
-          width: 1.2,
+          color: isDark ? Colors.white.withOpacity(0.20) : Colors.white.withOpacity(0.85),
+          width: 1.4,
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(isDark ? 0.6 : 0.2),
-            blurRadius: 32,
-            offset: const Offset(0, 10),
+            color: isDark ? Colors.black.withOpacity(0.55) : const Color(0xFF64748B).withOpacity(0.25),
+            blurRadius: 36,
+            offset: const Offset(0, 14),
+            spreadRadius: 2,
+          ),
+          BoxShadow(
+            color: (isDark ? const Color(0xFF6366F1) : const Color(0xFF00E5FF)).withOpacity(0.10),
+            blurRadius: 40,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(32),
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Top drag handle pill
-                Center(
-                  child: Container(
-                    width: 36,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: isDark ? Colors.white24 : Colors.black26,
-                      borderRadius: BorderRadius.circular(2),
+          filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+          child: FluidWaterOverlayContainer(
+            isDark: isDark,
+            isListening: _isListening,
+            isSpeaking: _isAiSpeaking,
+            isThinking: _isThinking,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // 1. Top drag handle pill (floating)
+                  FloatingWaterElement(
+                    distanceFactor: -1.0,
+                    child: Center(
+                      child: Container(
+                        width: 36,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: isDark ? Colors.white24 : Colors.black26,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 10),
+                  const SizedBox(height: 10),
 
-                // Device status capsule + dismiss button
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4.5),
-                      decoration: BoxDecoration(
-                        color: isDark ? const Color(0xFF1E222D) : const Color(0xFFF1F3F5),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: isDark ? Colors.white10 : Colors.black12,
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 7,
-                            height: 7,
-                            decoration: BoxDecoration(
-                              color: _isConnected ? const Color(0xFF10B981) : const Color(0xFFEF4444),
-                              shape: BoxShape.circle,
-                              boxShadow: [
-                                if (_isConnected)
-                                  BoxShadow(
-                                    color: const Color(0xFF10B981).withOpacity(0.5),
-                                    blurRadius: 6,
-                                    spreadRadius: 1,
-                                  ),
-                              ],
+                  // 2. Device status capsule + theme toggle + dismiss button (floating)
+                  FloatingWaterElement(
+                    distanceFactor: -0.75,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4.5),
+                          decoration: BoxDecoration(
+                            color: isDark ? const Color(0xFF1E222D).withOpacity(0.85) : const Color(0xFFF1F3F5).withOpacity(0.85),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: isDark ? Colors.white12 : Colors.black12,
                             ),
                           ),
-                          const SizedBox(width: 6),
-                          Text(
-                            activeDeviceName,
-                            style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: AppTokens.textPrimary(isDark)),
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            '• AGENT',
-                            style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w700, color: const Color(0xFF6366F1)),
-                          ),
-                        ],
-                      ),
-                    ),
-                    GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () {
-                        try { platform.invokeMethod('closeOverlay'); } catch (_) {}
-                        SystemNavigator.pop();
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.all(5),
-                        decoration: BoxDecoration(
-                          color: isDark ? Colors.white.withOpacity(0.06) : Colors.black.withOpacity(0.05),
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(Icons.close_rounded, size: 16, color: AppTokens.textSecondary(isDark)),
-                      ),
-                    ),
-                  ],
-                ),
-
-                // Screenshot Preview (if captured)
-                if (_temporaryAssistantImage != null) ...[
-                  const SizedBox(height: 10),
-                  GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () {
-                      showDialog(
-                        context: context,
-                        builder: (context) => Dialog(
-                          backgroundColor: Colors.transparent,
-                          insetPadding: EdgeInsets.zero,
-                          child: Stack(
-                            alignment: Alignment.center,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
                             children: [
-                              InteractiveViewer(
-                                panEnabled: true,
-                                boundaryMargin: const EdgeInsets.all(20),
-                                minScale: 0.5,
-                                maxScale: 4,
-                                child: Image.memory(
-                                  (() { try { return base64Decode(_temporaryAssistantImage!); } catch (_) { return Uint8List(0); } })(),
-                                  fit: BoxFit.contain,
+                              Container(
+                                width: 7,
+                                height: 7,
+                                decoration: BoxDecoration(
+                                  color: _isConnected ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+                                  shape: BoxShape.circle,
+                                  boxShadow: [
+                                    if (_isConnected)
+                                      BoxShadow(
+                                        color: const Color(0xFF10B981).withOpacity(0.5),
+                                        blurRadius: 6,
+                                        spreadRadius: 1,
+                                      ),
+                                  ],
                                 ),
                               ),
-                              Positioned(
-                                top: 40,
-                                right: 20,
-                                child: IconButton(
-                                  icon: const Icon(Icons.close, color: Colors.white, size: 30),
-                                  onPressed: () => Navigator.pop(context),
-                                ),
+                              const SizedBox(width: 6),
+                              Text(
+                                activeDeviceName,
+                                style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: AppTokens.textPrimary(isDark)),
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                '• AGENT',
+                                style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w700, color: const Color(0xFF6366F1)),
                               ),
                             ],
                           ),
                         ),
-                      );
-                    },
-                    child: Container(
-                      constraints: const BoxConstraints(maxHeight: 160),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.white.withOpacity(0.1)),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(16),
-                        child: Image.memory(
-                          (() { try { return base64Decode(_temporaryAssistantImage!); } catch (_) { return Uint8List(0); } })(),
-                          fit: BoxFit.contain,
-                          errorBuilder: (c, e, s) => const SizedBox.shrink(),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-
-                const SizedBox(height: 12),
-
-                // Live Transcription / Status subtitle
-                Container(
-                  constraints: const BoxConstraints(maxHeight: 70),
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: SingleChildScrollView(
-                    physics: const BouncingScrollPhysics(),
-                    child: Text(
-                      _currentAiSubtitle.isNotEmpty
-                          ? _currentAiSubtitle
-                          : (_isListening
-                              ? 'Listening...'
-                              : (_isThinking
-                                  ? 'Thinking...'
-                                  : (_isAiSpeaking ? 'AI speaking...' : 'Ready for voice or text prompt'))),
-                      style: GoogleFonts.outfit(
-                        fontSize: 16,
-                        height: 1.35,
-                        fontWeight: FontWeight.w600,
-                        color: _currentAiSubtitle.isNotEmpty ? AppTokens.textPrimary(isDark) : AppTokens.textSecondary(isDark),
-                        shadows: [
-                          Shadow(color: isDark ? Colors.black87 : Colors.white70, blurRadius: 6),
-                        ],
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 10),
-
-                // Glowing AI Sphere / PulseWaveVisualizer (Decreased size per user request)
-                Center(
-                  child: PulseWaveVisualizer(
-                    size: 130.0,
-                    coreSize: 64.0,
-                    isListening: _isListening,
-                    isSpeaking: _isAiSpeaking,
-                    onTap: () {
-                      if (_isListening) {
-                        _stopListening();
-                      } else if (_isThinking) {
-                        _cancelBackendTask();
-                      } else {
-                        setState(() { _isLiveSession = true; });
-                        _startListening();
-                      }
-                    },
-                  ),
-                ),
-
-                const SizedBox(height: 12),
-
-                // Quick Action Context Chips
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  physics: const BouncingScrollPhysics(),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      _buildOverlayActionChip(
-                        icon: Icons.camera_alt_outlined,
-                        label: 'Screenshot',
-                        onTap: () {
-                          _controller.text = "__SCREENSHOT__";
-                          _sendMessage();
-                        },
-                        isDark: isDark,
-                      ),
-                      const SizedBox(width: 8),
-                      _buildOverlayActionChip(
-                        icon: Icons.bolt_outlined,
-                        label: 'Summarize',
-                        onTap: () {
-                          _controller.text = "Summarize current session";
-                          _sendMessage();
-                        },
-                        isDark: isDark,
-                      ),
-                      if (_isThinking || _isListening) ...[
-                        const SizedBox(width: 8),
-                        _buildOverlayActionChip(
-                          icon: Icons.stop_rounded,
-                          label: 'Stop',
-                          isDanger: true,
-                          onTap: () {
-                            _cancelBackendTask();
-                            _stopListening();
-                          },
-                          isDark: isDark,
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: () {
+                                saveThemeMode(isDark ? ThemeMode.light : ThemeMode.dark);
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.all(5),
+                                margin: const EdgeInsets.only(right: 6),
+                                decoration: BoxDecoration(
+                                  color: isDark ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.06),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: isDark ? Colors.white10 : Colors.black12),
+                                ),
+                                child: Icon(
+                                  isDark ? Icons.light_mode_rounded : Icons.dark_mode_rounded,
+                                  size: 15,
+                                  color: isDark ? Colors.amberAccent : AppTokens.textPrimary(isDark),
+                                ),
+                              ),
+                            ),
+                            GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: () {
+                                try { platform.invokeMethod('closeOverlay'); } catch (_) {}
+                                SystemNavigator.pop();
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.all(5),
+                                decoration: BoxDecoration(
+                                  color: isDark ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.06),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: isDark ? Colors.white10 : Colors.black12),
+                                ),
+                                child: Icon(Icons.close_rounded, size: 15, color: AppTokens.textSecondary(isDark)),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
-                    ],
+                    ),
                   ),
-                ),
 
-                const SizedBox(height: 14),
+                  // 3. Screenshot Preview (if captured) (floating)
+                  if (_temporaryAssistantImage != null) ...[
+                    const SizedBox(height: 10),
+                    FloatingWaterElement(
+                      distanceFactor: -0.45,
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () {
+                          showDialog(
+                            context: context,
+                            builder: (context) => Dialog(
+                              backgroundColor: Colors.transparent,
+                              insetPadding: EdgeInsets.zero,
+                              child: Stack(
+                                alignment: Alignment.center,
+                                children: [
+                                  InteractiveViewer(
+                                    panEnabled: true,
+                                    boundaryMargin: const EdgeInsets.all(20),
+                                    minScale: 0.5,
+                                    maxScale: 4,
+                                    child: Image.memory(
+                                      (() { try { return base64Decode(_temporaryAssistantImage!); } catch (_) { return Uint8List(0); } })(),
+                                      fit: BoxFit.contain,
+                                    ),
+                                  ),
+                                  Positioned(
+                                    top: 40,
+                                    right: 20,
+                                    child: IconButton(
+                                      icon: const Icon(Icons.close, color: Colors.white, size: 30),
+                                      onPressed: () => Navigator.pop(context),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                        child: Container(
+                          constraints: const BoxConstraints(maxHeight: 160),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: Colors.white.withOpacity(0.1)),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(16),
+                            child: Image.memory(
+                              (() { try { return base64Decode(_temporaryAssistantImage!); } catch (_) { return Uint8List(0); } })(),
+                              fit: BoxFit.contain,
+                              errorBuilder: (c, e, s) => const SizedBox.shrink(),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
 
-                // Floating capsule input bar
-                _buildInputArea(colorScheme),
-              ],
+                  const SizedBox(height: 12),
+
+                  // 4. Live Transcription / Status subtitle (floating)
+                  FloatingWaterElement(
+                    distanceFactor: -0.25,
+                    child: Container(
+                      constraints: const BoxConstraints(maxHeight: 70),
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: SingleChildScrollView(
+                        physics: const BouncingScrollPhysics(),
+                        child: Text(
+                          _currentAiSubtitle.isNotEmpty
+                              ? _currentAiSubtitle
+                              : (_isListening
+                                  ? 'Listening...'
+                                  : (_isThinking
+                                      ? 'Thinking...'
+                                      : (_isAiSpeaking ? 'AI speaking...' : 'Ready for voice or text prompt'))),
+                          style: GoogleFonts.outfit(
+                            fontSize: 16,
+                            height: 1.35,
+                            fontWeight: FontWeight.w600,
+                            color: _currentAiSubtitle.isNotEmpty ? AppTokens.textPrimary(isDark) : AppTokens.textSecondary(isDark),
+                            shadows: [
+                              Shadow(color: isDark ? Colors.black87 : Colors.white70, blurRadius: 6),
+                            ],
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 10),
+
+                  // 5. Center 3D Mic Button with underwater ripples & tactile volumetric depth
+                  Center(
+                    child: Volumetric3DMicButton(
+                      isListening: _isListening,
+                      isSpeaking: _isAiSpeaking,
+                      isThinking: _isThinking,
+                      isDark: isDark,
+                      onTap: () {
+                        if (_isListening) {
+                          _stopListening();
+                        } else if (_isThinking) {
+                          _cancelBackendTask();
+                        } else {
+                          setState(() { _isLiveSession = true; });
+                          _startListening();
+                        }
+                      },
+                    ),
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  // 6. Quick Action Context Chips (floating)
+                  FloatingWaterElement(
+                    distanceFactor: 0.35,
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      physics: const BouncingScrollPhysics(),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          _buildOverlayActionChip(
+                            icon: Icons.camera_alt_outlined,
+                            label: 'Screenshot',
+                            onTap: () {
+                              _controller.text = "__SCREENSHOT__";
+                              _sendMessage();
+                            },
+                            isDark: isDark,
+                          ),
+                          const SizedBox(width: 8),
+                          _buildOverlayActionChip(
+                            icon: Icons.bolt_outlined,
+                            label: 'Summarize',
+                            onTap: () {
+                              _controller.text = "Summarize current session";
+                              _sendMessage();
+                            },
+                            isDark: isDark,
+                          ),
+                          if (_isThinking || _isListening) ...[
+                            const SizedBox(width: 8),
+                            _buildOverlayActionChip(
+                              icon: Icons.stop_rounded,
+                              label: 'Stop',
+                              isDanger: true,
+                              onTap: () {
+                                _cancelBackendTask();
+                                _stopListening();
+                              },
+                              isDark: isDark,
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 14),
+
+                  // 7. Floating capsule input bar (floating)
+                  FloatingWaterElement(
+                    distanceFactor: 0.75,
+                    child: _buildInputArea(colorScheme),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -4466,9 +5063,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
               IconButton(
                 icon: Icon(appThemeMode.value == ThemeMode.dark ? Icons.light_mode_rounded : Icons.dark_mode_rounded, size: 22, color: AppTokens.textPrimary(appThemeMode.value == ThemeMode.dark)),
                 onPressed: () {
-                  setState(() {
-                    appThemeMode.value = appThemeMode.value == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
-                  });
+                  saveThemeMode(appThemeMode.value == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark);
                 },
               ),
               const SizedBox(width: 4),
@@ -5569,24 +6164,25 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            // Screenshot Camera Button (compact)
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () {
-                _controller.text = "__SCREENSHOT__";
-                _sendMessage();
-              },
-              child: Container(
-                margin: const EdgeInsets.only(bottom: 2, right: 6),
-                padding: const EdgeInsets.all(9),
-                decoration: BoxDecoration(
-                  color: AppTokens.cardAlt(isDark),
-                  shape: BoxShape.circle,
-                  border: Border.all(color: AppTokens.border(isDark)),
+            // Screenshot Camera Button (compact) - only in main app, overlay uses quick chip
+            if (!_isAssistant)
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  _controller.text = "__SCREENSHOT__";
+                  _sendMessage();
+                },
+                child: Container(
+                  margin: const EdgeInsets.only(bottom: 2, right: 6),
+                  padding: const EdgeInsets.all(9),
+                  decoration: BoxDecoration(
+                    color: AppTokens.cardAlt(isDark),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: AppTokens.border(isDark)),
+                  ),
+                  child: Icon(Icons.camera_alt_rounded, color: AppTokens.textSecondary(isDark), size: 18),
                 ),
-                child: Icon(Icons.camera_alt_rounded, color: AppTokens.textSecondary(isDark), size: 18),
               ),
-            ),
             
             // Text Input Field (spans full available width)
             Expanded(
@@ -5594,9 +6190,11 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                 margin: const EdgeInsets.only(bottom: 2),
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
                 decoration: BoxDecoration(
-                  color: AppTokens.cardAlt(isDark),
+                  color: _isAssistant
+                      ? (isDark ? Colors.white.withOpacity(0.06) : Colors.black.withOpacity(0.04))
+                      : AppTokens.cardAlt(isDark),
                   borderRadius: BorderRadius.circular(100),
-                  border: Border.all(color: AppTokens.border(isDark)),
+                  border: Border.all(color: isDark ? Colors.white12 : Colors.black12),
                 ),
                 child: TextField(
                   controller: _controller,
@@ -5617,51 +6215,57 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
               ),
             ),
 
-            const SizedBox(width: 6),
-
             // Send / Mic Button with dynamic listener (compact)
             ValueListenableBuilder<TextEditingValue>(
               valueListenable: _controller,
               builder: (context, val, _) {
                 final hasText = val.text.trim().isNotEmpty;
-                return GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () {
-                    if (_isThinking) {
-                      _cancelBackendTask();
-                    } else if (hasText) {
-                      _sendMessage();
-                    } else {
-                      setState(() { _isLiveSession = true; _showTextInput = false; });
-                      _startListening();
-                    }
-                  },
-                  child: Container(
-                    margin: const EdgeInsets.only(bottom: 2),
-                    padding: const EdgeInsets.all(9),
-                    decoration: BoxDecoration(
-                      color: _isThinking
-                          ? const Color(0xFFEF4444)
-                          : (hasText
-                              ? AppTokens.accentSecondary
-                              : AppTokens.accent),
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: (_isThinking ? const Color(0xFFEF4444) : (hasText ? AppTokens.accentSecondary : AppTokens.accent)).withOpacity(0.4),
-                          blurRadius: 10,
-                          offset: const Offset(0, 3),
-                        )
-                      ],
-                    ),
-                    child: Icon(
-                      _isThinking 
-                          ? Icons.stop_rounded 
-                          : (hasText 
-                              ? Icons.send_rounded 
-                              : Icons.mic_rounded),
-                      color: hasText ? const Color(0xFF09090B) : Colors.white,
-                      size: 18,
+                // In assistant overlay: remove duplicate mic button; only display button if text is entered (Send) or thinking (Stop)
+                if (_isAssistant && !hasText && !_isThinking) {
+                  return const SizedBox.shrink();
+                }
+
+                return Padding(
+                  padding: const EdgeInsets.only(left: 6),
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () {
+                      if (_isThinking) {
+                        _cancelBackendTask();
+                      } else if (hasText) {
+                        _sendMessage();
+                      } else {
+                        setState(() { _isLiveSession = true; _showTextInput = false; });
+                        _startListening();
+                      }
+                    },
+                    child: Container(
+                      margin: const EdgeInsets.only(bottom: 2),
+                      padding: const EdgeInsets.all(9),
+                      decoration: BoxDecoration(
+                        color: _isThinking
+                            ? const Color(0xFFEF4444)
+                            : (hasText
+                                ? AppTokens.accentSecondary
+                                : AppTokens.accent),
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: (_isThinking ? const Color(0xFFEF4444) : (hasText ? AppTokens.accentSecondary : AppTokens.accent)).withOpacity(0.4),
+                            blurRadius: 10,
+                            offset: const Offset(0, 3),
+                          )
+                        ],
+                      ),
+                      child: Icon(
+                        _isThinking 
+                            ? Icons.stop_rounded 
+                            : (hasText 
+                                ? Icons.send_rounded 
+                                : Icons.mic_rounded),
+                        color: hasText ? const Color(0xFF09090B) : Colors.white,
+                        size: 18,
+                      ),
                     ),
                   ),
                 );
