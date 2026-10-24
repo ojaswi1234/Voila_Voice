@@ -86,6 +86,7 @@ class AppTokens {
   
   static Color bg(bool isDark) => isDark ? const Color(0xFF09090B) : const Color(0xFFF4F4F5);
   static Color card(bool isDark) => isDark ? const Color(0xFF18181B) : Colors.white;
+  static Color surface(bool isDark) => card(isDark);
   static Color cardAlt(bool isDark) => isDark ? const Color(0xFF27272A) : const Color(0xFFE4E4E7);
   
   static Color textPrimary(bool isDark) => isDark ? const Color(0xFFFAFAFA) : const Color(0xFF09090B);
@@ -1039,7 +1040,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: AppTokens.surface(appThemeMode.value == ThemeMode.dark),
+        backgroundColor: AppTokens.card(appThemeMode.value == ThemeMode.dark),
         title: Text('Delete Conversation?', style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.w700)),
         content: Text('Are you sure you want to delete "$title"? This cannot be undone.', style: GoogleFonts.inter(fontSize: 14)),
         actions: [
