@@ -518,6 +518,10 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     if (_currentMode.toUpperCase() == 'AGENT') {
       _messagesAgent.add(msg);
       if (_messagesAgent.length > 200) _messagesAgent.removeAt(0);
+      if (_currentConversationId.isNotEmpty) {
+        _conversationMessagesCache[_currentConversationId] = List.from(_messagesAgent);
+        _saveConversationHistoryToDiskCache(_currentConversationId, _messagesAgent);
+      }
     } else {
       _messagesShell.add(msg);
       if (_messagesShell.length > 200) _messagesShell.removeAt(0);
@@ -552,6 +556,80 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   Map<String, dynamic> _savedDevices = {};
   String _currentConversationId = '';
   List<Map<String, String>> _conversations = [];
+  final Map<String, List<Map<String, dynamic>>> _conversationMessagesCache = {};
+
+  Future<File> _getCacheFile(String filename) async {
+    final dir = await getApplicationDocumentsDirectory();
+    return File('${dir.path}/$filename');
+  }
+
+  Future<void> _saveConversationsToDiskCache(List<dynamic> list) async {
+    try {
+      final file = await _getCacheFile('conversations_index_cache.json');
+      await file.writeAsString(jsonEncode(list));
+    } catch (e) {
+      debugPrint('Failed to save conversations to disk cache: $e');
+    }
+  }
+
+  Future<void> _loadConversationsFromDiskCache() async {
+    try {
+      final file = await _getCacheFile('conversations_index_cache.json');
+      if (await file.exists()) {
+        final raw = await file.readAsString();
+        final decoded = jsonDecode(raw);
+        if (decoded is List && mounted) {
+          setState(() {
+            _conversations = decoded.map((x) {
+              try {
+                return Map<String, String>.from(
+                  (x as Map).map((k, v) => MapEntry(k.toString(), v?.toString() ?? '')));
+              } catch (_) { return <String, String>{}; }
+            }).where((m) => m.isNotEmpty && m.containsKey('id')).toList();
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Failed to load conversations from disk cache: $e');
+    }
+  }
+
+  Future<void> _saveConversationHistoryToDiskCache(String convId, List<Map<String, dynamic>> msgs) async {
+    try {
+      final file = await _getCacheFile('conv_history_${convId}.json');
+      await file.writeAsString(jsonEncode(msgs));
+    } catch (e) {
+      debugPrint('Failed to save conv history cache: $e');
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _loadConversationHistoryFromDiskCache(String convId) async {
+    try {
+      final file = await _getCacheFile('conv_history_${convId}.json');
+      if (await file.exists()) {
+        final raw = await file.readAsString();
+        final decoded = jsonDecode(raw);
+        if (decoded is List) {
+          final list = decoded.map((x) => Map<String, dynamic>.from(x as Map)).toList();
+          _conversationMessagesCache[convId] = list;
+          return list;
+        }
+      }
+    } catch (e) {
+      debugPrint('Failed to load conv history cache: $e');
+    }
+    return [];
+  }
+
+  Future<void> _removeConversationFromCache(String convId) async {
+    _conversationMessagesCache.remove(convId);
+    try {
+      final file = await _getCacheFile('conv_history_${convId}.json');
+      if (await file.exists()) {
+        await file.delete();
+      }
+    } catch (_) {}
+  }
   List<Map<String, dynamic>> _securityAlerts = [];
   Map<String, dynamic> _lastTokenUsage = {};
   
@@ -760,6 +838,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _loadConversationsFromDiskCache();
     
     // FIX Bug #3: This is now the PRIMARY mechanism for AssistantActivity to signal
     // overlay mode. AssistantActivity.configureFlutterEngine invokes "onIntentChanged"
@@ -887,13 +966,97 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     Navigator.pop(context); // close drawer
   }
   
-  void _resumeConversation(String id, String title) {
-    if (mounted) setState(() {
+  void _resumeConversation(String id, String title) async {
+    if (!mounted) return;
+    setState(() {
       _currentConversationId = id;
-      _messagesAgent.clear();
-      _messagesAgent.insert(0, {'text': 'Resumed conversation: ', 'isUser': false});
     });
+
+    // 1. Instant L1 memory cache hit (0ms)
+    if (_conversationMessagesCache.containsKey(id) && _conversationMessagesCache[id]!.isNotEmpty) {
+      setState(() {
+        _messagesAgent.clear();
+        _messagesAgent.addAll(_conversationMessagesCache[id]!);
+      });
+      _scrollToBottom();
+    } else {
+      // 2. Instant L2 disk cache check (<2ms)
+      final diskMsgs = await _loadConversationHistoryFromDiskCache(id);
+      if (diskMsgs.isNotEmpty && mounted && _currentConversationId == id) {
+        setState(() {
+          _messagesAgent.clear();
+          _messagesAgent.addAll(diskMsgs);
+        });
+        _scrollToBottom();
+      } else {
+        setState(() {
+          _messagesAgent.clear();
+          _messagesAgent.insert(0, {
+            'type': 'system',
+            'content': 'Loading messages for "$title"...',
+            'timestamp': DateTime.now().toString(),
+          });
+        });
+      }
+    }
+
+    // 3. Network fetch to ensure we have latest turns from server
+    if (_channel != null && _isConnected) {
+      final msg = jsonEncode({
+        "type": "get_conversation_messages",
+        "device_id": _activeDevice,
+        "conversation_id": id,
+        "session_token": _sessionToken,
+      });
+      _channel?.sink.add(msg);
+    }
+
     Navigator.pop(context); // close drawer
+  }
+
+  void _deleteConversation(String id) {
+    if (_channel != null && _isConnected) {
+      final msg = jsonEncode({
+        "type": "delete_conversation",
+        "device_id": _activeDevice,
+        "conversation_id": id,
+        "session_token": _sessionToken,
+      });
+      _channel?.sink.add(msg);
+    }
+    _removeConversationFromCache(id);
+    if (mounted) {
+      setState(() {
+        _conversations.removeWhere((c) => c['id'] == id);
+        if (_currentConversationId == id) {
+          _startNewConversation();
+        }
+      });
+    }
+  }
+
+  void _confirmDeleteConversation(String id, String title) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTokens.surface(appThemeMode.value == ThemeMode.dark),
+        title: Text('Delete Conversation?', style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.w700)),
+        content: Text('Are you sure you want to delete "$title"? This cannot be undone.', style: GoogleFonts.inter(fontSize: 14)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _deleteConversation(id);
+            },
+            child: const Text('Delete', style: TextStyle(color: Colors.redAccent)),
+          ),
+        ],
+      ),
+    );
   }
   void _loadSession() async {
     final savedToken = await _storage.read(key: 'session_token');
@@ -1402,6 +1565,59 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                   } catch (_) { return <String, String>{}; }
                 }).where((m) => m.isNotEmpty).toList();
               });
+              _saveConversationsToDiskCache(parsedData);
+            } else if (jsonResponse is Map && jsonResponse['type'] == 'conversation_messages') {
+              final convId = jsonResponse['conversation_id']?.toString() ?? '';
+              Map<String, dynamic> detailMap = {};
+              var payload = jsonResponse['data'] ?? jsonResponse['payload'];
+              if (payload is Map && payload['encrypted'] != null) {
+                final String phrase = _cachedSecurityPhrase;
+                String dec = CryptoUtils.decrypt(payload['encrypted'], phrase);
+                try {
+                  detailMap = jsonDecode(dec) as Map<String, dynamic>;
+                } catch(e) {}
+              } else if (payload is Map<String, dynamic>) {
+                detailMap = payload;
+              } else if (jsonResponse['messages'] != null) {
+                detailMap = Map<String, dynamic>.from(jsonResponse);
+              }
+
+              final rawMsgs = detailMap['messages'] as List<dynamic>? ?? [];
+              final loadedMessages = rawMsgs.map((m) {
+                if (m is Map) {
+                  return Map<String, dynamic>.from(m);
+                }
+                return <String, dynamic>{};
+              }).where((m) => m.isNotEmpty).toList();
+
+              if (convId.isNotEmpty) {
+                _conversationMessagesCache[convId] = loadedMessages;
+                _saveConversationHistoryToDiskCache(convId, loadedMessages);
+              }
+
+              if (mounted && convId == _currentConversationId) {
+                setState(() {
+                  _messagesAgent.clear();
+                  _messagesAgent.addAll(loadedMessages);
+                  if (_messagesAgent.isEmpty) {
+                    _messagesAgent.insert(0, {'text': 'Conversation is ready.', 'isUser': false});
+                  }
+                });
+                _scrollToBottom();
+              }
+            } else if (jsonResponse is Map && jsonResponse['type'] == 'conversation_deleted') {
+              final deletedId = jsonResponse['conversation_id']?.toString() ?? '';
+              if (deletedId.isNotEmpty) {
+                _removeConversationFromCache(deletedId);
+                if (mounted) {
+                  setState(() {
+                    _conversations.removeWhere((c) => c['id'] == deletedId);
+                    if (_currentConversationId == deletedId) {
+                      _startNewConversation();
+                    }
+                  });
+                }
+              }
             } else if (jsonResponse is Map && jsonResponse['type'] == 'surveillance_alert') {
               final alert = jsonResponse['alert'];
               final reason = alert != null ? (alert['reason'] ?? 'Intruder detected!') : 'Intruder detected!';
@@ -2552,11 +2768,11 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                 const SizedBox(width: 12),
                 Text('VOILA VOICE', style: GoogleFonts.spaceGrotesk(color: AppTokens.textPrimary(isDark), fontSize: 20, fontWeight: FontWeight.w800, letterSpacing: -1.0)),
                 const Spacer(),
-                if (_currentMode.toUpperCase() == 'AGENT')
-                  IconButton(
-                    icon: Icon(Icons.refresh, color: AppTokens.textSecondary(isDark)),
-                    onPressed: _fetchConversations,
-                  )
+                IconButton(
+                  icon: Icon(Icons.refresh, color: AppTokens.textSecondary(isDark)),
+                  onPressed: _fetchConversations,
+                  tooltip: 'Sync Conversations',
+                )
               ],
             ),
           ),
@@ -2565,20 +2781,18 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
             child: ListView(
               padding: const EdgeInsets.symmetric(vertical: 8),
               children: [
-                if (_currentMode.toUpperCase() == 'AGENT') ...[
-                  ListTile(
-                    leading: const Icon(Icons.add_circle_rounded, color: AppTokens.accentSecondary),
-                    title: Text('New Conversation', style: GoogleFonts.inter(color: AppTokens.textPrimary(isDark), fontWeight: FontWeight.w600)),
-                    onTap: () {
-                      Navigator.pop(context);
-                      _startNewConversation();
-                    },
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    child: Divider(color: AppTokens.border(isDark)),
-                  ),
-                ],
+                ListTile(
+                  leading: const Icon(Icons.add_circle_rounded, color: AppTokens.accentSecondary),
+                  title: Text('New Conversation', style: GoogleFonts.inter(color: AppTokens.textPrimary(isDark), fontWeight: FontWeight.w600)),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _startNewConversation();
+                  },
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: Divider(color: AppTokens.border(isDark)),
+                ),
                 
                 _buildDrawerItem(Icons.dashboard_customize_rounded, 'Artifacts', () async {
                   if (!await _ensureUnlocked()) return;
@@ -2667,32 +2881,75 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                   ),
                 ),
                 
-                if (_currentMode.toUpperCase() == 'AGENT' && _conversations.isNotEmpty) ...[
+                if (_conversations.isNotEmpty) ...[
                   Padding(
                     padding: const EdgeInsets.only(left: 20, top: 16, bottom: 8),
-                    child: Text('RECENT CHATS', style: GoogleFonts.spaceGrotesk(color: AppTokens.textSecondary(isDark), fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 1.2)),
+                    child: Row(
+                      children: [
+                        Text('RECENT CHATS', style: GoogleFonts.spaceGrotesk(color: AppTokens.textSecondary(isDark), fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 1.2)),
+                        const Spacer(),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: AppTokens.accentSecondary.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text('${_conversations.length}', style: GoogleFonts.inter(color: AppTokens.accentSecondary, fontSize: 10, fontWeight: FontWeight.w700)),
+                        ),
+                        const SizedBox(width: 16),
+                      ],
+                    ),
                   ),
                   ..._conversations.map((conv) {
                     final isSelected = _currentConversationId == conv['id'];
-                    return ListTile(
-                      dense: true,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 20),
-                      tileColor: isSelected ? AppTokens.accentSecondary.withOpacity(0.15) : null,
-                      leading: Icon(Icons.chat_bubble_rounded, size: 18, color: isSelected ? AppTokens.accentSecondary : AppTokens.textSecondary(isDark)),
-                      title: Text(
-                        conv['title'] ?? 'Unknown', 
-                        style: GoogleFonts.inter(
-                          color: isSelected ? AppTokens.textPrimary(isDark) : AppTokens.textSecondary(isDark),
-                          fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                          fontSize: 14,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                    final title = conv['title'] ?? 'New Conversation';
+                    final snippet = conv['last_snippet'] ?? '';
+
+                    return Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: isSelected ? AppTokens.accentSecondary.withOpacity(0.16) : Colors.transparent,
+                        borderRadius: BorderRadius.circular(10),
+                        border: isSelected ? Border.all(color: AppTokens.accentSecondary.withOpacity(0.5), width: 1) : null,
                       ),
-                      onTap: () {
-                        Navigator.pop(context);
-                        _resumeConversation(conv['id']!, conv['title']!);
-                      },
+                      child: ListTile(
+                        dense: true,
+                        contentPadding: const EdgeInsets.only(left: 12, right: 4),
+                        leading: Icon(
+                          isSelected ? Icons.auto_awesome : Icons.chat_bubble_outline_rounded,
+                          size: 18,
+                          color: isSelected ? AppTokens.accentSecondary : AppTokens.textSecondary(isDark),
+                        ),
+                        title: Text(
+                          title, 
+                          style: GoogleFonts.inter(
+                            color: isSelected ? AppTokens.textPrimary(isDark) : AppTokens.textSecondary(isDark),
+                            fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                            fontSize: 13.5,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        subtitle: snippet.isNotEmpty
+                            ? Text(
+                                snippet,
+                                style: GoogleFonts.inter(
+                                  color: AppTokens.textSecondary(isDark).withOpacity(0.7),
+                                  fontSize: 11,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              )
+                            : null,
+                        trailing: IconButton(
+                          icon: Icon(Icons.delete_outline_rounded, size: 16, color: AppTokens.textSecondary(isDark).withOpacity(0.5)),
+                          tooltip: 'Delete Chat',
+                          onPressed: () => _confirmDeleteConversation(conv['id']!, title),
+                        ),
+                        onTap: () {
+                          _resumeConversation(conv['id']!, title);
+                        },
+                      ),
                     );
                   }).toList(),
                 ],

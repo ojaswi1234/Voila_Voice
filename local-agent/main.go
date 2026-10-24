@@ -2000,6 +2000,8 @@ func startHTTPServer() {
 
 	mux.HandleFunc("/models", listModelsHandler)
 	mux.HandleFunc("/conversations", listConversationsHandler)
+	mux.HandleFunc("/conversation/messages", conversationMessagesHandler)
+	mux.HandleFunc("/conversation/delete", conversationDeleteHandler)
 	mux.HandleFunc("/jobs", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Content-Type", "application/json")
@@ -2936,8 +2938,50 @@ func listModelsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 type Conversation struct {
-	ID    string `json:"id"`
-	Title string `json:"title"`
+	ID           string `json:"id"`
+	Title        string `json:"title"`
+	UpdatedAt    int64  `json:"updated_at,omitempty"`
+	CreatedAt    int64  `json:"created_at,omitempty"`
+	MessageCount int    `json:"message_count,omitempty"`
+	LastSnippet  string `json:"last_snippet,omitempty"`
+}
+
+type ConversationMetadata struct {
+	ID           string `json:"id"`
+	Title        string `json:"title"`
+	CreatedAt    int64  `json:"created_at"`
+	UpdatedAt    int64  `json:"updated_at"`
+	MessageCount int    `json:"message_count"`
+	LastSnippet  string `json:"last_snippet"`
+}
+
+func loadConversationMetadata(convID string) (ConversationMetadata, bool) {
+	brainDir := getBrainDir()
+	metaPath := filepath.Join(brainDir, convID, "metadata.json")
+	data, err := os.ReadFile(metaPath)
+	if err != nil {
+		return ConversationMetadata{}, false
+	}
+	var meta ConversationMetadata
+	if json.Unmarshal(data, &meta) == nil && meta.ID != "" {
+		return meta, true
+	}
+	return ConversationMetadata{}, false
+}
+
+func saveConversationMetadata(meta ConversationMetadata) {
+	brainDir := getBrainDir()
+	convDir := filepath.Join(brainDir, meta.ID)
+	os.MkdirAll(convDir, 0755)
+	metaPath := filepath.Join(convDir, "metadata.json")
+	if meta.CreatedAt == 0 {
+		meta.CreatedAt = time.Now().UnixMilli()
+	}
+	meta.UpdatedAt = time.Now().UnixMilli()
+	data, err := json.MarshalIndent(meta, "", "  ")
+	if err == nil {
+		os.WriteFile(metaPath, data, 0644)
+	}
 }
 
 func getBrainDir() string {
@@ -3032,6 +3076,11 @@ func listConversationsHandler(w http.ResponseWriter, r *http.Request) {
 		conversations[i], conversations[j] = conversations[j], conversations[i]
 	}
 
+	// Sort newest first by UpdatedAt
+	sort.Slice(conversations, func(i, j int) bool {
+		return conversations[i].UpdatedAt > conversations[j].UpdatedAt
+	})
+
 	jsonData, _ := json.Marshal(conversations)
 	encrypted, err := EncryptData(jsonData, connData.SecurityPhrase)
 	w.Header().Set("Content-Type", "application/json")
@@ -3040,6 +3089,158 @@ func listConversationsHandler(w http.ResponseWriter, r *http.Request) {
 	} else {
 		json.NewEncoder(w).Encode(conversations)
 	}
+}
+
+func conversationMessagesHandler(w http.ResponseWriter, r *http.Request) {
+	connData, err := loadConnectionData()
+	if err != nil || connData.SecurityPhrase == "" {
+		http.Error(w, "Agent not configured", http.StatusServiceUnavailable)
+		return
+	}
+	expectedSecret := hashPhrase(connData.SecurityPhrase, connData.DeviceID)
+	providedSecret := r.Header.Get("X-Exec-Secret")
+	if subtle.ConstantTimeCompare([]byte(providedSecret), []byte(expectedSecret)) != 1 {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	convID := strings.TrimSpace(r.URL.Query().Get("id"))
+	if convID == "" || strings.Contains(convID, "..") || strings.Contains(convID, "/") || strings.Contains(convID, "\\") {
+		http.Error(w, "Invalid conversation ID", http.StatusBadRequest)
+		return
+	}
+
+	brainDir := getBrainDir()
+	convDir := filepath.Join(brainDir, convID)
+
+	meta, _ := loadConversationMetadata(convID)
+	title := meta.Title
+	if title == "" {
+		title = "Conversation"
+	}
+
+	var messages []map[string]interface{}
+
+	// 1. Try cloud_history_full.json
+	fullPath := filepath.Join(convDir, "cloud_history_full.json")
+	if data, err := os.ReadFile(fullPath); err == nil {
+		var rawTurns []map[string]interface{}
+		if json.Unmarshal(data, &rawTurns) == nil {
+			for i, turn := range rawTurns {
+				role, _ := turn["role"].(string)
+				content, _ := turn["content"].(string)
+				msgType := "user"
+				if role == "assistant" {
+					msgType = "response"
+				}
+				id := fmt.Sprintf("%s_%d", convID, i)
+				if existingID, ok := turn["id"].(string); ok && existingID != "" {
+					id = existingID
+				}
+				ts := time.Now().Format("2006-01-02 15:04:05")
+				if existingTs, ok := turn["timestamp"].(string); ok && existingTs != "" {
+					ts = existingTs
+				}
+				msg := map[string]interface{}{
+					"id":        id,
+					"type":      msgType,
+					"content":   content,
+					"timestamp": ts,
+				}
+				if art, ok := turn["artifact_path"].(string); ok && art != "" {
+					msg["artifact_path"] = art
+				}
+				if summary, ok := turn["summary"].(string); ok && summary != "" {
+					msg["summary"] = summary
+				}
+				messages = append(messages, msg)
+			}
+		}
+	}
+
+	// 2. Fallback to cloud_history.json if full wasn't populated
+	if len(messages) == 0 {
+		path := filepath.Join(convDir, "cloud_history.json")
+		if data, err := os.ReadFile(path); err == nil {
+			var rawTurns []map[string]interface{}
+			if json.Unmarshal(data, &rawTurns) == nil {
+				for i, turn := range rawTurns {
+					role, _ := turn["role"].(string)
+					content, _ := turn["content"].(string)
+					msgType := "user"
+					if role == "assistant" {
+						msgType = "response"
+					}
+					messages = append(messages, map[string]interface{}{
+						"id":        fmt.Sprintf("%s_%d", convID, i),
+						"type":      msgType,
+						"content":   content,
+						"timestamp": time.Now().Format("2006-01-02 15:04:05"),
+					})
+				}
+			}
+		}
+	}
+
+	respPayload := map[string]interface{}{
+		"conversation_id": convID,
+		"title":           title,
+		"messages":        messages,
+	}
+
+	jsonData, _ := json.Marshal(respPayload)
+	encrypted, err := EncryptData(jsonData, connData.SecurityPhrase)
+	w.Header().Set("Content-Type", "application/json")
+	if err == nil {
+		json.NewEncoder(w).Encode(map[string]string{"encrypted": encrypted})
+	} else {
+		w.Write(jsonData)
+	}
+}
+
+func conversationDeleteHandler(w http.ResponseWriter, r *http.Request) {
+	connData, err := loadConnectionData()
+	if err != nil || connData.SecurityPhrase == "" {
+		http.Error(w, "Agent not configured", http.StatusServiceUnavailable)
+		return
+	}
+	expectedSecret := hashPhrase(connData.SecurityPhrase, connData.DeviceID)
+	providedSecret := r.Header.Get("X-Exec-Secret")
+	if subtle.ConstantTimeCompare([]byte(providedSecret), []byte(expectedSecret)) != 1 {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	var req struct {
+		ConversationID string `json:"conversation_id"`
+	}
+	bodyBytes, _ := io.ReadAll(r.Body)
+	json.Unmarshal(bodyBytes, &req)
+
+	convID := strings.TrimSpace(req.ConversationID)
+	if convID == "" {
+		convID = strings.TrimSpace(r.URL.Query().Get("id"))
+	}
+	if convID == "" || strings.Contains(convID, "..") || strings.Contains(convID, "/") || strings.Contains(convID, "\\") {
+		http.Error(w, "Invalid conversation ID", http.StatusBadRequest)
+		return
+	}
+
+	brainDir := getBrainDir()
+	convDir := filepath.Join(brainDir, convID)
+	os.RemoveAll(convDir)
+
+	activeConvMu.Lock()
+	if lastActiveConv == convID {
+		lastActiveConv = ""
+	}
+	activeConvMu.Unlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":          "ok",
+		"conversation_id": convID,
+	})
 }
 
 func executeCommand(ctx context.Context, command string, mode string, conversationID string, modelName string) (string, string, error) {
@@ -5689,11 +5890,44 @@ func saveCloudHistory(convID, userContent, assistantContent string) {
 	if fullData, err := os.ReadFile(fullPath); err == nil {
 		json.Unmarshal(fullData, &fullHistory)
 	}
-	fullHistory = append(fullHistory, map[string]interface{}{"role": "user", "content": userContent})
-	fullHistory = append(fullHistory, map[string]interface{}{"role": "assistant", "content": assistantContent})
+	nowMs := time.Now().UnixMilli()
+	nowStr := time.Now().Format("2006-01-02 15:04:05")
+	userMsg := map[string]interface{}{
+		"id":        fmt.Sprintf("msg_%d_user", nowMs),
+		"role":      "user",
+		"content":   userContent,
+		"timestamp": nowStr,
+	}
+	asstMsg := map[string]interface{}{
+		"id":        fmt.Sprintf("msg_%d_asst", nowMs+1),
+		"role":      "assistant",
+		"content":   assistantContent,
+		"timestamp": nowStr,
+	}
+	fullHistory = append(fullHistory, userMsg, asstMsg)
 	if fullData, err := json.MarshalIndent(fullHistory, "", "  "); err == nil {
 		os.WriteFile(fullPath, fullData, 0644)
 	}
+
+	// Maintain rich metadata.json for high-performance session listing
+	meta, exists := loadConversationMetadata(convID)
+	if !exists {
+		meta.ID = convID
+		title := userContent
+		if len(title) > 40 {
+			title = title[:37] + "..."
+		}
+		title = strings.ReplaceAll(title, "\n", " ")
+		meta.Title = title
+		meta.CreatedAt = nowMs
+	}
+	meta.MessageCount = len(fullHistory)
+	snippet := assistantContent
+	if len(snippet) > 80 {
+		snippet = snippet[:77] + "..."
+	}
+	meta.LastSnippet = strings.ReplaceAll(snippet, "\n", " ")
+	saveConversationMetadata(meta)
 
 	if len(fullHistory) > 8 {
 		go asyncUpdateSessionSummary(convID, fullHistory)

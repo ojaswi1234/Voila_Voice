@@ -162,3 +162,76 @@ func TestMultiTurnCloudHistoryRoundtrip(t *testing.T) {
 		t.Errorf("Turn 2 content mismatch")
 	}
 }
+
+
+func TestConversationMetadataPersistence(t *testing.T) {
+	testConv := "test_conv_metadata_99"
+	brainDir := getBrainDir()
+	convDir := filepath.Join(brainDir, testConv)
+	os.RemoveAll(convDir)
+	defer os.RemoveAll(convDir)
+
+	meta := ConversationMetadata{
+		ID:           testConv,
+		Title:        "Diagnose Server Latency",
+		CreatedAt:    time.Now().UnixMilli(),
+		UpdatedAt:    time.Now().UnixMilli(),
+		MessageCount: 6,
+		LastSnippet:  "All systems operational",
+	}
+
+	saveConversationMetadata(meta)
+
+	loaded, ok := loadConversationMetadata(testConv)
+	if !ok {
+		t.Fatalf("Expected loadConversationMetadata to succeed")
+	}
+	if loaded.Title != meta.Title {
+		t.Errorf("Title mismatch: expected %s, got %s", meta.Title, loaded.Title)
+	}
+	if loaded.MessageCount != 6 {
+		t.Errorf("MessageCount mismatch: expected 6, got %d", loaded.MessageCount)
+	}
+	if loaded.LastSnippet != meta.LastSnippet {
+		t.Errorf("LastSnippet mismatch: expected %s, got %s", meta.LastSnippet, loaded.LastSnippet)
+	}
+}
+
+func TestConversationDelete(t *testing.T) {
+	testConv := "test_conv_delete_99"
+	brainDir := getBrainDir()
+	convDir := filepath.Join(brainDir, testConv)
+	os.MkdirAll(convDir, 0755)
+
+	// Save turn
+	saveCloudHistory(testConv, "Hello Voila", "Hello boss!")
+
+	// Set as active
+	activeConvMu.Lock()
+	lastActiveConv = testConv
+	activeConvMu.Unlock()
+
+	// Verify dir exists
+	if _, err := os.Stat(convDir); os.IsNotExist(err) {
+		t.Fatalf("Expected convDir to exist")
+	}
+
+	// Delete
+	os.RemoveAll(convDir)
+	activeConvMu.Lock()
+	if lastActiveConv == testConv {
+		lastActiveConv = ""
+	}
+	activeConvMu.Unlock()
+
+	// Verify dir removed
+	if _, err := os.Stat(convDir); !os.IsNotExist(err) {
+		t.Errorf("Expected convDir to be removed")
+	}
+	activeConvMu.Lock()
+	currActive := lastActiveConv
+	activeConvMu.Unlock()
+	if currActive == testConv {
+		t.Errorf("Expected lastActiveConv to be reset")
+	}
+}

@@ -1700,6 +1700,101 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 					}
 					b.dispatcher.Dispatch(cID, msgType, []byte("ERROR: failed to fetch conversations"))
 				}(deviceID, clientID, device.Address, device.SecurityPhraseHash, messageType)
+
+			case "get_conversation_messages":
+				convID, _ := msg["conversation_id"].(string)
+				if convID == "" {
+					b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: conversation_id required"))
+					continue
+				}
+				if deviceID == "" {
+					device := b.getActiveDevice()
+					if device != nil && device.Active {
+						deviceID = device.ID
+					} else {
+						b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: No active online desktop device"))
+						continue
+					}
+				}
+				
+				b.mu.RLock()
+				device, exists := b.devices[deviceID]
+				b.mu.RUnlock()
+				
+				if !exists || !device.Active {
+					b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: device not found or offline"))
+					continue
+				}
+				
+				go func(dID string, cID string, addr string, hash string, targetConvID string, msgType int) {
+					client := safeHTTPClient()
+					targetURL := addr + "/conversation/messages?id=" + url.QueryEscape(targetConvID)
+					req, err := http.NewRequest("GET", targetURL, nil)
+					if err == nil {
+						req.Header.Set("X-Exec-Secret", hash)
+						resp, err := client.Do(req)
+						if err == nil {
+							defer resp.Body.Close()
+							body, _ := io.ReadAll(resp.Body)
+							respObj := map[string]interface{}{
+								"type":            "conversation_messages",
+								"conversation_id": targetConvID,
+								"data":            json.RawMessage(body),
+							}
+							respJson, _ := json.Marshal(respObj)
+							b.dispatcher.Dispatch(cID, msgType, respJson)
+							return
+						}
+					}
+					b.dispatcher.Dispatch(cID, msgType, []byte("ERROR: failed to fetch conversation messages"))
+				}(deviceID, clientID, device.Address, device.SecurityPhraseHash, convID, messageType)
+
+			case "delete_conversation":
+				convID, _ := msg["conversation_id"].(string)
+				if convID == "" {
+					b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: conversation_id required"))
+					continue
+				}
+				if deviceID == "" {
+					device := b.getActiveDevice()
+					if device != nil && device.Active {
+						deviceID = device.ID
+					} else {
+						b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: No active online desktop device"))
+						continue
+					}
+				}
+				
+				b.mu.RLock()
+				device, exists := b.devices[deviceID]
+				b.mu.RUnlock()
+				
+				if !exists || !device.Active {
+					b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: device not found or offline"))
+					continue
+				}
+				
+				go func(dID string, cID string, addr string, hash string, targetConvID string, msgType int) {
+					client := safeHTTPClient()
+					delBody, _ := json.Marshal(map[string]string{"conversation_id": targetConvID})
+					req, err := http.NewRequest("POST", addr+"/conversation/delete", bytes.NewBuffer(delBody))
+					if err == nil {
+						req.Header.Set("Content-Type", "application/json")
+						req.Header.Set("X-Exec-Secret", hash)
+						resp, err := client.Do(req)
+						if err == nil {
+							defer resp.Body.Close()
+							respObj := map[string]interface{}{
+								"type":            "conversation_deleted",
+								"conversation_id": targetConvID,
+							}
+							respJson, _ := json.Marshal(respObj)
+							b.dispatcher.Dispatch(cID, msgType, respJson)
+							return
+						}
+					}
+					b.dispatcher.Dispatch(cID, msgType, []byte("ERROR: failed to delete conversation"))
+				}(deviceID, clientID, device.Address, device.SecurityPhraseHash, convID, messageType)
 				
 			case "command":
 				command, _ := msg["command"].(string)
