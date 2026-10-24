@@ -22,8 +22,17 @@ class VoilaVoiceInteractionSessionService : VoiceInteractionSessionService() {
 
 class VoilaVoiceInteractionSession(context: Context) : VoiceInteractionSession(context) {
 
+    override fun onCreate() {
+        super.onCreate()
+        // CRITICAL FIX: Disable the VoiceInteractionSession's default full-screen system window.
+        // If setUiEnabled is not set to false, Android displays a transparent system dialog
+        // over the entire display, intercepting all touch events before they can reach AssistantActivity.
+        setUiEnabled(false)
+    }
+
     override fun onShow(args: Bundle?, showFlags: Int) {
         super.onShow(args, showFlags)
+        setUiEnabled(false)
         launchAssistantActivity()
     }
 

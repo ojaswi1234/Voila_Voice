@@ -220,12 +220,16 @@ class PulseWaveVisualizer extends StatefulWidget {
   final bool isListening;
   final bool isSpeaking;
   final VoidCallback onTap;
+  final double size;
+  final double coreSize;
 
   const PulseWaveVisualizer({
     Key? key,
     required this.isListening,
     required this.isSpeaking,
     required this.onTap,
+    this.size = 220.0,
+    this.coreSize = 90.0,
   }) : super(key: key);
 
   @override
@@ -271,17 +275,20 @@ class _PulseWaveVisualizerState extends State<PulseWaveVisualizer> with SingleTi
   @override
   Widget build(BuildContext context) {
     Color baseColor = widget.isSpeaking ? AppTokens.accentSecondary : AppTokens.accent;
+    final double cSize = widget.coreSize;
+    final double boxSize = widget.size;
+    final double iconSize = cSize * 0.44;
 
     final coreButton = Container(
-      width: 90,
-      height: 90,
+      width: cSize,
+      height: cSize,
       decoration: BoxDecoration(
         color: baseColor,
         shape: BoxShape.circle,
         boxShadow: [
           BoxShadow(
             color: baseColor.withOpacity(0.35),
-            blurRadius: 20,
+            blurRadius: cSize * 0.22,
             spreadRadius: 4,
           )
         ],
@@ -290,7 +297,7 @@ class _PulseWaveVisualizerState extends State<PulseWaveVisualizer> with SingleTi
         child: Icon(
           widget.isSpeaking ? Icons.graphic_eq_rounded : Icons.mic_rounded,
           color: Colors.white,
-          size: 40,
+          size: iconSize,
         ),
       ),
     );
@@ -298,16 +305,18 @@ class _PulseWaveVisualizerState extends State<PulseWaveVisualizer> with SingleTi
     // ZERO IDLE OVERHEAD: Return static button directly when not listening or speaking
     if (!widget.isListening && !widget.isSpeaking) {
       return GestureDetector(
+        behavior: HitTestBehavior.opaque,
         onTap: widget.onTap,
         child: SizedBox(
-          width: 220,
-          height: 220,
+          width: boxSize,
+          height: boxSize,
           child: Center(child: coreButton),
         ),
       );
     }
 
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: widget.onTap,
       child: AnimatedBuilder(
         animation: _controller,
@@ -315,45 +324,45 @@ class _PulseWaveVisualizerState extends State<PulseWaveVisualizer> with SingleTi
           double wave1 = 1.0 + (_controller.value * 1.5);
           double wave2 = 1.0 + (((_controller.value + 0.3) % 1.0) * 1.2);
           double wave3 = 1.0 + (((_controller.value + 0.6) % 1.0) * 0.9);
-          double corePulse = 10 + (math.sin(_controller.value * math.pi * 2) * 5);
+          double corePulse = (cSize * 0.11) + (math.sin(_controller.value * math.pi * 2) * 5);
 
           return SizedBox(
-            width: 220,
-            height: 220,
+            width: boxSize,
+            height: boxSize,
             child: Stack(
               alignment: Alignment.center,
               children: [
                 Transform.scale(
                   scale: wave1,
                   child: Container(
-                    width: 90, height: 90,
+                    width: cSize, height: cSize,
                     decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: baseColor.withOpacity(0.05 * (1.0 - _controller.value)), width: 2)),
                   ),
                 ),
                 Transform.scale(
                   scale: wave2,
                   child: Container(
-                    width: 90, height: 90,
+                    width: cSize, height: cSize,
                     decoration: BoxDecoration(shape: BoxShape.circle, color: baseColor.withOpacity(0.1 * (1.0 - ((_controller.value + 0.3) % 1.0)))),
                   ),
                 ),
                 Transform.scale(
                   scale: wave3,
                   child: Container(
-                    width: 90, height: 90,
+                    width: cSize, height: cSize,
                     decoration: BoxDecoration(shape: BoxShape.circle, color: baseColor.withOpacity(0.15 * (1.0 - ((_controller.value + 0.6) % 1.0)))),
                   ),
                 ),
                 Container(
-                  width: 90,
-                  height: 90,
+                  width: cSize,
+                  height: cSize,
                   decoration: BoxDecoration(
                     color: baseColor,
                     shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
                         color: baseColor.withOpacity(0.4),
-                        blurRadius: 30,
+                        blurRadius: cSize * 0.33,
                         spreadRadius: corePulse,
                       )
                     ]
@@ -362,7 +371,7 @@ class _PulseWaveVisualizerState extends State<PulseWaveVisualizer> with SingleTi
                     child: Icon(
                       widget.isSpeaking ? Icons.graphic_eq_rounded : Icons.mic_rounded,
                       color: Colors.white,
-                      size: 40,
+                      size: iconSize,
                     ),
                   ),
                 ),
@@ -3877,17 +3886,32 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
         endDrawer: _isAssistant ? null : _buildBgTasksSidebar(),
         backgroundColor: _isAssistant ? Colors.transparent : AppTokens.bg(appThemeMode.value == ThemeMode.dark),
         body: _isAssistant
-          ? SafeArea(
-              child: Stack(
-                children: [
-                  Positioned(
-                    bottom: 0,
-                    left: 0,
-                    right: 0,
-                    child: _buildMainContent(colorScheme),
+          ? Stack(
+              children: [
+                // Backdrop touch dismisser
+                Positioned.fill(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () {
+                      try {
+                        platform.invokeMethod('closeOverlay');
+                      } catch (_) {}
+                      SystemNavigator.pop();
+                    },
+                    child: Container(color: Colors.transparent),
                   ),
-                ],
-              ),
+                ),
+                // Anchored floating assistant bottom sheet
+                Positioned(
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  child: SafeArea(
+                    top: false,
+                    child: _buildRedesignedAssistantOverlay(colorScheme),
+                  ),
+                ),
+              ],
             )
           : SafeArea(
               child: Container(
@@ -4046,86 +4070,325 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     }
   }
 
-  Widget _buildMainContent(ColorScheme colorScheme) {
-    if (_isAssistant) {
-      // Sleek minimal overlay for Assistant Mode
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (_temporaryAssistantImage != null)
-            GestureDetector(
-              onTap: () {
-                showDialog(
-                  context: context,
-                  builder: (context) => Dialog(
-                    backgroundColor: Colors.transparent,
-                    insetPadding: EdgeInsets.zero,
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        InteractiveViewer(
-                          panEnabled: true,
-                          boundaryMargin: const EdgeInsets.all(20),
-                          minScale: 0.5,
-                          maxScale: 4,
-                          child: Image.memory((() { try { return base64Decode(_temporaryAssistantImage!); } catch(_) { return Uint8List(0); } })(),
-                            fit: BoxFit.contain,
-                          ),
-                        ),
-                        Positioned(
-                          top: 40,
-                          right: 20,
-                          child: IconButton(
-                            icon: const Icon(Icons.close, color: Colors.white, size: 30),
-                            onPressed: () => Navigator.pop(context),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-              child: Container(
-                margin: const EdgeInsets.only(left: 16, right: 16, top: 8),
-                padding: const EdgeInsets.all(8),
-                constraints: const BoxConstraints(maxHeight: 250),
-                decoration: BoxDecoration(
-                  color: AppTokens.card(appThemeMode.value == ThemeMode.dark).withOpacity(0.85),
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: Colors.white.withOpacity(0.05)),
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(16),
-                  child: Image.memory((() { try { return base64Decode(_temporaryAssistantImage!); } catch(_) { return Uint8List(0); } })(),
-                    fit: BoxFit.contain,
-                    errorBuilder: (c, e, s) => const Text('Image Error', style: TextStyle(color: Colors.red)),
-                  ),
-                ),
+  Widget _buildOverlayActionChip({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    required bool isDark,
+    bool isDanger = false,
+  }) {
+    final Color chipColor = isDanger
+        ? const Color(0xFFEF4444).withOpacity(0.15)
+        : (isDark ? const Color(0xFF1E222D) : const Color(0xFFF1F3F5));
+    final Color textColor = isDanger
+        ? const Color(0xFFEF4444)
+        : AppTokens.textPrimary(isDark);
+    final Color borderColor = isDanger
+        ? const Color(0xFFEF4444).withOpacity(0.35)
+        : (isDark ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.08));
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: chipColor,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: borderColor),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: textColor),
+            const SizedBox(width: 5),
+            Text(
+              label,
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: textColor,
               ),
             ),
-          _buildSubtitleOverlay(colorScheme, true), // OVERLAY STYLE SUBTITLES
-          // Flowchart with a subtle dark background pill for readability over random desktop walls
-          Container(
-            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AppTokens.card(appThemeMode.value == ThemeMode.dark).withOpacity(0.85),
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: Colors.white.withOpacity(0.05)),
-            ),
-            child: ConnectionFlowchart(
-              isBackendConnected: _isHealthy,
-              isLocalAgentConnected: _localAgentConnected,
-              isWebSocketConnected: _isConnected,
-              isDataDeparting: _isDataDeparting,
-              isDataArriving: _isDataArriving,
-              activeDeviceName: _activeDevice.isNotEmpty ? (_devices[_activeDevice]?['name'] ?? 'Desktop') : null,
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRedesignedAssistantOverlay(ColorScheme colorScheme) {
+    final bool isDark = appThemeMode.value == ThemeMode.dark;
+    final String activeDeviceName = _activeDevice.isNotEmpty ? (_devices[_activeDevice]?['name'] ?? 'Desktop') : 'Desktop Agent';
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xF2151821) : const Color(0xF7FFFFFF),
+        borderRadius: BorderRadius.circular(32),
+        border: Border.all(
+          color: isDark ? Colors.white.withOpacity(0.10) : Colors.black.withOpacity(0.08),
+          width: 1.2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(isDark ? 0.6 : 0.2),
+            blurRadius: 32,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(32),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Top drag handle pill
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: isDark ? Colors.white24 : Colors.black26,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+
+                // Device status capsule + dismiss button
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4.5),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF1E222D) : const Color(0xFFF1F3F5),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: isDark ? Colors.white10 : Colors.black12,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 7,
+                            height: 7,
+                            decoration: BoxDecoration(
+                              color: _isConnected ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                if (_isConnected)
+                                  BoxShadow(
+                                    color: const Color(0xFF10B981).withOpacity(0.5),
+                                    blurRadius: 6,
+                                    spreadRadius: 1,
+                                  ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            activeDeviceName,
+                            style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: AppTokens.textPrimary(isDark)),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            '• AGENT',
+                            style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w700, color: const Color(0xFF6366F1)),
+                          ),
+                        ],
+                      ),
+                    ),
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () {
+                        try { platform.invokeMethod('closeOverlay'); } catch (_) {}
+                        SystemNavigator.pop();
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(5),
+                        decoration: BoxDecoration(
+                          color: isDark ? Colors.white.withOpacity(0.06) : Colors.black.withOpacity(0.05),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(Icons.close_rounded, size: 16, color: AppTokens.textSecondary(isDark)),
+                      ),
+                    ),
+                  ],
+                ),
+
+                // Screenshot Preview (if captured)
+                if (_temporaryAssistantImage != null) ...[
+                  const SizedBox(height: 10),
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () {
+                      showDialog(
+                        context: context,
+                        builder: (context) => Dialog(
+                          backgroundColor: Colors.transparent,
+                          insetPadding: EdgeInsets.zero,
+                          child: Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              InteractiveViewer(
+                                panEnabled: true,
+                                boundaryMargin: const EdgeInsets.all(20),
+                                minScale: 0.5,
+                                maxScale: 4,
+                                child: Image.memory(
+                                  (() { try { return base64Decode(_temporaryAssistantImage!); } catch (_) { return Uint8List(0); } })(),
+                                  fit: BoxFit.contain,
+                                ),
+                              ),
+                              Positioned(
+                                top: 40,
+                                right: 20,
+                                child: IconButton(
+                                  icon: const Icon(Icons.close, color: Colors.white, size: 30),
+                                  onPressed: () => Navigator.pop(context),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                    child: Container(
+                      constraints: const BoxConstraints(maxHeight: 160),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.white.withOpacity(0.1)),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(16),
+                        child: Image.memory(
+                          (() { try { return base64Decode(_temporaryAssistantImage!); } catch (_) { return Uint8List(0); } })(),
+                          fit: BoxFit.contain,
+                          errorBuilder: (c, e, s) => const SizedBox.shrink(),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+
+                const SizedBox(height: 12),
+
+                // Live Transcription / Status subtitle
+                Container(
+                  constraints: const BoxConstraints(maxHeight: 70),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: SingleChildScrollView(
+                    physics: const BouncingScrollPhysics(),
+                    child: Text(
+                      _currentAiSubtitle.isNotEmpty
+                          ? _currentAiSubtitle
+                          : (_isListening
+                              ? 'Listening...'
+                              : (_isThinking
+                                  ? 'Thinking...'
+                                  : (_isAiSpeaking ? 'AI speaking...' : 'Ready for voice or text prompt'))),
+                      style: GoogleFonts.outfit(
+                        fontSize: 16,
+                        height: 1.35,
+                        fontWeight: FontWeight.w600,
+                        color: _currentAiSubtitle.isNotEmpty ? AppTokens.textPrimary(isDark) : AppTokens.textSecondary(isDark),
+                        shadows: [
+                          Shadow(color: isDark ? Colors.black87 : Colors.white70, blurRadius: 6),
+                        ],
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 10),
+
+                // Glowing AI Sphere / PulseWaveVisualizer (Decreased size per user request)
+                Center(
+                  child: PulseWaveVisualizer(
+                    size: 130.0,
+                    coreSize: 64.0,
+                    isListening: _isListening,
+                    isSpeaking: _isAiSpeaking,
+                    onTap: () {
+                      if (_isListening) {
+                        _stopListening();
+                      } else if (_isThinking) {
+                        _cancelBackendTask();
+                      } else {
+                        setState(() { _isLiveSession = true; });
+                        _startListening();
+                      }
+                    },
+                  ),
+                ),
+
+                const SizedBox(height: 12),
+
+                // Quick Action Context Chips
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  physics: const BouncingScrollPhysics(),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      _buildOverlayActionChip(
+                        icon: Icons.camera_alt_outlined,
+                        label: 'Screenshot',
+                        onTap: () {
+                          _controller.text = "__SCREENSHOT__";
+                          _sendMessage();
+                        },
+                        isDark: isDark,
+                      ),
+                      const SizedBox(width: 8),
+                      _buildOverlayActionChip(
+                        icon: Icons.bolt_outlined,
+                        label: 'Summarize',
+                        onTap: () {
+                          _controller.text = "Summarize current session";
+                          _sendMessage();
+                        },
+                        isDark: isDark,
+                      ),
+                      if (_isThinking || _isListening) ...[
+                        const SizedBox(width: 8),
+                        _buildOverlayActionChip(
+                          icon: Icons.stop_rounded,
+                          label: 'Stop',
+                          isDanger: true,
+                          onTap: () {
+                            _cancelBackendTask();
+                            _stopListening();
+                          },
+                          isDark: isDark,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 14),
+
+                // Floating capsule input bar
+                _buildInputArea(colorScheme),
+              ],
             ),
           ),
-          // We ensure _currentMode is forced to agent in Assistant view, but it should be default
-          _buildInputArea(colorScheme),
-        ],
-      );
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMainContent(ColorScheme colorScheme) {
+    if (_isAssistant) {
+      return _buildRedesignedAssistantOverlay(colorScheme);
     }
 
     // Full layout for normal App Mode
@@ -5301,7 +5564,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
 
       // Minimal floating pill input
       return Container(
-        margin: const EdgeInsets.only(left: 14, right: 14, bottom: 26, top: 8),
+        margin: EdgeInsets.only(left: _isAssistant ? 0 : 14, right: _isAssistant ? 0 : 14, bottom: _isAssistant ? 2 : 26, top: _isAssistant ? 2 : 8),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [

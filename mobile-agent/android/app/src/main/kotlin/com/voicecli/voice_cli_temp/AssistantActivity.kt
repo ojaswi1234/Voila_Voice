@@ -23,6 +23,7 @@ class AssistantActivity : FlutterActivity() {
         // but still blocks all touches. FLAG_NOT_TOUCH_MODAL makes touches
         // outside the Activity's "focus region" pass through to the app below.
         // This is essential for a voice assistant overlay UX.
+        window.clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
         window.addFlags(
             WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
         )
@@ -54,6 +55,10 @@ class AssistantActivity : FlutterActivity() {
         ch.setMethodCallHandler { call, result ->
             when (call.method) {
                 "isAssistantIntent" -> result.success(true)
+                "closeOverlay" -> {
+                    finish()
+                    result.success(true)
+                }
                 else -> result.notImplemented()
             }
         }

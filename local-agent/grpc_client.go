@@ -328,6 +328,9 @@ var (
 
 // handleCancelSignalViaGRPC handles stop / kill requests received via gRPC tunnel
 func handleCancelSignalViaGRPC(cmd *voilav1.ExecutionCommand, connData ConnectionData) {
+	if freshData, err := loadConnectionData(); err == nil {
+		connData = freshData
+	}
 	log.Printf("[gRPC Client] Received out-of-band STOP signal for task: %s, job: %s, conv: %s", cmd.TargetTaskId, cmd.TargetJobId, cmd.ConversationId)
 
 	// Cancel targeted session or all active sessions
@@ -420,6 +423,10 @@ func handleCancelSignalViaGRPC(cmd *voilav1.ExecutionCommand, connData Connectio
 
 // handleIncomingCommandViaGRPC executes a command received via the gRPC tunnel
 func handleIncomingCommandViaGRPC(cmd *voilav1.ExecutionCommand, connData ConnectionData) {
+	// Always reload latest configuration dynamically from disk so model/key updates take effect immediately
+	if freshData, err := loadConnectionData(); err == nil {
+		connData = freshData
+	}
 	if cmd.Command == "__SCREENSHOT__" {
 		handleScreenshotViaGRPC(cmd, connData)
 		return
