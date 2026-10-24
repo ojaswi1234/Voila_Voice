@@ -443,6 +443,23 @@ func handleIncomingCommandViaGRPC(cmd *voilav1.ExecutionCommand, connData Connec
 		return
 	}
 
+	if cmd.Command == "__CLEAR_ALL_CONVERSATIONS__" {
+		clearAllConversationsInternal()
+		SendTelemetry(&voilav1.AgentTelemetry{
+			DeviceId:    connData.DeviceID,
+			Status:      "IDLE",
+			TimestampMs: time.Now().UnixMilli(),
+			Payload: &voilav1.AgentTelemetry_FinalResult{
+				FinalResult: &voilav1.ExecutionResult{
+					CommandId: cmd.CommandId,
+					Summary:   "all_conversations_cleared",
+					Status:    "all_conversations_cleared",
+				},
+			},
+		})
+		return
+	}
+
 	currentModeMu.Lock()
 	globalMode := strings.ToUpper(currentMode)
 	currentModeMu.Unlock()

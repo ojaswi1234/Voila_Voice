@@ -1198,6 +1198,71 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       ),
     );
   }
+
+  Future<void> _clearAllConversations() async {
+    if (_channel != null && _isConnected) {
+      final msg = jsonEncode({
+        "type": "clear_all_conversations",
+        "device_id": _activeDevice,
+        "session_token": _sessionToken,
+      });
+      _channel?.sink.add(msg);
+    }
+
+    _conversationMessagesCache.clear();
+    if (mounted) {
+      setState(() {
+        _conversations.clear();
+        _currentConversationId = '';
+        _messagesAgent.clear();
+        _messagesAgent.insert(0, {
+          'type': 'system',
+          'content': 'Fresh session started. All past conversation history has been cleared.',
+          'timestamp': DateTime.now().toString(),
+        });
+      });
+    }
+
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final indexFile = File('${dir.path}/conversations_index_cache.json');
+      if (await indexFile.exists()) await indexFile.delete();
+
+      final files = dir.listSync();
+      for (final f in files) {
+        if (f is File && f.path.contains('conv_history_')) {
+          await f.delete();
+        }
+      }
+    } catch (e) {
+      debugPrint('Error clearing local cache files: $e');
+    }
+  }
+
+  void _confirmClearAllConversations() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTokens.card(appThemeMode.value == ThemeMode.dark),
+        title: Text('Clear All Conversations?', style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.w700)),
+        content: Text('Are you sure you want to delete all conversation history across both mobile and desktop? This cannot be undone.', style: GoogleFonts.inter(fontSize: 14)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _closeDrawerSafely();
+              _clearAllConversations();
+            },
+            child: const Text('Clear All', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
   void _loadSession() async {
     final savedToken = await _storage.read(key: 'session_token');
     final savedExpiresAt = await _storage.read(key: 'session_expires_at');
@@ -1779,6 +1844,20 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                     }
                   });
                 }
+              }
+            } else if (jsonResponse is Map && jsonResponse['type'] == 'all_conversations_cleared') {
+              _conversationMessagesCache.clear();
+              if (mounted) {
+                setState(() {
+                  _conversations.clear();
+                  _currentConversationId = '';
+                  _messagesAgent.clear();
+                  _messagesAgent.insert(0, {
+                    'type': 'system',
+                    'content': 'All past conversations have been wiped clean.',
+                    'timestamp': DateTime.now().toString(),
+                  });
+                });
               }
             } else if (jsonResponse is Map && jsonResponse['type'] == 'surveillance_alert') {
               final alert = jsonResponse['alert'];
@@ -3144,6 +3223,9 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                         _messages.removeWhere((m) => (m['content'] as String? ?? '').startsWith('__IMAGE__:'));
                       });
                       _closeDrawerSafely();
+                    }),
+                    _buildDrawerItem(Icons.delete_sweep_rounded, 'Clear All Chats', () {
+                      _confirmClearAllConversations();
                     }),
 
                     // Session Status Card

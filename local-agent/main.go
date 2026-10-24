@@ -2002,6 +2002,7 @@ func startHTTPServer() {
 	mux.HandleFunc("/conversations", listConversationsHandler)
 	mux.HandleFunc("/conversation/messages", conversationMessagesHandler)
 	mux.HandleFunc("/conversation/delete", conversationDeleteHandler)
+	mux.HandleFunc("/conversations/clear", conversationClearAllHandler)
 	mux.HandleFunc("/jobs", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Content-Type", "application/json")
@@ -3269,7 +3270,63 @@ func getConversationMessagesInternal(convID string) map[string]interface{} {
 }
 
 func deleteConversationInternal(convID string) {
-	deleteConversationInternal(convID)
+	if convID == "" || strings.Contains(convID, "..") || strings.Contains(convID, "/") || strings.Contains(convID, "\\") {
+		return
+	}
+	_, convDir := findConversationDir(convID)
+	if convDir != "" {
+		os.RemoveAll(convDir)
+	}
+	activeConvMu.Lock()
+	if lastActiveConv == convID {
+		lastActiveConv = ""
+	}
+	activeConvMu.Unlock()
+}
+
+func clearAllConversationsInternal() {
+	brainDir := getBrainDir()
+	entries, err := os.ReadDir(brainDir)
+	if err == nil {
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				if entry.Name() == "cmd_memory.json" {
+					os.Remove(filepath.Join(brainDir, entry.Name()))
+				}
+				continue
+			}
+			name := entry.Name()
+			if strings.HasPrefix(name, "node-") || name == "verify" {
+				continue
+			}
+			os.RemoveAll(filepath.Join(brainDir, name))
+		}
+	}
+	activeConvMu.Lock()
+	lastActiveConv = ""
+	activeConvMu.Unlock()
+}
+
+func conversationClearAllHandler(w http.ResponseWriter, r *http.Request) {
+	connData, err := loadConnectionData()
+	if err != nil || connData.SecurityPhrase == "" {
+		http.Error(w, "Agent not configured", http.StatusServiceUnavailable)
+		return
+	}
+	expectedSecret := hashPhrase(connData.SecurityPhrase, connData.DeviceID)
+	providedSecret := r.Header.Get("X-Exec-Secret")
+	if subtle.ConstantTimeCompare([]byte(providedSecret), []byte(expectedSecret)) != 1 {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	clearAllConversationsInternal()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":  "ok",
+		"cleared": true,
+	})
 }
 
 func listConversationsHandler(w http.ResponseWriter, r *http.Request) {

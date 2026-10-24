@@ -213,6 +213,14 @@ func (s *TunnelServer) EstablishTunnel(stream voilav1.DesktopTunnelService_Estab
 					s.backend.broadcastToClients(websocket.TextMessage, b)
 				}
 				continue
+			} else if res.Summary == "all_conversations_cleared" {
+				resp := map[string]interface{}{
+					"type": "all_conversations_cleared",
+				}
+				if b, err := json.Marshal(resp); err == nil && s.backend != nil {
+					s.backend.broadcastToClients(websocket.TextMessage, b)
+				}
+				continue
 			}
 
 			resp := map[string]interface{}{

@@ -1882,6 +1882,55 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 					}
 					b.dispatcher.Dispatch(cID, msgType, []byte("ERROR: failed to delete conversation"))
 				}(deviceID, clientID, device.Address, device.SecurityPhraseHash, convID, messageType)
+
+			case "clear_all_conversations":
+				if deviceID == "" {
+					device := b.getActiveDevice()
+					if device != nil && device.Active {
+						deviceID = device.ID
+					} else {
+						b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: No active online desktop device"))
+						continue
+					}
+				}
+
+				if globalTunnelManager != nil && globalTunnelManager.HasTunnel(deviceID) {
+					cmdID := fmt.Sprintf("conv-clear-%d", time.Now().UnixNano())
+					execCmd := &voilav1.ExecutionCommand{
+						CommandId:   cmdID,
+						Command:     "__CLEAR_ALL_CONVERSATIONS__",
+						ClientId:    clientID,
+						TimestampMs: time.Now().UnixMilli(),
+					}
+					if ok := globalTunnelManager.SendCommand(deviceID, execCmd); ok {
+						continue
+					}
+				}
+
+				b.mu.RLock()
+				device, exists := b.devices[deviceID]
+				b.mu.RUnlock()
+
+				if !exists || !device.Active {
+					b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: device not found or offline"))
+					continue
+				}
+
+				go func(dID string, cID string, addr string, hash string, msgType int) {
+					client := safeHTTPClient()
+					req, err := http.NewRequest("POST", strings.TrimRight(addr, "/")+"/conversations/clear", nil)
+					if err == nil {
+						req.Header.Set("X-Exec-Secret", hash)
+						req.Header.Set("ngrok-skip-browser-warning", "true")
+						resp, err := client.Do(req)
+						if err == nil {
+							defer resp.Body.Close()
+							b.dispatcher.Dispatch(cID, msgType, []byte(`{"type":"all_conversations_cleared"}`))
+							return
+						}
+					}
+					b.dispatcher.Dispatch(cID, msgType, []byte("ERROR: failed to clear conversations"))
+				}(deviceID, clientID, device.Address, device.SecurityPhraseHash, messageType)
 				
 			case "command":
 				command, _ := msg["command"].(string)
