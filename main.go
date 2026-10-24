@@ -931,10 +931,10 @@ func generateAuthToken() string {
 
 
 func (b *Backend) stopCommand(deviceID string) (string, error) {
-	return b.stopCommandWithTask(deviceID, "", "")
+	return b.stopCommandWithTask(deviceID, "", "", "")
 }
 
-func (b *Backend) stopCommandWithTask(deviceID, jobID, taskID string) (string, error) {
+func (b *Backend) stopCommandWithTask(deviceID, jobID, taskID, convID string) (string, error) {
 	// First check if device has an active gRPC reverse tunnel
 	if globalTunnelManager != nil && globalTunnelManager.HasTunnel(deviceID) {
 		cmdID := fmt.Sprintf("stop-%d", time.Now().UnixNano())
@@ -943,10 +943,11 @@ func (b *Backend) stopCommandWithTask(deviceID, jobID, taskID string) (string, e
 			IsCancelSignal: true,
 			TargetTaskId:   taskID,
 			TargetJobId:    jobID,
+			ConversationId: convID,
 			TimestampMs:    time.Now().UnixMilli(),
 		}
 		if ok := globalTunnelManager.SendCommand(deviceID, cancelCmd); ok {
-			log.Printf("[stopCommandWithTask] Dispatched stop signal via gRPC tunnel to device %s (task: %s, job: %s)", deviceID, taskID, jobID)
+			log.Printf("[stopCommandWithTask] Dispatched stop signal via gRPC tunnel to device %s (task: %s, job: %s, conv: %s)", deviceID, taskID, jobID, convID)
 			return "Task stopped via gRPC tunnel", nil
 		}
 	}
@@ -1931,6 +1932,95 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 					}
 					b.dispatcher.Dispatch(cID, msgType, []byte("ERROR: failed to clear conversations"))
 				}(deviceID, clientID, device.Address, device.SecurityPhraseHash, messageType)
+
+			case "pin_conversation":
+				convID, _ := msg["conversation_id"].(string)
+				isPinned, _ := msg["is_pinned"].(bool)
+				if convID == "" {
+					b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: conversation_id required"))
+					continue
+				}
+				if deviceID == "" {
+					device := b.getActiveDevice()
+					if device != nil && device.Active {
+						deviceID = device.ID
+					} else {
+						b.mu.RLock()
+						for dId, d := range b.devices {
+							if d.Active {
+								deviceID = dId
+								break
+							}
+						}
+						b.mu.RUnlock()
+					}
+				}
+				if deviceID == "" {
+					b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: No active online desktop device"))
+					continue
+				}
+
+				if globalTunnelManager != nil && globalTunnelManager.HasTunnel(deviceID) {
+					cmdID := fmt.Sprintf("conv-pin-%d", time.Now().UnixNano())
+					execCmd := &voilav1.ExecutionCommand{
+						CommandId:      cmdID,
+						Command:        fmt.Sprintf("__PIN_CONVERSATION__:%s:%t", convID, isPinned),
+						ConversationId: convID,
+						ClientId:       clientID,
+						TimestampMs:    time.Now().UnixMilli(),
+					}
+					if ok := globalTunnelManager.SendCommand(deviceID, execCmd); ok {
+						continue
+					}
+				}
+
+			case "fork_conversation":
+				convID, _ := msg["conversation_id"].(string)
+				newID, _ := msg["new_id"].(string)
+				model, _ := msg["model"].(string)
+				if convID == "" {
+					b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: conversation_id required"))
+					continue
+				}
+				if newID == "" {
+					newID = fmt.Sprintf("fork-%x", time.Now().UnixNano()%0xFFFFFF)
+				}
+				if model == "" {
+					model = "LOCAL"
+				}
+				if deviceID == "" {
+					device := b.getActiveDevice()
+					if device != nil && device.Active {
+						deviceID = device.ID
+					} else {
+						b.mu.RLock()
+						for dId, d := range b.devices {
+							if d.Active {
+								deviceID = dId
+								break
+							}
+						}
+						b.mu.RUnlock()
+					}
+				}
+				if deviceID == "" {
+					b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: No active online desktop device"))
+					continue
+				}
+
+				if globalTunnelManager != nil && globalTunnelManager.HasTunnel(deviceID) {
+					cmdID := fmt.Sprintf("conv-fork-%d", time.Now().UnixNano())
+					execCmd := &voilav1.ExecutionCommand{
+						CommandId:      cmdID,
+						Command:        fmt.Sprintf("__FORK_CONVERSATION__:%s:%s:%s", convID, newID, model),
+						ConversationId: newID,
+						ClientId:       clientID,
+						TimestampMs:    time.Now().UnixMilli(),
+					}
+					if ok := globalTunnelManager.SendCommand(deviceID, execCmd); ok {
+						continue
+					}
+				}
 				
 			case "command":
 				command, _ := msg["command"].(string)
@@ -2021,6 +2111,7 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 			case "stop_command":
 				jobID, _ := msg["job_id"].(string)
 				taskID, _ := msg["task_id"].(string)
+				convID, _ := msg["conversation_id"].(string)
 				if deviceID == "" {
 					dev := b.getActiveDevice()
 					if dev != nil {
@@ -2028,14 +2119,14 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 					}
 				}
 				b.forceUnlockDevice(deviceID)
-				go func(dID, jID, tID string) {
-					result, err := b.stopCommandWithTask(dID, jID, tID)
+				go func(dID, jID, tID, cID string) {
+					result, err := b.stopCommandWithTask(dID, jID, tID, cID)
 					if err != nil {
 						b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: "+err.Error()))
 					} else {
 						b.dispatcher.Dispatch(clientID, messageType, []byte("OK: "+result))
 					}
-				}(deviceID, jobID, taskID)
+				}(deviceID, jobID, taskID, convID)
 
 			case "surveillance_action":
 				action, _ := msg["action"].(string)
@@ -2103,7 +2194,7 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				}
 				b.forceUnlockDevice(deviceID)
 				go func(dID, jID, tID string) {
-					result, err := b.stopCommandWithTask(dID, jID, tID)
+					result, err := b.stopCommandWithTask(dID, jID, tID, "")
 					if err != nil {
 						b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: "+err.Error()))
 					} else {

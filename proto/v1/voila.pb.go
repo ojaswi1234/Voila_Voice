@@ -480,8 +480,9 @@ type CommandOutputChunk struct {
 	Text          string                 `protobuf:"bytes,2,opt,name=text,proto3" json:"text,omitempty"`
 	IsError       bool                   `protobuf:"varint,3,opt,name=is_error,json=isError,proto3" json:"is_error,omitempty"`
 	IsFinal       bool                   `protobuf:"varint,4,opt,name=is_final,json=isFinal,proto3" json:"is_final,omitempty"`
-	ToolName      string                 `protobuf:"bytes,5,opt,name=tool_name,json=toolName,proto3" json:"tool_name,omitempty"`
-	unknownFields protoimpl.UnknownFields
+	ToolName       string                 `protobuf:"bytes,5,opt,name=tool_name,json=toolName,proto3" json:"tool_name,omitempty"`
+	ConversationId string                 `protobuf:"bytes,6,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	unknownFields  protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
@@ -550,6 +551,13 @@ func (x *CommandOutputChunk) GetToolName() string {
 	return ""
 }
 
+func (x *CommandOutputChunk) GetConversationId() string {
+	if x != nil {
+		return x.ConversationId
+	}
+	return ""
+}
+
 type TaskProgressUpdate struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	TaskId           string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
@@ -558,6 +566,7 @@ type TaskProgressUpdate struct {
 	Status           string                 `protobuf:"bytes,4,opt,name=status,proto3" json:"status,omitempty"` // "running", "completed", "failed", "cancelled"
 	ElapsedSeconds   int64                  `protobuf:"varint,5,opt,name=elapsed_seconds,json=elapsedSeconds,proto3" json:"elapsed_seconds,omitempty"`
 	LatestLogSnippet string                 `protobuf:"bytes,6,opt,name=latest_log_snippet,json=latestLogSnippet,proto3" json:"latest_log_snippet,omitempty"`
+	ConversationId   string                 `protobuf:"bytes,7,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -630,6 +639,13 @@ func (x *TaskProgressUpdate) GetElapsedSeconds() int64 {
 func (x *TaskProgressUpdate) GetLatestLogSnippet() string {
 	if x != nil {
 		return x.LatestLogSnippet
+	}
+	return ""
+}
+
+func (x *TaskProgressUpdate) GetConversationId() string {
+	if x != nil {
+		return x.ConversationId
 	}
 	return ""
 }

@@ -71,7 +71,7 @@ var (
 	bgTaskIdx = 1
 
 	// Hook for gRPC tunnel telemetry
-	onBGTaskProgressUpdate func(id, label, command, status string, elapsedSeconds int64, logSnippet string)
+	onBGTaskProgressUpdate func(id, label, command, status string, elapsedSeconds int64, logSnippet, conversationID string)
 )
 
 // bgTasksDir returns a stable directory for BG task persistence
@@ -124,7 +124,7 @@ func persistSnapshot(task *BGTask) {
 		if !task.StartTime.IsZero() {
 			elapsed = int64(time.Since(task.StartTime).Seconds())
 		}
-		go onBGTaskProgressUpdate(task.ID, task.Label, task.Command, task.Status, elapsed, snap)
+		go onBGTaskProgressUpdate(task.ID, task.Label, task.Command, task.Status, elapsed, snap, task.ConversationID)
 	}
 }
 

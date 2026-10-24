@@ -72,6 +72,7 @@ message CommandOutputChunk {
   bool is_error = 3;
   bool is_final = 4;
   string tool_name = 5;
+  string conversation_id = 6;
 }
 
 message TaskProgressUpdate {
@@ -81,6 +82,7 @@ message TaskProgressUpdate {
   string status = 4; // "running", "completed", "failed", "cancelled"
   int64 elapsed_seconds = 5;
   string latest_log_snippet = 6;
+  string conversation_id = 7;
 }
 
 message ScreenCapture {

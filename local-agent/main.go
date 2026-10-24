@@ -193,11 +193,14 @@ var (
 	circuitMu          sync.Mutex
 	circuitOpen        bool
 	execSemaphore      chan struct{} // Limit concurrent executions
-	maxConcurrentExecs = 3           // Maximum concurrent AI executions
+	maxConcurrentExecs = 8           // Maximum concurrent AI executions across sessions
 	resilienceManager  *ResilienceManager
 
 	// Protect local models from VRAM crashes
 	ollamaSemaphore = make(chan struct{}, 1)
+
+	// Token-bucket rate limiter for AI providers (10 req/s, burst 5)
+	globalAIRateLimiter = NewTokenBucketLimiter(10.0, 5.0)
 
 	// Inter-Agent IPC
 	agentRegistryMu sync.RWMutex
@@ -207,6 +210,53 @@ var (
 	jobRegistryMu sync.RWMutex
 	jobRegistry   = make(map[string]*JobRegistryEntry)
 )
+
+// TokenBucketLimiter controls burst and continuous rate of outgoing AI executions
+type TokenBucketLimiter struct {
+	rate       float64
+	capacity   float64
+	tokens     float64
+	lastUpdate time.Time
+	mu         sync.Mutex
+}
+
+func NewTokenBucketLimiter(rate, capacity float64) *TokenBucketLimiter {
+	return &TokenBucketLimiter{
+		rate:       rate,
+		capacity:   capacity,
+		tokens:     capacity,
+		lastUpdate: time.Now(),
+	}
+}
+
+func (l *TokenBucketLimiter) Wait(ctx context.Context, tokens float64) error {
+	for {
+		l.mu.Lock()
+		now := time.Now()
+		elapsed := now.Sub(l.lastUpdate).Seconds()
+		l.lastUpdate = now
+		l.tokens += elapsed * l.rate
+		if l.tokens > l.capacity {
+			l.tokens = l.capacity
+		}
+
+		if l.tokens >= tokens {
+			l.tokens -= tokens
+			l.mu.Unlock()
+			return nil
+		}
+
+		missing := tokens - l.tokens
+		waitTime := time.Duration((missing / l.rate) * float64(time.Second))
+		l.mu.Unlock()
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(waitTime):
+		}
+	}
+}
 
 type JobRegistryEntry struct {
 	ID         string `json:"id"`
@@ -2945,6 +2995,9 @@ type Conversation struct {
 	CreatedAt    int64  `json:"created_at,omitempty"`
 	MessageCount int    `json:"message_count,omitempty"`
 	LastSnippet  string `json:"last_snippet,omitempty"`
+	IsPinned     bool   `json:"is_pinned"`
+	ParentID     string `json:"parent_id,omitempty"`
+	ModelType    string `json:"model_type,omitempty"`
 }
 
 type ConversationMetadata struct {
@@ -2954,6 +3007,9 @@ type ConversationMetadata struct {
 	UpdatedAt    int64  `json:"updated_at"`
 	MessageCount int    `json:"message_count"`
 	LastSnippet  string `json:"last_snippet"`
+	IsPinned     bool   `json:"is_pinned"`
+	ParentID     string `json:"parent_id,omitempty"`
+	ModelType    string `json:"model_type,omitempty"`
 }
 
 func loadConversationMetadata(convID string) (ConversationMetadata, bool) {
@@ -2985,6 +3041,60 @@ func saveConversationMetadata(meta ConversationMetadata) {
 	}
 }
 
+func pinConversationInternal(convID string, isPinned bool) bool {
+	meta, ok := loadConversationMetadata(convID)
+	if !ok {
+		meta = ConversationMetadata{
+			ID:        convID,
+			CreatedAt: time.Now().UnixMilli(),
+		}
+	}
+	meta.IsPinned = isPinned
+	saveConversationMetadata(meta)
+	return true
+}
+
+func forkConversationInternal(parentID, newID, model string) bool {
+	if newID == "" {
+		newID = fmt.Sprintf("fork-%x", time.Now().UnixNano()%0xFFFFFF)
+	}
+	brainDir := getBrainDir()
+	parentDir := filepath.Join(brainDir, parentID)
+	newDir := filepath.Join(brainDir, newID)
+	os.MkdirAll(newDir, 0755)
+
+	copyFileIfExists := func(srcName, dstName string) {
+		s := filepath.Join(parentDir, srcName)
+		d := filepath.Join(newDir, dstName)
+		if data, err := os.ReadFile(s); err == nil {
+			os.WriteFile(d, data, 0644)
+		}
+	}
+	copyFileIfExists("cloud_history_full.json", "cloud_history_full.json")
+	copyFileIfExists("cloud_history.json", "cloud_history.json")
+
+	parentMeta, _ := loadConversationMetadata(parentID)
+	newTitle := parentMeta.Title
+	if newTitle == "" {
+		newTitle = "Forked Session"
+	}
+	newTitle = fmt.Sprintf("[Fork] %s", newTitle)
+
+	meta := ConversationMetadata{
+		ID:           newID,
+		Title:        newTitle,
+		CreatedAt:    time.Now().UnixMilli(),
+		UpdatedAt:    time.Now().UnixMilli(),
+		MessageCount: parentMeta.MessageCount,
+		LastSnippet:  parentMeta.LastSnippet,
+		IsPinned:     false,
+		ParentID:     parentID,
+		ModelType:    model,
+	}
+	saveConversationMetadata(meta)
+	return true
+}
+
 func getBrainDir() string {
 	homeDir, _ := os.UserHomeDir()
 	return filepath.Join(homeDir, ".gemini", "voila-cli", "brain")
@@ -2992,9 +3102,10 @@ func getBrainDir() string {
 
 func getAllBrainDirs() []string {
 	homeDir, _ := os.UserHomeDir()
+	// STRICT ISOLATION: Voila Voice only indexes its own brain directory.
+	// Internal agent conversations (e.g. ~/.gemini/antigravity-cli/brain) are intentionally excluded.
 	candidates := []string{
 		filepath.Join(homeDir, ".gemini", "voila-cli", "brain"),
-		filepath.Join(homeDir, ".gemini", "antigravity-cli", "brain"),
 	}
 	var valid []string
 	for _, d := range candidates {
@@ -3063,6 +3174,9 @@ func listConversationsInternal() []Conversation {
 					CreatedAt:    meta.CreatedAt,
 					MessageCount: meta.MessageCount,
 					LastSnippet:  meta.LastSnippet,
+					IsPinned:     meta.IsPinned,
+					ParentID:     meta.ParentID,
+					ModelType:    meta.ModelType,
 				})
 				continue
 			}
@@ -3167,6 +3281,7 @@ func listConversationsInternal() []Conversation {
 				UpdatedAt:    updatedAt,
 				MessageCount: msgCount,
 				LastSnippet:  lastSnippet,
+				IsPinned:     false,
 			}
 			saveConversationMetadata(metaToSave)
 
@@ -3178,12 +3293,16 @@ func listConversationsInternal() []Conversation {
 				CreatedAt:    modTime,
 				MessageCount: msgCount,
 				LastSnippet:  lastSnippet,
+				IsPinned:     false,
 			})
 		}
 	}
 
-	// Sort newest first by UpdatedAt
+	// Sort pinned conversations first, then newest first by UpdatedAt
 	sort.Slice(conversations, func(i, j int) bool {
+		if conversations[i].IsPinned != conversations[j].IsPinned {
+			return conversations[i].IsPinned
+		}
 		return conversations[i].UpdatedAt > conversations[j].UpdatedAt
 	})
 

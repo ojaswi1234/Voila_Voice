@@ -55,7 +55,7 @@ func InitGRPCTunnel() {
 		}
 
 		// Register background tasks progress hook to stream progress via gRPC
-		onBGTaskProgressUpdate = func(id, label, command, status string, elapsedSeconds int64, logSnippet string) {
+		onBGTaskProgressUpdate = func(id, label, command, status string, elapsedSeconds int64, logSnippet, conversationID string) {
 			SendTelemetry(&voilav1.AgentTelemetry{
 				DeviceId:    getDeviceID(),
 				Status:      "RUNNING",
@@ -68,6 +68,7 @@ func InitGRPCTunnel() {
 						Status:            status,
 						ElapsedSeconds:    elapsedSeconds,
 						LatestLogSnippet:  logSnippet,
+						ConversationId:    conversationID,
 					},
 				},
 			})
@@ -239,7 +240,7 @@ func (c *GRPCTunnelClient) connectAndServe(connData ConnectionData) error {
 		defer bgTasksMu.RUnlock()
 		for _, t := range bgTasks {
 			if onBGTaskProgressUpdate != nil {
-				onBGTaskProgressUpdate(t.ID, t.Label, t.Command, t.Status, int64(time.Since(t.StartTime).Seconds()), "")
+				onBGTaskProgressUpdate(t.ID, t.Label, t.Command, t.Status, int64(time.Since(t.StartTime).Seconds()), "", t.ConversationID)
 			}
 		}
 	}()
@@ -320,15 +321,37 @@ func (c *GRPCTunnelClient) connectAndServe(connData ConnectionData) error {
 	}
 }
 
+var (
+	sessionCancelsMu sync.Mutex
+	sessionCancels   = make(map[string]context.CancelFunc)
+)
+
 // handleCancelSignalViaGRPC handles stop / kill requests received via gRPC tunnel
 func handleCancelSignalViaGRPC(cmd *voilav1.ExecutionCommand, connData ConnectionData) {
-	log.Printf("[gRPC Client] Received out-of-band STOP signal for task: %s, job: %s", cmd.TargetTaskId, cmd.TargetJobId)
+	log.Printf("[gRPC Client] Received out-of-band STOP signal for task: %s, job: %s, conv: %s", cmd.TargetTaskId, cmd.TargetJobId, cmd.ConversationId)
+
+	// Cancel targeted session or all active sessions
+	sessionCancelsMu.Lock()
+	if cmd.ConversationId != "" {
+		if cancel, exists := sessionCancels[cmd.ConversationId]; exists {
+			log.Printf("[gRPC Client] Cancelling session %s", cmd.ConversationId)
+			cancel()
+			delete(sessionCancels, cmd.ConversationId)
+		}
+	} else {
+		for cID, cancel := range sessionCancels {
+			log.Printf("[gRPC Client] Cancelling session %s", cID)
+			cancel()
+			delete(sessionCancels, cID)
+		}
+	}
+	sessionCancelsMu.Unlock()
 
 	cmdMu.Lock()
-	if currentCancel != nil {
+	if cmd.ConversationId == "" && currentCancel != nil {
 		currentCancel()
 	}
-	if currentCmd != nil && currentCmd.Process != nil {
+	if currentCmd != nil && currentCmd.Process != nil && cmd.ConversationId == "" {
 		if runtime.GOOS == "windows" {
 			exec.Command("taskkill", "/F", "/T", "/PID", fmt.Sprintf("%d", currentCmd.Process.Pid)).Run()
 		} else {
@@ -336,27 +359,44 @@ func handleCancelSignalViaGRPC(cmd *voilav1.ExecutionCommand, connData Connectio
 		}
 		currentCmd = nil
 	}
-	for _, pid := range activeToolPids {
-		if runtime.GOOS == "windows" {
-			exec.Command("taskkill", "/F", "/T", "/PID", fmt.Sprintf("%d", pid)).Run()
+	if cmd.ConversationId == "" {
+		for _, pid := range activeToolPids {
+			if runtime.GOOS == "windows" {
+				exec.Command("taskkill", "/F", "/T", "/PID", fmt.Sprintf("%d", pid)).Run()
+			}
 		}
-	}
-	activeToolPids = nil
-	if graphifyTuiPid != 0 {
-		if runtime.GOOS == "windows" {
-			exec.Command("taskkill", "/F", "/T", "/PID", fmt.Sprintf("%d", graphifyTuiPid)).Run()
+		activeToolPids = nil
+		if graphifyTuiPid != 0 {
+			if runtime.GOOS == "windows" {
+				exec.Command("taskkill", "/F", "/T", "/PID", fmt.Sprintf("%d", graphifyTuiPid)).Run()
+			}
+			graphifyTuiPid = 0
+			fmt.Print("\r\n\x1b[0m\x1b[?25h\x1b[?1049l\x1b[2J\x1b[H")
 		}
-		graphifyTuiPid = 0
-		fmt.Print("\r\n\x1b[0m\x1b[?25h\x1b[?1049l\x1b[2J\x1b[H")
 	}
 	cmdMu.Unlock()
 
-	// 1. Force kill persistent terminal session if alive
-	forceKillTerminalSession()
+	// 1. Force kill persistent terminal session if alive (only if full stop)
+	if cmd.ConversationId == "" && cmd.TargetTaskId == "" {
+		forceKillTerminalSession()
+	}
 
 	// 2. Kill background tasks
 	if cmd.TargetTaskId != "" {
 		killBGTask(cmd.TargetTaskId)
+	} else if cmd.ConversationId != "" {
+		// Stop any bg task running in this conversation
+		bgTasksMu.RLock()
+		var toKill []string
+		for id, t := range bgTasks {
+			if t.ConversationID == cmd.ConversationId && t.Status == "running" {
+				toKill = append(toKill, id)
+			}
+		}
+		bgTasksMu.RUnlock()
+		for _, id := range toKill {
+			killBGTask(id)
+		}
 	} else {
 		stopAllBGTasks()
 	}
@@ -368,10 +408,11 @@ func handleCancelSignalViaGRPC(cmd *voilav1.ExecutionCommand, connData Connectio
 		TimestampMs: time.Now().UnixMilli(),
 		Payload: &voilav1.AgentTelemetry_FinalResult{
 			FinalResult: &voilav1.ExecutionResult{
-				CommandId: cmd.CommandId,
-				Output:    "Execution forcibly cancelled by user via gRPC signal.",
-				Summary:   "🛑 Cancelled",
-				Status:    "cancelled",
+				CommandId:         cmd.CommandId,
+				Output:            "Execution forcibly cancelled by user via gRPC signal.",
+				Summary:           "🛑 Cancelled",
+				Status:            "cancelled",
+				NewConversationId: cmd.ConversationId,
 			},
 		},
 	})
@@ -460,19 +501,75 @@ func handleIncomingCommandViaGRPC(cmd *voilav1.ExecutionCommand, connData Connec
 		return
 	}
 
+	if strings.HasPrefix(cmd.Command, "__PIN_CONVERSATION__:") {
+		parts := strings.Split(strings.TrimPrefix(cmd.Command, "__PIN_CONVERSATION__:"), ":")
+		if len(parts) >= 2 {
+			convID := parts[0]
+			isPinned := parts[1] == "true" || parts[1] == "1"
+			pinConversationInternal(convID, isPinned)
+			SendTelemetry(&voilav1.AgentTelemetry{
+				DeviceId:    connData.DeviceID,
+				Status:      "IDLE",
+				TimestampMs: time.Now().UnixMilli(),
+				Payload: &voilav1.AgentTelemetry_FinalResult{
+					FinalResult: &voilav1.ExecutionResult{
+						CommandId:         cmd.CommandId,
+						Summary:           "conversation_pinned",
+						Status:            "conversation_pinned",
+						NewConversationId: convID,
+					},
+				},
+			})
+			return
+		}
+	}
+
+	if strings.HasPrefix(cmd.Command, "__FORK_CONVERSATION__:") {
+		parts := strings.Split(strings.TrimPrefix(cmd.Command, "__FORK_CONVERSATION__:"), ":")
+		if len(parts) >= 3 {
+			parentID := parts[0]
+			newID := parts[1]
+			model := parts[2]
+			forkConversationInternal(parentID, newID, model)
+			SendTelemetry(&voilav1.AgentTelemetry{
+				DeviceId:    connData.DeviceID,
+				Status:      "IDLE",
+				TimestampMs: time.Now().UnixMilli(),
+				Payload: &voilav1.AgentTelemetry_FinalResult{
+					FinalResult: &voilav1.ExecutionResult{
+						CommandId:         cmd.CommandId,
+						Summary:           "conversation_forked",
+						Status:            "conversation_forked",
+						NewConversationId: newID,
+					},
+				},
+			})
+			return
+		}
+	}
+
+	effectiveConvID := getOrCreateConversationID(cmd.ConversationId)
+
 	currentModeMu.Lock()
 	globalMode := strings.ToUpper(currentMode)
 	currentModeMu.Unlock()
 
 	reqMode := strings.ToUpper(cmd.Mode)
 	var effectiveMode string
-	switch reqMode {
-	case "GROQ", "OLLAMA", "SHELL":
+	if reqMode == "SHELL" {
+		effectiveMode = "SHELL"
+	} else if reqMode == "GROQ" || reqMode == "OLLAMA" {
 		effectiveMode = reqMode
-	default:
-		effectiveMode = globalMode
-		if effectiveMode == "" {
-			effectiveMode = "LOCAL"
+	} else {
+		// In AGENT mode, check if the session was forked with a specific model type
+		meta, _ := loadConversationMetadata(effectiveConvID)
+		if meta.ModelType != "" {
+			effectiveMode = meta.ModelType
+		} else {
+			effectiveMode = globalMode
+			if effectiveMode == "" {
+				effectiveMode = "LOCAL"
+			}
 		}
 	}
 
@@ -480,26 +577,28 @@ func handleIncomingCommandViaGRPC(cmd *voilav1.ExecutionCommand, connData Connec
 		effectiveMode = "AGENT"
 	}
 
-	// Preemptively cancel any currently running task so this new command can take over
-	cmdMu.Lock()
-	if currentCancel != nil {
-		currentCancel()
+	// Cancel any previously running task IN THIS SPECIFIC SESSION ONLY (allowing multi-session parallelism)
+	sessionCancelsMu.Lock()
+	if prevCancel, exists := sessionCancels[effectiveConvID]; exists {
+		prevCancel()
+		delete(sessionCancels, effectiveConvID)
 	}
-	cmdMu.Unlock()
+	sessionCancelsMu.Unlock()
 
 	// Acquire execution semaphore with timeout
 	select {
 	case execSemaphore <- struct{}{}:
-	case <-time.After(5 * time.Second):
+	case <-time.After(10 * time.Second):
 		SendTelemetry(&voilav1.AgentTelemetry{
 			DeviceId:    connData.DeviceID,
 			Status:      "IDLE",
 			TimestampMs: time.Now().UnixMilli(),
 			Payload: &voilav1.AgentTelemetry_FinalResult{
 				FinalResult: &voilav1.ExecutionResult{
-					CommandId: cmd.CommandId,
-					Output:    "Previous task is still cancelling, please try again",
-					Status:    "error",
+					CommandId:         cmd.CommandId,
+					Output:            "Agent execution capacity reached, please retry momentarily",
+					Status:            "error",
+					NewConversationId: effectiveConvID,
 				},
 			},
 		})
@@ -507,19 +606,32 @@ func handleIncomingCommandViaGRPC(cmd *voilav1.ExecutionCommand, connData Connec
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
+	sessionCancelsMu.Lock()
+	sessionCancels[effectiveConvID] = cancel
+	sessionCancelsMu.Unlock()
 	cmdMu.Lock()
 	currentCancel = cancel
 	cmdMu.Unlock()
 
 	defer func() {
 		<-execSemaphore
+		sessionCancelsMu.Lock()
+		delete(sessionCancels, effectiveConvID)
+		sessionCancelsMu.Unlock()
 		cmdMu.Lock()
-		currentCancel = nil
+		if currentCancel != nil {
+			currentCancel = nil
+		}
 		cmdMu.Unlock()
 		cancel()
 	}()
 
 	wakeScreen()
+
+	// Wait for global AI rate limiter token before firing LLM / execution
+	if globalAIRateLimiter != nil {
+		_ = globalAIRateLimiter.Wait(ctx, 1.0)
+	}
 
 	// Update telemetry to RUNNING
 	SendTelemetry(&voilav1.AgentTelemetry{
@@ -534,7 +646,6 @@ func handleIncomingCommandViaGRPC(cmd *voilav1.ExecutionCommand, connData Connec
 	var err error
 
 	taskID := fmt.Sprintf("Agent-%x", time.Now().UnixNano()%0xFFFF)
-	effectiveConvID := getOrCreateConversationID(cmd.ConversationId)
 
 	if cmd.GraphifyEnabled {
 		output, err = executeGraphifyDAG(ctx, cmd.Command)

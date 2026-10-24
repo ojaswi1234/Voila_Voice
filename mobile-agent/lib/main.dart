@@ -466,6 +466,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   final List<Map<String, dynamic>> _messagesAgent = [];
   List<Map<String, dynamic>> get _messages => _currentMode.toUpperCase() == 'AGENT' ? _messagesAgent : _messagesShell;
   bool _isThinking = false;
+  final Set<String> _thinkingSessions = <String>{};
   String _currentStatus = 'Processing...';
   bool _isDataDeparting = false;
   bool _isDataArriving = false;
@@ -718,6 +719,11 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
 
   void _sortConversations() {
     _conversations.sort((a, b) {
+      final aPinned = a['is_pinned'] == 'true';
+      final bPinned = b['is_pinned'] == 'true';
+      if (aPinned != bPinned) {
+        return aPinned ? -1 : 1;
+      }
       final aTime = _parseConversationDate(a['updated_at'] ?? a['created_at']);
       final bTime = _parseConversationDate(b['updated_at'] ?? b['created_at']);
       return bTime.compareTo(aTime);
@@ -731,6 +737,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     final sevenDaysAgo = todayStart.subtract(const Duration(days: 7));
 
     final Map<String, List<Map<String, String>>> categorized = {
+      'Pinned': [],
       'Today': [],
       'Yesterday': [],
       'Previous 7 Days': [],
@@ -738,6 +745,10 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     };
 
     for (final conv in _conversations) {
+      if (conv['is_pinned'] == 'true') {
+        categorized['Pinned']!.add(conv);
+        continue;
+      }
       final d = _parseConversationDate(conv['updated_at'] ?? conv['created_at']);
       if (d.isAfter(todayStart) || d.isAtSameMomentAs(todayStart)) {
         categorized['Today']!.add(conv);
@@ -1109,6 +1120,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     if (!mounted) return;
     setState(() {
       _currentConversationId = id;
+      _isThinking = _thinkingSessions.contains(id);
     });
 
     // 1. Instant L1 memory cache hit (0ms)
@@ -1387,6 +1399,55 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     return t;
   }
 
+  String _parseSpokenPunctuation(String text) {
+    if (text.isEmpty) return text;
+    String t = text;
+
+    // Brackets, Parentheses, Braces
+    t = t.replaceAll(RegExp(r'\b(open|left)\s+(parenthesis|paren|round\s+bracket)\b', caseSensitive: false), '(');
+    t = t.replaceAll(RegExp(r'\b(close|right|closed)\s+(parenthesis|paren|round\s+bracket)\b', caseSensitive: false), ')');
+    t = t.replaceAll(RegExp(r'\b(open|left)\s+(bracket|square\s+bracket)\b', caseSensitive: false), '[');
+    t = t.replaceAll(RegExp(r'\b(close|right|closed)\s+(bracket|square\s+bracket)\b', caseSensitive: false), ']');
+    t = t.replaceAll(RegExp(r'\b(open|left)\s+(brace|curly\s+bracket|curly\s+brace)\b', caseSensitive: false), '{');
+    t = t.replaceAll(RegExp(r'\b(close|right|closed)\s+(brace|curly\s+bracket|curly\s+brace)\b', caseSensitive: false), '}');
+
+    // Quotes
+    t = t.replaceAll(RegExp(r'\b(open|start)\s+(quote|quotation|double\s+quote)\b', caseSensitive: false), '"');
+    t = t.replaceAll(RegExp(r'\b(close|end)\s+(quote|quotation|double\s+quote)\b', caseSensitive: false), '"');
+    t = t.replaceAll(RegExp(r'\b(single\s+quote|apostrophe)\b', caseSensitive: false), '\'');
+
+    // Standard Punctuation Marks
+    t = t.replaceAll(RegExp(r'\b(comma)\b', caseSensitive: false), ',');
+    t = t.replaceAll(RegExp(r'\b(full\s+stop|period|dot)\b', caseSensitive: false), '.');
+    t = t.replaceAll(RegExp(r'\b(question\s+mark)\b', caseSensitive: false), '?');
+    t = t.replaceAll(RegExp(r'\b(exclamation\s+mark|exclamation\s+point)\b', caseSensitive: false), '!');
+    t = t.replaceAll(RegExp(r'\b(colon)\b', caseSensitive: false), ':');
+    t = t.replaceAll(RegExp(r'\b(semicolon|semi-colon)\b', caseSensitive: false), ';');
+    t = t.replaceAll(RegExp(r'\b(hyphen|dash)\b', caseSensitive: false), '-');
+    t = t.replaceAll(RegExp(r'\b(underscore)\b', caseSensitive: false), '_');
+    t = t.replaceAll(RegExp(r'\b(forward\s+slash|slash)\b', caseSensitive: false), '/');
+    t = t.replaceAll(RegExp(r'\b(backslash|back\s+slash)\b', caseSensitive: false), '\\');
+    t = t.replaceAll(RegExp(r'\b(newline|new\s+line|next\s+line)\b', caseSensitive: false), '\n');
+
+    // Whitespace cleanup around punctuation
+    t = t.replaceAll(RegExp(r'\s+([,.:;?!])'), r'$1');
+    t = t.replaceAllMapped(RegExp(r'([,.:;?!])([A-Za-z0-9])'), (m) => '${m[1]} ${m[2]}');
+    t = t.replaceAll(RegExp(r'\(\s+'), '(');
+    t = t.replaceAll(RegExp(r'\s+\)'), ')');
+    t = t.replaceAll(RegExp(r'\[\s+'), '[');
+    t = t.replaceAll(RegExp(r'\s+\]'), ']');
+    t = t.replaceAll(RegExp(r'\{\s+'), '{');
+    t = t.replaceAll(RegExp(r'\s+\}'), '}');
+
+    return t;
+  }
+
+  String _normalizeDictatedSpeech(String text) {
+    String t = _normalizeGenZSlang(text);
+    t = _parseSpokenPunctuation(t);
+    return t;
+  }
+
   Future<void> _startListening() async {
     final hasPermission = await _requestMicrophonePermission();
     if (!hasPermission) return;
@@ -1477,7 +1538,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
           }
           
           if (result.finalResult) {
-            String finalWords = _normalizeGenZSlang(result.recognizedWords);
+            String finalWords = _normalizeDictatedSpeech(result.recognizedWords);
             if (mounted) setState(() {
               _controller.text = _previousDictationText + finalWords;
               _isListening = false;
@@ -1525,7 +1586,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
           } else {
             // Partial result - update text field live
             if (mounted) setState(() {
-              _controller.text = _previousDictationText + _normalizeGenZSlang(result.recognizedWords);
+              _controller.text = _previousDictationText + _normalizeDictatedSpeech(result.recognizedWords);
             });
           }
         },
@@ -1993,8 +2054,13 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
               // arrives — including screenshots. Previously the screenshot branch
               // only called _triggerDataArriving() but forgot to set
               // _isThinking = false, leaving the skeleton loader visible.
+              final resConvId = jsonResponse['new_conversation_id']?.toString() ?? _currentConversationId;
               if (mounted) setState(() {
-                _isThinking = false; _triggerDataArriving();
+                _thinkingSessions.remove(resConvId);
+                if (resConvId == _currentConversationId || _thinkingSessions.isEmpty) {
+                  _isThinking = false;
+                  _triggerDataArriving();
+                }
               });
               
               String summaryToSpeak = jsonResponse['summary'];
@@ -2516,6 +2582,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       setState(() {
         if (text != '__SCREENSHOT__') {
           _isThinking = true;
+          _thinkingSessions.add(_currentConversationId);
           _triggerDataDeparting();
         }
         _addMessage({
@@ -3169,7 +3236,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                         ],
 
                         // Categorized Groups
-                        for (final category in ['Today', 'Yesterday', 'Previous 7 Days', 'Older'])
+                        for (final category in ['Pinned', 'Today', 'Yesterday', 'Previous 7 Days', 'Older'])
                           if ((categorized[category] ?? []).isNotEmpty) ...[
                             _buildCategoryHeader(category, categorized[category]!.length, isDark),
                             for (final conv in categorized[category]!)
@@ -3433,10 +3500,199 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     );
   }
 
+  void _togglePinConversation(String convId, bool isPinned) {
+    if (convId.isEmpty) return;
+    setState(() {
+      final idx = _conversations.indexWhere((c) => c['id'] == convId);
+      if (idx >= 0) {
+        final item = Map<String, String>.from(_conversations[idx]);
+        item['is_pinned'] = isPinned ? 'true' : 'false';
+        _conversations[idx] = item;
+        _sortConversations();
+        _saveConversationsToDiskCache(_conversations);
+      }
+    });
+
+    if (_channel != null) {
+      _channel!.sink.add(jsonEncode({
+        'action': 'pin_conversation',
+        'conversation_id': convId,
+        'is_pinned': isPinned,
+      }));
+    }
+  }
+
+  void _showForkConversationDialog(String parentId, String parentTitle) {
+    String selectedModel = 'GROQ';
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final isDark = appThemeMode.value == ThemeMode.dark;
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Container(
+              padding: EdgeInsets.only(
+                left: 20,
+                right: 20,
+                top: 20,
+                bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+              ),
+              decoration: BoxDecoration(
+                color: AppTokens.card(isDark),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                border: Border.all(color: AppTokens.border(isDark)),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.fork_right_rounded, color: AppTokens.accentSecondary, size: 22),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Fork Session',
+                        style: GoogleFonts.inter(
+                          color: AppTokens.textPrimary(isDark),
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Branch "$parentTitle" to another AI model provider so they can cross-analyze each other\'s work and task history.',
+                    style: GoogleFonts.inter(
+                      color: AppTokens.textSecondary(isDark),
+                      fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'SELECT TARGET MODEL PROVIDER',
+                    style: GoogleFonts.inter(
+                      color: AppTokens.textSecondary(isDark),
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  for (final provider in [
+                    {'id': 'GROQ', 'name': 'Groq Cloud (Ultra Fast)', 'icon': Icons.bolt_rounded},
+                    {'id': 'OLLAMA', 'name': 'Ollama Local (Offline / Private)', 'icon': Icons.memory_rounded},
+                    {'id': 'LOCAL', 'name': 'Local Default Agent', 'icon': Icons.terminal_rounded},
+                  ])
+                    Container(
+                      margin: const EdgeInsets.symmetric(vertical: 4),
+                      decoration: BoxDecoration(
+                        color: selectedModel == provider['id']
+                            ? AppTokens.accentSecondary.withOpacity(0.12)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: selectedModel == provider['id']
+                              ? AppTokens.accentSecondary
+                              : AppTokens.border(isDark),
+                        ),
+                      ),
+                      child: ListTile(
+                        dense: true,
+                        leading: Icon(
+                          provider['icon'] as IconData,
+                          color: selectedModel == provider['id']
+                              ? AppTokens.accentSecondary
+                              : AppTokens.textSecondary(isDark),
+                          size: 18,
+                        ),
+                        title: Text(
+                          provider['name'] as String,
+                          style: GoogleFonts.inter(
+                            color: AppTokens.textPrimary(isDark),
+                            fontSize: 12.5,
+                            fontWeight: selectedModel == provider['id'] ? FontWeight.w600 : FontWeight.w400,
+                          ),
+                        ),
+                        trailing: selectedModel == provider['id']
+                            ? const Icon(Icons.check_circle_rounded, color: AppTokens.accentSecondary, size: 18)
+                            : null,
+                        onTap: () {
+                          setModalState(() {
+                            selectedModel = provider['id'] as String;
+                          });
+                        },
+                      ),
+                    ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.pop(ctx),
+                          style: OutlinedButton.styleFrom(
+                            side: Border.all(color: AppTokens.border(isDark)),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                          child: Text(
+                            'Cancel',
+                            style: GoogleFonts.inter(color: AppTokens.textSecondary(isDark)),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () {
+                            Navigator.pop(ctx);
+                            final newForkId = 'conv_fork_' + const Uuid().v4().substring(0, 8);
+                            if (_channel != null) {
+                              _channel!.sink.add(jsonEncode({
+                                'action': 'fork_conversation',
+                                'conversation_id': parentId,
+                                'new_id': newForkId,
+                                'model': selectedModel,
+                              }));
+                            }
+                            _resumeConversation(newForkId, '[Fork] $parentTitle');
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Forked session to $selectedModel'),
+                                duration: const Duration(seconds: 2),
+                              ),
+                            );
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTokens.accentSecondary,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                          child: Text(
+                            'Fork Chat',
+                            style: GoogleFonts.inter(color: Colors.black, fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   Widget _buildConversationTile(Map<String, String> conv, bool isDark) {
     final isSelected = _currentConversationId == conv['id'];
+    final convId = conv['id'] ?? '';
     final title = conv['title'] ?? 'Conversation';
     final snippet = conv['last_snippet'] ?? '';
+    final isPinned = conv['is_pinned'] == 'true';
+    final isTaskRunning = _thinkingSessions.contains(convId) ||
+        _bgTasks.any((t) => (t['conversation_id']?.toString() == convId || t['conv_id']?.toString() == convId) && t['status'] == 'running');
 
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 2),
@@ -3447,21 +3703,100 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       ),
       child: ListTile(
         dense: true,
-        contentPadding: const EdgeInsets.only(left: 10, right: 4),
-        leading: Icon(
-          isSelected ? Icons.auto_awesome : Icons.chat_bubble_outline_rounded,
-          size: 16,
-          color: isSelected ? AppTokens.accentSecondary : AppTokens.textSecondary(isDark).withOpacity(0.7),
+        contentPadding: const EdgeInsets.only(left: 8, right: 4),
+        leading: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Icon(
+              isSelected ? Icons.auto_awesome : Icons.chat_bubble_outline_rounded,
+              size: 16,
+              color: isTaskRunning
+                  ? const Color(0xFF10B981)
+                  : (isSelected ? AppTokens.accentSecondary : AppTokens.textSecondary(isDark).withOpacity(0.7)),
+            ),
+            if (isTaskRunning)
+              Positioned(
+                right: -4,
+                top: -4,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 2.5, vertical: 0.5),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF10B981),
+                    borderRadius: BorderRadius.circular(3),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF10B981).withOpacity(0.6),
+                        blurRadius: 4,
+                        spreadRadius: 1,
+                      ),
+                    ],
+                  ),
+                  child: const Text(
+                    'A',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 7.5,
+                      fontWeight: FontWeight.w900,
+                      height: 1.0,
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ),
-        title: Text(
-          title,
-          style: GoogleFonts.inter(
-            color: isSelected ? AppTokens.textPrimary(isDark) : AppTokens.textSecondary(isDark),
-            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-            fontSize: 12.5,
-          ),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
+        title: Row(
+          children: [
+            if (isPinned) ...[
+              const Icon(Icons.push_pin_rounded, size: 12, color: Color(0xFFF59E0B)),
+              const SizedBox(width: 4),
+            ],
+            Expanded(
+              child: Text(
+                title,
+                style: GoogleFonts.inter(
+                  color: isSelected ? AppTokens.textPrimary(isDark) : AppTokens.textSecondary(isDark),
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                  fontSize: 12.5,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (isTaskRunning) ...[
+              const SizedBox(width: 4),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1.5),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF10B981).withOpacity(0.18),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: const Color(0xFF10B981), width: 1),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 5,
+                      height: 5,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF10B981),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 3),
+                    const Text(
+                      'A',
+                      style: TextStyle(
+                        color: Color(0xFF10B981),
+                        fontSize: 9,
+                        fontWeight: FontWeight.w900,
+                        height: 1.0,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
         ),
         subtitle: snippet.isNotEmpty
             ? Text(
@@ -3474,13 +3809,46 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                 overflow: TextOverflow.ellipsis,
               )
             : null,
-        trailing: IconButton(
-          icon: Icon(Icons.delete_outline_rounded, size: 15, color: AppTokens.textSecondary(isDark).withOpacity(0.4)),
-          tooltip: 'Delete Chat',
-          onPressed: () => _confirmDeleteConversation(conv['id']!, title),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: Icon(
+                isPinned ? Icons.push_pin_rounded : Icons.push_pin_outlined,
+                size: 14,
+                color: isPinned ? const Color(0xFFF59E0B) : AppTokens.textSecondary(isDark).withOpacity(0.4),
+              ),
+              tooltip: isPinned ? 'Unpin Chat' : 'Pin Chat',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+              onPressed: () => _togglePinConversation(convId, !isPinned),
+            ),
+            IconButton(
+              icon: Icon(
+                Icons.fork_right_rounded,
+                size: 14,
+                color: AppTokens.textSecondary(isDark).withOpacity(0.5),
+              ),
+              tooltip: 'Fork Chat',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+              onPressed: () => _showForkConversationDialog(convId, title),
+            ),
+            IconButton(
+              icon: Icon(
+                Icons.delete_outline_rounded,
+                size: 14,
+                color: AppTokens.textSecondary(isDark).withOpacity(0.4),
+              ),
+              tooltip: 'Delete Chat',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+              onPressed: () => _confirmDeleteConversation(convId, title),
+            ),
+          ],
         ),
         onTap: () {
-          _resumeConversation(conv['id']!, title);
+          _resumeConversation(convId, title);
         },
       ),
     );
@@ -4102,6 +4470,11 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
           await flutterTts.setSpeechRate(rate);
           
           await flutterTts.speak(chunk);
+          if (chunk.contains(',') || chunk.contains(';') || chunk.contains(':')) {
+            await Future.delayed(const Duration(milliseconds: 220));
+          } else {
+            await Future.delayed(const Duration(milliseconds: 350));
+          }
         }
       } catch (e) {
         debugPrint("TTS Speak Error: $e");
@@ -4121,6 +4494,34 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     }
   }
 
+  String _formatSsmlProsody(String text) {
+    // 1. XML character escaping
+    String clean = text
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&apos;');
+
+    // 2. Syntactic human prosody pausing (English grammar)
+    // Commas: short syntactic breath pause (~220ms)
+    clean = clean.replaceAllMapped(RegExp(r',(?:\s+|$)'), (m) => ', <break time="220ms"/> ');
+    // Semicolons and Colons: clause punctuation pause (~320ms)
+    clean = clean.replaceAllMapped(RegExp(r';(?:\s+|$)'), (m) => '; <break time="320ms"/> ');
+    clean = clean.replaceAllMapped(RegExp(r':(?:\s+|$)'), (m) => ': <break time="300ms"/> ');
+    // Em dash / parenthetical dashes: (~260ms)
+    clean = clean.replaceAllMapped(RegExp(r'\s+[-–—]\s+'), (m) => ' <break time="260ms"/> ');
+    // Sentence terminals (periods, question marks, exclamations): (~450ms)
+    clean = clean.replaceAllMapped(RegExp(r'\.(?:\s+|$)'), (m) => '. <break time="450ms"/> ');
+    clean = clean.replaceAllMapped(RegExp(r'\?(?:\s+|$)'), (m) => '? <break time="450ms"/> ');
+    clean = clean.replaceAllMapped(RegExp(r'!(?:\s+|$)'), (m) => '! <break time="450ms"/> ');
+    // Paragraph breaks: (~550ms)
+    clean = clean.replaceAll(RegExp(r'\n{2,}'), ' <break time="550ms"/> ');
+    clean = clean.replaceAll('\n', ' <break time="300ms"/> ');
+
+    return clean;
+  }
+
   Future<bool> _playEdgeTts(String text) async {
     try {
       final String endpoint = "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=6A5AA1D4EAFF4E9FB37E23D68491D6F4";
@@ -4136,7 +4537,8 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       
       channel.sink.add(configMsg);
 
-      final String ssml = "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-IN'><voice name='en-IN-NeerjaNeural'><prosody pitch='+0Hz' rate='-10%'>$text</prosody></voice></speak>";
+      final String formattedText = _formatSsmlProsody(text);
+      final String ssml = "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-IN'><voice name='en-IN-NeerjaNeural'><prosody pitch='+0Hz' rate='-10%'>$formattedText</prosody></voice></speak>";
 
       final String reqMsg = "X-RequestId:$uuid\r\n"
           "Content-Type:application/ssml+xml\r\n"

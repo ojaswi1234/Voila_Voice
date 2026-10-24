@@ -172,12 +172,13 @@ func (s *TunnelServer) EstablishTunnel(stream voilav1.DesktopTunnelService_Estab
 		case *voilav1.AgentTelemetry_OutputChunk:
 			chunk := p.OutputChunk
 			resp := map[string]interface{}{
-				"type":       "chunk",
-				"command_id": chunk.CommandId,
-				"content":    chunk.Text,
-				"is_error":   chunk.IsError,
-				"is_final":   chunk.IsFinal,
-				"tool":       chunk.ToolName,
+				"type":            "chunk",
+				"command_id":      chunk.CommandId,
+				"content":         chunk.Text,
+				"is_error":        chunk.IsError,
+				"is_final":        chunk.IsFinal,
+				"tool":            chunk.ToolName,
+				"conversation_id": chunk.ConversationId,
 			}
 			if b, err := json.Marshal(resp); err == nil && s.backend != nil {
 				s.backend.broadcastToClients(websocket.TextMessage, b)
@@ -216,6 +217,24 @@ func (s *TunnelServer) EstablishTunnel(stream voilav1.DesktopTunnelService_Estab
 			} else if res.Summary == "all_conversations_cleared" {
 				resp := map[string]interface{}{
 					"type": "all_conversations_cleared",
+				}
+				if b, err := json.Marshal(resp); err == nil && s.backend != nil {
+					s.backend.broadcastToClients(websocket.TextMessage, b)
+				}
+				continue
+			} else if res.Summary == "conversation_pinned" {
+				resp := map[string]interface{}{
+					"type":            "conversation_pinned",
+					"conversation_id": res.NewConversationId,
+				}
+				if b, err := json.Marshal(resp); err == nil && s.backend != nil {
+					s.backend.broadcastToClients(websocket.TextMessage, b)
+				}
+				continue
+			} else if res.Summary == "conversation_forked" {
+				resp := map[string]interface{}{
+					"type":            "conversation_forked",
+					"conversation_id": res.NewConversationId,
 				}
 				if b, err := json.Marshal(resp); err == nil && s.backend != nil {
 					s.backend.broadcastToClients(websocket.TextMessage, b)
@@ -263,12 +282,13 @@ func (s *TunnelServer) EstablishTunnel(stream voilav1.DesktopTunnelService_Estab
 			resp := map[string]interface{}{
 				"type": "bg_task_update",
 				"task": map[string]interface{}{
-					"id":       prog.TaskId,
-					"label":    prog.Label,
-					"command":  prog.Command,
-					"status":   prog.Status,
-					"duration": fmt.Sprintf("%ds", prog.ElapsedSeconds),
-					"snapshot": prog.LatestLogSnippet,
+					"id":              prog.TaskId,
+					"label":           prog.Label,
+					"command":         prog.Command,
+					"status":          prog.Status,
+					"duration":        fmt.Sprintf("%ds", prog.ElapsedSeconds),
+					"snapshot":        prog.LatestLogSnippet,
+					"conversation_id": prog.ConversationId,
 				},
 			}
 			if b, err := json.Marshal(resp); err == nil && s.backend != nil {
