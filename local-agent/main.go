@@ -2989,6 +2989,31 @@ func getBrainDir() string {
 	return filepath.Join(homeDir, ".gemini", "voila-cli", "brain")
 }
 
+func getAllBrainDirs() []string {
+	homeDir, _ := os.UserHomeDir()
+	candidates := []string{
+		filepath.Join(homeDir, ".gemini", "voila-cli", "brain"),
+		filepath.Join(homeDir, ".gemini", "antigravity-cli", "brain"),
+	}
+	var valid []string
+	for _, d := range candidates {
+		if stat, err := os.Stat(d); err == nil && stat.IsDir() {
+			valid = append(valid, d)
+		}
+	}
+	return valid
+}
+
+func findConversationDir(convID string) (string, string) {
+	for _, bDir := range getAllBrainDirs() {
+		cDir := filepath.Join(bDir, convID)
+		if stat, err := os.Stat(cDir); err == nil && stat.IsDir() {
+			return bDir, cDir
+		}
+	}
+	return getBrainDir(), filepath.Join(getBrainDir(), convID)
+}
+
 func listConversationsHandler(w http.ResponseWriter, r *http.Request) {
 	// Zero-friction mode: Authenticate using SecurityPhraseHash
 	connData, err := loadConnectionData()
@@ -3013,32 +3038,116 @@ func listConversationsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	brainDir := getBrainDir()
-
-	entries, err := os.ReadDir(brainDir)
+	seenIDs := make(map[string]bool)
 	var conversations []Conversation
 
-	if err == nil {
-		for _, entry := range entries {
-			if entry.IsDir() {
-				id := entry.Name()
-				transcriptPath := filepath.Join(brainDir, id, ".system_generated", "logs", "transcript.jsonl")
-				title := "Unknown Task"
+	for _, brainDir := range getAllBrainDirs() {
+		entries, err := os.ReadDir(brainDir)
+		if err != nil {
+			continue
+		}
 
-				file, err := os.Open(transcriptPath)
-				if err == nil {
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+			id := entry.Name()
+			if seenIDs[id] {
+				continue
+			}
+
+			// Filter internal agent directories that are not conversational
+			if strings.HasPrefix(id, "node-") || id == "verify" || strings.HasPrefix(id, "Agent-") {
+				checkPath := filepath.Join(brainDir, id, "cloud_history.json")
+				if _, statErr := os.Stat(checkPath); os.IsNotExist(statErr) {
+					continue
+				}
+			}
+
+			info, _ := entry.Info()
+			var modTime int64
+			if info != nil {
+				modTime = info.ModTime().UnixMilli()
+			}
+
+			// 1. Check if metadata.json already indexed
+			meta, hasMeta := loadConversationMetadata(id)
+			if hasMeta && meta.Title != "" && meta.Title != "Unknown Task" {
+				seenIDs[id] = true
+				updatedAt := meta.UpdatedAt
+				if updatedAt == 0 {
+					updatedAt = modTime
+				}
+				conversations = append(conversations, Conversation{
+					ID:           id,
+					Title:        meta.Title,
+					UpdatedAt:    updatedAt,
+					CreatedAt:    meta.CreatedAt,
+					MessageCount: meta.MessageCount,
+					LastSnippet:  meta.LastSnippet,
+				})
+				continue
+			}
+
+			// 2. Discover from cloud_history_full.json, cloud_history.json, or transcript.jsonl
+			title := ""
+			lastSnippet := ""
+			msgCount := 0
+			convDir := filepath.Join(brainDir, id)
+
+			// Try full cloud history
+			cloudHistFull := filepath.Join(convDir, "cloud_history_full.json")
+			if data, err := os.ReadFile(cloudHistFull); err == nil {
+				var turns []map[string]interface{}
+				if json.Unmarshal(data, &turns) == nil && len(turns) > 0 {
+					msgCount = len(turns)
+					for _, turn := range turns {
+						if turn["role"] == "user" && title == "" {
+							if c, ok := turn["content"].(string); ok && strings.TrimSpace(c) != "" {
+								title = strings.TrimSpace(c)
+							}
+						}
+						if c, ok := turn["content"].(string); ok && strings.TrimSpace(c) != "" {
+							lastSnippet = strings.TrimSpace(c)
+						}
+					}
+				}
+			}
+
+			// Try cloud_history.json
+			if title == "" {
+				cloudHist := filepath.Join(convDir, "cloud_history.json")
+				if data, err := os.ReadFile(cloudHist); err == nil {
+					var turns []map[string]interface{}
+					if json.Unmarshal(data, &turns) == nil && len(turns) > 0 {
+						msgCount = len(turns)
+						for _, turn := range turns {
+							if turn["role"] == "user" && title == "" {
+								if c, ok := turn["content"].(string); ok && strings.TrimSpace(c) != "" {
+									title = strings.TrimSpace(c)
+								}
+							}
+							if c, ok := turn["content"].(string); ok && strings.TrimSpace(c) != "" {
+								lastSnippet = strings.TrimSpace(c)
+							}
+						}
+					}
+				}
+			}
+
+			// Try transcript.jsonl
+			if title == "" {
+				transcriptPath := filepath.Join(convDir, ".system_generated", "logs", "transcript.jsonl")
+				if file, err := os.Open(transcriptPath); err == nil {
 					scanner := bufio.NewScanner(file)
 					for scanner.Scan() {
 						line := scanner.Text()
 						if strings.Contains(line, "\"type\":\"USER_INPUT\"") {
 							var step map[string]interface{}
 							if json.Unmarshal([]byte(line), &step) == nil {
-								if c, ok := step["content"].(string); ok {
-									title = c
-									if len(title) > 40 {
-										title = title[:37] + "..."
-									}
-									title = strings.ReplaceAll(title, "\n", " ")
+								if c, ok := step["content"].(string); ok && strings.TrimSpace(c) != "" {
+									title = strings.TrimSpace(c)
+									msgCount++
 									break
 								}
 							}
@@ -3046,34 +3155,53 @@ func listConversationsHandler(w http.ResponseWriter, r *http.Request) {
 					}
 					file.Close()
 				}
-				if title == "Unknown Task" {
-					cloudHistPath := filepath.Join(brainDir, id, "cloud_history.json")
-					if data, err := os.ReadFile(cloudHistPath); err == nil {
-						var turns []map[string]interface{}
-						if json.Unmarshal(data, &turns) == nil {
-							for _, turn := range turns {
-								if turn["role"] == "user" {
-									if c, ok := turn["content"].(string); ok {
-										title = strings.TrimSpace(c)
-										if len(title) > 40 {
-											title = title[:37] + "..."
-										}
-										title = strings.ReplaceAll(title, "\n", " ")
-										break
-									}
-								}
-							}
-						}
-					}
-				}
-				conversations = append(conversations, Conversation{ID: id, Title: title})
 			}
-		}
-	}
 
-	// reverse to show newest first
-	for i, j := 0, len(conversations)-1; i < j; i, j = i+1, j-1 {
-		conversations[i], conversations[j] = conversations[j], conversations[i]
+			// Skip empty internal directories that have no conversation turns
+			if title == "" && msgCount == 0 {
+				continue
+			}
+
+			if title == "" {
+				title = "Conversation " + id
+			}
+
+			if len(title) > 40 {
+				title = title[:37] + "..."
+			}
+			title = strings.ReplaceAll(title, "\n", " ")
+
+			if len(lastSnippet) > 60 {
+				lastSnippet = lastSnippet[:57] + "..."
+			}
+			lastSnippet = strings.ReplaceAll(lastSnippet, "\n", " ")
+
+			updatedAt := modTime
+			if updatedAt == 0 {
+				updatedAt = time.Now().UnixMilli()
+			}
+
+			// Persist metadata.json so next lookup is instantaneous
+			metaToSave := ConversationMetadata{
+				ID:           id,
+				Title:        title,
+				CreatedAt:    modTime,
+				UpdatedAt:    updatedAt,
+				MessageCount: msgCount,
+				LastSnippet:  lastSnippet,
+			}
+			saveConversationMetadata(metaToSave)
+
+			seenIDs[id] = true
+			conversations = append(conversations, Conversation{
+				ID:           id,
+				Title:        title,
+				UpdatedAt:    updatedAt,
+				CreatedAt:    modTime,
+				MessageCount: msgCount,
+				LastSnippet:  lastSnippet,
+			})
+		}
 	}
 
 	// Sort newest first by UpdatedAt
@@ -3105,8 +3233,7 @@ func conversationMessagesHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	brainDir := getBrainDir()
-	convDir := filepath.Join(brainDir, convID)
+	_, convDir := findConversationDir(convID)
 
 	meta, _ := loadConversationMetadata(convID)
 	title := meta.Title
@@ -3216,8 +3343,7 @@ func conversationDeleteHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	brainDir := getBrainDir()
-	convDir := filepath.Join(brainDir, convID)
+	_, convDir := findConversationDir(convID)
 	os.RemoveAll(convDir)
 
 	activeConvMu.Lock()

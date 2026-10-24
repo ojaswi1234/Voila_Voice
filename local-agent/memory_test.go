@@ -235,3 +235,26 @@ func TestConversationDelete(t *testing.T) {
 		t.Errorf("Expected lastActiveConv to be reset")
 	}
 }
+
+func TestListConversationsDiscovery(t *testing.T) {
+	testConv := "conv_discovery_test_101"
+	brainDir := getBrainDir()
+	convDir := filepath.Join(brainDir, testConv)
+	os.RemoveAll(convDir)
+	defer os.RemoveAll(convDir)
+
+	saveCloudHistory(testConv, "Show system architecture overview", "Voila uses a zero-trust multi-agent swarm architecture.")
+
+	_, foundDir := findConversationDir(testConv)
+	if foundDir != convDir {
+		t.Errorf("findConversationDir failed: expected %s, got %s", convDir, foundDir)
+	}
+
+	meta, hasMeta := loadConversationMetadata(testConv)
+	if !hasMeta {
+		t.Errorf("Expected metadata to be automatically created by saveCloudHistory")
+	}
+	if meta.Title != "Show system architecture overview" {
+		t.Errorf("Expected title to match first user turn, got: %s", meta.Title)
+	}
+}

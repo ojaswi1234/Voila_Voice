@@ -949,9 +949,22 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
 
   void _fetchConversations() {
     if (_channel != null && _isConnected) {
+      String targetDevice = _activeDevice;
+      if (targetDevice.isEmpty && _devices.isNotEmpty) {
+        targetDevice = _devices.keys.firstWhere((k) => k.startsWith('desktop-'), orElse: () => '');
+        if (targetDevice.isNotEmpty) {
+          _activeDevice = targetDevice;
+        }
+      }
+      if (targetDevice.isEmpty && _savedDevices.isNotEmpty) {
+        targetDevice = _savedDevices.keys.firstWhere((k) => k.startsWith('desktop-'), orElse: () => '');
+        if (targetDevice.isNotEmpty) {
+          _activeDevice = targetDevice;
+        }
+      }
       final msg = jsonEncode({
         "type": "get_conversations",
-        "device_id": _activeDevice,
+        "device_id": targetDevice,
         "session_token": _sessionToken
       });
       _channel?.sink.add(msg);
@@ -962,9 +975,12 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     if (mounted) setState(() {
       _currentConversationId = 'conv_' + const Uuid().v4().substring(0, 8);
       _messagesAgent.clear();
-      _messagesAgent.insert(0, {'text': 'Started a new conversation.', 'isUser': false});
+      _messagesAgent.insert(0, {
+        'type': 'system',
+        'content': 'Started a new conversation.',
+        'timestamp': DateTime.now().toString(),
+      });
     });
-    Navigator.pop(context); // close drawer
   }
   
   void _resumeConversation(String id, String title) async {
@@ -1551,6 +1567,13 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
             } else if (jsonResponse is Map && jsonResponse['type'] == 'conversations_list') {
               List<dynamic> parsedData = [];
               var payload = jsonResponse['data'] ?? jsonResponse['conversations'];
+              if (payload is String) {
+                try {
+                  final dec = jsonDecode(payload);
+                  if (dec is List) payload = dec;
+                  else if (dec is Map) payload = dec;
+                } catch (_) {}
+              }
               if (payload is Map && payload['encrypted'] != null) {
                  final String phrase = _cachedSecurityPhrase;
                  String dec = CryptoUtils.decrypt(payload['encrypted'], phrase);
@@ -1560,15 +1583,19 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
               } else if (payload is List) {
                  parsedData = payload;
               }
-              if (mounted) setState(() {  // BUG-08 fix: safe cast handles non-String JSON values
-                _conversations = parsedData.map((x) {
-                  try {
-                    return Map<String, String>.from(
-                      (x as Map).map((k, v) => MapEntry(k.toString(), v?.toString() ?? '')));
-                  } catch (_) { return <String, String>{}; }
-                }).where((m) => m.isNotEmpty).toList();
+              final mapped = parsedData.map((x) {
+                try {
+                  return Map<String, String>.from(
+                    (x as Map).map((k, v) => MapEntry(k.toString(), v?.toString() ?? '')));
+                } catch (_) { return <String, String>{}; }
+              }).where((m) => m.isNotEmpty && m.containsKey('id')).toList();
+
+              if (mounted) setState(() {
+                _conversations = mapped;
               });
-              _saveConversationsToDiskCache(parsedData);
+              if (mapped.isNotEmpty) {
+                _saveConversationsToDiskCache(mapped);
+              }
             } else if (jsonResponse is Map && jsonResponse['type'] == 'conversation_messages') {
               final convId = jsonResponse['conversation_id']?.toString() ?? '';
               Map<String, dynamic> detailMap = {};
@@ -1603,7 +1630,11 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                   _messagesAgent.clear();
                   _messagesAgent.addAll(loadedMessages);
                   if (_messagesAgent.isEmpty) {
-                    _messagesAgent.insert(0, {'text': 'Conversation is ready.', 'isUser': false});
+                    _messagesAgent.insert(0, {
+                      'type': 'system',
+                      'content': 'Conversation is ready.',
+                      'timestamp': DateTime.now().toString(),
+                    });
                   }
                 });
                 _scrollToBottom();
@@ -2758,286 +2789,308 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     
     return Drawer(
       backgroundColor: AppTokens.bg(isDark),
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.only(top: 60, bottom: 20, left: 20, right: 20),
-            decoration: BoxDecoration(
-              color: AppTokens.card(isDark),
-              border: Border(bottom: BorderSide(color: AppTokens.border(isDark))),
+      child: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // 1. Fixed Header (VOILA VOICE + Sync button)
+            Container(
+              padding: const EdgeInsets.only(top: 16, bottom: 16, left: 20, right: 14),
+              decoration: BoxDecoration(
+                color: AppTokens.card(isDark),
+                border: Border(bottom: BorderSide(color: AppTokens.border(isDark))),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.graphic_eq_rounded, color: AppTokens.accent, size: 26),
+                  const SizedBox(width: 10),
+                  Text('VOILA VOICE', style: GoogleFonts.spaceGrotesk(color: AppTokens.textPrimary(isDark), fontSize: 19, fontWeight: FontWeight.w800, letterSpacing: -0.8)),
+                  const Spacer(),
+                  IconButton(
+                    icon: Icon(Icons.refresh, color: AppTokens.textSecondary(isDark), size: 20),
+                    onPressed: _fetchConversations,
+                    tooltip: 'Sync Conversations',
+                  )
+                ],
+              ),
             ),
-            child: Row(
-              children: [
-                const Icon(Icons.graphic_eq_rounded, color: AppTokens.accent, size: 28),
-                const SizedBox(width: 12),
-                Text('VOILA VOICE', style: GoogleFonts.spaceGrotesk(color: AppTokens.textPrimary(isDark), fontSize: 20, fontWeight: FontWeight.w800, letterSpacing: -1.0)),
-                const Spacer(),
-                IconButton(
-                  icon: Icon(Icons.refresh, color: AppTokens.textSecondary(isDark)),
-                  onPressed: _fetchConversations,
-                  tooltip: 'Sync Conversations',
-                )
-              ],
-            ),
-          ),
-          
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              children: [
-                // 1. Prominent + New Conversation button (Gemini/Claude standard)
-                Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFFFF4500), Color(0xFFFF6A00)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFFFF4500).withOpacity(0.3),
-                        blurRadius: 10,
-                        offset: const Offset(0, 3),
-                      ),
-                    ],
+            
+            // 2. Fixed Prominent + New Conversation button
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFFFF4500), Color(0xFFFF6A00)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFFFF4500).withOpacity(0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, 3),
                   ),
-                  child: ListTile(
-                    dense: true,
-                    leading: const Icon(Icons.add_rounded, color: Colors.white, size: 22),
-                    title: Text(
-                      'New Conversation',
-                      style: GoogleFonts.spaceGrotesk(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 14,
-                        letterSpacing: 0.3,
-                      ),
-                    ),
-                    onTap: () {
-                      Navigator.pop(context);
-                      _startNewConversation();
-                    },
+                ],
+              ),
+              child: ListTile(
+                dense: true,
+                leading: const Icon(Icons.add_rounded, color: Colors.white, size: 22),
+                title: Text(
+                  'New Conversation',
+                  style: GoogleFonts.spaceGrotesk(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                    letterSpacing: 0.3,
                   ),
                 ),
+                onTap: () {
+                  Navigator.pop(context); // Close the drawer cleanly
+                  _startNewConversation();
+                },
+              ),
+            ),
 
-                const SizedBox(height: 8),
-
-                // 2. RECENT CHATS Section Header
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
-                  child: Row(
-                    children: [
-                      Text(
-                        'RECENT CHATS',
-                        style: GoogleFonts.spaceGrotesk(
-                          color: AppTokens.textSecondary(isDark),
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 1.2,
-                        ),
-                      ),
-                      const Spacer(),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: AppTokens.accentSecondary.withOpacity(0.15),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Text(
-                          '${_conversations.length}',
-                          style: GoogleFonts.inter(
-                            color: AppTokens.accentSecondary,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                    ],
+            // 3. Fixed RECENT CHATS Header with Count Badge
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+              child: Row(
+                children: [
+                  Text(
+                    'RECENT CHATS',
+                    style: GoogleFonts.spaceGrotesk(
+                      color: AppTokens.textSecondary(isDark),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1.2,
+                    ),
                   ),
-                ),
-
-                // 3. Conversation List OR Helpful Empty State (always visible!)
-                if (_conversations.isEmpty)
+                  const Spacer(),
                   Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                     decoration: BoxDecoration(
-                      color: AppTokens.card(isDark).withOpacity(0.5),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: AppTokens.border(isDark).withOpacity(0.5)),
+                      color: AppTokens.accentSecondary.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(10),
                     ),
-                    child: Column(
-                      children: [
-                        Icon(Icons.chat_bubble_outline_rounded, size: 30, color: AppTokens.textSecondary(isDark).withOpacity(0.4)),
-                        const SizedBox(height: 8),
-                        Text(
-                          'No conversations yet',
-                          style: GoogleFonts.inter(
-                            color: AppTokens.textPrimary(isDark),
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
-                          ),
+                    child: Text(
+                      '${_conversations.length}',
+                      style: GoogleFonts.inter(
+                        color: AppTokens.accentSecondary,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // 4. Dedicated Scrollable Conversation List with Smooth Scrolling Physics and Native Scrollbar
+            Expanded(
+              child: _conversations.isEmpty
+                ? Center(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: AppTokens.card(isDark).withOpacity(0.5),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: AppTokens.border(isDark).withOpacity(0.5)),
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Tap "+ New Conversation" or speak to start chatting with Voila.',
-                          textAlign: TextAlign.center,
-                          style: GoogleFonts.inter(
-                            color: AppTokens.textSecondary(isDark),
-                            fontSize: 11,
-                          ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.chat_bubble_outline_rounded, size: 28, color: AppTokens.textSecondary(isDark).withOpacity(0.4)),
+                            const SizedBox(height: 8),
+                            Text(
+                              'No conversations yet',
+                              style: GoogleFonts.inter(
+                                color: AppTokens.textPrimary(isDark),
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Tap "+ New Conversation" or speak to start chatting with Voila.',
+                              textAlign: TextAlign.center,
+                              style: GoogleFonts.inter(
+                                color: AppTokens.textSecondary(isDark),
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
+                      ),
                     ),
                   )
-                else
-                  ..._conversations.map((conv) {
-                    final isSelected = _currentConversationId == conv['id'];
-                    final title = conv['title'] ?? 'New Conversation';
-                    final snippet = conv['last_snippet'] ?? '';
+                : RawScrollbar(
+                    thumbVisibility: true,
+                    thickness: 4,
+                    radius: const Radius.circular(8),
+                    thumbColor: AppTokens.accentSecondary.withOpacity(0.5),
+                    child: ListView.builder(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+                      itemCount: _conversations.length,
+                      itemBuilder: (context, index) {
+                        final conv = _conversations[index];
+                        final isSelected = _currentConversationId == conv['id'];
+                        final title = conv['title'] ?? 'New Conversation';
+                        final snippet = conv['last_snippet'] ?? '';
 
-                    return Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: isSelected ? AppTokens.accentSecondary.withOpacity(0.16) : Colors.transparent,
-                        borderRadius: BorderRadius.circular(12),
-                        border: isSelected ? Border.all(color: AppTokens.accentSecondary.withOpacity(0.6), width: 1.2) : null,
-                      ),
-                      child: ListTile(
-                        dense: true,
-                        contentPadding: const EdgeInsets.only(left: 12, right: 4),
-                        leading: Icon(
-                          isSelected ? Icons.auto_awesome : Icons.chat_bubble_outline_rounded,
-                          size: 18,
-                          color: isSelected ? AppTokens.accentSecondary : AppTokens.textSecondary(isDark),
-                        ),
-                        title: Text(
-                          title, 
-                          style: GoogleFonts.inter(
-                            color: isSelected ? AppTokens.textPrimary(isDark) : AppTokens.textSecondary(isDark),
-                            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                            fontSize: 13.5,
+                        return Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: isSelected ? AppTokens.accentSecondary.withOpacity(0.16) : Colors.transparent,
+                            borderRadius: BorderRadius.circular(12),
+                            border: isSelected ? Border.all(color: AppTokens.accentSecondary.withOpacity(0.6), width: 1.2) : null,
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        subtitle: snippet.isNotEmpty
-                            ? Text(
-                                snippet,
-                                style: GoogleFonts.inter(
-                                  color: AppTokens.textSecondary(isDark).withOpacity(0.7),
-                                  fontSize: 11,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              )
-                            : null,
-                        trailing: IconButton(
-                          icon: Icon(Icons.delete_outline_rounded, size: 16, color: AppTokens.textSecondary(isDark).withOpacity(0.5)),
-                          tooltip: 'Delete Chat',
-                          onPressed: () => _confirmDeleteConversation(conv['id']!, title),
-                        ),
-                        onTap: () {
-                          _resumeConversation(conv['id']!, title);
-                        },
-                      ),
-                    );
-                  }).toList(),
-
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  child: Divider(color: AppTokens.border(isDark)),
-                ),
-
-                // 4. Auxiliary Navigation Items (Secondary)
-                _buildDrawerItem(Icons.dashboard_customize_rounded, 'Artifacts', () async {
-                  if (!await _ensureUnlocked()) return;
-                  if (mounted) Navigator.pop(context);
-                  if (mounted) Navigator.push(context, MaterialPageRoute(builder: (context) => const ArtifactsPage()));
-                }),
-                _buildDrawerItem(Icons.shield_rounded, 'Security Alerts', () {
-                  Navigator.pop(context);
-                  _showSecurityAlerts();
-                }),
-                _buildDrawerItem(Icons.camera_outdoor_rounded, 'Surveillance', () async {
-                  if (!await _ensureUnlocked()) return;
-                  if (mounted) Navigator.pop(context);
-                  if (mounted) showModalBottomSheet(
-                    context: context,
-                    isScrollControlled: true,
-                    backgroundColor: Colors.transparent,
-                    builder: (context) => SurveillanceSheet(
-                      backendUrl: backendUrl,
-                      deviceId: _activeDevice ?? '',
-                    ),
-                  );
-                }),
-                _buildDrawerItem(Icons.tune_rounded, 'Settings', () {
-                  Navigator.pop(context);
-                  _showSettingsSheet(context);
-                }),
-                _buildDrawerItem(Icons.image_not_supported_rounded, 'Clear Screenshots', () {
-                  if (mounted) setState(() {
-                    _messages.removeWhere((m) => (m['content'] as String? ?? '').startsWith('__IMAGE__:'));
-                  });
-                  Navigator.pop(context);
-                }),
-
-                // 5. Session Status Card
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: _isSessionValid() 
-                        ? (_isSessionExpiringSoon() ? Colors.orange.withOpacity(0.1) : Colors.green.withOpacity(0.1))
-                        : Colors.red.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: _isSessionValid() 
-                          ? (_isSessionExpiringSoon() ? Colors.orange.withOpacity(0.5) : Colors.green.withOpacity(0.5))
-                          : Colors.red.withOpacity(0.5),
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          _isSessionValid() ? Icons.lock_open_rounded : Icons.lock_rounded,
-                          size: 18,
-                          color: _isSessionValid() 
-                            ? (_isSessionExpiringSoon() ? Colors.orange : Colors.green)
-                            : Colors.red,
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('Session Status', style: GoogleFonts.inter(color: AppTokens.textSecondary(isDark), fontSize: 12)),
-                              const SizedBox(height: 2),
-                              Text(
-                                _getSessionStatusText(),
-                                style: GoogleFonts.inter(
-                                  color: _isSessionValid() 
-                                    ? (_isSessionExpiringSoon() ? Colors.orange : Colors.green)
-                                    : Colors.red,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 14,
-                                ),
+                          child: ListTile(
+                            dense: true,
+                            contentPadding: const EdgeInsets.only(left: 12, right: 4),
+                            leading: Icon(
+                              isSelected ? Icons.auto_awesome : Icons.chat_bubble_outline_rounded,
+                              size: 18,
+                              color: isSelected ? AppTokens.accentSecondary : AppTokens.textSecondary(isDark),
+                            ),
+                            title: Text(
+                              title, 
+                              style: GoogleFonts.inter(
+                                color: isSelected ? AppTokens.textPrimary(isDark) : AppTokens.textSecondary(isDark),
+                                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                                fontSize: 13,
                               ),
-                            ],
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            subtitle: snippet.isNotEmpty
+                                ? Text(
+                                    snippet,
+                                    style: GoogleFonts.inter(
+                                      color: AppTokens.textSecondary(isDark).withOpacity(0.7),
+                                      fontSize: 11,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  )
+                                : null,
+                            trailing: IconButton(
+                              icon: Icon(Icons.delete_outline_rounded, size: 16, color: AppTokens.textSecondary(isDark).withOpacity(0.5)),
+                              tooltip: 'Delete Chat',
+                              onPressed: () => _confirmDeleteConversation(conv['id']!, title),
+                            ),
+                            onTap: () {
+                              _resumeConversation(conv['id']!, title);
+                            },
                           ),
-                        ),
-                      ],
+                        );
+                      },
                     ),
                   ),
-                ),
-              ],
             ),
-          ),
-        ],
+
+            // 5. Docked Bottom Auxiliary Section (Divider, Utilities & Session Status)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Divider(color: AppTokens.border(isDark), height: 1),
+            ),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 280),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildDrawerItem(Icons.dashboard_customize_rounded, 'Artifacts', () async {
+                      if (!await _ensureUnlocked()) return;
+                      if (mounted) Navigator.pop(context);
+                      if (mounted) Navigator.push(context, MaterialPageRoute(builder: (context) => const ArtifactsPage()));
+                    }),
+                    _buildDrawerItem(Icons.shield_rounded, 'Security Alerts', () {
+                      Navigator.pop(context);
+                      _showSecurityAlerts();
+                    }),
+                    _buildDrawerItem(Icons.camera_outdoor_rounded, 'Surveillance', () async {
+                      if (!await _ensureUnlocked()) return;
+                      if (mounted) Navigator.pop(context);
+                      if (mounted) showModalBottomSheet(
+                        context: context,
+                        isScrollControlled: true,
+                        backgroundColor: Colors.transparent,
+                        builder: (context) => SurveillanceSheet(
+                          backendUrl: backendUrl,
+                          deviceId: _activeDevice ?? '',
+                        ),
+                      );
+                    }),
+                    _buildDrawerItem(Icons.tune_rounded, 'Settings', () {
+                      Navigator.pop(context);
+                      _showSettingsSheet(context);
+                    }),
+                    _buildDrawerItem(Icons.image_not_supported_rounded, 'Clear Screenshots', () {
+                      if (mounted) setState(() {
+                        _messages.removeWhere((m) => (m['content'] as String? ?? '').startsWith('__IMAGE__:'));
+                      });
+                      Navigator.pop(context);
+                    }),
+
+                    // Session Status Card
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                      child: Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: _isSessionValid() 
+                            ? (_isSessionExpiringSoon() ? Colors.orange.withOpacity(0.1) : Colors.green.withOpacity(0.1))
+                            : Colors.red.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: _isSessionValid() 
+                              ? (_isSessionExpiringSoon() ? Colors.orange.withOpacity(0.5) : Colors.green.withOpacity(0.5))
+                              : Colors.red.withOpacity(0.5),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              _isSessionValid() ? Icons.lock_open_rounded : Icons.lock_rounded,
+                              size: 16,
+                              color: _isSessionValid() 
+                                ? (_isSessionExpiringSoon() ? Colors.orange : Colors.green)
+                                : Colors.red,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Session Status', style: GoogleFonts.inter(color: AppTokens.textSecondary(isDark), fontSize: 11)),
+                                  const SizedBox(height: 1),
+                                  Text(
+                                    _getSessionStatusText(),
+                                    style: GoogleFonts.inter(
+                                      color: _isSessionValid() 
+                                        ? (_isSessionExpiringSoon() ? Colors.orange : Colors.green)
+                                        : Colors.red,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

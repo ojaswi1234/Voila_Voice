@@ -1630,12 +1630,15 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				
 				go func(dID string, cID string, addr string, hash string, msgType int) {
 					client := safeHTTPClient()
-					req, err := http.NewRequest("GET", addr+"/models", nil)
+					req, err := http.NewRequest("GET", strings.TrimRight(addr, "/")+"/models", nil)
 					if err != nil {
 						b.dispatcher.Dispatch(cID, msgType, []byte("ERROR: Failed to create models request"))
 						return
 					}
 					req.Header.Set("X-Exec-Secret", hash)
+					req.Header.Set("ngrok-skip-browser-warning", "true")
+					req.Header.Set("User-Agent", "VoilaBackend/1.0")
+					req.Header.Set("Accept", "application/json")
 					
 					resp, err := client.Do(req)
 					if err != nil {
@@ -1664,9 +1667,19 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 					if device != nil && device.Active {
 						deviceID = device.ID
 					} else {
-						b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: No active online desktop device"))
-						continue
+						b.mu.RLock()
+						for dId, d := range b.devices {
+							if d.Active {
+								deviceID = dId
+								break
+							}
+						}
+						b.mu.RUnlock()
 					}
+				}
+				if deviceID == "" {
+					b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: No active online desktop device"))
+					continue
 				}
 				
 				b.mu.RLock()
@@ -1680,22 +1693,25 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				
 				go func(dID string, cID string, addr string, hash string, msgType int) {
 					client := safeHTTPClient()
-					req, err := http.NewRequest("GET", addr+"/conversations", nil)
+					req, err := http.NewRequest("GET", strings.TrimRight(addr, "/")+"/conversations", nil)
 					if err == nil {
 						req.Header.Set("X-Exec-Secret", hash)
+						req.Header.Set("ngrok-skip-browser-warning", "true")
+						req.Header.Set("User-Agent", "VoilaBackend/1.0")
+						req.Header.Set("Accept", "application/json")
 						resp, err := client.Do(req)
 						if err == nil {
 							defer resp.Body.Close()
 							body, _ := io.ReadAll(resp.Body)
-							
-							// Wrap in a response object
-							respObj := map[string]interface{}{
-								"type": "conversations_list",
-								"data": json.RawMessage(body),
+							if resp.StatusCode == http.StatusOK {
+								respObj := map[string]interface{}{
+									"type": "conversations_list",
+									"data": json.RawMessage(body),
+								}
+								respJson, _ := json.Marshal(respObj)
+								b.dispatcher.Dispatch(cID, msgType, respJson)
+								return
 							}
-							respJson, _ := json.Marshal(respObj)
-							b.dispatcher.Dispatch(cID, msgType, respJson)
-							return
 						}
 					}
 					b.dispatcher.Dispatch(cID, msgType, []byte("ERROR: failed to fetch conversations"))
@@ -1712,9 +1728,19 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 					if device != nil && device.Active {
 						deviceID = device.ID
 					} else {
-						b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: No active online desktop device"))
-						continue
+						b.mu.RLock()
+						for dId, d := range b.devices {
+							if d.Active {
+								deviceID = dId
+								break
+							}
+						}
+						b.mu.RUnlock()
 					}
+				}
+				if deviceID == "" {
+					b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: No active online desktop device"))
+					continue
 				}
 				
 				b.mu.RLock()
@@ -1728,22 +1754,27 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				
 				go func(dID string, cID string, addr string, hash string, targetConvID string, msgType int) {
 					client := safeHTTPClient()
-					targetURL := addr + "/conversation/messages?id=" + url.QueryEscape(targetConvID)
+					targetURL := strings.TrimRight(addr, "/") + "/conversation/messages?id=" + url.QueryEscape(targetConvID)
 					req, err := http.NewRequest("GET", targetURL, nil)
 					if err == nil {
 						req.Header.Set("X-Exec-Secret", hash)
+						req.Header.Set("ngrok-skip-browser-warning", "true")
+						req.Header.Set("User-Agent", "VoilaBackend/1.0")
+						req.Header.Set("Accept", "application/json")
 						resp, err := client.Do(req)
 						if err == nil {
 							defer resp.Body.Close()
 							body, _ := io.ReadAll(resp.Body)
-							respObj := map[string]interface{}{
-								"type":            "conversation_messages",
-								"conversation_id": targetConvID,
-								"data":            json.RawMessage(body),
+							if resp.StatusCode == http.StatusOK {
+								respObj := map[string]interface{}{
+									"type":            "conversation_messages",
+									"conversation_id": targetConvID,
+									"data":            json.RawMessage(body),
+								}
+								respJson, _ := json.Marshal(respObj)
+								b.dispatcher.Dispatch(cID, msgType, respJson)
+								return
 							}
-							respJson, _ := json.Marshal(respObj)
-							b.dispatcher.Dispatch(cID, msgType, respJson)
-							return
 						}
 					}
 					b.dispatcher.Dispatch(cID, msgType, []byte("ERROR: failed to fetch conversation messages"))
@@ -1760,9 +1791,19 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 					if device != nil && device.Active {
 						deviceID = device.ID
 					} else {
-						b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: No active online desktop device"))
-						continue
+						b.mu.RLock()
+						for dId, d := range b.devices {
+							if d.Active {
+								deviceID = dId
+								break
+							}
+						}
+						b.mu.RUnlock()
 					}
+				}
+				if deviceID == "" {
+					b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: No active online desktop device"))
+					continue
 				}
 				
 				b.mu.RLock()
@@ -1777,20 +1818,25 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				go func(dID string, cID string, addr string, hash string, targetConvID string, msgType int) {
 					client := safeHTTPClient()
 					delBody, _ := json.Marshal(map[string]string{"conversation_id": targetConvID})
-					req, err := http.NewRequest("POST", addr+"/conversation/delete", bytes.NewBuffer(delBody))
+					req, err := http.NewRequest("POST", strings.TrimRight(addr, "/")+"/conversation/delete", bytes.NewBuffer(delBody))
 					if err == nil {
 						req.Header.Set("Content-Type", "application/json")
 						req.Header.Set("X-Exec-Secret", hash)
+						req.Header.Set("ngrok-skip-browser-warning", "true")
+						req.Header.Set("User-Agent", "VoilaBackend/1.0")
+						req.Header.Set("Accept", "application/json")
 						resp, err := client.Do(req)
 						if err == nil {
 							defer resp.Body.Close()
-							respObj := map[string]interface{}{
-								"type":            "conversation_deleted",
-								"conversation_id": targetConvID,
+							if resp.StatusCode == http.StatusOK {
+								respObj := map[string]interface{}{
+									"type":            "conversation_deleted",
+									"conversation_id": targetConvID,
+								}
+								respJson, _ := json.Marshal(respObj)
+								b.dispatcher.Dispatch(cID, msgType, respJson)
+								return
 							}
-							respJson, _ := json.Marshal(respObj)
-							b.dispatcher.Dispatch(cID, msgType, respJson)
-							return
 						}
 					}
 					b.dispatcher.Dispatch(cID, msgType, []byte("ERROR: failed to delete conversation"))
