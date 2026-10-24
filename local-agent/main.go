@@ -8074,6 +8074,8 @@ func main() {
 	StartClipboardInterceptor()
 	// Contextual Morning & Workday Briefing
 	StartWorkdayBriefingScheduler()
+	// Autonomous Nightly Project Maintenance (Cron-Agent)
+	StartNightlyGuardianScheduler()
 
 	// Check for background mode flag
 	backgroundMode := false

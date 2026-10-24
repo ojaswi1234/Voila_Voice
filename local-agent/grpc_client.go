@@ -437,6 +437,16 @@ func handleIncomingCommandViaGRPC(cmd *voilav1.ExecutionCommand, connData Connec
 		return
 	}
 
+	if cmd.Command == "__RUN_NIGHTLY_AUDIT__" {
+		go RunNightlyAudit(true)
+		return
+	}
+
+	if cmd.Command == "__EXECUTE_CACHE_CLEANUP__" {
+		go ExecuteCacheCleanup()
+		return
+	}
+
 	if cmd.Command == "__GET_CONVERSATIONS__" {
 		convs := listConversationsInternal()
 		jsonData, _ := json.Marshal(convs)

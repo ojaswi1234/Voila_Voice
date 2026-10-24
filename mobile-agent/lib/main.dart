@@ -1083,6 +1083,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   Map<String, dynamic>? _activeClipboardSuggestion;
   Timer? _clipboardSuggestionTimer;
   Map<String, dynamic>? _activeWorkdayBriefing;
+  Map<String, dynamic>? _activeNightlyAuditReport;
   int _reconnectAttempts = 0;
   Map<String, dynamic> _devices = {};
   String? _currentDeviceId;
@@ -3181,6 +3182,241 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     );
   }
 
+  Widget _buildNightlyGuardianCard(Map<String, dynamic> report, bool isDark) {
+    final cacheMB = report['cleanable_cache_mb'] != null ? (report['cleanable_cache_mb'] as num).toDouble() : 0.0;
+    final depStatus = report['dependency_status']?.toString() ?? 'Healthy';
+    final staleBranches = report['stale_branches'] is List ? (report['stale_branches'] as List).length : 0;
+    final recommendation = report['recommendation']?.toString() ?? '';
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF0F172A).withOpacity(0.94) : Colors.white.withOpacity(0.94),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: const Color(0xFF06B6D4).withOpacity(0.4),
+          width: 1.2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF06B6D4).withOpacity(0.14),
+            blurRadius: 12,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF06B6D4).withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Icon(Icons.shield_outlined, size: 14, color: Color(0xFF06B6D4)),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'NIGHTLY GUARDIAN • AUDIT REPORT',
+                  style: GoogleFonts.spaceGrotesk(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.8,
+                    color: const Color(0xFF06B6D4),
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  setState(() {
+                    _activeNightlyAuditReport = null;
+                  });
+                },
+                child: Padding(
+                  padding: const EdgeInsets.all(2.0),
+                  child: Icon(Icons.close_rounded, size: 14, color: AppTokens.textSecondary(isDark)),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          // Badges row: Cleanable cache, dependencies, stale branches
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: (cacheMB > 50 ? const Color(0xFFEF4444) : const Color(0xFF10B981)).withOpacity(0.14),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.cleaning_services_rounded, size: 11, color: cacheMB > 50 ? const Color(0xFFEF4444) : const Color(0xFF10B981)),
+                      const SizedBox(width: 4),
+                      Text(
+                        cacheMB > 0 ? '${cacheMB.toStringAsFixed(0)} MB Cache' : '0 MB Clean',
+                        style: GoogleFonts.jetBrainsMono(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: cacheMB > 50 ? const Color(0xFFEF4444) : const Color(0xFF10B981),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF6366F1).withOpacity(0.14),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    depStatus,
+                    style: GoogleFonts.inter(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF6366F1),
+                    ),
+                  ),
+                ),
+                if (staleBranches > 0) ...[
+                  const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.withOpacity(0.14),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      '$staleBranches stale branches',
+                      style: GoogleFonts.inter(fontSize: 10, color: Colors.amber),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          if (recommendation.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              recommendation,
+              style: GoogleFonts.inter(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w500,
+                color: AppTokens.textPrimary(isDark),
+                height: 1.35,
+              ),
+            ),
+          ],
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              if (cacheMB > 1.0) ...[
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () {
+                    if (_isConnected && _activeDevice.isNotEmpty && _activeDevice.startsWith('desktop-')) {
+                      final message = {
+                        'type': 'command',
+                        'device_id': _activeDevice,
+                        'command': '__EXECUTE_CACHE_CLEANUP__',
+                        'session_token': _sessionToken,
+                      };
+                      _channel?.sink.add(jsonEncode(message));
+                    }
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF06B6D4), Color(0xFF0284C7)],
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF06B6D4).withOpacity(0.3),
+                          blurRadius: 4,
+                          offset: const Offset(0, 1),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.cleaning_services_rounded, size: 12, color: Colors.white),
+                        const SizedBox(width: 4),
+                        Text(
+                          '1-Tap Clean Cache',
+                          style: GoogleFonts.inter(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+              ],
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  if (_isConnected && _activeDevice.isNotEmpty && _activeDevice.startsWith('desktop-')) {
+                    final message = {
+                      'type': 'command',
+                      'device_id': _activeDevice,
+                      'command': '__RUN_NIGHTLY_AUDIT__',
+                      'session_token': _sessionToken,
+                    };
+                    _channel?.sink.add(jsonEncode(message));
+                  }
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.06),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: isDark ? Colors.white12 : Colors.black12),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.shield_outlined, size: 11, color: AppTokens.textSecondary(isDark)),
+                      const SizedBox(width: 3),
+                      Text(
+                        'Run Audit',
+                        style: GoogleFonts.inter(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w600,
+                          color: AppTokens.textSecondary(isDark),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _initializeDeviceIdentity() async {
     _currentDeviceId = await DeviceIdentity.getDeviceId();
     _currentDeviceName = await DeviceIdentity.getDeviceName();
@@ -3483,6 +3719,31 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                     _speakSummary(summary);
                   }
                 }
+              }
+            } else if (jsonResponse is Map && jsonResponse['type'] == 'nightly_audit_report') {
+              final report = jsonResponse['data'];
+              if (report is Map && mounted) {
+                setState(() {
+                  _activeNightlyAuditReport = Map<String, dynamic>.from(report);
+                });
+              }
+            } else if (jsonResponse is Map && jsonResponse['type'] == 'cache_cleanup_result') {
+              final result = jsonResponse['data'];
+              if (result is Map && mounted) {
+                final msg = result['message']?.toString() ?? 'Cache cleaned';
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('🧹 $msg'),
+                    backgroundColor: const Color(0xFF10B981),
+                    duration: const Duration(seconds: 4),
+                  ),
+                );
+                setState(() {
+                  if (_activeNightlyAuditReport != null) {
+                    _activeNightlyAuditReport!['cleanable_cache_mb'] = 0;
+                    _activeNightlyAuditReport!['recommendation'] = msg;
+                  }
+                });
               }
             } else if (jsonResponse is Map && jsonResponse['type'] == 'security_alert') {
               final alert = jsonResponse['alert'];
@@ -5986,6 +6247,15 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                     FloatingWaterElement(
                       distanceFactor: 0.28,
                       child: _buildWorkdayBriefingCard(_activeWorkdayBriefing!, isDark),
+                    ),
+                  ],
+
+                  // 5.8 Autonomous Nightly Guardian Card
+                  if (_activeNightlyAuditReport != null) ...[
+                    const SizedBox(height: 10),
+                    FloatingWaterElement(
+                      distanceFactor: 0.30,
+                      child: _buildNightlyGuardianCard(_activeNightlyAuditReport!, isDark),
                     ),
                   ],
 

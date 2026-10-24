@@ -258,6 +258,25 @@ func (s *TunnelServer) EstablishTunnel(stream voilav1.DesktopTunnelService_Estab
 					s.backend.broadcastToClients(websocket.TextMessage, b)
 				}
 				continue
+
+			} else if res.Summary == "nightly_audit_report" {
+				resp := map[string]interface{}{
+					"type": "nightly_audit_report",
+					"data": json.RawMessage(res.Output),
+				}
+				if b, err := json.Marshal(resp); err == nil && s.backend != nil {
+					s.backend.broadcastToClients(websocket.TextMessage, b)
+				}
+				continue
+			} else if res.Summary == "cache_cleanup_result" {
+				resp := map[string]interface{}{
+					"type": "cache_cleanup_result",
+					"data": json.RawMessage(res.Output),
+				}
+				if b, err := json.Marshal(resp); err == nil && s.backend != nil {
+					s.backend.broadcastToClients(websocket.TextMessage, b)
+				}
+				continue
 			}
 
 			resp := map[string]interface{}{
