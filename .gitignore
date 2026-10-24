@@ -132,3 +132,6 @@ scratch/
 local-agent/bridge_last_job_id.txt
 local-agent/bridge_assist_count_*.txt
 local-agent/cursor_pos_*.txt
+
+.local.env
+*.local.env

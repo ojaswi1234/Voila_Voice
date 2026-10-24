@@ -17,6 +17,33 @@ import (
 )
 
 // -------------------------------------------------------------------
+// syncBuffer - concurrency-safe bytes buffer for subprocess streaming
+// -------------------------------------------------------------------
+
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func newSyncBuffer() *syncBuffer {
+	return &syncBuffer{}
+}
+
+func (s *syncBuffer) Write(p []byte) (n int, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.Write(p)
+}
+
+func (s *syncBuffer) Bytes() []byte {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cp := make([]byte, s.buf.Len())
+	copy(cp, s.buf.Bytes())
+	return cp
+}
+
+// -------------------------------------------------------------------
 // BGTask - persisted to disk so restarts don't lose in-flight work
 // -------------------------------------------------------------------
 
@@ -30,9 +57,9 @@ type BGTask struct {
 	ConversationID string `json:"conversation_id"`
 
 	// Runtime-only (not persisted - rebuilt on startup)
-	Stdout *bytes.Buffer `json:"-"`
-	Stderr *bytes.Buffer `json:"-"`
-	Cmd    *exec.Cmd     `json:"-"`
+	Stdout *syncBuffer `json:"-"`
+	Stderr *syncBuffer `json:"-"`
+	Cmd    *exec.Cmd   `json:"-"`
 
 	// Snapshot written to disk periodically and on completion
 	SnapshotFile string `json:"snapshot_file"`
@@ -136,8 +163,8 @@ func loadBGTasksFromDisk() {
 			task.EndTime = time.Now()
 		}
 		// Restore snapshot from disk
-		task.Stdout = &bytes.Buffer{}
-		task.Stderr = &bytes.Buffer{}
+		task.Stdout = newSyncBuffer()
+		task.Stderr = newSyncBuffer()
 		if task.SnapshotFile != "" {
 			if snap, err := os.ReadFile(task.SnapshotFile); err == nil {
 				task.Stdout.Write(snap)
@@ -206,8 +233,8 @@ func spawnBGTaskWithLabel(command, label, convID string) string {
 		Label:        label,
 		ConversationID: convID,
 		Status:       "running",
-		Stdout:       &bytes.Buffer{},
-		Stderr:       &bytes.Buffer{},
+		Stdout:       newSyncBuffer(),
+		Stderr:       newSyncBuffer(),
 		StartTime:    time.Now(),
 		SnapshotFile: snapshotFile,
 	}

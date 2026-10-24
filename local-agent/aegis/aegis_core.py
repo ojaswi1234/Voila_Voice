@@ -9,12 +9,18 @@ import ctypes
 def _acquire_aegis():
     try:
         m = ctypes.windll.kernel32.CreateMutexW(None, False, "VoilaAegisMutex")
-        ctypes.windll.kernel32.WaitForSingleObject(m, 0xFFFFFFFF)
-        return m
+        # Use 3000ms bounded timeout instead of 0xFFFFFFFF (infinite) to prevent deadlocks
+        res = ctypes.windll.kernel32.WaitForSingleObject(m, 3000)
+        if res in (0, 0x80):  # WAIT_OBJECT_0 or WAIT_ABANDONED
+            return m
+        ctypes.windll.kernel32.CloseHandle(m)
+        return None
     except: return None
 def _release_aegis(m):
     if m:
-        try: ctypes.windll.kernel32.ReleaseMutex(m)
+        try:
+            ctypes.windll.kernel32.ReleaseMutex(m)
+            ctypes.windll.kernel32.CloseHandle(m)
         except: pass
 
 

@@ -339,6 +339,16 @@ class VoilaRichSummaryView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final blocks = _getOrParseBlocks();
+    if (blocks.isEmpty) {
+      return Text(
+        text.trim().isEmpty ? 'Task completed successfully.' : text,
+        style: GoogleFonts.inter(
+          color: primaryTextColor,
+          fontSize: 14,
+          height: 1.5,
+        ),
+      );
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

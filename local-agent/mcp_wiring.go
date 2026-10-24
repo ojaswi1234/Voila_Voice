@@ -25,6 +25,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"sync"
 
 	"voila/mcp"
 )
@@ -33,12 +34,33 @@ import (
 // toolListForSession — merged tool list (native + MCP + extras)
 // ---------------------------------------------------------------------------
 
+var (
+	cachedSessionTools   []toolDef
+	cachedSessionToolsMu sync.RWMutex
+)
+
+// InvalidateSessionToolsCache invalidates the cached tool list after server reloads or additions
+func InvalidateSessionToolsCache() {
+	cachedSessionToolsMu.Lock()
+	cachedSessionTools = nil
+	cachedSessionToolsMu.Unlock()
+}
+
 // toolListForSession returns the complete list of tools to send to the LLM.
-// It merges:
+// It merges and caches:
 //   - availableTools (native Voila tools)
 //   - MCP host tool definitions (mcp__<server>__<tool> namespaced)
 //   - Extra meta tools for MCP management, skills marketplace, and connectors
 func toolListForSession() []toolDef {
+	cachedSessionToolsMu.RLock()
+	if cachedSessionTools != nil {
+		res := make([]toolDef, len(cachedSessionTools))
+		copy(res, cachedSessionTools)
+		cachedSessionToolsMu.RUnlock()
+		return res
+	}
+	cachedSessionToolsMu.RUnlock()
+
 	tools := make([]toolDef, len(availableTools))
 	copy(tools, availableTools)
 
@@ -73,6 +95,12 @@ func toolListForSession() []toolDef {
 
 	// Append extra management/marketplace/connector tools
 	tools = append(tools, extraTools...)
+
+	cachedSessionToolsMu.Lock()
+	cachedSessionTools = make([]toolDef, len(tools))
+	copy(cachedSessionTools, tools)
+	cachedSessionToolsMu.Unlock()
+
 	return tools
 }
 
@@ -431,6 +459,7 @@ func dispatchMCPAndExtras(ctx context.Context, toolName string, argsJSON json.Ra
 		if err := mcp.GlobalHost.Reload(cfg); err != nil {
 			return "error reloading: " + err.Error(), true
 		}
+		InvalidateSessionToolsCache()
 		return fmt.Sprintf("Reloaded. Servers: %d, Tools: %d",
 			len(mcp.GlobalHost.ListServers()), len(mcp.GlobalHost.ToolDefs())), true
 

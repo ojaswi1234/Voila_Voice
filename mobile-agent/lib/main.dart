@@ -502,6 +502,16 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   int _overlapTriggers = 0;
 
   void _addMessage(Map<String, dynamic> msg) {
+    final content = (msg['content'] as String? ?? '').trim();
+    final summary = (msg['summary'] as String? ?? '').trim();
+    // Drop ghost empty bubble if response content and summary are both empty
+    if (msg['type'] == 'response' && content.isEmpty && !content.startsWith('__IMAGE__:')) {
+      if (summary.isNotEmpty) {
+        msg['content'] = summary;
+      } else {
+        return; // Drop empty ghost message completely
+      }
+    }
     if (msg['type'] == 'error') {
       HapticFeedback.heavyImpact();
     }
@@ -1547,7 +1557,14 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                 }
               }
 
-              final contentStr = jsonResponse['output'] ?? message;
+              final rawOutput = (jsonResponse['output'] as String? ?? '').trim();
+              final rawSummary = (jsonResponse['summary'] as String? ?? '').trim();
+              String contentStr = rawOutput.isNotEmpty
+                  ? rawOutput
+                  : (rawSummary.isNotEmpty ? rawSummary : 'Task completed successfully.');
+              if (rawOutput.startsWith('__IMAGE__:')) {
+                contentStr = rawOutput;
+              }
               _interceptImageForAssistant(contentStr);
               _addMessage({
                 'type': 'response',
@@ -3731,6 +3748,11 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     if (content.startsWith('__IMAGE__:')) {
       isImage = true;
       displayContent = content.substring(10).replaceAll(RegExp(r'\s+'), '');
+    }
+
+    // Guard against hollow empty bubbles
+    if (content.trim().isEmpty && !isImage) {
+      return const SizedBox.shrink();
     }
 
     final screenWidth = MediaQuery.of(context).size.width;

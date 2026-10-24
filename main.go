@@ -1371,6 +1371,13 @@ func handleWebhookResult(b *Backend) http.HandlerFunc {
 					summary = b.generateTaskSummary("Command", output)
 				}
 				
+				if strings.TrimSpace(output) == "" {
+					output = "Command executed successfully with no output."
+				}
+				if strings.TrimSpace(summary) == "" {
+					summary = output
+				}
+				
 				if mode == "" {
 					mode = "shell"
 				}

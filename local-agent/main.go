@@ -42,6 +42,7 @@ import (
 	"regexp"
 	"strings"
 	"strconv"
+	"sort"
 	"sync"
 	"syscall"
 	"time"
@@ -173,6 +174,7 @@ var (
 )
 
 var (
+	memoryMu          sync.RWMutex
 	terminalSessionMu sync.Mutex
 	terminalCmdFile   = filepath.Join(os.TempDir(), "voila_ipc_cmd.txt")
 	terminalOutFile   = filepath.Join(os.TempDir(), "voila_ipc_out.txt")
@@ -737,11 +739,23 @@ func getMemoryLogFilePath() string {
 }
 
 func appendMemoryLog(purpose, command string) {
+	memoryMu.Lock()
+	defer memoryMu.Unlock()
+
 	path := getMemoryLogFilePath()
 	var logList []MemoryLogEntry
 	if data, err := os.ReadFile(path); err == nil {
 		json.Unmarshal(data, &logList)
 	}
+
+	// Deduplicate: skip if identical to last entry
+	if len(logList) > 0 {
+		last := logList[len(logList)-1]
+		if last.Purpose == purpose && last.Command == command {
+			return
+		}
+	}
+
 	entry := MemoryLogEntry{
 		ID:        fmt.Sprintf("mem-%d", time.Now().UnixNano()),
 		Timestamp: time.Now(),
@@ -753,31 +767,84 @@ func appendMemoryLog(purpose, command string) {
 		logList = logList[len(logList)-500:]
 	}
 	data, _ := json.MarshalIndent(logList, "", "  ")
-	os.WriteFile(path, data, 0644)
+	dir := filepath.Dir(path)
+	os.MkdirAll(dir, 0755)
+	tmpFile := filepath.Join(dir, fmt.Sprintf(".cmd_memory_log_%d.tmp", time.Now().UnixNano()))
+	if err := os.WriteFile(tmpFile, data, 0644); err == nil {
+		os.Rename(tmpFile, path)
+	}
 }
 
 func searchMemoryLog(query, dateFrom string) []MemoryLogEntry {
+	memoryMu.RLock()
+	defer memoryMu.RUnlock()
+
 	path := getMemoryLogFilePath()
 	var logList []MemoryLogEntry
 	if data, err := os.ReadFile(path); err == nil {
 		json.Unmarshal(data, &logList)
 	}
-	queryLower := strings.ToLower(query)
-	var results []MemoryLogEntry
-	for _, entry := range logList {
-		if dateFrom != "" {
-			cutoff, err := time.Parse("2006-01-02", dateFrom)
-			if err == nil && entry.Timestamp.Before(cutoff) {
-				continue
-			}
-		}
-		if strings.Contains(strings.ToLower(entry.Purpose), queryLower) ||
-			strings.Contains(strings.ToLower(entry.Command), queryLower) {
-			results = append(results, entry)
+
+	queryLower := strings.ToLower(strings.TrimSpace(query))
+	queryTokens := strings.Fields(queryLower)
+
+	type scoredEntry struct {
+		entry MemoryLogEntry
+		score int
+	}
+	var scored []scoredEntry
+
+	var cutoff time.Time
+	var hasCutoff bool
+	if dateFrom != "" {
+		if t, err := time.Parse("2006-01-02", dateFrom); err == nil {
+			cutoff = t
+			hasCutoff = true
 		}
 	}
-	if len(results) > 20 {
-		results = results[len(results)-20:]
+
+	for _, entry := range logList {
+		if hasCutoff && entry.Timestamp.Before(cutoff) {
+			continue
+		}
+		pLower := strings.ToLower(entry.Purpose)
+		cLower := strings.ToLower(entry.Command)
+		score := 0
+
+		// Exact substring match gives high priority
+		if queryLower != "" && (strings.Contains(pLower, queryLower) || strings.Contains(cLower, queryLower)) {
+			score += 100
+		}
+
+		// Tokenized keyword match gives semantic relevance
+		for _, token := range queryTokens {
+			if len(token) < 2 {
+				continue
+			}
+			if strings.Contains(pLower, token) {
+				score += 20
+			}
+			if strings.Contains(cLower, token) {
+				score += 10
+			}
+		}
+
+		if score > 0 {
+			scored = append(scored, scoredEntry{entry: entry, score: score})
+		}
+	}
+
+	// Sort scored entries descending by relevance, breaking ties with newest first
+	sort.Slice(scored, func(i, j int) bool {
+		if scored[i].score != scored[j].score {
+			return scored[i].score > scored[j].score
+		}
+		return scored[i].entry.Timestamp.After(scored[j].entry.Timestamp)
+	})
+
+	var results []MemoryLogEntry
+	for i := 0; i < len(scored) && i < 20; i++ {
+		results = append(results, scored[i].entry)
 	}
 	return results
 }
@@ -2341,6 +2408,9 @@ func startHTTPServer() {
 		mode := getString("mode")
 		clientID := getString("client_id")
 		conversationID := getString("conversation_id")
+		if conversationID == "" {
+			conversationID = "conv_" + generateUUID()[:8]
+		}
 		modelName := getString("model")
 		graphifyEnabled := getBool("graphify_enabled")
 
@@ -2698,6 +2768,9 @@ if ($LASTEXITCODE -ne 0) {
 			if err != nil {
 				resultPayload["error"] = "Command failed:\n" + err.Error()
 			} else {
+				if strings.TrimSpace(output) == "" {
+					output = "Task completed successfully with no additional output."
+				}
 				resultPayload["output"] = output
 				
 				// T1.3 / Gap 3: Extract artifact_path if a document was created
@@ -3135,6 +3208,9 @@ func executeCommand(ctx context.Context, command string, mode string, conversati
 		return errStr, conversationID, err
 	}
 
+	if outStr == "" {
+		outStr = "Command executed successfully with no output."
+	}
 	return outStr, conversationID, nil
 }
 
@@ -3249,13 +3325,21 @@ var availableTools = []toolDef{
 		Type: "function",
 		Function: toolFuncDef{
 			Name:        "read_file",
-			Description: "Read the content of a file from the local filesystem.",
+			Description: "Read the content of a file from the local filesystem. Supports line pagination via optional 'offset' and 'limit' parameters for large files.",
 			Parameters: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"path": map[string]interface{}{
 						"type":        "string",
 						"description": "Absolute or relative path to the file",
+					},
+					"offset": map[string]interface{}{
+						"type":        "integer",
+						"description": "Optional 1-based starting line number for pagination (default: 1)",
+					},
+					"limit": map[string]interface{}{
+						"type":        "integer",
+						"description": "Optional maximum number of lines to read (default: 200, max: 1000)",
 					},
 				},
 				"required": []string{"path"},
@@ -3654,6 +3738,33 @@ Example full deck:
 	{
 		Type: "function",
 		Function: toolFuncDef{
+			Name:        "remember_fact",
+			Description: "Persist an important user preference, environment quirk, or project rule to long-term memory for future turns and sessions.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"fact": map[string]interface{}{
+						"type":        "string",
+						"description": "The exact fact or rule to remember (e.g., 'Primary test command is go test ./...', 'User prefers dark mode')",
+					},
+					"scope": map[string]interface{}{
+						"type":        "string",
+						"enum":        []string{"global", "project"},
+						"description": "'global' stores user-wide preference in global_memory.md; 'project' stores repo-level rule in ./VOILA.md",
+					},
+					"category": map[string]interface{}{
+						"type":        "string",
+						"enum":        []string{"preference", "build_command", "environment", "rule"},
+						"description": "Category tag for the fact",
+					},
+				},
+				"required": []string{"fact"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
 			Name:        "save_command_memory",
 			Description: "Save a successful PowerShell technique to memory for future reuse.",
 			Parameters: map[string]interface{}{
@@ -3861,6 +3972,8 @@ func executeTool(ctx context.Context, toolName string, argsJSON json.RawMessage,
 		}
 		switch toolName {
 
+		case "remember_fact":
+			return appendMemoryFact(getString("fact"), getString("scope"), getString("category"))
 		case "save_command_memory":
 			return saveMemory(getString("purpose"), getString("command"))
 		case "run_terminal":
@@ -4267,6 +4380,24 @@ func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMes
 		return ""
 	}
 
+	getInt := func(key string, defaultVal int) int {
+		if val, exists := args[key]; exists {
+			switch v := val.(type) {
+			case float64:
+				return int(v)
+			case int:
+				return v
+			case int64:
+				return int(v)
+			case string:
+				if parsed, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
+					return parsed
+				}
+			}
+		}
+		return defaultVal
+	}
+
 	switch toolName {
 	case "docs.templates.list", "docs_templates_list", "docs.templates.get", "docs_templates_get", "docs.create_from_template", "docs_create_from_template", "docs.list_recent", "docs_list_recent", "docs.open_local", "docs_open_local":
 		action := strings.TrimPrefix(toolName, "docs.")
@@ -4315,6 +4446,11 @@ func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMes
 			return "error: " + err.Error()
 		}
 		return res
+	case "remember_fact":
+		fact := getString("fact")
+		scope := getString("scope")
+		category := getString("category")
+		return appendMemoryFact(fact, scope, category)
 	case "save_command_memory":
 		purpose := getString("purpose")
 		command := getString("command")
@@ -4414,15 +4550,30 @@ func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMes
 				continue
 			}
 			info := ""
+			sizeStr := ""
 			if e.IsDir() {
 				info = "[DIR]  "
 			} else {
 				info = "[FILE] "
+				if fileInfo, err := e.Info(); err == nil {
+					sizeBytes := fileInfo.Size()
+					if sizeBytes < 1024 {
+						sizeStr = fmt.Sprintf(" (%d B)", sizeBytes)
+					} else if sizeBytes < 1024*1024 {
+						sizeStr = fmt.Sprintf(" (%.1f KB)", float64(sizeBytes)/1024.0)
+					} else {
+						sizeStr = fmt.Sprintf(" (%.1f MB)", float64(sizeBytes)/(1024.0*1024.0))
+					}
+				}
 			}
-			out = append(out, info+e.Name())
+			out = append(out, fmt.Sprintf("%s%s%s", info, e.Name(), sizeStr))
+		}
+		if len(out) == 0 {
+			return "(empty directory or all contents ignored by filter)"
 		}
 		return strings.Join(out, "\n")
-case "read_file":
+
+	case "read_file":
 		path := getString("path")
 		if path == "" {
 			return "error: path is required"
@@ -4431,11 +4582,56 @@ case "read_file":
 		if err != nil {
 			return "error reading file: " + err.Error()
 		}
-		content := string(data)
-		if len(content) > 8000 {
-			content = content[:8000] + "\n... (truncated)"
+		
+		// Binary safety check
+		checkLen := len(data)
+		if checkLen > 512 {
+			checkLen = 512
 		}
-		return content
+		for _, b := range data[:checkLen] {
+			if b == 0 {
+				return fmt.Sprintf("error: file %q appears to be a binary file (%d bytes). Use dedicated tools to inspect binary files.", filepath.Base(path), len(data))
+			}
+		}
+
+		offset := getInt("offset", 0)
+		limit := getInt("limit", 0)
+		lines := strings.Split(string(data), "\n")
+		totalLines := len(lines)
+
+		// Backward-compatible default when offset and limit are omitted
+		if offset <= 0 && limit <= 0 {
+			if len(data) <= 8000 {
+				return string(data)
+			}
+			endLine := 200
+			if endLine > totalLines {
+				endLine = totalLines
+			}
+			chunk := strings.Join(lines[:endLine], "\n")
+			return fmt.Sprintf("[Showing lines 1-%d of %d (total: %d bytes). File exceeds 8000 chars. Use offset=%d to read the next chunk]\n\n%s", endLine, totalLines, len(data), endLine+1, chunk)
+		}
+
+		// Explicit pagination requested
+		if offset <= 0 {
+			offset = 1
+		}
+		if limit <= 0 {
+			limit = 200
+		}
+		if limit > 1000 {
+			limit = 1000
+		}
+		startIdx := offset - 1
+		if startIdx >= totalLines {
+			return fmt.Sprintf("error: offset %d is beyond end of file (total lines: %d)", offset, totalLines)
+		}
+		endIdx := startIdx + limit
+		if endIdx > totalLines {
+			endIdx = totalLines
+		}
+		chunk := strings.Join(lines[startIdx:endIdx], "\n")
+		return fmt.Sprintf("[Showing lines %d-%d of %d (total: %d bytes)]\n\n%s", startIdx+1, endIdx, totalLines, len(data), chunk)
 
 	case "edit_file":
 		path := getString("path")
@@ -4452,15 +4648,38 @@ case "read_file":
 		}
 		
 		contentStr := string(data)
-		if !strings.Contains(contentStr, targetText) {
+		count := strings.Count(contentStr, targetText)
+		if count == 0 {
 			return "error: target_text not found in file. Ensure exact matching including whitespace/newlines."
+		}
+		if count > 1 {
+			return fmt.Sprintf("error: target_text appears %d times in file. Provide more surrounding context lines to make the target text unique.", count)
 		}
 		
 		newContent := strings.Replace(contentStr, targetText, replacementText, 1)
-		if err := os.WriteFile(path, []byte(newContent), 0644); err != nil {
-			return "error writing file: " + err.Error()
+		
+		// Atomic write via temporary file
+		dir := filepath.Dir(path)
+		tmpFile := filepath.Join(dir, fmt.Sprintf(".voila_edit_%d.tmp", time.Now().UnixNano()))
+		if err := os.WriteFile(tmpFile, []byte(newContent), 0644); err != nil {
+			return "error writing temporary file for edit: " + err.Error()
 		}
-		return "ok: file edited successfully"
+		if err := os.Rename(tmpFile, path); err != nil {
+			os.Remove(tmpFile)
+			return "error replacing file during edit: " + err.Error()
+		}
+		if fi, err := os.Stat(path); err != nil {
+			return "error: verification failed, edited file not found on disk: " + err.Error()
+		} else if fi.Size() != int64(len(newContent)) {
+			return fmt.Sprintf("warning: edited file size (%d bytes) does not match expected size (%d bytes)", fi.Size(), len(newContent))
+		}
+		
+		targetLine := 1
+		idx := strings.Index(contentStr, targetText)
+		if idx > 0 {
+			targetLine = strings.Count(contentStr[:idx], "\n") + 1
+		}
+		return fmt.Sprintf("ok: file edited successfully (modified starting at line %d, new size: %d bytes)", targetLine, len(newContent))
 
 	case "write_file":
 		path := getString("path")
@@ -4468,23 +4687,94 @@ case "read_file":
 		if path == "" {
 			return "error: path is required"
 		}
-		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		
+		dir := filepath.Dir(path)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return "error creating parent directory: " + err.Error()
+		}
+		
+		tmpFile := filepath.Join(dir, fmt.Sprintf(".voila_write_%d.tmp", time.Now().UnixNano()))
+		if err := os.WriteFile(tmpFile, []byte(content), 0644); err != nil {
 			return "error writing file: " + err.Error()
 		}
-		return "ok"
+		if err := os.Rename(tmpFile, path); err != nil {
+			os.Remove(tmpFile)
+			return "error replacing file: " + err.Error()
+		}
+		if fi, err := os.Stat(path); err != nil {
+			return "error: verification failed, file not found after write: " + err.Error()
+		} else if fi.Size() != int64(len(content)) {
+			return fmt.Sprintf("warning: written file size (%d bytes) does not match expected size (%d bytes)", fi.Size(), len(content))
+		}
+		return fmt.Sprintf("ok: wrote %d bytes to %s (verified on disk)", len(content), path)
+
+	case "send_message":
+		targetAgentID := getString("target_agent_id")
+		message := getString("message")
+		if targetAgentID == "" || message == "" {
+			return "error: target_agent_id and message are required"
+		}
+
+		agentRegistryMu.RLock()
+		targetTask, exists := activeAgents[targetAgentID]
+		agentRegistryMu.RUnlock()
+
+		if !exists {
+			agentRegistryMu.RLock()
+			var liveIDs []string
+			for id := range activeAgents {
+				liveIDs = append(liveIDs, id)
+			}
+			agentRegistryMu.RUnlock()
+
+			if len(liveIDs) == 0 {
+				return fmt.Sprintf("error: target agent %q not found. No concurrent agents currently running.", targetAgentID)
+			}
+			return fmt.Sprintf("error: target agent %q not found. Currently active agents: %s", targetAgentID, strings.Join(liveIDs, ", "))
+		}
+
+		select {
+		case targetTask.Inbox <- message:
+			return fmt.Sprintf("ok: message delivered to %s", targetAgentID)
+		default:
+			return fmt.Sprintf("error: inbox for agent %s is full", targetAgentID)
+		}
 
 	case "save_playbook":
 		pbID := getString("playbook_id")
 		pbJSON := getString("playbook_json")
+		if pbID == "" || pbJSON == "" {
+			return "error: playbook_id and playbook_json are required"
+		}
+
+		// Validate playbook schema before persisting
+		var testPlaybook struct {
+			Steps []struct {
+				Type string `json:"type"`
+			} `json:"steps"`
+		}
+		if err := json.Unmarshal([]byte(pbJSON), &testPlaybook); err != nil {
+			return "error: invalid playbook JSON: " + err.Error()
+		}
+		if len(testPlaybook.Steps) == 0 {
+			return "error: playbook must contain at least one step in 'steps' array"
+		}
+
 		pbDir := getPlaybooksDir()
 		if !strings.HasSuffix(pbID, ".json") { pbID += ".json" }
 		os.MkdirAll(pbDir, 0755)
 		pbPath := filepath.Join(pbDir, pbID)
-		err := os.WriteFile(pbPath, []byte(pbJSON), 0644)
-		if err != nil {
-			return "Error saving playbook: " + err.Error()
+		
+		// Atomic write via temporary file
+		tmpPath := filepath.Join(pbDir, fmt.Sprintf(".voila_pb_%d.tmp", time.Now().UnixNano()))
+		if err := os.WriteFile(tmpPath, []byte(pbJSON), 0644); err != nil {
+			return "error saving playbook temporary file: " + err.Error()
 		}
-		return "Playbook saved successfully to " + pbPath
+		if err := os.Rename(tmpPath, pbPath); err != nil {
+			os.Remove(tmpPath)
+			return "error saving playbook: " + err.Error()
+		}
+		return fmt.Sprintf("ok: playbook saved successfully to %s (%d steps)", pbPath, len(testPlaybook.Steps))
 
 	case "list_playbooks":
 		pbDir := getPlaybooksDir()
@@ -4505,9 +4795,11 @@ case "read_file":
 
 	case "run_playbook":
 		pbID := getString("playbook_id")
-		exeDir, _ := os.Executable()
-		pbPath := filepath.Join(filepath.Dir(exeDir), "playbooks", pbID)
-		if !strings.HasSuffix(pbPath, ".json") { pbPath += ".json" }
+		if pbID == "" {
+			return "error: playbook_id is required"
+		}
+		if !strings.HasSuffix(pbID, ".json") { pbID += ".json" }
+		pbPath := filepath.Join(getPlaybooksDir(), pbID)
 		
 		data, err := os.ReadFile(pbPath)
 		if err != nil {
@@ -4642,8 +4934,14 @@ case "read_file":
 			startTerminalSession()
 		}
 
+		// Clear any stale IPC signals before issuing new command
+		os.Remove(terminalDoneFile)
+		os.Remove(terminalOutFile)
+
 		// Write command to the IPC file
 		os.WriteFile(terminalCmdFile, []byte(encodedCmd), 0644)
+		// Release mutex so cancel handlers or concurrent checks never deadlock
+		terminalSessionMu.Unlock()
 
 		// Wait for done file (timeout 5 mins)
 		debugLog.Printf("[executeTool/run_terminal] Waiting for execution to finish...")
@@ -4658,17 +4956,18 @@ case "read_file":
 			}
 			if _, errStat := os.Stat(terminalDoneFile); errStat == nil {
 				// Execution finished! Read output.
-				time.Sleep(100 * time.Millisecond) // small buffer for OS write flush
+				time.Sleep(50 * time.Millisecond) // small buffer for OS write flush
 				outBytes, err = os.ReadFile(terminalOutFile)
+				
+				terminalSessionMu.Lock()
 				os.Remove(terminalDoneFile)
 				os.Remove(terminalOutFile)
 				os.Remove(terminalCmdFile) // signal PS to continue
+				terminalSessionMu.Unlock()
 				break
 			}
 			time.Sleep(100 * time.Millisecond)
 		}
-
-		terminalSessionMu.Unlock()
 
 		// If the IPC loop timed out (no done file), outBytes is still nil/empty - return actionable error
 		if len(outBytes) == 0 && err == nil {
@@ -5141,10 +5440,142 @@ case "browser_automation":
 // Supports up to 5 tool-calling iterations using OpenAI-compatible tool_calls format.
 
 // --- Cloud Memory Helpers ---
+func getWorkspaceMemory() string {
+	var sb strings.Builder
+	cwd, err := os.Getwd()
+	if err == nil {
+		projectCandidates := []string{
+			filepath.Join(cwd, "VOILA.md"),
+			filepath.Join(cwd, ".voila", "memory.md"),
+		}
+		for _, p := range projectCandidates {
+			if data, err := os.ReadFile(p); err == nil && len(data) > 0 {
+				s := string(data)
+				if len(s) > 3000 {
+					s = s[:2997] + "..."
+				}
+				sb.WriteString("\n\n--- PROJECT CONTEXT (" + filepath.Base(p) + ") ---\n" + s + "\n----------------------------------------\n")
+				break
+			}
+		}
+	}
+	globalPath := filepath.Join(getBrainDir(), "global_memory.md")
+	if data, err := os.ReadFile(globalPath); err == nil && len(data) > 0 {
+		s := string(data)
+		if len(s) > 2000 {
+			s = s[:1997] + "..."
+		}
+		sb.WriteString("\n\n--- GLOBAL USER PREFERENCES & ENVIRONMENT (global_memory.md) ---\n" + s + "\n----------------------------------------\n")
+	}
+	return sb.String()
+}
+
+func appendMemoryFact(fact, scope, category string) string {
+	memoryMu.Lock()
+	defer memoryMu.Unlock()
+
+	fact = strings.TrimSpace(fact)
+	if fact == "" {
+		return "error: fact cannot be empty"
+	}
+	if category == "" {
+		category = "preference"
+	}
+
+	var targetPath string
+	var headerTitle string
+	if scope == "project" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return "error determining current working directory: " + err.Error()
+		}
+		targetPath = filepath.Join(cwd, "VOILA.md")
+		headerTitle = "# VOILA.md - Project Blueprint & Memory"
+	} else {
+		targetPath = filepath.Join(getBrainDir(), "global_memory.md")
+		headerTitle = "# Voila Global User Preferences & Memory"
+	}
+
+	existing := ""
+	if data, err := os.ReadFile(targetPath); err == nil {
+		existing = string(data)
+	}
+
+	bullet := fmt.Sprintf("- [%s] %s", strings.ToUpper(category), fact)
+	if strings.Contains(existing, fact) {
+		return fmt.Sprintf("Fact already recorded in %s", filepath.Base(targetPath))
+	}
+
+	if strings.TrimSpace(existing) == "" {
+		existing = headerTitle + "\n\n"
+	}
+
+	newContent := strings.TrimRight(existing, "\r\n") + "\n" + bullet + "\n"
+	dir := filepath.Dir(targetPath)
+	os.MkdirAll(dir, 0755)
+	tmpFile := filepath.Join(dir, fmt.Sprintf(".mem_%d.tmp", time.Now().UnixNano()))
+	if err := os.WriteFile(tmpFile, []byte(newContent), 0644); err != nil {
+		return "error writing memory file: " + err.Error()
+	}
+	if err := os.Rename(tmpFile, targetPath); err != nil {
+		os.Remove(tmpFile)
+		return "error saving memory file: " + err.Error()
+	}
+	return fmt.Sprintf("ok: fact saved to %s", filepath.Base(targetPath))
+}
+
+func asyncUpdateSessionSummary(convID string, fullHistory []map[string]interface{}) {
+	if len(fullHistory) <= 8 {
+		return
+	}
+	brainDir := getBrainDir()
+	summaryPath := filepath.Join(brainDir, convID, "session_summary.md")
+
+	archivedTurns := fullHistory[:len(fullHistory)-6]
+	if len(archivedTurns) == 0 {
+		return
+	}
+
+	var sb strings.Builder
+	sb.WriteString("## Historical Session Milestones\n")
+	step := 1
+	for i := 0; i < len(archivedTurns); i += 2 {
+		userTurn, _ := archivedTurns[i]["content"].(string)
+		if len(userTurn) > 120 {
+			userTurn = userTurn[:117] + "..."
+		}
+		asstTurn := ""
+		if i+1 < len(archivedTurns) {
+			asstTurn, _ = archivedTurns[i+1]["content"].(string)
+			lines := strings.Split(asstTurn, "\n")
+			for _, l := range lines {
+				l = strings.TrimSpace(l)
+				if l != "" && !strings.HasPrefix(l, "#") {
+					if len(l) > 140 {
+						l = l[:137] + "..."
+					}
+					asstTurn = l
+					break
+				}
+			}
+		}
+		if asstTurn == "" {
+			asstTurn = "Executed"
+		}
+		sb.WriteString(fmt.Sprintf("- Turn %d: User: %q -> %s\n", step, userTurn, asstTurn))
+		step++
+	}
+
+	tmpFile := filepath.Join(brainDir, convID, fmt.Sprintf(".session_summary_%d.tmp", time.Now().UnixNano()))
+	if err := os.WriteFile(tmpFile, []byte(sb.String()), 0644); err == nil {
+		os.Rename(tmpFile, summaryPath)
+	}
+}
+
 func loadCloudHistory(convID string) []map[string]interface{} {
 	var history []map[string]interface{}
 	if convID == "" {
-		return history
+		convID = "default_session"
 	}
 	brainDir := getBrainDir()
 	path := filepath.Join(brainDir, convID, "cloud_history.json")
@@ -5152,23 +5583,28 @@ func loadCloudHistory(convID string) []map[string]interface{} {
 	if err == nil {
 		json.Unmarshal(data, &history)
 	}
-	// Limit to last 10 messages (5 turns) to prevent bloating
-	if len(history) > 10 {
-		history = history[len(history)-10:]
+	// Limit to last 8 messages (4 turns) to prevent context bloating
+	if len(history) > 8 {
+		history = history[len(history)-8:]
 	}
 	return history
 }
 
 func saveCloudHistory(convID, userContent, assistantContent string) {
 	if convID == "" {
-		return
+		convID = "default_session"
+	}
+	userContent = strings.TrimSpace(userContent)
+	assistantContent = strings.TrimSpace(assistantContent)
+	if userContent == "" || assistantContent == "" {
+		return // Do not store empty turns in memory
 	}
 	history := loadCloudHistory(convID)
 	history = append(history, map[string]interface{}{"role": "user", "content": userContent})
 	history = append(history, map[string]interface{}{"role": "assistant", "content": assistantContent})
 	
-	if len(history) > 10 {
-		history = history[len(history)-10:]
+	if len(history) > 8 {
+		history = history[len(history)-8:]
 	}
 	
 	brainDir := getBrainDir()
@@ -5176,6 +5612,22 @@ func saveCloudHistory(convID, userContent, assistantContent string) {
 	path := filepath.Join(brainDir, convID, "cloud_history.json")
 	data, _ := json.MarshalIndent(history, "", "  ")
 	os.WriteFile(path, data, 0644)
+
+	// Persist full transcript for session recovery and milestone compaction
+	fullPath := filepath.Join(brainDir, convID, "cloud_history_full.json")
+	var fullHistory []map[string]interface{}
+	if fullData, err := os.ReadFile(fullPath); err == nil {
+		json.Unmarshal(fullData, &fullHistory)
+	}
+	fullHistory = append(fullHistory, map[string]interface{}{"role": "user", "content": userContent})
+	fullHistory = append(fullHistory, map[string]interface{}{"role": "assistant", "content": assistantContent})
+	if fullData, err := json.MarshalIndent(fullHistory, "", "  "); err == nil {
+		os.WriteFile(fullPath, fullData, 0644)
+	}
+
+	if len(fullHistory) > 8 {
+		go asyncUpdateSessionSummary(convID, fullHistory)
+	}
 }
 // -----------------------------
 
@@ -5331,6 +5783,9 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
    
 5. HOW TO STOP: To exit the loop and speak to the user, you MUST return a normal text message and completely OMIT the tool calls. If you call a tool, you are trapped in the loop.`
 	}
+	if wsMem := getWorkspaceMemory(); wsMem != "" {
+		systemPrompt += wsMem
+	}
 
 	// Maintain conversation as raw JSON-friendly messages
 	var messages []map[string]interface{}
@@ -5348,7 +5803,36 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 		messages = []map[string]interface{}{
 			{"role": "system", "content": systemPrompt},
 		}
-		messages = append(messages, map[string]interface{}{"role": "user", "content": command})
+		effectiveConvID := convID
+		if effectiveConvID == "" {
+			effectiveConvID = "default_session"
+		}
+		// Inject historical session summary scratchpad at index 1 if it exists
+		if summaryData, err := os.ReadFile(filepath.Join(getBrainDir(), effectiveConvID, "session_summary.md")); err == nil && len(summaryData) > 0 {
+			messages = append(messages, map[string]interface{}{
+				"role":    "system",
+				"content": "<CONTEXT_SUMMARY>\n" + string(summaryData) + "\n</CONTEXT_SUMMARY>",
+			})
+		}
+		priorTurns := loadCloudHistory(effectiveConvID)
+		for _, m := range priorTurns {
+			content, _ := m["content"].(string)
+			if len(content) > 1000 {
+				content = content[:997] + "..."
+			}
+			role, _ := m["role"].(string)
+			if role == "user" || role == "assistant" {
+				messages = append(messages, map[string]interface{}{
+					"role":    role,
+					"content": content,
+				})
+			}
+		}
+		userTurnContent := command
+		if relevantTech := getRelevantCommandMemory(command, 3); relevantTech != "" {
+			userTurnContent = fmt.Sprintf("[RELEVANT PROCEDURAL TECHNIQUES FROM MEMORY]\n%s\n[USER REQUEST]\n%s", relevantTech, command)
+		}
+		messages = append(messages, map[string]interface{}{"role": "user", "content": userTurnContent})
 	}
 
 	client := &http.Client{Timeout: 60 * time.Second}
@@ -5571,6 +6055,13 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 			debugLog.Printf("================================================================")
 			debugLog.Printf("[executeGroqCommand] iter=%d final answer len=%d", iter, len(choice.Message.Content))
 			finalAnswer := strings.TrimSpace(choice.Message.Content)
+			if finalAnswer == "" {
+				if toolUsageSummary.Len() > 0 {
+					finalAnswer = "Actions completed successfully:\n" + strings.TrimSpace(toolUsageSummary.String())
+				} else {
+					finalAnswer = "Task completed successfully with no additional output."
+				}
+			}
 			saveCloudHistory(convID, command, finalAnswer)
 			return finalAnswer, nil
 		}
@@ -5672,7 +6163,7 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 		"tools":       toolListForSession(),
 	}
 	body, _ := json.Marshal(payload)
-	req, _ := http.NewRequestWithContext(context.Background(), "POST", "https://api.openai.com/v1/chat/completions", bytes.NewReader(body))
+	req, _ := http.NewRequestWithContext(context.Background(), "POST", "https://api.groq.com/openai/v1/chat/completions", bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Content-Type", "application/json")
 	if summaryClient := (&http.Client{Timeout: 30 * time.Second}); req != nil {
@@ -5825,14 +6316,45 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
    
 5. HOW TO STOP: To exit the loop and speak to the user, you MUST return a normal text message and completely OMIT the tool calls. If you call a tool, you are trapped in the loop.`
 	}
+	if wsMem := getWorkspaceMemory(); wsMem != "" {
+		systemPrompt += wsMem
+	}
 
 	// Maintain conversation as raw JSON-friendly messages
 
 	messages := []map[string]interface{}{
 		{"role": "system", "content": systemPrompt},
 	}
-	// History loading removed per user request to only consider latest task
-	messages = append(messages, map[string]interface{}{"role": "user", "content": command})
+	effectiveConvID := convID
+	if effectiveConvID == "" {
+		effectiveConvID = "default_session"
+	}
+	// Inject historical session summary scratchpad at index 1 if it exists
+	if summaryData, err := os.ReadFile(filepath.Join(getBrainDir(), effectiveConvID, "session_summary.md")); err == nil && len(summaryData) > 0 {
+		messages = append(messages, map[string]interface{}{
+			"role":    "system",
+			"content": "<CONTEXT_SUMMARY>\n" + string(summaryData) + "\n</CONTEXT_SUMMARY>",
+		})
+	}
+	priorTurns := loadCloudHistory(effectiveConvID)
+	for _, m := range priorTurns {
+		content, _ := m["content"].(string)
+		if len(content) > 1000 {
+			content = content[:997] + "..."
+		}
+		role, _ := m["role"].(string)
+		if role == "user" || role == "assistant" {
+			messages = append(messages, map[string]interface{}{
+				"role":    role,
+				"content": content,
+			})
+		}
+	}
+	userTurnContent := command
+	if relevantTech := getRelevantCommandMemory(command, 3); relevantTech != "" {
+		userTurnContent = fmt.Sprintf("[RELEVANT PROCEDURAL TECHNIQUES FROM MEMORY]\n%s\n[USER REQUEST]\n%s", relevantTech, command)
+	}
+	messages = append(messages, map[string]interface{}{"role": "user", "content": userTurnContent})
 
 	client := &http.Client{Timeout: 300 * time.Second}
 	
@@ -5994,6 +6516,13 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 			debugLog.Printf("================================================================")
 			logBGInfo("Ollama", "iter=%d final answer len=%d", iter, len(result.Message.Content))
 			finalAnswer := strings.TrimSpace(result.Message.Content)
+			if finalAnswer == "" {
+				if toolUsageSummary.Len() > 0 {
+					finalAnswer = "Actions completed successfully:\n" + strings.TrimSpace(toolUsageSummary.String())
+				} else {
+					finalAnswer = "Task completed successfully with no additional output."
+				}
+			}
 			saveCloudHistory(convID, command, finalAnswer)
 			return finalAnswer, nil
 		}
@@ -6584,11 +7113,88 @@ func (m model) resetCircuitBreakerWithPhrase(phrase string) tea.Cmd {
 
 // --- MEMORY SYSTEM ---
 func getMemoryFilePath() string {
-	exe, _ := os.Executable()
-	return filepath.Join(filepath.Dir(exe), "cmd_memory.json")
+	brainPath := filepath.Join(getBrainDir(), "cmd_memory.json")
+	if _, err := os.Stat(brainPath); os.IsNotExist(err) {
+		exe, err := os.Executable()
+		if err == nil {
+			oldPath := filepath.Join(filepath.Dir(exe), "cmd_memory.json")
+			if _, err := os.Stat(oldPath); err == nil {
+				os.Rename(oldPath, brainPath)
+			}
+		}
+	}
+	return brainPath
+}
+
+func getRelevantCommandMemory(query string, maxEntries int) string {
+	memoryMu.RLock()
+	defer memoryMu.RUnlock()
+
+	path := getMemoryFilePath()
+	data, err := os.ReadFile(path)
+	if err != nil || len(data) == 0 {
+		return ""
+	}
+	var mem map[string]string
+	if err := json.Unmarshal(data, &mem); err != nil || len(mem) == 0 {
+		return ""
+	}
+
+	queryTokens := strings.Fields(strings.ToLower(query))
+	if len(queryTokens) == 0 {
+		return ""
+	}
+
+	type scoredMem struct {
+		purpose string
+		command string
+		score   int
+	}
+	var matches []scoredMem
+
+	for purpose, cmd := range mem {
+		pLower := strings.ToLower(purpose)
+		cLower := strings.ToLower(cmd)
+		score := 0
+		for _, token := range queryTokens {
+			if len(token) <= 2 {
+				continue
+			}
+			if strings.Contains(pLower, token) {
+				score += 3
+			}
+			if strings.Contains(cLower, token) {
+				score += 1
+			}
+		}
+		if score > 0 {
+			matches = append(matches, scoredMem{purpose: purpose, command: cmd, score: score})
+		}
+	}
+
+	if len(matches) == 0 {
+		return ""
+	}
+
+	sort.Slice(matches, func(i, j int) bool {
+		return matches[i].score > matches[j].score
+	})
+
+	var sb strings.Builder
+	limit := maxEntries
+	if len(matches) < limit {
+		limit = len(matches)
+	}
+	for i := 0; i < limit; i++ {
+		sb.WriteString(fmt.Sprintf("• [%s]: `%s`\n", matches[i].purpose, matches[i].command))
+	}
+	return sb.String()
 }
 
 func loadMemory() string {
+	memoryMu.RLock()
+	defer memoryMu.RUnlock()
+
 	data, err := os.ReadFile(getMemoryFilePath())
 	if err != nil || len(data) == 0 {
 		return "{}"
@@ -6597,17 +7203,40 @@ func loadMemory() string {
 }
 
 func saveMemory(purpose, command string) string {
+	memoryMu.Lock()
+	defer memoryMu.Unlock()
+
 	mem := make(map[string]string)
-	data, _ := os.ReadFile(getMemoryFilePath())
-	json.Unmarshal(data, &mem)
+	path := getMemoryFilePath()
+	if data, err := os.ReadFile(path); err == nil {
+		json.Unmarshal(data, &mem)
+	}
+	
+	// Deduplicate identical purpose and command
+	if existingCmd, ok := mem[purpose]; ok && existingCmd == command {
+		return "Technique is already memorized."
+	}
 	mem[purpose] = command
 	b, _ := json.MarshalIndent(mem, "", "  ")
-	os.WriteFile(getMemoryFilePath(), b, 0644)
+	dir := filepath.Dir(path)
+	os.MkdirAll(dir, 0755)
+	tmpFile := filepath.Join(dir, fmt.Sprintf(".cmd_memory_%d.tmp", time.Now().UnixNano()))
+	if err := os.WriteFile(tmpFile, b, 0644); err == nil {
+		os.Rename(tmpFile, path)
+	}
 	return "Memory successfully updated with technique."
 }
 
 func flushMemory() {
-	os.WriteFile(getMemoryFilePath(), []byte("{}"), 0644)
+	memoryMu.Lock()
+	defer memoryMu.Unlock()
+	path := getMemoryFilePath()
+	dir := filepath.Dir(path)
+	os.MkdirAll(dir, 0755)
+	tmpFile := filepath.Join(dir, fmt.Sprintf(".cmd_memory_%d.tmp", time.Now().UnixNano()))
+	if err := os.WriteFile(tmpFile, []byte("{}"), 0644); err == nil {
+		os.Rename(tmpFile, path)
+	}
 }
 
 func handleLocalMockExecution(w http.ResponseWriter, r *http.Request, command string, connData ConnectionData, endpoint string) {
