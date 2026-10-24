@@ -32,7 +32,7 @@ jobs:
         # Restore all our custom tracked files that flutter create might have overwritten
         # (This restores MainActivity.kt, lib files, google-services.json, AndroidManifest.xml, etc.)
         cd ..
-        git checkout -- mobile-agent/lib/ mobile-agent/android/
+        git checkout -- mobile-agent/lib/ mobile-agent/android/ mobile-agent/pubspec.yaml mobile-agent/analysis_options.yaml
 
     - name: Inject google-services.json securely
       env:

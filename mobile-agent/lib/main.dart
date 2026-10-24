@@ -9,7 +9,6 @@ import 'package:flutter/foundation.dart'; // For compute()
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
 import 'package:flutter/services.dart';
-import 'dart:ui';
 import 'crypto.dart';
 import 'package:http/http.dart' as http;
 import 'package:web_socket_channel/web_socket_channel.dart';
@@ -19,7 +18,6 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'device_identity.dart';
 import 'artifacts_page.dart';
-import 'visualizer.dart';
 import 'surveillance_ui.dart';
 import 'rich_output_widgets.dart';
 import 'package:uuid/uuid.dart';
@@ -27,8 +25,6 @@ import 'package:uuid/uuid.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_background/flutter_background.dart';
 import 'connection_flowchart.dart';
-import 'package:audioplayers/audioplayers.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -778,8 +774,6 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   // Security phrase for backend operations
   String _securityPhrase = '';
 
-  @override
-
   String? _fcmToken;
   final FlutterLocalNotificationsPlugin _flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
 
@@ -1359,27 +1353,6 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     }
     
     return true;
-  }
-
-  void _toggleListening() async {
-    if (!_speechInitialized) {
-      await _initializeSpeech();
-    }
-    
-    if (!_speechAvailable) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Speech recognition not available on this device')),
-        );
-      }
-      return;
-    }
-    
-    if (_isListening) {
-      await _stopListening();
-    } else {
-      await _startListening();
-    }
   }
 
   String _normalizeGenZSlang(String text) {
@@ -2268,7 +2241,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       );
       
       if (response.statusCode == 200) {
-        final healthData = jsonDecode(response.body);
+        jsonDecode(response.body);
         
         // Now fetch detailed status with device information
         String statusUrl = backendUrl;
@@ -2393,32 +2366,6 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       // Pause background timers to eliminate idle battery & network drain
       _bgTaskTimer?.cancel();
       _healthCheckTimer?.cancel();
-    }
-  }
-
-
-  void _stopCommand() {
-    if (_channel != null && _isConnected) {
-      _channel?.sink.add(jsonEncode({"type": "stop_command"}));
-      if (mounted) setState(() {
-        _isThinking = false; _triggerDataArriving();
-        _addMessage({
-          'type': 'response',
-          'content': 'Execution stopped by user.',
-          'timestamp': DateTime.now().toString(),
-        });
-      });
-    }
-  }
-
-  void _fetchModels() {
-    if (_channel != null && _isConnected) {
-      if (mounted) setState(() => _isFetchingModels = true);
-      _channel?.sink.add(jsonEncode({
-        "type": "get_models",
-        "device_id": _activeDevice,
-        "session_token": _sessionToken
-      }));
     }
   }
 
@@ -2799,7 +2746,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     if (ts == null) return '';
     try {
       final d = DateTime.parse(ts.toString()).toLocal();
-      return ':';
+      return '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
     } catch(e) {
       return ts.toString();
     }
@@ -2905,7 +2852,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                                     children: [
                                       Row(
                                         children: [
-                                          Icon(Icons.warning_amber_rounded, size: 18, color: AppTokens.accent),
+                                          Icon(_getSeverityIcon(alert['severity']?.toString() ?? 'medium'), size: 18, color: _getSeverityColor(alert['severity']?.toString() ?? 'medium')),
                                           const SizedBox(width: 8),
                                           Expanded(
                                             child: Text(
@@ -3060,8 +3007,6 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       ),
     );
   }
-
-  @override
 
   Widget _buildDrawer() {
     bool isDark = appThemeMode.value == ThemeMode.dark;
@@ -3277,9 +3222,13 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                         backgroundColor: Colors.transparent,
                         builder: (context) => SurveillanceSheet(
                           backendUrl: backendUrl,
-                          deviceId: _activeDevice ?? '',
+                          deviceId: _activeDevice,
                         ),
                       );
+                    }),
+                    _buildDrawerItem(Icons.devices_rounded, 'Saved Devices', () {
+                      _closeDrawerSafely();
+                      _showSavedDevices();
                     }),
                     _buildDrawerItem(Icons.tune_rounded, 'Settings', () {
                       _closeDrawerSafely();
@@ -3633,7 +3582,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                         child: OutlinedButton(
                           onPressed: () => Navigator.pop(ctx),
                           style: OutlinedButton.styleFrom(
-                            side: Border.all(color: AppTokens.border(isDark)),
+                            side: BorderSide(color: AppTokens.border(isDark)),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                           ),
                           child: Text(
@@ -4929,35 +4878,6 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     );
   }
 
-  void _retryLastCommand() {
-    String? lastUserCommand;
-    for (var i = _messages.length - 1; i >= 0; i--) {
-      if (_messages[i]['type'] == 'user') {
-        lastUserCommand = _messages[i]['content'];
-        break;
-      }
-    }
-    if (lastUserCommand != null) {
-      _controller.text = lastUserCommand;
-      _sendMessage();
-    }
-  }
-
-  void _showErrorLog(String content) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1A1F),
-        title: const Text('Error Log', style: TextStyle(color: Colors.white, fontSize: 16)),
-        content: SingleChildScrollView(
-          child: Text(content, style: const TextStyle(color: Colors.redAccent, fontSize: 13, fontFamily: 'monospace')),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
-        ],
-      ),
-    );
-  }
   Widget _buildSkeletonLoader() {
     return Container(
       margin: const EdgeInsets.only(bottom: 16, right: 40),
@@ -5566,19 +5486,6 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     );
   }
 
-  void _cancelJob() {
-    if (_activeJobId == null || _activeJobId!.isEmpty) return;
-    _channel?.sink.add(jsonEncode({
-      'type': 'cancel_job',
-      'device_id': _activeDevice,
-      'job_id': _activeJobId,
-      'session_token': _sessionToken,
-    }));
-    if (mounted) setState(() {
-      _activeJobStatus = 'cancelling';
-    });
-  }
-
   Widget _buildTaskWorkflow(ColorScheme colorScheme) {
     bool isDark = appThemeMode.value == ThemeMode.dark;
     bool isAgent = _currentMode.toUpperCase() == 'AGENT';
@@ -5775,9 +5682,6 @@ class CollapsibleOutput extends StatefulWidget {
 
 class _CollapsibleOutputState extends State<CollapsibleOutput> {
   bool _isExpanded = false;
-  String _selectedModel = 'flash';
-  bool _isFetchingModels = false;
-  String _cachedSecurityPhrase = '';
 
   @override
   Widget build(BuildContext context) {

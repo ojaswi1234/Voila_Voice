@@ -7,10 +7,7 @@ import 'visualizer.dart';
 
 // ─── THEME TOKENS ───
 class _OutputTokens {
-  static const Color accent = Color(0xFF6366F1);
-  static const Color accentCyan = Color(0xFF00E5FF);
   static const Color accentEmerald = Color(0xFF10B981);
-  static const Color accentAmber = Color(0xFFF59E0B);
   static const Color accentRose = Color(0xFFEF4444);
 
   static Color terminalBg(bool isDark) => const Color(0xFF0A0D14);
@@ -314,7 +311,6 @@ class VoilaRichSummaryView extends StatelessWidget {
 
   // Lightweight LRU Block Cache for 60/120 FPS jank-free scrolling
   static final Map<int, List<_RichBlock>> _blockCache = {};
-  static final RegExp _inlineRegex = RegExp(r'(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|==[^=]+==|~~[^~]+~~)');
 
   const VoilaRichSummaryView({
     Key? key,
@@ -582,7 +578,6 @@ class VoilaRichSummaryView extends StatelessWidget {
         return const SizedBox(height: 6);
 
       case _BlockType.paragraph:
-      default:
         return Padding(
           padding: const EdgeInsets.only(bottom: 6),
           child: _buildRichInlineText(block.content),
