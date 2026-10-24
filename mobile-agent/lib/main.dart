@@ -1079,6 +1079,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   Timer? _healthCheckTimer;
   Timer? _bgTaskTimer;
   List<dynamic> _bgTasks = [];
+  String? _dismissedWatchdogTaskId;
   int _reconnectAttempts = 0;
   Map<String, dynamic> _devices = {};
   String? _currentDeviceId;
@@ -1333,6 +1334,16 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     await _flutterLocalNotificationsPlugin
         .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
         ?.createNotificationChannel(channel);
+
+    const AndroidNotificationChannel taskChannel = AndroidNotificationChannel(
+      'bg_tasks_channel',
+      'Autonomous Tasks & Watchdog',
+      description: 'Real-time proactive notifications for background commands and builds.',
+      importance: Importance.max,
+    );
+    await _flutterLocalNotificationsPlugin
+        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+        ?.createNotificationChannel(taskChannel);
 
     String? token = await FirebaseMessaging.instance.getToken();
     if (token != null && mounted) {  // FCM-03 fix: widget may be gone by the time token arrives
@@ -2200,6 +2211,512 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     }
   }
 
+  Future<void> _notifyTaskCompletion(Map<String, dynamic> task) async {
+    final status = task['status']?.toString() ?? '';
+    final isSuccess = status == 'completed';
+    final isFailed = status == 'failed';
+    if (!isSuccess && !isFailed) return;
+
+    final id = task['id']?.toString() ?? 'Task';
+    final label = task['label']?.toString().isNotEmpty == true ? task['label'] : id;
+    final duration = task['duration']?.toString() ?? '';
+    final snapshot = task['snapshot']?.toString() ?? '';
+
+    String rootCause = '';
+    String recFix = '';
+    if (snapshot.contains('ROOT_CAUSE:')) {
+      final parts = snapshot.split('ROOT_CAUSE:');
+      if (parts.length > 1) {
+        final fixParts = parts[1].split('RECOMMENDED_FIX:');
+        rootCause = fixParts[0].trim();
+        if (fixParts.length > 1) {
+          recFix = fixParts[1].trim();
+        }
+      }
+    }
+
+    final title = isSuccess
+        ? '✓ Task Completed: $label'
+        : '⚠️ Task Failed: $label';
+    final body = isSuccess
+        ? 'Command finished successfully${duration.isNotEmpty ? ' in $duration' : ''}.'
+        : (rootCause.isNotEmpty
+            ? 'Root cause: $rootCause'
+            : 'Exit code: ${task['exit_code'] ?? 'non-zero'}. Tap to view diagnosis.');
+
+    try {
+      const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+        'bg_tasks_channel',
+        'Autonomous Tasks & Watchdog',
+        channelDescription: 'Real-time proactive notifications for background commands and builds.',
+        importance: Importance.max,
+        priority: Priority.high,
+        playSound: true,
+        enableVibration: true,
+      );
+      const NotificationDetails details = NotificationDetails(android: androidDetails);
+      await _flutterLocalNotificationsPlugin.show(
+        id.hashCode,
+        title,
+        body,
+        details,
+      );
+    } catch (e) {
+      debugPrint('Local notification error: $e');
+    }
+
+    // Proactive voice announcement if enabled
+    if (_willTalk) {
+      if (isSuccess) {
+        _speakSummary("$label has finished successfully.");
+      } else {
+        final speechText = rootCause.isNotEmpty
+            ? "Alert: $label failed. Root cause: $rootCause."
+            : "Alert: $label failed with an error.";
+        _speakSummary(speechText, isCritical: true);
+      }
+    }
+
+    // In-app SnackBar if mounted
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              Icon(
+                isSuccess ? Icons.check_circle_outline : Icons.error_outline,
+                color: isSuccess ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '$title - $body',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: isSuccess ? const Color(0xFF1E293B) : const Color(0xFF450A0A),
+          duration: Duration(seconds: isFailed ? 6 : 4),
+          action: isFailed
+              ? SnackBarAction(
+                  label: 'DIAGNOSE',
+                  textColor: Colors.amberAccent,
+                  onPressed: () => _showTaskDetailsDialog(task),
+                )
+              : null,
+        ),
+      );
+    }
+  }
+
+  void _showTaskDetailsDialog(Map<String, dynamic> task) {
+    final bool isDark = appThemeMode.value == ThemeMode.dark;
+    final bool isRunning = task['status'] == 'running';
+    final bool isFailed = task['status'] == 'failed';
+    final String snapshot = task['snapshot']?.toString() ?? task['latest_log']?.toString() ?? '';
+    
+    // Extract root cause and recommended fix if present
+    String rootCause = '';
+    String recFix = '';
+    if (snapshot.contains('ROOT_CAUSE:')) {
+      final parts = snapshot.split('ROOT_CAUSE:');
+      if (parts.length > 1) {
+        final fixParts = parts[1].split('RECOMMENDED_FIX:');
+        rootCause = fixParts[0].trim();
+        if (fixParts.length > 1) {
+          recFix = fixParts[1].trim();
+        }
+      }
+    }
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppTokens.bg(isDark),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(color: AppTokens.border(isDark)),
+        ),
+        title: Row(
+          children: [
+            Icon(
+              isRunning
+                  ? Icons.play_circle_fill_rounded
+                  : (isFailed ? Icons.error_rounded : Icons.check_circle_rounded),
+              color: isRunning
+                  ? AppTokens.accentSecondary
+                  : (isFailed ? const Color(0xFFEF4444) : const Color(0xFF10B981)),
+              size: 22,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Task: ${task["label"] ?? task["id"] ?? "Details"}',
+                style: GoogleFonts.spaceGrotesk(color: AppTokens.textPrimary(isDark), fontSize: 16, fontWeight: FontWeight.bold),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: (isFailed ? const Color(0xFFEF4444) : (isRunning ? AppTokens.accentSecondary : const Color(0xFF10B981))).withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        task["status"].toString().toUpperCase(),
+                        style: GoogleFonts.inter(
+                          color: isFailed ? const Color(0xFFEF4444) : (isRunning ? AppTokens.accentSecondary : const Color(0xFF10B981)),
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    if (task["duration"] != null)
+                      Text('Duration: ${task["duration"]}', style: GoogleFonts.inter(color: AppTokens.textSecondary(isDark), fontSize: 11)),
+                  ],
+                ),
+                if (task["workdir"] != null && task["workdir"].toString().isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text('Directory: ${task["workdir"]}', style: GoogleFonts.inter(color: AppTokens.textSecondary(isDark), fontSize: 11)),
+                ],
+                const SizedBox(height: 12),
+                Text('Command:', style: GoogleFonts.inter(color: AppTokens.textPrimary(isDark), fontSize: 12, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 4),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppTokens.cardAlt(isDark),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppTokens.border(isDark)),
+                  ),
+                  child: SelectableText(
+                    task["command"] ?? '',
+                    style: GoogleFonts.jetBrainsMono(color: AppTokens.accent, fontSize: 11),
+                  ),
+                ),
+                if (rootCause.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      const Icon(Icons.psychology_rounded, size: 16, color: Colors.amberAccent),
+                      const SizedBox(width: 6),
+                      Text('Watchdog AI Diagnosis:', style: GoogleFonts.inter(color: Colors.amberAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.amber.withOpacity(0.3)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Root Cause: $rootCause', style: GoogleFonts.inter(color: AppTokens.textPrimary(isDark), fontSize: 11, fontWeight: FontWeight.w600)),
+                        if (recFix.isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Text('Recommended Fix: $recFix', style: GoogleFonts.inter(color: AppTokens.accentSecondary, fontSize: 11)),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+                if (snapshot.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Text('Log Output & Diagnostics:', style: GoogleFonts.inter(color: AppTokens.textPrimary(isDark), fontSize: 12, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 4),
+                  Container(
+                    width: double.infinity,
+                    constraints: const BoxConstraints(maxHeight: 220),
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF090D16) : const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppTokens.border(isDark)),
+                    ),
+                    child: SingleChildScrollView(
+                      physics: const BouncingScrollPhysics(),
+                      child: SelectableText(
+                        snapshot,
+                        style: GoogleFonts.jetBrainsMono(
+                          color: isDark ? const Color(0xFFE2E8F0) : const Color(0xFF1E293B),
+                          fontSize: 10.5,
+                          height: 1.4,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          if (isFailed && (recFix.isNotEmpty || rootCause.isNotEmpty))
+            ElevatedButton.icon(
+              onPressed: () {
+                Navigator.pop(context);
+                final fixPrompt = "Fix background task error (${task['id']}): $rootCause. Suggestion: $recFix";
+                _controller.text = fixPrompt;
+                _sendMessage();
+              },
+              icon: const Icon(Icons.auto_fix_high_rounded, size: 14),
+              label: const Text('Auto-Fix with AI', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTokens.accentSecondary,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+            ),
+          if (isRunning)
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                _killSpecificBgTask(task['id']?.toString() ?? '');
+              },
+              child: const Text('Kill Task', style: TextStyle(color: Color(0xFFEF4444), fontWeight: FontWeight.bold)),
+            ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Close', style: GoogleFonts.inter(color: AppTokens.textSecondary(isDark))),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProactiveWatchdogCard(Map<String, dynamic> task, bool isDark) {
+    final status = task['status']?.toString() ?? 'running';
+    final isRunning = status == 'running';
+    final isFailed = status == 'failed';
+    final id = task['id']?.toString() ?? '';
+    final label = task['label']?.toString().isNotEmpty == true ? task['label'] : id;
+    final snapshot = task['snapshot']?.toString() ?? task['latest_log']?.toString() ?? '';
+    final duration = task['duration']?.toString() ?? '';
+
+    String rootCause = '';
+    String recFix = '';
+    if (snapshot.contains('ROOT_CAUSE:')) {
+      final parts = snapshot.split('ROOT_CAUSE:');
+      if (parts.length > 1) {
+        final fixParts = parts[1].split('RECOMMENDED_FIX:');
+        rootCause = fixParts[0].trim();
+        if (fixParts.length > 1) {
+          recFix = fixParts[1].trim();
+        }
+      }
+    }
+
+    final accentColor = isFailed
+        ? const Color(0xFFEF4444)
+        : (isRunning ? const Color(0xFF10B981) : const Color(0xFF6366F1));
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF141923).withOpacity(0.92) : Colors.white.withOpacity(0.92),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: accentColor.withOpacity(0.35),
+          width: 1.2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: accentColor.withOpacity(0.12),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: accentColor,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(color: accentColor.withOpacity(0.6), blurRadius: 4, spreadRadius: 1),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                'WATCHDOG • ${status.toUpperCase()}',
+                style: GoogleFonts.spaceGrotesk(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.8,
+                  color: accentColor,
+                ),
+              ),
+              if (duration.isNotEmpty) ...[
+                const SizedBox(width: 6),
+                Text(
+                  '($duration)',
+                  style: GoogleFonts.inter(
+                    fontSize: 10,
+                    color: AppTokens.textSecondary(isDark),
+                  ),
+                ),
+              ],
+              const Spacer(),
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  setState(() {
+                    _dismissedWatchdogTaskId = id;
+                  });
+                },
+                child: Padding(
+                  padding: const EdgeInsets.all(2.0),
+                  child: Icon(Icons.close_rounded, size: 14, color: AppTokens.textSecondary(isDark)),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  isFailed && rootCause.isNotEmpty
+                      ? 'Error: $rootCause'
+                      : (task['command'] ?? label),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.jetBrainsMono(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: isFailed ? const Color(0xFFFCA5A5) : AppTokens.textPrimary(isDark),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              if (isFailed) ...[
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () {
+                    final fixPrompt = "Fix background task error ($id): ${rootCause.isNotEmpty ? rootCause : snapshot}. Suggestion: $recFix";
+                    _controller.text = fixPrompt;
+                    _sendMessage();
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF6366F1).withOpacity(0.3),
+                          blurRadius: 4,
+                          offset: const Offset(0, 1),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.auto_fix_high_rounded, size: 12, color: Colors.white),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Auto-Fix',
+                          style: GoogleFonts.inter(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+              ],
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => _showTaskDetailsDialog(task),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.06),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: isDark ? Colors.white12 : Colors.black12),
+                  ),
+                  child: Text(
+                    'Details & Logs',
+                    style: GoogleFonts.inter(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w600,
+                      color: AppTokens.textPrimary(isDark),
+                    ),
+                  ),
+                ),
+              ),
+              if (isRunning) ...[
+                const SizedBox(width: 6),
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => _killSpecificBgTask(id),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEF4444).withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFEF4444).withOpacity(0.3)),
+                    ),
+                    child: Text(
+                      'Kill',
+                      style: GoogleFonts.inter(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFFEF4444),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _initializeDeviceIdentity() async {
     _currentDeviceId = await DeviceIdentity.getDeviceId();
     _currentDeviceName = await DeviceIdentity.getDeviceName();
@@ -2449,15 +2966,27 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
             } else if (jsonResponse is Map && jsonResponse['type'] == 'bg_task_update') {
               final task = jsonResponse['task'];
               if (task is Map && mounted) {
+                final taskMap = Map<String, dynamic>.from(task);
+                final taskId = taskMap['id']?.toString() ?? '';
+                final status = taskMap['status']?.toString() ?? '';
+                String prevStatus = '';
                 setState(() {
-                  final taskId = task['id']?.toString() ?? '';
                   final existingIdx = _bgTasks.indexWhere((t) => t['id'] == taskId);
                   if (existingIdx != -1) {
-                    _bgTasks[existingIdx] = Map<String, dynamic>.from(task);
+                    prevStatus = _bgTasks[existingIdx]['status']?.toString() ?? '';
+                    _bgTasks[existingIdx] = taskMap;
                   } else {
-                    _bgTasks.insert(0, Map<String, dynamic>.from(task));
+                    _bgTasks.insert(0, taskMap);
+                  }
+                  if (status == 'running' || status == 'failed') {
+                    if (_dismissedWatchdogTaskId == taskId && status != prevStatus) {
+                      _dismissedWatchdogTaskId = null;
+                    }
                   }
                 });
+                if (status != prevStatus && (status == 'completed' || status == 'failed')) {
+                  _notifyTaskCompletion(taskMap);
+                }
               }
             } else if (jsonResponse is Map && jsonResponse['type'] == 'security_alert') {
               final alert = jsonResponse['alert'];
@@ -4920,6 +5449,32 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                     ),
                   ),
 
+                  // 5.5 Proactive Watchdog Card (when background task is active or failed)
+                  (() {
+                    Map<String, dynamic>? activeWatchdogTask;
+                    for (final t in _bgTasks) {
+                      if (t is Map) {
+                        final tid = t['id']?.toString();
+                        if (tid == _dismissedWatchdogTaskId) continue;
+                        final status = t['status']?.toString();
+                        if (status == 'running' || status == 'failed') {
+                          activeWatchdogTask = Map<String, dynamic>.from(t);
+                          break;
+                        }
+                      }
+                    }
+                    if (activeWatchdogTask != null) {
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 10),
+                        child: FloatingWaterElement(
+                          distanceFactor: 0.15,
+                          child: _buildProactiveWatchdogCard(activeWatchdogTask, isDark),
+                        ),
+                      );
+                    }
+                    return const SizedBox.shrink();
+                  })(),
+
                   const SizedBox(height: 12),
 
                   // 6. Quick Action Context Chips (floating)
@@ -5989,58 +6544,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                         
                         return InkWell(
                           borderRadius: BorderRadius.circular(16),
-                          onTap: () {
-                            showDialog(
-                              context: context,
-                              builder: (context) => AlertDialog(
-                                backgroundColor: AppTokens.bg(isDark),
-                                title: Row(
-                                  children: [
-                                    Icon(isRunning ? Icons.play_circle_fill_rounded : Icons.check_circle_rounded, color: isRunning ? AppTokens.accentSecondary : AppTokens.textSecondary(isDark), size: 20),
-                                    const SizedBox(width: 8),
-                                    Text('Task Details', style: GoogleFonts.spaceGrotesk(color: AppTokens.textPrimary(isDark), fontSize: 16, fontWeight: FontWeight.bold)),
-                                  ],
-                                ),
-                                content: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text('ID: ${task["id"]}', style: GoogleFonts.inter(color: AppTokens.textSecondary(isDark), fontSize: 12)),
-                                    const SizedBox(height: 4),
-                                    Text('Status: ${task["status"].toString().toUpperCase()}', style: GoogleFonts.inter(color: isRunning ? AppTokens.accentSecondary : AppTokens.textPrimary(isDark), fontSize: 12, fontWeight: FontWeight.bold)),
-                                    const SizedBox(height: 4),
-                                    if (task["duration"] != null) Text('Duration: ${task["duration"]}', style: GoogleFonts.inter(color: AppTokens.textSecondary(isDark), fontSize: 12)),
-                                    const SizedBox(height: 12),
-                                    Text('Command:', style: GoogleFonts.inter(color: AppTokens.textPrimary(isDark), fontSize: 12, fontWeight: FontWeight.bold)),
-                                    const SizedBox(height: 4),
-                                    Container(
-                                      padding: const EdgeInsets.all(8),
-                                      decoration: BoxDecoration(
-                                        color: AppTokens.cardAlt(isDark),
-                                        borderRadius: BorderRadius.circular(6),
-                                        border: Border.all(color: AppTokens.border(isDark)),
-                                      ),
-                                      child: Text(task["command"] ?? '', style: GoogleFonts.jetBrainsMono(color: AppTokens.accent, fontSize: 11)),
-                                    ),
-                                  ],
-                                ),
-                                actions: [
-                                  if (isRunning)
-                                    TextButton(
-                                      onPressed: () {
-                                        Navigator.pop(context);
-                                        _killSpecificBgTask(task['id']?.toString() ?? '');
-                                      },
-                                      child: const Text('Kill Task', style: TextStyle(color: Color(0xFFEF4444), fontWeight: FontWeight.bold)),
-                                    ),
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(context),
-                                    child: Text('Close', style: GoogleFonts.inter(color: AppTokens.textSecondary(isDark))),
-                                  )
-                                ],
-                              ),
-                            );
-                          },
+                          onTap: () => _showTaskDetailsDialog(Map<String, dynamic>.from(task as Map)),
                           child: Container(
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(

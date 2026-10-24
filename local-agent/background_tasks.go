@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -81,7 +80,7 @@ func bgTasksDir() string {
 	return dir
 }
 
-// generateSnapshot builds an abbreviated log: first 30 + last 30 lines
+// generateSnapshot builds an abbreviated log with smart error detection
 func generateSnapshot(stdout, stderr []byte) string {
 	outStr := strings.TrimSpace(string(stdout))
 	errStr := strings.TrimSpace(string(stderr))
@@ -98,6 +97,32 @@ func generateSnapshot(stdout, stderr []byte) string {
 			sb.WriteString(log + "\n")
 		} else {
 			sb.WriteString(strings.Join(lines[:30], "\n") + "\n")
+
+			// Scan omitted lines for critical error keywords to ensure errors are never lost
+			var errorHighlights []string
+			errorKeywords := []string{"error", "failed", "exception", "fatal:", "npm err!", "fail:", "panic:"}
+			for i := 30; i < len(lines)-30 && len(errorHighlights) < 20; i++ {
+				lineLower := strings.ToLower(lines[i])
+				for _, kw := range errorKeywords {
+					if strings.Contains(lineLower, kw) {
+						start := i - 2
+						if start < 30 { start = 30 }
+						end := i + 3
+						if end > len(lines)-30 { end = len(lines) - 30 }
+						for k := start; k < end && len(errorHighlights) < 20; k++ {
+							errorHighlights = append(errorHighlights, lines[k])
+						}
+						i = end
+						break
+					}
+				}
+			}
+
+			if len(errorHighlights) > 0 {
+				sb.WriteString("\n--- CRITICAL ERROR HIGHLIGHTS ---\n")
+				sb.WriteString(strings.Join(errorHighlights, "\n") + "\n")
+			}
+
 			sb.WriteString(fmt.Sprintf("\n... [ %d lines omitted for brevity ] ...\n\n", len(lines)-60))
 			sb.WriteString(strings.Join(lines[len(lines)-30:], "\n") + "\n")
 		}
@@ -207,21 +232,48 @@ func isLongRunningCommand(cmd string) bool {
 	return false
 }
 
+// resolveSafeTaskDir determines the execution directory within the Desktop sandbox root
+func resolveSafeTaskDir(workdir string) string {
+	desktopDir, _ := os.UserHomeDir()
+	desktopDir = filepath.Join(desktopDir, "Desktop")
+
+	if workdir != "" {
+		if !filepath.IsAbs(workdir) {
+			return filepath.Join(desktopDir, workdir)
+		}
+		return workdir
+	}
+
+	workingDirMutex.Lock()
+	cwd := currentWorkingDir
+	workingDirMutex.Unlock()
+
+	if cwd != "" {
+		return cwd
+	}
+
+	return desktopDir
+}
+
 // spawnBGTask spawns a command in a goroutine, persists metadata, returns task ID
 func spawnBGTask(command, convID string) string {
-	return spawnBGTaskWithLabel(command, command, convID)
+	return spawnBGTaskWithLabel(command, command, convID, "")
 }
 
 // spawnBGTaskSafe is the public entry point - checks for duplicates first
 func spawnBGTaskSafe(command, label, convID string) (string, bool) {
-	if isDup, existingID := isDuplicateBGTask(command); isDup {
-		logBGWarn("BGTask", "Duplicate detected - command already running as %s", existingID)
-		return existingID, true // true = was duplicate
-	}
-	return spawnBGTaskWithLabel(command, label, convID), false
+	return spawnBGTaskWithWorkDir(command, label, convID, "")
 }
 
-func spawnBGTaskWithLabel(command, label, convID string) string {
+func spawnBGTaskWithWorkDir(command, label, convID, workdir string) (string, bool) {
+	if isDup, existingID := isDuplicateBGTask(command); isDup {
+		logBGWarn("BGTask", "Duplicate detected - command already running as %s", existingID)
+		return existingID, true
+	}
+	return spawnBGTaskWithLabel(command, label, convID, workdir), false
+}
+
+func spawnBGTaskWithLabel(command, label, convID, workdir string) string {
 	bgTasksMu.Lock()
 	id := fmt.Sprintf("TASK-%d", bgTaskIdx)
 	bgTaskIdx++
@@ -246,7 +298,8 @@ func spawnBGTaskWithLabel(command, label, convID string) string {
 	logBGInfo("BGTask", "Spawned task %s: %s", id, command)
 
 	go func() {
-		fullCmd := fmt.Sprintf("Set-Location -Path $([Environment]::GetFolderPath('Desktop')); %s", command)
+		targetDir := resolveSafeTaskDir(workdir)
+		fullCmd := fmt.Sprintf("Set-Location -LiteralPath '%s'; %s", targetDir, command)
 		cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", fullCmd)
 		if runtime.GOOS == "windows" {
 			cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
@@ -276,12 +329,12 @@ func spawnBGTaskWithLabel(command, label, convID string) string {
 		close(done)
 
 		bgTasksMu.Lock()
-		defer bgTasksMu.Unlock()
 		task.EndTime = time.Now()
 		if task.Status == "cancelled" {
 			logBGInfo("BGTask", "Task %s was CANCELLED by user (skipping retries)", id)
 			persistSnapshot(task)
 			saveBGTaskMeta(task)
+			bgTasksMu.Unlock()
 			return
 		}
 		if err != nil {
@@ -294,6 +347,7 @@ func spawnBGTaskWithLabel(command, label, convID string) string {
 		}
 		persistSnapshot(task)
 		saveBGTaskMeta(task)
+		bgTasksMu.Unlock()
 
 		// Push completion notification to the running LLM loop (COMORADE mode)
 		snapshot := generateSnapshot(task.Stdout.Bytes(), task.Stderr.Bytes())
@@ -307,20 +361,17 @@ func spawnBGTaskWithLabel(command, label, convID string) string {
 		default:
 			logBGWarn("BGTask", "COMORADE channel full, notification for %s dropped", task.ID)
 		}
-		
-		// AUTONOMOUS WAKEUP: If task FAILED and we have a ConversationID, trigger self-healing retry!
-		// If it SUCCEEDED, do NOT wake up the LLM — the task is finished and output is already delivered.
-		if task.Status == "failed" && task.ConversationID != "" {
-			go func(cID, tID, status, snap string) {
-				time.Sleep(2 * time.Second) // Give the UI a moment to breathe
-				ctx := context.Background()
-				connData, _ := loadConnectionData()
-				triggerMsg := fmt.Sprintf("BACKGROUND TASK FAILURE ALERT:\nTask %s has failed with status: %s.\n\nLogs:\n%s\n\nCRITICAL INSTRUCTION: Analyze these logs, determine the root cause, adapt the command, and autonomously retry using run_terminal.", tID, strings.ToUpper(status), snap)
-				logBGInfo("BGTask", "Triggering autonomous error recovery for failed task %s on conv %s", tID, cID)
-				executeCommand(ctx, triggerMsg, connData.ActiveMode, cID, "")
-			}(task.ConversationID, task.ID, task.Status, snapshot)
-		}
 
+		// AUTONOMOUS WATCHDOG: If task FAILED, diagnose with active provider (Ollama Cloud or Groq)
+		if task.Status == "failed" {
+			go func(t *BGTask, snap string) {
+				rootCause, fix := diagnoseTaskFailure(t.ID, t.Label, snap)
+				diagMsg := fmt.Sprintf("\n[WATCHDOG DIAGNOSIS]\nRoot Cause: %s\nRecommended Fix: %s\n", rootCause, fix)
+				t.Stderr.Write([]byte(diagMsg))
+				persistSnapshot(t)
+				saveBGTaskMeta(t)
+			}(task, snapshot)
+		}
 	}()
 
 	return id

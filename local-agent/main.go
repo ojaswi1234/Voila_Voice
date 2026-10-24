@@ -3953,6 +3953,10 @@ var availableTools = []toolDef{
 						"enum": []string{"NONE", "BG TASK", "BG TASK COMORADE"},
 						"description": "Background execution mode for long tasks.",
 					},
+					"workdir": map[string]interface{}{
+						"type": "string",
+						"description": "Optional working directory or project subfolder relative to Desktop (e.g. 'Voila_Voice/mobile-agent').",
+					},
 				},
 				"required": []string{"command"},
 			},
@@ -5409,7 +5413,8 @@ func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMes
 					convID = s
 				}
 			}
-			taskID, isDup := spawnBGTaskSafe(actualCommand, actualCommand, convID)
+			workdir := getString("workdir")
+			taskID, isDup := spawnBGTaskWithWorkDir(actualCommand, actualCommand, convID, workdir)
 
 			
 			if isDup {
@@ -6795,6 +6800,146 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 	return fallback, nil
 }
 
+// diagnoseTaskFailure asks the active LLM provider (Ollama Cloud or Groq) to analyze a failed background task
+func diagnoseTaskFailure(taskID, label, snapshot string) (rootCause string, suggestedFix string) {
+	connData, err := loadConnectionData()
+	if err != nil {
+		return "Build failed with error exit status.", ""
+	}
+
+	prompt := fmt.Sprintf(`A background command failed on the user's Windows machine. Analyze the output and give a precise diagnosis.
+Command: %s
+Output:
+%s
+
+Respond STRICTLY in this two-line format:
+ROOT_CAUSE: <One sentence summarizing why it failed>
+RECOMMENDED_FIX: <One powershell command or code fix to resolve it>`, label, snapshot)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 22*time.Second)
+	defer cancel()
+
+	var rawResponse string
+	if connData.ActiveMode == "GROQ" && connData.GroqAPIKey != "" {
+		m := connData.GroqModel
+		if m == "" {
+			m = "openai/gpt-oss-120b"
+		}
+		rawResponse, _ = runFastCompletionGroq(ctx, prompt, connData.GroqAPIKey, m)
+	} else if connData.OllamaAPIKey != "" || connData.OllamaBaseURL != "" {
+		baseURL := connData.OllamaBaseURL
+		if baseURL == "" {
+			baseURL = "https://api.ollama.com"
+		}
+		m := connData.OllamaModel
+		if m == "" {
+			m = "gemma4:31b"
+		}
+		rawResponse, _ = runFastCompletionOllama(ctx, prompt, baseURL, m, connData.OllamaAPIKey)
+	}
+
+	for _, line := range strings.Split(rawResponse, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "ROOT_CAUSE:") {
+			rootCause = strings.TrimSpace(strings.TrimPrefix(trimmed, "ROOT_CAUSE:"))
+		} else if strings.HasPrefix(trimmed, "RECOMMENDED_FIX:") {
+			suggestedFix = strings.TrimSpace(strings.TrimPrefix(trimmed, "RECOMMENDED_FIX:"))
+		}
+	}
+	if rootCause == "" {
+		rootCause = "Build failed with non-zero exit code."
+	}
+	return rootCause, suggestedFix
+}
+
+func runFastCompletionGroq(ctx context.Context, prompt, apiKey, model string) (string, error) {
+	payload := map[string]interface{}{
+		"model": model,
+		"messages": []map[string]string{
+			{"role": "user", "content": prompt},
+		},
+		"temperature": 0.2,
+		"max_tokens":  300,
+	}
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.groq.com/openai/v1/chat/completions", bytes.NewReader(b))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{Timeout: 18 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	var res struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil || len(res.Choices) == 0 {
+		return "", fmt.Errorf("invalid groq response")
+	}
+	return res.Choices[0].Message.Content, nil
+}
+
+func runFastCompletionOllama(ctx context.Context, prompt, baseURL, model, apiKey string) (string, error) {
+	if baseURL == "" || baseURL == "https://ollama.com" {
+		if apiKey != "" {
+			baseURL = "https://api.ollama.com"
+		} else {
+			baseURL = "http://localhost:11434"
+		}
+	}
+	apiURL := strings.TrimRight(baseURL, "/") + "/api/chat"
+	payload := map[string]interface{}{
+		"model": model,
+		"messages": []map[string]string{
+			{"role": "user", "content": prompt},
+		},
+		"stream": false,
+		"options": map[string]interface{}{
+			"num_predict": 300,
+			"temperature": 0.2,
+		},
+	}
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewReader(b))
+	if err != nil {
+		return "", err
+	}
+	if apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{Timeout: 18 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	var res struct {
+		Message struct {
+			Content string `json:"content"`
+		} `json:"message"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+		return "", err
+	}
+	return res.Message.Content, nil
+}
+
+
 // Ã¢â€â‚¬Ã¢â€â‚¬ Ollama executor with tool-calling loop Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 // executeOllamaCommand sends a prompt to an Ollama-compatible endpoint.
@@ -7030,6 +7175,11 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 		}
 		if ctx.Err() != nil {
 			return "Canceled by user", nil
+		}
+		// Drain any completed COMORADE background task notifications
+		if notifs := drainComradeNotifications(); len(notifs) > 0 {
+			messages = append(messages, notifs...)
+			logBGInfo("Ollama", "iter=%d injected %d COMORADE notifications", iter, len(notifs))
 		}
 		debugLog.Printf("[executeOllamaCommand] iter=%d messages=%d", iter, len(messages))
 		payload := map[string]interface{}{

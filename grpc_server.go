@@ -295,6 +295,34 @@ func (s *TunnelServer) EstablishTunnel(stream voilav1.DesktopTunnelService_Estab
 				s.backend.broadcastToClients(websocket.TextMessage, b)
 			}
 
+			// Proactive Watchdog: Dispatch FCM notification to mobile when task completes or fails
+			if s.backend != nil && (prog.Status == "completed" || prog.Status == "failed") {
+				targetDevice := deviceID
+				if targetDevice == "" {
+					targetDevice = telemetry.DeviceId
+				}
+
+				eventType := "task_finished"
+				title := fmt.Sprintf("Build Succeeded: %s", prog.Label)
+				body := fmt.Sprintf("Task %s completed in %ds.", prog.TaskId, prog.ElapsedSeconds)
+
+				if prog.Status == "failed" {
+					eventType = "task_failed"
+					title = fmt.Sprintf("Build Failed: %s", prog.Label)
+					body = fmt.Sprintf("Task %s failed after %ds.", prog.TaskId, prog.ElapsedSeconds)
+					if idx := strings.Index(prog.LatestLogSnippet, "Root Cause:"); idx != -1 {
+						snippet := prog.LatestLogSnippet[idx:]
+						if end := strings.Index(snippet, "\n"); end != -1 {
+							body = strings.TrimSpace(snippet[:end])
+						}
+					}
+				}
+
+				if targetDevice != "" {
+					go s.backend.sendFCMTaskCompletion(targetDevice, eventType, title, body, prog.TaskId, prog.LatestLogSnippet, "")
+				}
+			}
+
 		case *voilav1.AgentTelemetry_SurveillanceAlert:
 			al := p.SurveillanceAlert
 			resp := map[string]interface{}{
