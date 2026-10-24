@@ -1080,6 +1080,8 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   Timer? _bgTaskTimer;
   List<dynamic> _bgTasks = [];
   String? _dismissedWatchdogTaskId;
+  Map<String, dynamic>? _activeClipboardSuggestion;
+  Timer? _clipboardSuggestionTimer;
   int _reconnectAttempts = 0;
   Map<String, dynamic> _devices = {};
   String? _currentDeviceId;
@@ -2717,6 +2719,208 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     );
   }
 
+  Widget _buildAmbientClipboardCard(Map<String, dynamic> suggestion, bool isDark) {
+    final lang = suggestion['language']?.toString() ?? 'Code';
+    final summary = suggestion['summary']?.toString() ?? suggestion['error_type']?.toString() ?? 'Error detected';
+    final recFix = suggestion['recommended_fix']?.toString() ?? '';
+    final snippet = suggestion['snippet']?.toString() ?? '';
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF161228).withOpacity(0.94) : Colors.white.withOpacity(0.94),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: const Color(0xFF8B5CF6).withOpacity(0.4),
+          width: 1.2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF8B5CF6).withOpacity(0.16),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF8B5CF6).withOpacity(0.18),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Icon(Icons.content_paste_search_rounded, size: 13, color: Color(0xFFA78BFA)),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'SMART CLIPBOARD • ${lang.toUpperCase()}',
+                style: GoogleFonts.spaceGrotesk(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.8,
+                  color: const Color(0xFFA78BFA),
+                ),
+              ),
+              const Spacer(),
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  setState(() {
+                    _activeClipboardSuggestion = null;
+                  });
+                },
+                child: Padding(
+                  padding: const EdgeInsets.all(2.0),
+                  child: Icon(Icons.close_rounded, size: 14, color: AppTokens.textSecondary(isDark)),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 5),
+          Text(
+            summary,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.inter(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+              color: AppTokens.textPrimary(isDark),
+              height: 1.3,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  final prompt = "Fix this copied $lang error: $summary.\nSuggestion: $recFix\nSnippet:\n```\n$snippet\n```";
+                  _controller.text = prompt;
+                  setState(() {
+                    _activeClipboardSuggestion = null;
+                  });
+                  _sendMessage();
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4.5),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF6366F1), Color(0xFF9333EA)],
+                    ),
+                    borderRadius: BorderRadius.circular(8),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF6366F1).withOpacity(0.3),
+                        blurRadius: 4,
+                        offset: const Offset(0, 1),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.auto_fix_high_rounded, size: 12, color: Colors.white),
+                      const SizedBox(width: 4),
+                      Text(
+                        '1-Tap Auto-Fix',
+                        style: GoogleFonts.inter(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  showDialog(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      backgroundColor: AppTokens.bg(isDark),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        side: BorderSide(color: AppTokens.border(isDark)),
+                      ),
+                      title: Row(
+                        children: [
+                          const Icon(Icons.content_paste_rounded, color: Color(0xFFA78BFA), size: 20),
+                          const SizedBox(width: 8),
+                          Text('$lang Error Analysis', style: GoogleFonts.spaceGrotesk(color: AppTokens.textPrimary(isDark), fontSize: 16, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                      content: SingleChildScrollView(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Root Cause:', style: GoogleFonts.inter(color: AppTokens.textPrimary(isDark), fontSize: 12, fontWeight: FontWeight.bold)),
+                            const SizedBox(height: 4),
+                            Text(summary, style: GoogleFonts.inter(color: AppTokens.textSecondary(isDark), fontSize: 12)),
+                            if (recFix.isNotEmpty) ...[
+                              const SizedBox(height: 10),
+                              Text('Recommended Fix:', style: GoogleFonts.inter(color: Colors.amberAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                              const SizedBox(height: 4),
+                              Text(recFix, style: GoogleFonts.inter(color: AppTokens.textPrimary(isDark), fontSize: 12)),
+                            ],
+                            const SizedBox(height: 10),
+                            Text('Copied Snippet:', style: GoogleFonts.inter(color: AppTokens.textPrimary(isDark), fontSize: 12, fontWeight: FontWeight.bold)),
+                            const SizedBox(height: 4),
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: AppTokens.cardAlt(isDark),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: AppTokens.border(isDark)),
+                              ),
+                              child: SelectableText(snippet, style: GoogleFonts.jetBrainsMono(fontSize: 10.5, color: AppTokens.accent)),
+                            ),
+                          ],
+                        ),
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: Text('Close', style: GoogleFonts.inter(color: AppTokens.textSecondary(isDark))),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4.5),
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.06),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: isDark ? Colors.white12 : Colors.black12),
+                  ),
+                  child: Text(
+                    'View Snippet',
+                    style: GoogleFonts.inter(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w600,
+                      color: AppTokens.textPrimary(isDark),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _initializeDeviceIdentity() async {
     _currentDeviceId = await DeviceIdentity.getDeviceId();
     _currentDeviceName = await DeviceIdentity.getDeviceName();
@@ -2986,6 +3190,25 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                 });
                 if (status != prevStatus && (status == 'completed' || status == 'failed')) {
                   _notifyTaskCompletion(taskMap);
+                }
+              }
+            } else if (jsonResponse is Map && jsonResponse['type'] == 'clipboard_suggestion') {
+              final suggestion = jsonResponse['data'];
+              if (suggestion is Map && mounted) {
+                setState(() {
+                  _activeClipboardSuggestion = Map<String, dynamic>.from(suggestion);
+                });
+                _clipboardSuggestionTimer?.cancel();
+                _clipboardSuggestionTimer = Timer(const Duration(seconds: 40), () {
+                  if (mounted) {
+                    setState(() {
+                      _activeClipboardSuggestion = null;
+                    });
+                  }
+                });
+                if (_willTalk) {
+                  final lang = suggestion['language'] ?? 'Code';
+                  _speakSummary("Copied $lang error detected in clipboard.");
                 }
               }
             } else if (jsonResponse is Map && jsonResponse['type'] == 'security_alert') {
@@ -5474,6 +5697,15 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                     }
                     return const SizedBox.shrink();
                   })(),
+
+                  // 5.6 Ambient Smart Clipboard Card
+                  if (_activeClipboardSuggestion != null) ...[
+                    const SizedBox(height: 10),
+                    FloatingWaterElement(
+                      distanceFactor: 0.22,
+                      child: _buildAmbientClipboardCard(_activeClipboardSuggestion!, isDark),
+                    ),
+                  ],
 
                   const SizedBox(height: 12),
 

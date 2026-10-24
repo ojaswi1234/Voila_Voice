@@ -8070,6 +8070,8 @@ func main() {
 	defer mcp.GlobalHost.StopAll()
 	// Load any persisted background tasks from previous runs
 	loadBGTasksFromDisk()
+	// Ambient Smart Clipboard Interceptor
+	StartClipboardInterceptor()
 
 	// Check for background mode flag
 	backgroundMode := false
