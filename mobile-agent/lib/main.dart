@@ -1082,6 +1082,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   String? _dismissedWatchdogTaskId;
   Map<String, dynamic>? _activeClipboardSuggestion;
   Timer? _clipboardSuggestionTimer;
+  Map<String, dynamic>? _activeWorkdayBriefing;
   int _reconnectAttempts = 0;
   Map<String, dynamic> _devices = {};
   String? _currentDeviceId;
@@ -2921,6 +2922,265 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     );
   }
 
+  Widget _buildWorkdayBriefingCard(Map<String, dynamic> briefing, bool isDark) {
+    final date = briefing['date']?.toString() ?? 'Today';
+    final branch = briefing['git_branch']?.toString() ?? 'main';
+    final uncommitted = briefing['uncommitted_count'] ?? 0;
+    final freeRam = briefing['free_ram_gb'] != null ? (briefing['free_ram_gb'] as num).toStringAsFixed(1) : null;
+    final freeDisk = briefing['free_disk_gb'] != null ? (briefing['free_disk_gb'] as num).toStringAsFixed(0) : null;
+    final summary = briefing['summary_text']?.toString() ?? '';
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1B1710).withOpacity(0.94) : Colors.white.withOpacity(0.94),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: const Color(0xFFF59E0B).withOpacity(0.4),
+          width: 1.2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFFF59E0B).withOpacity(0.14),
+            blurRadius: 12,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF59E0B).withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Icon(Icons.wb_sunny_rounded, size: 14, color: Color(0xFFF59E0B)),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'WORKDAY BRIEFING • $date',
+                  style: GoogleFonts.spaceGrotesk(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.8,
+                    color: const Color(0xFFF59E0B),
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  setState(() {
+                    _activeWorkdayBriefing = null;
+                  });
+                },
+                child: Padding(
+                  padding: const EdgeInsets.all(2.0),
+                  child: Icon(Icons.close_rounded, size: 14, color: AppTokens.textSecondary(isDark)),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          // Badges row: Git branch & System stats
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF10B981).withOpacity(0.14),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.call_split_rounded, size: 11, color: Color(0xFF10B981)),
+                      const SizedBox(width: 4),
+                      Text(
+                        branch,
+                        style: GoogleFonts.jetBrainsMono(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: const Color(0xFF10B981),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: (uncommitted > 0 ? const Color(0xFFF59E0B) : const Color(0xFF6366F1)).withOpacity(0.14),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    uncommitted > 0 ? '$uncommitted changed' : 'clean tree',
+                    style: GoogleFonts.inter(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: uncommitted > 0 ? const Color(0xFFF59E0B) : const Color(0xFF6366F1),
+                    ),
+                  ),
+                ),
+                if (freeRam != null) ...[
+                  const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: isDark ? Colors.white.withOpacity(0.06) : Colors.black.withOpacity(0.05),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      'RAM: $freeRam GB',
+                      style: GoogleFonts.inter(fontSize: 10, color: AppTokens.textSecondary(isDark)),
+                    ),
+                  ),
+                ],
+                if (freeDisk != null) ...[
+                  const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: isDark ? Colors.white.withOpacity(0.06) : Colors.black.withOpacity(0.05),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      'Disk: $freeDisk GB',
+                      style: GoogleFonts.inter(fontSize: 10, color: AppTokens.textSecondary(isDark)),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          if (summary.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              summary,
+              style: GoogleFonts.inter(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w500,
+                color: AppTokens.textPrimary(isDark),
+                height: 1.35,
+              ),
+            ),
+          ],
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              if (summary.isNotEmpty) ...[
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () {
+                    _speakSummary(summary);
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF59E0B).withOpacity(0.18),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFF59E0B).withOpacity(0.3)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.volume_up_rounded, size: 12, color: Color(0xFFF59E0B)),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Listen',
+                          style: GoogleFonts.inter(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.bold,
+                            color: const Color(0xFFF59E0B),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+              ],
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  _controller.text = "git status";
+                  _sendMessage();
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.06),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: isDark ? Colors.white12 : Colors.black12),
+                  ),
+                  child: Text(
+                    'Git Status',
+                    style: GoogleFonts.inter(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w600,
+                      color: AppTokens.textPrimary(isDark),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  if (_isConnected && _activeDevice.isNotEmpty && _activeDevice.startsWith('desktop-')) {
+                    final message = {
+                      'type': 'command',
+                      'device_id': _activeDevice,
+                      'command': '__GET_WORKDAY_BRIEFING__',
+                      'session_token': _sessionToken,
+                    };
+                    _channel?.sink.add(jsonEncode(message));
+                  }
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.06),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: isDark ? Colors.white12 : Colors.black12),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.refresh_rounded, size: 11, color: AppTokens.textSecondary(isDark)),
+                      const SizedBox(width: 3),
+                      Text(
+                        'Refresh',
+                        style: GoogleFonts.inter(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w600,
+                          color: AppTokens.textSecondary(isDark),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _initializeDeviceIdentity() async {
     _currentDeviceId = await DeviceIdentity.getDeviceId();
     _currentDeviceName = await DeviceIdentity.getDeviceName();
@@ -3209,6 +3469,19 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                 if (_willTalk) {
                   final lang = suggestion['language'] ?? 'Code';
                   _speakSummary("Copied $lang error detected in clipboard.");
+                }
+              }
+            } else if (jsonResponse is Map && jsonResponse['type'] == 'workday_briefing') {
+              final briefing = jsonResponse['data'];
+              if (briefing is Map && mounted) {
+                setState(() {
+                  _activeWorkdayBriefing = Map<String, dynamic>.from(briefing);
+                });
+                if (_willTalk) {
+                  final summary = briefing['summary_text']?.toString() ?? '';
+                  if (summary.isNotEmpty) {
+                    _speakSummary(summary);
+                  }
                 }
               }
             } else if (jsonResponse is Map && jsonResponse['type'] == 'security_alert') {
@@ -5707,6 +5980,15 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                     ),
                   ],
 
+                  // 5.7 Contextual Workday Briefing Card
+                  if (_activeWorkdayBriefing != null) ...[
+                    const SizedBox(height: 10),
+                    FloatingWaterElement(
+                      distanceFactor: 0.28,
+                      child: _buildWorkdayBriefingCard(_activeWorkdayBriefing!, isDark),
+                    ),
+                  ],
+
                   const SizedBox(height: 12),
 
                   // 6. Quick Action Context Chips (floating)
@@ -5729,11 +6011,21 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                           ),
                           const SizedBox(width: 8),
                           _buildOverlayActionChip(
-                            icon: Icons.bolt_outlined,
-                            label: 'Summarize',
+                            icon: Icons.wb_sunny_outlined,
+                            label: 'Briefing',
                             onTap: () {
-                              _controller.text = "Summarize current session";
-                              _sendMessage();
+                              if (_isConnected && _activeDevice.isNotEmpty && _activeDevice.startsWith('desktop-')) {
+                                final message = {
+                                  'type': 'command',
+                                  'device_id': _activeDevice,
+                                  'command': '__GET_WORKDAY_BRIEFING__',
+                                  'session_token': _sessionToken,
+                                };
+                                _channel?.sink.add(jsonEncode(message));
+                              } else {
+                                _controller.text = "Give me a workday briefing";
+                                _sendMessage();
+                              }
                             },
                             isDark: isDark,
                           ),

@@ -249,6 +249,15 @@ func (s *TunnelServer) EstablishTunnel(stream voilav1.DesktopTunnelService_Estab
 					s.backend.broadcastToClients(websocket.TextMessage, b)
 				}
 				continue
+			} else if res.Summary == "workday_briefing" {
+				resp := map[string]interface{}{
+					"type": "workday_briefing",
+					"data": json.RawMessage(res.Output),
+				}
+				if b, err := json.Marshal(resp); err == nil && s.backend != nil {
+					s.backend.broadcastToClients(websocket.TextMessage, b)
+				}
+				continue
 			}
 
 			resp := map[string]interface{}{

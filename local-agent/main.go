@@ -8072,6 +8072,8 @@ func main() {
 	loadBGTasksFromDisk()
 	// Ambient Smart Clipboard Interceptor
 	StartClipboardInterceptor()
+	// Contextual Morning & Workday Briefing
+	StartWorkdayBriefingScheduler()
 
 	// Check for background mode flag
 	backgroundMode := false

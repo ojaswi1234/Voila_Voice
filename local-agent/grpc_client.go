@@ -432,6 +432,11 @@ func handleIncomingCommandViaGRPC(cmd *voilav1.ExecutionCommand, connData Connec
 		return
 	}
 
+	if cmd.Command == "__GET_WORKDAY_BRIEFING__" {
+		go GenerateAndDispatchWorkdayBriefing(true)
+		return
+	}
+
 	if cmd.Command == "__GET_CONVERSATIONS__" {
 		convs := listConversationsInternal()
 		jsonData, _ := json.Marshal(convs)
