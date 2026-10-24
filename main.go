@@ -443,6 +443,9 @@ func (b *Backend) broadcastDevices() {
 func (b *Backend) tripCircuitBreaker(deviceID string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+
+	// Panic wipe ephemeral credentials vault immediately on intrusion
+	globalVault.PanicDestroyAll()
 	
 	if device, exists := b.devices[deviceID]; exists {
 		if !device.CircuitOpen {
@@ -1513,6 +1516,56 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 			case "ping":
 				b.dispatcher.Dispatch(clientID, messageType, []byte(`{"type":"pong"}`))
 				continue
+
+			case "get_flipper_status":
+				statusMap := globalVault.GetPolicyStatus()
+				jBytes, _ := json.Marshal(statusMap)
+				b.dispatcher.Dispatch(clientID, messageType, jBytes)
+				continue
+
+			case "update_flipper_policy":
+				if pMap, ok := msg["policy"].(map[string]interface{}); ok {
+					jb, _ := json.Marshal(pMap)
+					var newP FlipperPolicy
+					if err := json.Unmarshal(jb, &newP); err == nil {
+						globalVault.UpdatePolicy(newP)
+					}
+				}
+				statusMap := globalVault.GetPolicyStatus()
+				jBytes, _ := json.Marshal(statusMap)
+				b.dispatcher.Dispatch(clientID, messageType, jBytes)
+				continue
+
+			case "destroy_vault_creds":
+				globalVault.DestroyAllAndDeactivate()
+				ack, _ := json.Marshal(map[string]interface{}{
+					"type":    "vault_destroyed_ack",
+					"message": "All cached credentials securely zeroed from memory. Flipper deactivated.",
+				})
+				b.dispatcher.Dispatch(clientID, messageType, ack)
+				statusMap := globalVault.GetPolicyStatus()
+				jBytes, _ := json.Marshal(statusMap)
+				b.dispatcher.Dispatch(clientID, messageType, jBytes)
+				continue
+
+			case "store_vault_creds":
+				prov, _ := msg["provider"].(string)
+				mod, _ := msg["model"].(string)
+				bURL, _ := msg["base_url"].(string)
+				sec, _ := msg["secret"].(string)
+				ttlM, _ := msg["ttl_minutes"].(float64)
+				if prov != "" && sec != "" {
+					ttl := time.Duration(ttlM) * time.Minute
+					if ttl <= 0 { ttl = 30 * time.Minute }
+					globalVault.StoreCred(prov+"_key", prov, mod, bURL, sec, ttl)
+					b.dispatcher.Dispatch(clientID, messageType, []byte(`{"type":"store_vault_creds_ack","status":"stored"}`))
+				}
+				statusMap := globalVault.GetPolicyStatus()
+				jBytes, _ := json.Marshal(statusMap)
+				b.dispatcher.Dispatch(clientID, messageType, jBytes)
+				continue
+				b.dispatcher.Dispatch(clientID, messageType, []byte(`{"type":"pong"}`))
+				continue
 				
 			case "register_fcm_token":
 				token, _ := msg["token"].(string)
@@ -2048,7 +2101,34 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 					continue
 				}
 				if !isOnline {
-					b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: device offline"))
+					allowed, reason := globalVault.IsActionAllowed("general")
+					if !allowed {
+						resp := map[string]interface{}{
+							"type":   "result",
+							"output": fmt.Sprintf("Desktop is offline. Cloud Flipper mode is unavailable: %s", reason),
+							"status": "error",
+							"mode":   "offline_blocked",
+						}
+						j, _ := json.Marshal(resp)
+						b.dispatcher.Dispatch(clientID, messageType, j)
+						continue
+					}
+
+					hasOllama := globalVault.HasCred("ollama_key")
+					hasGroq := globalVault.HasCred("groq_key")
+					if !hasOllama && !hasGroq {
+						resp := map[string]interface{}{
+							"type":   "result",
+							"output": "Desktop is offline. To chat in Cloud Flipper mode, seed your Ollama Cloud or Groq key in Settings, or wake your desktop.",
+							"status": "error",
+							"mode":   "keys_needed",
+						}
+						j, _ := json.Marshal(resp)
+						b.dispatcher.Dispatch(clientID, messageType, j)
+						continue
+					}
+
+					go executeFlipperDirectCompletion(b, clientID, messageType, command, hasOllama)
 					continue
 				}
 				if circuitOpen {
@@ -2884,3 +2964,114 @@ func getNgrokURL() (string, error) {
 
 
 
+
+func executeFlipperDirectCompletion(b *Backend, clientID string, messageType int, prompt string, hasOllama bool) {
+	keyID := "ollama_key"
+	if !hasOllama {
+		keyID = "groq_key"
+	}
+
+	err := globalVault.BorrowCred(keyID, func(plaintext []byte, provider, model, baseURL string) error {
+		apiKey := string(plaintext)
+		var output string
+		var callErr error
+
+		client := &http.Client{Timeout: 60 * time.Second}
+
+		if provider == "groq" {
+			if model == "" {
+				model = "openai/gpt-oss-120b"
+			}
+			reqBody := map[string]interface{}{
+				"model": model,
+				"messages": []map[string]string{
+					{"role": "user", "content": prompt},
+				},
+			}
+			reqBytes, _ := json.Marshal(reqBody)
+			req, _ := http.NewRequest("POST", "https://api.groq.com/openai/v1/chat/completions", bytes.NewReader(reqBytes))
+			req.Header.Set("Authorization", "Bearer "+apiKey)
+			req.Header.Set("Content-Type", "application/json")
+
+			resp, err := client.Do(req)
+			if err != nil {
+				return err
+			}
+			defer resp.Body.Close()
+			body, _ := io.ReadAll(resp.Body)
+			var groqResp struct {
+				Choices []struct {
+					Message struct {
+						Content string `json:"content"`
+					} `json:"message"`
+				} `json:"choices"`
+			}
+			json.Unmarshal(body, &groqResp)
+			if len(groqResp.Choices) > 0 {
+				output = groqResp.Choices[0].Message.Content
+			} else {
+				output = string(body)
+			}
+		} else {
+			if baseURL == "" || baseURL == "https://ollama.com" {
+				baseURL = "https://api.ollama.com"
+			}
+			if model == "" {
+				model = "llama3.2"
+			}
+			reqBody := map[string]interface{}{
+				"model":  model,
+				"prompt": prompt,
+				"stream": false,
+			}
+			reqBytes, _ := json.Marshal(reqBody)
+			req, _ := http.NewRequest("POST", strings.TrimRight(baseURL, "/")+"/api/generate", bytes.NewReader(reqBytes))
+			if apiKey != "" {
+				req.Header.Set("Authorization", "Bearer "+apiKey)
+			}
+			req.Header.Set("Content-Type", "application/json")
+
+			resp, err := client.Do(req)
+			if err != nil {
+				return err
+			}
+			defer resp.Body.Close()
+			body, _ := io.ReadAll(resp.Body)
+			var ollamaResp struct {
+				Response string `json:"response"`
+			}
+			json.Unmarshal(body, &ollamaResp)
+			output = ollamaResp.Response
+			if output == "" {
+				output = string(body)
+			}
+		}
+
+		if callErr != nil {
+			output = fmt.Sprintf("Cloud Flipper request failed: %v", callErr)
+		}
+
+		respMap := map[string]interface{}{
+			"type":       "result",
+			"command_id": fmt.Sprintf("flipper-%d", time.Now().UnixNano()),
+			"output":     output,
+			"summary":    "☁️ Cloud Flipper Response",
+			"status":     "ok",
+			"mode":       "cloud_flipper",
+		}
+		jBytes, _ := json.Marshal(respMap)
+		b.dispatcher.Dispatch(clientID, messageType, jBytes)
+		return nil
+	})
+
+	if err != nil {
+		respMap := map[string]interface{}{
+			"type":   "result",
+			"output": fmt.Sprintf("Cloud Flipper error: %v", err),
+			"status": "error",
+			"mode":   "flipper_failed",
+		}
+		jBytes, _ := json.Marshal(respMap)
+		b.dispatcher.Dispatch(clientID, messageType, jBytes)
+	}
+}

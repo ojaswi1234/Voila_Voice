@@ -277,6 +277,21 @@ func (s *TunnelServer) EstablishTunnel(stream voilav1.DesktopTunnelService_Estab
 					s.backend.broadcastToClients(websocket.TextMessage, b)
 				}
 				continue
+			} else if res.Summary == "vault_seed" {
+				var creds map[string]string
+				if err := json.Unmarshal([]byte(res.Output), &creds); err == nil {
+					p := creds["provider"]
+					sec := creds["secret"]
+					mod := creds["model"]
+					bURL := creds["base_url"]
+					if p != "" && sec != "" {
+						ttl := time.Duration(globalVault.policy.MaxKeyTTLMinutes) * time.Minute
+						if ttl <= 0 { ttl = 30 * time.Minute }
+						globalVault.StoreCred(p+"_key", p, mod, bURL, sec, ttl)
+						log.Printf("[Root Server] Seeded ephemeral vault for %s (TTL: %v)", p, ttl)
+					}
+				}
+				continue
 			}
 
 			resp := map[string]interface{}{
