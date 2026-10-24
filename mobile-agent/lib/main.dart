@@ -1084,17 +1084,6 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   Timer? _clipboardSuggestionTimer;
   Map<String, dynamic>? _activeWorkdayBriefing;
   Map<String, dynamic>? _activeNightlyAuditReport;
-  Map<String, dynamic> _flipperStatus = {
-    'flipper_enabled': true,
-    'timeslot_enforced': true,
-    'watchdog_enabled': true,
-    'clipboard_enabled': true,
-    'briefing_enabled': true,
-    'nightly_enabled': true,
-    'max_ttl_minutes': 30,
-  };
-  List<String> _flipperCachedKeys = [];
-  bool _flipperDeactivated = false;
   int _reconnectAttempts = 0;
   Map<String, dynamic> _devices = {};
   String? _currentDeviceId;
@@ -3453,7 +3442,6 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
             _reconnectAttempts = 0;
           });
           _fetchConversations();
-          _fetchFlipperStatus();
           if (_fcmToken != null && _activeDevice.isNotEmpty) {
             _sendFCMToken(_fcmToken!);
           }
@@ -3756,32 +3744,6 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                     _activeNightlyAuditReport!['recommendation'] = msg;
                   }
                 });
-              }
-            } else if (jsonResponse is Map && jsonResponse['type'] == 'flipper_policy_status') {
-              if (mounted) {
-                setState(() {
-                  if (jsonResponse['policy'] is Map) {
-                    _flipperStatus = Map<String, dynamic>.from(jsonResponse['policy']);
-                  }
-                  if (jsonResponse['cached_keys'] is List) {
-                    _flipperCachedKeys = (jsonResponse['cached_keys'] as List).map((e) => e.toString()).toList();
-                  }
-                  _flipperDeactivated = jsonResponse['is_deactivated'] == true;
-                });
-              }
-            } else if (jsonResponse is Map && jsonResponse['type'] == 'vault_purged') {
-              if (mounted) {
-                setState(() {
-                  _flipperCachedKeys.clear();
-                  _flipperDeactivated = true;
-                });
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('🔒 Ephemeral vault purged: credentials zero-wiped from RAM.'),
-                    backgroundColor: Color(0xFFEF4444),
-                    duration: Duration(seconds: 4),
-                  ),
-                );
               }
             } else if (jsonResponse is Map && jsonResponse['type'] == 'security_alert') {
               final alert = jsonResponse['alert'];
@@ -4763,445 +4725,6 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       case 'low': return Icons.info_outline;
       default: return Icons.notifications_none;
     }
-  }
-
-  void _fetchFlipperStatus() {
-    if (_isConnected) {
-      _channel?.sink.add(jsonEncode({"type": "get_flipper_status"}));
-    }
-  }
-
-  void _updateFlipperPolicy(Map<String, dynamic> updated) {
-    if (mounted) {
-      setState(() {
-        _flipperStatus = Map<String, dynamic>.from(updated);
-      });
-    }
-    if (_isConnected) {
-      _channel?.sink.add(jsonEncode({
-        "type": "update_flipper_policy",
-        "policy": updated,
-      }));
-    }
-  }
-
-  void _destroyVaultCredentials() {
-    if (_isConnected) {
-      _channel?.sink.add(jsonEncode({
-        "type": "destroy_vault_creds",
-      }));
-    }
-    if (mounted) {
-      setState(() {
-        _flipperCachedKeys.clear();
-        _flipperDeactivated = true;
-      });
-    }
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('🔒 Ephemeral vault purged and credentials zero-wiped from RAM.'),
-        backgroundColor: Color(0xFFEF4444),
-        duration: Duration(seconds: 4),
-      ),
-    );
-  }
-
-  void _showFlipperControlSheet() {
-    bool isDark = appThemeMode.value == ThemeMode.dark;
-    _fetchFlipperStatus();
-
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppTokens.bg(isDark),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      isScrollControlled: true,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            final flipperOn = _flipperStatus['flipper_enabled'] != false && !_flipperDeactivated;
-            final timeslotOn = _flipperStatus['timeslot_enforced'] != false;
-            final watchdogOn = _flipperStatus['watchdog_enabled'] != false;
-            final clipboardOn = _flipperStatus['clipboard_enabled'] != false;
-            final briefingOn = _flipperStatus['briefing_enabled'] != false;
-            final nightlyOn = _flipperStatus['nightly_enabled'] != false;
-
-            return DraggableScrollableSheet(
-              expand: false,
-              initialChildSize: 0.75,
-              minChildSize: 0.4,
-              maxChildSize: 0.95,
-              builder: (_, scrollController) => Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                child: ListView(
-                  controller: scrollController,
-                  children: [
-                    Center(
-                      child: Container(
-                        width: 40,
-                        height: 4,
-                        margin: const EdgeInsets.only(bottom: 18),
-                        decoration: BoxDecoration(
-                          color: AppTokens.border(isDark),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
-                    ),
-
-                    // Header
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF6366F1).withOpacity(0.15),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: const Icon(Icons.cloud_sync_rounded, color: Color(0xFF6366F1), size: 22),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'FLIPPER HYBRID ENGINE',
-                                style: GoogleFonts.spaceGrotesk(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w800,
-                                  color: AppTokens.textPrimary(isDark),
-                                  letterSpacing: 1.2,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                'Autonomous backend fallback when laptop is offline',
-                                style: GoogleFonts.inter(
-                                  fontSize: 11,
-                                  color: AppTokens.textSecondary(isDark),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: _flipperDeactivated
-                                ? const Color(0xFFEF4444).withOpacity(0.15)
-                                : const Color(0xFF10B981).withOpacity(0.15),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: _flipperDeactivated
-                                  ? const Color(0xFFEF4444).withOpacity(0.3)
-                                  : const Color(0xFF10B981).withOpacity(0.3),
-                            ),
-                          ),
-                          child: Text(
-                            _flipperDeactivated ? 'LOCKED' : 'ACTIVE',
-                            style: GoogleFonts.inter(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                              color: _flipperDeactivated ? const Color(0xFFEF4444) : const Color(0xFF10B981),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 18),
-
-                    // Ephemeral Vault Info Bento Card
-                    Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: isDark ? const Color(0xFF181B22) : const Color(0xFFF8FAFC),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: AppTokens.border(isDark)),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              const Icon(Icons.shield_outlined, size: 15, color: Color(0xFF38BDF8)),
-                              const SizedBox(width: 6),
-                              Text(
-                                'IN-MEMORY EPHEMERAL VAULT (AES-256-GCM)',
-                                style: GoogleFonts.spaceGrotesk(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
-                                  color: const Color(0xFF38BDF8),
-                                  letterSpacing: 0.8,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'API keys cached in RAM with automatic 20s sweeper and memory zeroing (zeroBytes). Plaintext never touches disk.',
-                            style: GoogleFonts.inter(
-                              fontSize: 11,
-                              color: AppTokens.textSecondary(isDark),
-                              height: 1.4,
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 6,
-                            children: [
-                              _buildPillTag(
-                                icon: Icons.vpn_key_outlined,
-                                label: _flipperCachedKeys.isEmpty ? 'No keys in RAM' : '${_flipperCachedKeys.length} keys in RAM',
-                                color: _flipperCachedKeys.isEmpty ? Colors.grey : const Color(0xFF10B981),
-                                isDark: isDark,
-                              ),
-                              _buildPillTag(
-                                icon: Icons.access_time_rounded,
-                                label: 'Max TTL: ${_flipperStatus['max_ttl_minutes'] ?? 30}m',
-                                color: const Color(0xFF818CF8),
-                                isDark: isDark,
-                              ),
-                              _buildPillTag(
-                                icon: Icons.schedule_outlined,
-                                label: 'Slots: 08-10, 18-20, 02-03',
-                                color: const Color(0xFFA78BFA),
-                                isDark: isDark,
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-
-                    const SizedBox(height: 16),
-
-                    // Master Toggles
-                    _buildSwitchTile(
-                      title: 'Dual-Mode Cloud Flipper',
-                      subtitle: 'Direct AI completion on backend when laptop is powered off',
-                      value: flipperOn,
-                      activeColor: const Color(0xFF6366F1),
-                      isDark: isDark,
-                      onChanged: (val) {
-                        final m = Map<String, dynamic>.from(_flipperStatus);
-                        m['flipper_enabled'] = val;
-                        _flipperDeactivated = !val;
-                        _updateFlipperPolicy(m);
-                        setModalState(() {});
-                      },
-                    ),
-
-                    _buildSwitchTile(
-                      title: 'Preset Timeslot Enforcement',
-                      subtitle: 'Execute proactive jobs only during allowed morning, evening & nightly slots',
-                      value: timeslotOn,
-                      activeColor: const Color(0xFF818CF8),
-                      isDark: isDark,
-                      onChanged: (val) {
-                        final m = Map<String, dynamic>.from(_flipperStatus);
-                        m['timeslot_enforced'] = val;
-                        _updateFlipperPolicy(m);
-                        setModalState(() {});
-                      },
-                    ),
-
-                    const SizedBox(height: 12),
-                    Text(
-                      'PROACTIVE FEATURE TOGGLES',
-                      style: GoogleFonts.spaceGrotesk(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: AppTokens.textSecondary(isDark),
-                        letterSpacing: 1.0,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-
-                    _buildSwitchTile(
-                      title: 'CI/CD & Terminal Watchdog',
-                      subtitle: 'Analyze build panics & GitHub Actions failure alerts',
-                      value: watchdogOn,
-                      activeColor: const Color(0xFFF59E0B),
-                      isDark: isDark,
-                      onChanged: (val) {
-                        final m = Map<String, dynamic>.from(_flipperStatus);
-                        m['watchdog_enabled'] = val;
-                        _updateFlipperPolicy(m);
-                        setModalState(() {});
-                      },
-                    ),
-
-                    _buildSwitchTile(
-                      title: 'Smart Clipboard Interceptor',
-                      subtitle: 'Intercept stack traces and suggest AI auto-fixes',
-                      value: clipboardOn,
-                      activeColor: const Color(0xFF38BDF8),
-                      isDark: isDark,
-                      onChanged: (val) {
-                        final m = Map<String, dynamic>.from(_flipperStatus);
-                        m['clipboard_enabled'] = val;
-                        _updateFlipperPolicy(m);
-                        setModalState(() {});
-                      },
-                    ),
-
-                    _buildSwitchTile(
-                      title: 'Contextual Morning Briefing',
-                      subtitle: 'Synthesize workday summary at 8:00 AM',
-                      value: briefingOn,
-                      activeColor: const Color(0xFF10B981),
-                      isDark: isDark,
-                      onChanged: (val) {
-                        final m = Map<String, dynamic>.from(_flipperStatus);
-                        m['briefing_enabled'] = val;
-                        _updateFlipperPolicy(m);
-                        setModalState(() {});
-                      },
-                    ),
-
-                    _buildSwitchTile(
-                      title: 'Autonomous Nightly Guardian',
-                      subtitle: 'Scan build caches, stale branches & run 2:00 AM audits',
-                      value: nightlyOn,
-                      activeColor: const Color(0xFFA855F7),
-                      isDark: isDark,
-                      onChanged: (val) {
-                        final m = Map<String, dynamic>.from(_flipperStatus);
-                        m['nightly_enabled'] = val;
-                        _updateFlipperPolicy(m);
-                        setModalState(() {});
-                      },
-                    ),
-
-                    const SizedBox(height: 20),
-
-                    // Emergency Clear & Destroy Button
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton.icon(
-                        onPressed: () {
-                          Navigator.pop(context);
-                          _destroyVaultCredentials();
-                        },
-                        icon: const Icon(Icons.delete_forever_rounded, size: 18),
-                        label: Text(
-                          'Clear Cache & Destroy Credentials',
-                          style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 13),
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFFEF4444).withOpacity(0.15),
-                          foregroundColor: const Color(0xFFEF4444),
-                          elevation: 0,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                            side: const BorderSide(color: Color(0xFFEF4444), width: 1.2),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Center(
-                      child: Text(
-                        'Immediately zeros AES RAM buffers and prevents backend execution',
-                        style: GoogleFonts.inter(fontSize: 10, color: Colors.grey),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Widget _buildSwitchTile({
-    required String title,
-    required String subtitle,
-    required bool value,
-    required Color activeColor,
-    required bool isDark,
-    required ValueChanged<bool> onChanged,
-  }) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF14171E) : Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppTokens.border(isDark)),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: GoogleFonts.inter(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: AppTokens.textPrimary(isDark),
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  style: GoogleFonts.inter(
-                    fontSize: 11,
-                    color: AppTokens.textSecondary(isDark),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Switch(
-            value: value,
-            activeColor: activeColor,
-            onChanged: onChanged,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPillTag({
-    required IconData icon,
-    required String label,
-    required Color color,
-    required bool isDark,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withOpacity(0.25)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 12, color: color),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: GoogleFonts.inter(
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
-              color: color,
-            ),
-          ),
-        ],
-      ),
-    );
   }
 
   void _resetCircuitBreaker() async {
@@ -6484,67 +6007,45 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: _showFlipperControlSheet,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4.5),
-                            decoration: BoxDecoration(
-                              color: isDark ? const Color(0xFF1E222D).withOpacity(0.85) : const Color(0xFFF1F3F5).withOpacity(0.85),
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(
-                                color: isDark ? Colors.white12 : Colors.black12,
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4.5),
+                          decoration: BoxDecoration(
+                            color: isDark ? const Color(0xFF1E222D).withOpacity(0.85) : const Color(0xFFF1F3F5).withOpacity(0.85),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: isDark ? Colors.white12 : Colors.black12,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                width: 7,
+                                height: 7,
+                                decoration: BoxDecoration(
+                                  color: _isConnected ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+                                  shape: BoxShape.circle,
+                                  boxShadow: [
+                                    if (_isConnected)
+                                      BoxShadow(
+                                        color: const Color(0xFF10B981).withOpacity(0.5),
+                                        blurRadius: 6,
+                                        spreadRadius: 1,
+                                      ),
+                                  ],
+                                ),
                               ),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Container(
-                                  width: 7,
-                                  height: 7,
-                                  decoration: BoxDecoration(
-                                    color: _localAgentConnected
-                                        ? const Color(0xFF10B981)
-                                        : (_flipperDeactivated
-                                            ? const Color(0xFF64748B)
-                                            : (_flipperCachedKeys.isNotEmpty
-                                                ? const Color(0xFF06B6D4)
-                                                : const Color(0xFFF59E0B))),
-                                    shape: BoxShape.circle,
-                                    boxShadow: [
-                                      if (_localAgentConnected || (!_flipperDeactivated && _flipperCachedKeys.isNotEmpty))
-                                        BoxShadow(
-                                          color: (_localAgentConnected ? const Color(0xFF10B981) : const Color(0xFF06B6D4)).withOpacity(0.5),
-                                          blurRadius: 6,
-                                          spreadRadius: 1,
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  _localAgentConnected ? activeDeviceName : 'CLOUD FLIPPER',
-                                  style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: AppTokens.textPrimary(isDark)),
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  _localAgentConnected
-                                      ? '• AGENT'
-                                      : (_flipperDeactivated
-                                          ? '• 🔒 LOCKED'
-                                          : (_flipperCachedKeys.isNotEmpty ? '• ☁️ HYBRID' : '• 🌙 DORMANT')),
-                                  style: GoogleFonts.inter(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w700,
-                                    color: _localAgentConnected
-                                        ? const Color(0xFF6366F1)
-                                        : (_flipperDeactivated
-                                            ? const Color(0xFF64748B)
-                                            : (_flipperCachedKeys.isNotEmpty ? const Color(0xFF06B6D4) : const Color(0xFFF59E0B))),
-                                  ),
-                                ),
-                              ],
-                            ),
+                              const SizedBox(width: 6),
+                              Text(
+                                activeDeviceName,
+                                style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: AppTokens.textPrimary(isDark)),
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                '• AGENT',
+                                style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w700, color: const Color(0xFF6366F1)),
+                              ),
+                            ],
                           ),
                         ),
                         Row(
@@ -6776,13 +6277,6 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                               _controller.text = "__SCREENSHOT__";
                               _sendMessage();
                             },
-                            isDark: isDark,
-                          ),
-                          const SizedBox(width: 8),
-                          _buildOverlayActionChip(
-                            icon: Icons.shield_moon_outlined,
-                            label: 'Flipper Vault',
-                            onTap: _showFlipperControlSheet,
                             isDark: isDark,
                           ),
                           const SizedBox(width: 8),

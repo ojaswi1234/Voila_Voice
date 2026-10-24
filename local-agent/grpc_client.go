@@ -245,9 +245,6 @@ func (c *GRPCTunnelClient) connectAndServe(connData ConnectionData) error {
 		}
 	}()
 
-	// Seed backend ephemeral vault with encrypted temporary credentials
-	go seedEphemeralVault(connData)
-
 	// Goroutine: Sender loop (Desktop -> Cloud)
 	sendErrChan := make(chan error, 1)
 	go func() {
@@ -840,55 +837,4 @@ func getActiveBGTaskCount() int {
 		}
 	}
 	return count
-}
-
-// seedEphemeralVault sends temporary credentials to the backend ephemeral vault
-func seedEphemeralVault(connData ConnectionData) {
-	time.Sleep(500 * time.Millisecond) // Let tunnel settle
-	if connData.GroqAPIKey != "" {
-		m := map[string]string{
-			"provider": "groq",
-			"secret":   connData.GroqAPIKey,
-			"model":    connData.GroqModel,
-		}
-		b, _ := json.Marshal(m)
-		SendTelemetry(&voilav1.AgentTelemetry{
-			DeviceId:    connData.DeviceID,
-			DeviceName:  connData.DeviceName,
-			Status:      "IDLE",
-			TimestampMs: time.Now().UnixMilli(),
-			Payload: &voilav1.AgentTelemetry_FinalResult{
-				FinalResult: &voilav1.ExecutionResult{
-					Summary: "vault_seed",
-					Output:  string(b),
-					Status:  "ok",
-				},
-			},
-		})
-		log.Printf("[gRPC Client] Dispatched vault_seed for Groq")
-	}
-
-	if connData.OllamaBaseURL != "" || connData.OllamaAPIKey != "" {
-		m := map[string]string{
-			"provider": "ollama",
-			"secret":   connData.OllamaAPIKey,
-			"model":    connData.OllamaModel,
-			"base_url": connData.OllamaBaseURL,
-		}
-		b, _ := json.Marshal(m)
-		SendTelemetry(&voilav1.AgentTelemetry{
-			DeviceId:    connData.DeviceID,
-			DeviceName:  connData.DeviceName,
-			Status:      "IDLE",
-			TimestampMs: time.Now().UnixMilli(),
-			Payload: &voilav1.AgentTelemetry_FinalResult{
-				FinalResult: &voilav1.ExecutionResult{
-					Summary: "vault_seed",
-					Output:  string(b),
-					Status:  "ok",
-				},
-			},
-		})
-		log.Printf("[gRPC Client] Dispatched vault_seed for Ollama Cloud")
-	}
 }
