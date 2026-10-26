@@ -493,25 +493,36 @@ def _notify_plasma_border(cmd_str):
     except Exception:
         pass
 
-def start_plasma_border(theme="gemini"):
-    global plasma_process
+def start_plasma_border(theme=None):
+    global plasma_process, current_plasma_state, current_plasma_theme
     try:
-        settings_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "plasma_settings.json")
-        is_enabled = True
-        chosen_theme = theme
-        if os.path.exists(settings_path):
+        is_enabled = (current_plasma_state != "OFF")
+        chosen_theme = theme or current_plasma_theme
+        if os.path.exists(PLASMA_SETTINGS_PATH):
             try:
-                import json
-                with open(settings_path, "r", encoding="utf-8") as _sf:
+                with open(PLASMA_SETTINGS_PATH, "r", encoding="utf-8") as _sf:
                     _sdata = json.load(_sf)
                     if _sdata.get("state") == "OFF":
                         is_enabled = False
+                        current_plasma_state = "OFF"
                     if _sdata.get("theme"):
                         chosen_theme = _sdata["theme"]
+                        current_plasma_theme = chosen_theme
             except Exception:
                 pass
 
         if not is_enabled:
+            # If disabled, terminate any running process immediately
+            if plasma_process and plasma_process.poll() is None:
+                try:
+                    plasma_process.terminate()
+                except Exception:
+                    pass
+                plasma_process = None
+            return
+
+        # If already running cleanly, do not spawn another
+        if plasma_process and plasma_process.poll() is None:
             return
 
         script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "plasma_border.py")
@@ -860,6 +871,18 @@ def update_dash_sphere(pulse, r1_x, r1_y, r1_z, r2_x, r2_y, r2_z, r3_x, r3_y, r3
     cx, cy = 60, 60
     scale = 2.0
     
+    if current_plasma_state == "OFF":
+        for key in p:
+            if key != 'core_bg':
+                try: c.itemconfig(p[key], state='hidden')
+                except: pass
+        try:
+            c.itemconfig(p['core_bg'], state='normal', fill='#3f3f46')
+            c.coords(p['core_bg'], cx-(6)*scale, cy-(6)*scale, cx+(6)*scale, cy+(6)*scale)
+        except: pass
+        c.update_idletasks()
+        return
+
     # Dynamic theme colors
     tc = get_plasma_theme_colors(current_plasma_theme, anim_frame)
     try:
@@ -1611,18 +1634,9 @@ def _show_settings_widgets():
     plasma_frame.grid(row=7, column=0, columnspan=4, padx=16, pady=(12, 6), sticky='ew')
 
     _p_settings_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "plasma_settings.json")
-    _cur_p_theme = "siri"
-    _cur_p_state = "IDLE"
-    try:
-        if os.path.exists(_p_settings_path):
-            with open(_p_settings_path, "r", encoding="utf-8") as _pf:
-                _pdata = json.load(_pf)
-                _cur_p_theme = _pdata.get("theme", "siri")
-                _cur_p_state = _pdata.get("state", "IDLE")
-    except Exception:
-        pass
-
-    plasma_status_var = tk.StringVar(value="Status: ACTIVE" if _cur_p_state != "OFF" else "Status: OFF")
+    _cur_p_theme = current_plasma_theme
+    _cur_p_state = current_plasma_state
+    plasma_status_var = tk.StringVar(value="Status: ACTIVE" if current_plasma_state != "OFF" else "Status: OFF")
 
     p_header_row = tk.Frame(plasma_frame, bg='#1A1D23')
     p_header_row.pack(fill='x', padx=12, pady=(8, 4))
@@ -1630,20 +1644,32 @@ def _show_settings_widgets():
              bg='#1A1D23', fg='#9CA3AF', font=('Segoe UI', 9)).pack(side='left')
 
     def _toggle_plasma_border():
-        global current_plasma_state
+        global current_plasma_state, plasma_process
         nonlocal _cur_p_state
         if current_plasma_state == "OFF":
             current_plasma_state = "IDLE"
             _cur_p_state = "IDLE"
             plasma_status_var.set("Status: ACTIVE")
+            start_plasma_border(current_plasma_theme)
+            _notify_plasma_border("ENABLE")
             _notify_plasma_border("STATE:IDLE")
-            if plasma_process is None or plasma_process.poll() is not None:
-                start_plasma_border(current_plasma_theme)
         else:
             current_plasma_state = "OFF"
             _cur_p_state = "OFF"
             plasma_status_var.set("Status: OFF")
             _notify_plasma_border("STATE:OFF")
+            _notify_plasma_border("DISABLE")
+            if plasma_process and plasma_process.poll() is None:
+                try:
+                    plasma_process.terminate()
+                except Exception:
+                    pass
+                plasma_process = None
+            try:
+                subprocess.run(['wmic', 'process', 'where', 'commandline like "%plasma_border.py%"', 'call', 'terminate'],
+                               creationflags=subprocess.CREATE_NO_WINDOW, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception:
+                pass
         try:
             with open(PLASMA_SETTINGS_PATH, "w", encoding="utf-8") as _pf:
                 json.dump({"theme": current_plasma_theme, "state": current_plasma_state}, _pf, indent=2)
@@ -2412,7 +2438,9 @@ def clear_alert():
     update_expression()
 
 def _sync_plasma_state():
-    global _last_plasma_state, ai_state
+    global _last_plasma_state, ai_state, current_plasma_state
+    if current_plasma_state == "OFF":
+        return
     current = ai_state
     if current != _last_plasma_state:
         _last_plasma_state = current
@@ -2488,26 +2516,43 @@ def animation_loop():
         canvas.coords(sun_glow1, cx-(10+pulse*0.3)*scale, cy-(10+pulse*0.3)*scale, cx+(10+pulse*0.3)*scale, cy+(10+pulse*0.3)*scale)
         canvas.coords(core_bg, cx-(6)*scale, cy-(6)*scale, cx+(6)*scale, cy+(6)*scale)
 
-        update_3d_ring_occluded(canvas, core_arc1, back_arc1, cx, cy, 14, r1_x, r1_y, r1_z, scale, shadow1, 2*scale)
-        update_3d_ring_occluded(canvas, core_arc2, back_arc2, cx, cy, 17, r2_x, r2_y, r2_z, scale, shadow2, 2*scale)
-        update_3d_ring_occluded(canvas, core_arc3, back_arc3, cx, cy, 20, r3_x, r3_y, r3_z, scale, shadow3, 2*scale)
-        canvas.coords(radar_arc, cx-rr, cy-rr, cx+rr, cy+rr)
-        
-        canvas.itemconfig(sun_aura, state="normal")
-        canvas.itemconfig(sun_glow4, state="normal")
-        canvas.itemconfig(sun_glow3, state="normal")
-        canvas.itemconfig(sun_glow2, state="normal")
-        canvas.itemconfig(sun_glow1, state="normal")
-        canvas.itemconfig(core_bg, state="normal")
-        canvas.itemconfig(shadow1, state="normal")
-        canvas.itemconfig(shadow2, state="normal")
-        canvas.itemconfig(shadow3, state="normal")
-        canvas.itemconfig(core_arc1, state="normal")
-        canvas.itemconfig(core_arc2, state="normal")
-        canvas.itemconfig(core_arc3, state="normal")
-        canvas.itemconfig(back_arc1, state="normal")
-        canvas.itemconfig(back_arc2, state="normal")
-        canvas.itemconfig(back_arc3, state="normal")
+        if current_plasma_state == "OFF":
+            canvas.itemconfig(sun_aura, state="hidden")
+            canvas.itemconfig(sun_glow4, state="hidden")
+            canvas.itemconfig(sun_glow3, state="hidden")
+            canvas.itemconfig(sun_glow2, state="hidden")
+            canvas.itemconfig(sun_glow1, state="hidden")
+            canvas.itemconfig(shadow1, state="hidden")
+            canvas.itemconfig(shadow2, state="hidden")
+            canvas.itemconfig(shadow3, state="hidden")
+            canvas.itemconfig(core_arc1, state="hidden")
+            canvas.itemconfig(core_arc2, state="hidden")
+            canvas.itemconfig(core_arc3, state="hidden")
+            canvas.itemconfig(back_arc1, state="hidden")
+            canvas.itemconfig(back_arc2, state="hidden")
+            canvas.itemconfig(back_arc3, state="hidden")
+            canvas.itemconfig(core_bg, state="normal", fill="#52525b")
+        else:
+            update_3d_ring_occluded(canvas, core_arc1, back_arc1, cx, cy, 14, r1_x, r1_y, r1_z, scale, shadow1, 2*scale)
+            update_3d_ring_occluded(canvas, core_arc2, back_arc2, cx, cy, 17, r2_x, r2_y, r2_z, scale, shadow2, 2*scale)
+            update_3d_ring_occluded(canvas, core_arc3, back_arc3, cx, cy, 20, r3_x, r3_y, r3_z, scale, shadow3, 2*scale)
+            canvas.coords(radar_arc, cx-rr, cy-rr, cx+rr, cy+rr)
+            
+            canvas.itemconfig(sun_aura, state="normal")
+            canvas.itemconfig(sun_glow4, state="normal")
+            canvas.itemconfig(sun_glow3, state="normal")
+            canvas.itemconfig(sun_glow2, state="normal")
+            canvas.itemconfig(sun_glow1, state="normal")
+            canvas.itemconfig(core_bg, state="normal")
+            canvas.itemconfig(shadow1, state="normal")
+            canvas.itemconfig(shadow2, state="normal")
+            canvas.itemconfig(shadow3, state="normal")
+            canvas.itemconfig(core_arc1, state="normal")
+            canvas.itemconfig(core_arc2, state="normal")
+            canvas.itemconfig(core_arc3, state="normal")
+            canvas.itemconfig(back_arc1, state="normal")
+            canvas.itemconfig(back_arc2, state="normal")
+            canvas.itemconfig(back_arc3, state="normal")
         canvas.itemconfig(term_prompt, state="hidden")
         canvas.itemconfig(file_icon, state="hidden")
         canvas.itemconfig(radar_arc, state="hidden")
@@ -2751,19 +2796,22 @@ def animation_loop():
         else: # IDLE
             target_text = "Standing by..." if mobile_clients == 0 else "Standing by (Linked)"
             target_outline = '#27272a'
-            tc = get_plasma_theme_colors(current_plasma_theme, anim_frame)
-            canvas.itemconfig(sun_aura, fill=tc['aura'][0])
-            canvas.itemconfig(sun_glow4, fill=tc['aura'][1])
-            canvas.itemconfig(sun_glow3, fill=tc['aura'][2])
-            canvas.itemconfig(sun_glow2, fill=tc['aura'][3])
-            canvas.itemconfig(sun_glow1, fill=tc['aura'][4])
-            canvas.itemconfig(core_bg, fill=tc['core'])
-            canvas.itemconfig(core_arc1, fill=tc['arcs'][0])
-            canvas.itemconfig(core_arc2, fill=tc['arcs'][1])
-            canvas.itemconfig(core_arc3, fill=tc['arcs'][2])
-            canvas.itemconfig(back_arc1, fill=tc['back_arcs'][0])
-            canvas.itemconfig(back_arc2, fill=tc['back_arcs'][1])
-            canvas.itemconfig(back_arc3, fill=tc['back_arcs'][2])
+            if current_plasma_state != "OFF":
+                tc = get_plasma_theme_colors(current_plasma_theme, anim_frame)
+                canvas.itemconfig(sun_aura, fill=tc['aura'][0])
+                canvas.itemconfig(sun_glow4, fill=tc['aura'][1])
+                canvas.itemconfig(sun_glow3, fill=tc['aura'][2])
+                canvas.itemconfig(sun_glow2, fill=tc['aura'][3])
+                canvas.itemconfig(sun_glow1, fill=tc['aura'][4])
+                canvas.itemconfig(core_bg, fill=tc['core'])
+                canvas.itemconfig(core_arc1, fill=tc['arcs'][0])
+                canvas.itemconfig(core_arc2, fill=tc['arcs'][1])
+                canvas.itemconfig(core_arc3, fill=tc['arcs'][2])
+                canvas.itemconfig(back_arc1, fill=tc['back_arcs'][0])
+                canvas.itemconfig(back_arc2, fill=tc['back_arcs'][1])
+                canvas.itemconfig(back_arc3, fill=tc['back_arcs'][2])
+            else:
+                canvas.itemconfig(core_bg, fill='#52525b')
 
         if is_hovering_pill:
             canvas.itemconfig(pill, outline='#6666ff')

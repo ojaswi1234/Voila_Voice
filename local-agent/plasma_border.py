@@ -372,6 +372,7 @@ class AmorphousPlasmaOverlay:
         self.theme_name = theme if theme in THEMES else "gemini"
         self.port = port
         self.state = "IDLE"  # "IDLE", "THINKING", "SEARCH", "BASH", "DESKTOP", etc.
+        self.enabled = True
         self.running = True
         self.alpha_entrance = 0.0
         self.start_time = time.time()
@@ -482,13 +483,27 @@ class AmorphousPlasmaOverlay:
                         self.theme_name = data["theme"]
                     if "state" in data:
                         self.state = data["state"]
+                        if self.state == "OFF":
+                            self.enabled = False
         except Exception:
             pass
 
     def save_settings(self):
         try:
             with open(self.settings_file, "w", encoding="utf-8") as f:
-                json.dump({"theme": self.theme_name, "state": self.state}, f, indent=2)
+                json.dump({"theme": self.theme_name, "state": "OFF" if not self.enabled else self.state}, f, indent=2)
+        except Exception:
+            pass
+
+    def clear_screen(self):
+        try:
+            self.arr.fill(0)
+            user32.UpdateLayeredWindow(
+                self.hwnd, self.hdc_screen,
+                ctypes.byref(self.pt_dst), ctypes.byref(self.sz),
+                self.hdc_mem, ctypes.byref(self.pt_src),
+                0, ctypes.byref(self.blend), ULW_ALPHA
+            )
         except Exception:
             pass
 
@@ -528,9 +543,32 @@ class AmorphousPlasmaOverlay:
                     self.save_settings()
             elif msg.startswith("STATE:"):
                 state = msg.split(":", 1)[1].strip().upper()
-                self.state = state
+                if state == "OFF":
+                    self.enabled = False
+                    self.state = "OFF"
+                    self.save_settings()
+                    self.clear_screen()
+                elif state in ("ON", "ACTIVE", "ENABLE"):
+                    self.enabled = True
+                    self.state = "IDLE"
+                    self.save_settings()
+                else:
+                    if not self.enabled:
+                        # Disabled: completely ignore active phrase updates!
+                        return
+                    self.state = state
+            elif msg in ("DISABLE", "OFF"):
+                self.enabled = False
+                self.state = "OFF"
+                self.save_settings()
+                self.clear_screen()
+            elif msg in ("ENABLE", "ON"):
+                self.enabled = True
+                self.state = "IDLE"
+                self.save_settings()
             elif msg in ("EXIT", "QUIT"):
                 self.running = False
+                self.clear_screen()
         except Exception:
             pass
 
@@ -556,14 +594,8 @@ class AmorphousPlasmaOverlay:
             if self.alpha_entrance < 1.0:
                 self.alpha_entrance = min(1.0, self.alpha_entrance + 0.04)
 
-            if self.state == "OFF":
-                self.arr.fill(0)
-                user32.UpdateLayeredWindow(
-                    self.hwnd, self.hdc_screen,
-                    ctypes.byref(self.pt_dst), ctypes.byref(self.sz),
-                    self.hdc_mem, ctypes.byref(self.pt_src),
-                    0, ctypes.byref(self.blend), ULW_ALPHA
-                )
+            if not self.enabled or self.state == "OFF":
+                self.clear_screen()
                 time.sleep(0.1)
                 continue
 
@@ -716,12 +748,16 @@ def main():
     parser = argparse.ArgumentParser(description="Voila Amorphous Screen Edge Plasma Glow Overlay")
     parser.add_argument("--theme", type=str, default="gemini", choices=list(THEMES.keys()), help="Initial theme")
     parser.add_argument("--port", type=int, default=19885, help="UDP IPC control port")
-    parser.add_argument("--state", type=str, default="IDLE", help="Initial state")
+    parser.add_argument("--state", type=str, default=None, help="Initial state override (e.g. IDLE, OFF)")
     args, _ = parser.parse_known_args()
 
     overlay = AmorphousPlasmaOverlay(theme=args.theme, port=args.port)
     if args.state:
-        overlay.state = args.state
+        overlay.state = args.state.upper()
+        if overlay.state == "OFF":
+            overlay.enabled = False
+        else:
+            overlay.enabled = True
     overlay.run()
 
 if __name__ == "__main__":
