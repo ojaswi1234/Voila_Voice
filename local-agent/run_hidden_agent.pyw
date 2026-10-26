@@ -8,6 +8,7 @@ import time
 import math
 import os
 import traceback
+import colorsys
 
 _script_dir = os.path.dirname(os.path.abspath(__file__))
 os.chdir(_script_dir)
@@ -188,6 +189,76 @@ def round_rect_points(x1, y1, x2, y2, r):
 def set_round_rect(item_id, x1, y1, x2, y2, r=20):
     canvas.coords(item_id, *round_rect_points(x1, y1, x2, y2, r))
 
+# ─── PLASMA THEME PALETTES & COLOR HELPERS ─────────────────────────────────
+PLASMA_SETTINGS_PATH = os.path.join(_script_dir, "plasma_settings.json")
+current_plasma_theme = "solar_gold"
+current_plasma_state = "IDLE"
+try:
+    if os.path.exists(PLASMA_SETTINGS_PATH):
+        with open(PLASMA_SETTINGS_PATH, "r", encoding="utf-8") as _pf:
+            _pdata = json.load(_pf)
+            current_plasma_theme = _pdata.get("theme", "solar_gold")
+            current_plasma_state = _pdata.get("state", "IDLE")
+except Exception:
+    pass
+
+def hsv_to_hex(h, s, v):
+    r, g, b = colorsys.hsv_to_rgb(h, s, v)
+    return f'#{int(r*255):02x}{int(g*255):02x}{int(b*255):02x}'
+
+def get_plasma_theme_colors(theme_name, frame=0):
+    theme = (theme_name or "solar_gold").lower()
+    if theme == "gemini":
+        return {
+            'arcs': ['#4285F4', '#9C5CF6', '#EF4444'],
+            'back_arcs': ['#1D3557', '#4C1D95', '#7F1D1D'],
+            'aura': ['#0f172a', '#1e1b4b', '#2e1065', '#4338ca', '#818cf8'],
+            'core': '#FFFFFF',
+            'outline': '#4285F4'
+        }
+    elif theme == "siri":
+        return {
+            'arcs': ['#00F0FF', '#EC4899', '#8B5CF6'],
+            'back_arcs': ['#083344', '#701A75', '#3B0764'],
+            'aura': ['#18181b', '#2e1065', '#4c0519', '#86198f', '#d946ef'],
+            'core': '#FFFFFF',
+            'outline': '#EC4899'
+        }
+    elif theme == "vibgyor":
+        h1 = (frame * 0.012 + 0.00) % 1.0
+        h2 = (frame * 0.012 + 0.33) % 1.0
+        h3 = (frame * 0.012 + 0.66) % 1.0
+        arc1 = hsv_to_hex(h1, 0.90, 1.0)
+        arc2 = hsv_to_hex(h2, 0.90, 1.0)
+        arc3 = hsv_to_hex(h3, 0.90, 1.0)
+        back1 = hsv_to_hex(h1, 0.85, 0.40)
+        back2 = hsv_to_hex(h2, 0.85, 0.40)
+        back3 = hsv_to_hex(h3, 0.85, 0.40)
+        aura_h = (frame * 0.008) % 1.0
+        return {
+            'arcs': [arc1, arc2, arc3],
+            'back_arcs': [back1, back2, back3],
+            'aura': ['#18181b', hsv_to_hex((aura_h+0.5)%1.0, 0.7, 0.2), hsv_to_hex((aura_h+0.25)%1.0, 0.8, 0.35), hsv_to_hex(aura_h, 0.85, 0.55), hsv_to_hex(aura_h, 0.7, 0.85)],
+            'core': '#FFFFFF',
+            'outline': arc1
+        }
+    elif theme == "solar_gold":
+        return {
+            'arcs': ['#F59E0B', '#F97316', '#EF4444'],
+            'back_arcs': ['#451A03', '#7C2D12', '#7F1D1D'],
+            'aura': ['#18181b', '#451a03', '#78350f', '#b45309', '#f59e0b'],
+            'core': '#FFFBEB',
+            'outline': '#F59E0B'
+        }
+    else:  # cyber_cyan / default
+        return {
+            'arcs': ['#00F5FF', '#6366F1', '#38BDF8'],
+            'back_arcs': ['#083344', '#1E1B4B', '#0C4A6E'],
+            'aura': ['#18181b', '#082f49', '#0c4a6e', '#0369a1', '#38bdf8'],
+            'core': '#F0F9FF',
+            'outline': '#00F5FF'
+        }
+
 bg_idle = '#18181b' # Obsidian background
 border_idle = '#27272a'
 pill = create_round_rect(canvas, 5, 5, 235, 60, r=27, fill=bg_idle, outline=border_idle, width=2)
@@ -198,71 +269,67 @@ import math
 
 
 def update_3d_ring_occluded(canvas, front_id, back_id, cx, cy, radius, rot_x, rot_y, rot_z, scale, shadow_id=None, shadow_offset=0):
-    front_pts = []
-    back_pts = []
-    
-    steps = 100
-    prev_px = None
-    prev_py = None
-    prev_z2 = None
-    
-    import math
-    for i in range(steps + 1):
-        angle = 2 * math.pi * i / steps
-        x = radius * math.cos(angle)
-        y = radius * math.sin(angle)
-        z = 0
-        y1 = y * math.cos(rot_x) - z * math.sin(rot_x)
-        z1 = y * math.sin(rot_x) + z * math.cos(rot_x)
-        x2 = x * math.cos(rot_y) + z1 * math.sin(rot_y)
-        z2 = -x * math.sin(rot_y) + z1 * math.cos(rot_y)
-        x3 = x2 * math.cos(rot_z) - y1 * math.sin(rot_z)
-        y3 = x2 * math.sin(rot_z) + y1 * math.cos(rot_z)
-        
-        px = cx + x3 * scale
-        py = cy + y3 * scale
-        
-        if prev_z2 is not None:
-            # If we crossed the z-axis, add the current point to the OTHER array too, to bridge the gap
-            if (z2 >= 0 and prev_z2 < 0) or (z2 < 0 and prev_z2 >= 0):
-                if z2 >= 0:
-                    front_pts.extend((prev_px, prev_py))
-                else:
-                    back_pts.extend((prev_px, prev_py))
-                    
-        if z2 >= 0:
-            front_pts.extend((px, py))
-        else:
-            back_pts.extend((px, py))
-            
-        prev_px = px
-        prev_py = py
-        prev_z2 = z2
+    A = math.sin(rot_x) * math.cos(rot_y)
+    B = math.sin(rot_y)
+    mag_sq = A * A + B * B
 
-    if front_pts and len(front_pts) >= 4:
+    cos_rx, sin_rx = math.cos(rot_x), math.sin(rot_x)
+    cos_ry, sin_ry = math.cos(rot_y), math.sin(rot_y)
+    cos_rz, sin_rz = math.cos(rot_z), math.sin(rot_z)
+
+    def project_point(t):
+        x = radius * math.cos(t)
+        y = radius * math.sin(t)
+        z = 0.0
+        y1 = y * cos_rx - z * sin_rx
+        z1 = y * sin_rx + z * cos_rx
+        x2 = x * cos_ry + z1 * sin_ry
+        x3 = x2 * cos_rz - y1 * sin_rz
+        y3 = x2 * sin_rz + y1 * cos_rz
+        return cx + x3 * scale, cy + y3 * scale
+
+    steps = 40
+    if mag_sq < 1e-6:
+        # Ring is facing camera directly: all front
+        front_pts = []
+        for i in range(steps + 1):
+            t = 2.0 * math.pi * i / steps
+            px, py = project_point(t)
+            front_pts.extend((px, py))
         canvas.coords(front_id, *front_pts)
         canvas.itemconfig(front_id, state='normal')
+        if back_id:
+            canvas.itemconfig(back_id, state='hidden')
     else:
-        canvas.itemconfig(front_id, state='hidden')
-        
-    if back_pts and len(back_pts) >= 4:
-        canvas.coords(back_id, *back_pts)
-        canvas.itemconfig(back_id, state='normal')
-    else:
-        canvas.itemconfig(back_id, state='hidden')
-        
+        phi = math.atan2(B, A)
+        front_pts = []
+        for i in range(steps + 1):
+            t = phi + math.pi * i / steps
+            px, py = project_point(t)
+            front_pts.extend((px, py))
+
+        back_pts = []
+        for i in range(steps + 1):
+            t = (phi + math.pi) + math.pi * i / steps
+            px, py = project_point(t)
+            back_pts.extend((px, py))
+
+        canvas.coords(front_id, *front_pts)
+        canvas.itemconfig(front_id, state='normal')
+        if back_id:
+            canvas.coords(back_id, *back_pts)
+            canvas.itemconfig(back_id, state='normal')
+
     if shadow_id:
-        # We can just draw the shadow for the back parts or all parts. Let's just do all parts for the shadow.
-        all_sh = []
-        for i in range(0, len(back_pts), 2):
-            all_sh.extend((back_pts[i], back_pts[i+1] + shadow_offset))
-        for i in range(0, len(front_pts), 2):
-            all_sh.extend((front_pts[i], front_pts[i+1] + shadow_offset))
-        if all_sh and len(all_sh) >= 4:
-            canvas.coords(shadow_id, *all_sh)
-            canvas.itemconfig(shadow_id, state='normal')
-        else:
-            canvas.itemconfig(shadow_id, state='hidden')
+        sh_pts = []
+        sh_steps = 30
+        for i in range(sh_steps):
+            t = 2.0 * math.pi * i / sh_steps
+            px, py = project_point(t)
+            sh_pts.extend((px, py + shadow_offset))
+        sh_pts.extend((sh_pts[0], sh_pts[1]))
+        canvas.coords(shadow_id, *sh_pts)
+        canvas.itemconfig(shadow_id, state='normal')
 
 def update_3d_ring(canvas, ring_id, cx, cy, radius, rot_x, rot_y, rot_z, scale, shadow_id=None, shadow_offset=0):
     points = []
@@ -295,6 +362,11 @@ def update_3d_ring(canvas, ring_id, cx, cy, radius, rot_x, rot_y, rot_z, scale, 
 shadow1 = canvas.create_line(0,0, 0,0, fill='#000000', width=1.0, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
 shadow2 = canvas.create_line(0,0, 0,0, fill='#000000', width=1.5, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
 shadow3 = canvas.create_line(0,0, 0,0, fill='#000000', width=2.0, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
+
+# Back Rings (orbit behind the sun for realistic 3D occlusion)
+back_arc1 = canvas.create_line(0,0, 0,0, fill='#083344', width=1.0, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
+back_arc2 = canvas.create_line(0,0, 0,0, fill='#1e1b4b', width=1.5, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
+back_arc3 = canvas.create_line(0,0, 0,0, fill='#0c4a6e', width=2.0, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
 
 # Hyperrealistic Dyson Sphere Sun Glow layers
 sun_aura = canvas.create_oval(cx-26, cy-26, cx+26, cy+26, fill='#1e1e24', outline='')
@@ -329,7 +401,7 @@ desktop_cursor_dot = canvas.create_oval(cx+2, cy+6, cx+7, cy+11, fill="#a78bfa",
 desktop_cursor_label = canvas.create_text(cx+12, cy, text="AI", fill="#a78bfa", font=("Segoe UI", 7, "bold"), anchor="w", state="hidden")
 
 # Keep variables compatible with animation loop
-face_parts = (shadow1, shadow2, shadow3, sun_aura, sun_glow4, sun_glow3, sun_glow2, sun_glow1, core_bg, core_arc1, core_arc2, core_arc3, term_prompt, file_icon, radar_arc, browser_box, browser_line, desktop_cursor_arrow, desktop_cursor_dot, desktop_cursor_label, mcp_diamond, mcp_inner, bg_center, bg_orbit1, bg_orbit2)
+face_parts = (shadow1, shadow2, shadow3, back_arc1, back_arc2, back_arc3, sun_aura, sun_glow4, sun_glow3, sun_glow2, sun_glow1, core_bg, core_arc1, core_arc2, core_arc3, term_prompt, file_icon, radar_arc, browser_box, browser_line, desktop_cursor_arrow, desktop_cursor_dot, desktop_cursor_label, mcp_diamond, mcp_inner, bg_center, bg_orbit1, bg_orbit2)
 cloud_parts = () # Empty, we don't use a thought cloud anymore
 
 # Typography Layout
@@ -453,7 +525,7 @@ def start_plasma_border(theme="gemini"):
     except Exception as e:
         _voila_log.error(f"Failed to start plasma border: {e}")
 
-start_plasma_border("gemini")
+start_plasma_border(current_plasma_theme)
 
 # ─── Gemini Live Audio/Agent Bridge ───
 live_bridge_process = None
@@ -694,10 +766,7 @@ def restore_mini_popup_elements(w=240, h=65):
     set_round_rect(pill, 5, 5, w - 5, h - 5, 27)
     canvas.itemconfig(pill, state='normal', fill=bg_idle, outline=border_idle, width=2)
 
-    canvas.coords(core_bg, cx-20, cy-20, cx+20, cy+20)
-    canvas.coords(core_arc1, cx-20, cy-20, cx+20, cy+20)
-    canvas.coords(core_arc2, cx-15, cy-15, cx+15, cy+15)
-    canvas.coords(core_arc3, cx-25, cy-25, cx+25, cy+25)
+    canvas.coords(core_bg, cx-6, cy-6, cx+6, cy+6)
     
     canvas.coords(term_prompt, cx, cy)
     canvas.coords(file_icon, cx-8, cy-10, cx+4, cy-10, cx+10, cy-4, cx+10, cy+12, cx-8, cy+12)
@@ -791,7 +860,25 @@ def update_dash_sphere(pulse, r1_x, r1_y, r1_z, r2_x, r2_y, r2_z, r3_x, r3_y, r3
     cx, cy = 60, 60
     scale = 2.0
     
-    # Ensure they are visible (handles the bug where hidden state gets applied to the wrong canvas)
+    # Dynamic theme colors
+    tc = get_plasma_theme_colors(current_plasma_theme, anim_frame)
+    try:
+        c.itemconfig(p['core_arc1'], fill=tc['arcs'][0])
+        c.itemconfig(p['core_arc2'], fill=tc['arcs'][1])
+        c.itemconfig(p['core_arc3'], fill=tc['arcs'][2])
+        c.itemconfig(p['back_arc1'], fill=tc['back_arcs'][0])
+        c.itemconfig(p['back_arc2'], fill=tc['back_arcs'][1])
+        c.itemconfig(p['back_arc3'], fill=tc['back_arcs'][2])
+        c.itemconfig(p['sun_aura'], fill=tc['aura'][0])
+        c.itemconfig(p['sun_glow4'], fill=tc['aura'][1])
+        c.itemconfig(p['sun_glow3'], fill=tc['aura'][2])
+        c.itemconfig(p['sun_glow2'], fill=tc['aura'][3])
+        c.itemconfig(p['sun_glow1'], fill=tc['aura'][4])
+        c.itemconfig(p['core_bg'], fill=tc['core'])
+    except Exception:
+        pass
+
+    # Ensure they are visible
     for key in p:
         try: c.itemconfig(p[key], state='normal')
         except: pass
@@ -806,9 +893,6 @@ def update_dash_sphere(pulse, r1_x, r1_y, r1_z, r2_x, r2_y, r2_z, r3_x, r3_y, r3
     update_3d_ring_occluded(c, p['core_arc1'], p['back_arc1'], cx, cy, 14, r1_x, r1_y, r1_z, scale, p['shadow1'], 2*scale)
     update_3d_ring_occluded(c, p['core_arc2'], p['back_arc2'], cx, cy, 17, r2_x, r2_y, r2_z, scale, p['shadow2'], 2*scale)
     update_3d_ring_occluded(c, p['core_arc3'], p['back_arc3'], cx, cy, 20, r3_x, r3_y, r3_z, scale, p['shadow3'], 2*scale)
-    
-    # Force redraw
-    c.update_idletasks()
     
     # Force redraw
     c.update_idletasks()
@@ -1546,20 +1630,23 @@ def _show_settings_widgets():
              bg='#1A1D23', fg='#9CA3AF', font=('Segoe UI', 9)).pack(side='left')
 
     def _toggle_plasma_border():
+        global current_plasma_state
         nonlocal _cur_p_state
-        if _cur_p_state == "OFF":
+        if current_plasma_state == "OFF":
+            current_plasma_state = "IDLE"
             _cur_p_state = "IDLE"
             plasma_status_var.set("Status: ACTIVE")
             _notify_plasma_border("STATE:IDLE")
             if plasma_process is None or plasma_process.poll() is not None:
-                start_plasma_border(_cur_p_theme)
+                start_plasma_border(current_plasma_theme)
         else:
+            current_plasma_state = "OFF"
             _cur_p_state = "OFF"
             plasma_status_var.set("Status: OFF")
             _notify_plasma_border("STATE:OFF")
         try:
-            with open(_p_settings_path, "w", encoding="utf-8") as _pf:
-                json.dump({"theme": _cur_p_theme, "state": _cur_p_state}, _pf, indent=2)
+            with open(PLASMA_SETTINGS_PATH, "w", encoding="utf-8") as _pf:
+                json.dump({"theme": current_plasma_theme, "state": current_plasma_state}, _pf, indent=2)
         except Exception:
             pass
 
@@ -1576,13 +1663,25 @@ def _show_settings_widgets():
         ("solar_gold", "☀️ Solar Gold", "#F59E0B"),
     ]
 
+    _theme_button_refs = {}
+
+    def _update_theme_btn_styles():
+        for k, b in _theme_button_refs.items():
+            if k == current_plasma_theme:
+                b.config(bg='#374151', fg='#67E8F9', relief='solid', bd=1)
+            else:
+                b.config(bg='#2D3039', fg='#E5E7EB', relief='flat', bd=0)
+
     def _select_plasma_theme(tname):
+        global current_plasma_theme
         nonlocal _cur_p_theme
         _cur_p_theme = tname
+        current_plasma_theme = tname
+        _update_theme_btn_styles()
         _notify_plasma_border(f"THEME:{tname}")
         try:
-            with open(_p_settings_path, "w", encoding="utf-8") as _pf:
-                json.dump({"theme": _cur_p_theme, "state": _cur_p_state}, _pf, indent=2)
+            with open(PLASMA_SETTINGS_PATH, "w", encoding="utf-8") as _pf:
+                json.dump({"theme": current_plasma_theme, "state": current_plasma_state}, _pf, indent=2)
         except Exception:
             pass
 
@@ -1594,6 +1693,9 @@ def _show_settings_widgets():
             command=lambda k=tkey: _select_plasma_theme(k)
         )
         tb.pack(side='left', padx=3)
+        _theme_button_refs[tkey] = tb
+
+    _update_theme_btn_styles()
 
     tgl_btn = tk.Button(
         p_btn_row, textvariable=plasma_status_var,
@@ -2323,7 +2425,11 @@ def animation_loop():
     dots = "." * ((anim_frame // 10) % 4)
 
     # --- COMPUTE ANIMATION MATH UNCONDITIONALLY (OUTSIDE OF DASHBOARD CHECKS) ---
-    pulse = math.sin(anim_frame * 0.03) * 1.0
+    # Dynamic organic plasma breathing pulse:
+    if ai_state in ("THINKING", "RUNNING"):
+        pulse = math.sin(anim_frame * 0.12) * 2.8 + math.cos(anim_frame * 0.24) * 1.2
+    else:
+        pulse = math.sin(anim_frame * 0.045) * 1.5 + math.sin(anim_frame * 0.09) * 0.5
     t = anim_frame * 0.01
     
     r1_x = t * 1.5 + math.sin(t * 0.8) * 1.2
@@ -2363,14 +2469,81 @@ def animation_loop():
                 if transition_scale > 1.0:
                     transition_scale = 1.0
 
-        if mobile_clients == 0 and not surveillance_locked:
-            if not alert_state["active"]:
-                canvas.itemconfig(status_text, text="Offline (Standing by)", fill='#6b7280')
-            canvas.itemconfig(core_bg, fill='#18181b')
-            target_outline = '#6666ff' if is_hovering_pill else '#27272a'
-            canvas.itemconfig(pill, outline=target_outline, fill='#09090b')
-            canvas.itemconfig(sun_aura, state="hidden")
-            canvas.itemconfig(sun_glow4, state="hidden")
+        canvas.itemconfig(pill, fill='#18181b')
+        canvas.itemconfig(status_text, state='normal')
+        canvas.itemconfig(mode_badge_bg, fill='#27272a')
+        canvas.itemconfig(mode_badge_text, fill='#9ca3af', text=current_mode)
+        
+        visual_state = current_rendered_state
+        # Multiply animation scale by dynamic window size scale
+        scale = transition_scale * (current_width / 240.0)
+        
+        rr = 18 * scale
+        
+        # Massive sun aura (increased star size)
+        canvas.coords(sun_aura, cx-(26+pulse*1.2)*scale, cy-(26+pulse*1.2)*scale, cx+(26+pulse*1.2)*scale, cy+(26+pulse*1.2)*scale)
+        canvas.coords(sun_glow4, cx-(22+pulse*1.0)*scale, cy-(22+pulse*1.0)*scale, cx+(22+pulse*1.0)*scale, cy+(22+pulse*1.0)*scale)
+        canvas.coords(sun_glow3, cx-(18+pulse*0.8)*scale, cy-(18+pulse*0.8)*scale, cx+(18+pulse*0.8)*scale, cy+(18+pulse*0.8)*scale)
+        canvas.coords(sun_glow2, cx-(14+pulse*0.6)*scale, cy-(14+pulse*0.6)*scale, cx+(14+pulse*0.6)*scale, cy+(14+pulse*0.6)*scale)
+        canvas.coords(sun_glow1, cx-(10+pulse*0.3)*scale, cy-(10+pulse*0.3)*scale, cx+(10+pulse*0.3)*scale, cy+(10+pulse*0.3)*scale)
+        canvas.coords(core_bg, cx-(6)*scale, cy-(6)*scale, cx+(6)*scale, cy+(6)*scale)
+
+        update_3d_ring_occluded(canvas, core_arc1, back_arc1, cx, cy, 14, r1_x, r1_y, r1_z, scale, shadow1, 2*scale)
+        update_3d_ring_occluded(canvas, core_arc2, back_arc2, cx, cy, 17, r2_x, r2_y, r2_z, scale, shadow2, 2*scale)
+        update_3d_ring_occluded(canvas, core_arc3, back_arc3, cx, cy, 20, r3_x, r3_y, r3_z, scale, shadow3, 2*scale)
+        canvas.coords(radar_arc, cx-rr, cy-rr, cx+rr, cy+rr)
+        
+        canvas.itemconfig(sun_aura, state="normal")
+        canvas.itemconfig(sun_glow4, state="normal")
+        canvas.itemconfig(sun_glow3, state="normal")
+        canvas.itemconfig(sun_glow2, state="normal")
+        canvas.itemconfig(sun_glow1, state="normal")
+        canvas.itemconfig(core_bg, state="normal")
+        canvas.itemconfig(shadow1, state="normal")
+        canvas.itemconfig(shadow2, state="normal")
+        canvas.itemconfig(shadow3, state="normal")
+        canvas.itemconfig(core_arc1, state="normal")
+        canvas.itemconfig(core_arc2, state="normal")
+        canvas.itemconfig(core_arc3, state="normal")
+        canvas.itemconfig(back_arc1, state="normal")
+        canvas.itemconfig(back_arc2, state="normal")
+        canvas.itemconfig(back_arc3, state="normal")
+        canvas.itemconfig(term_prompt, state="hidden")
+        canvas.itemconfig(file_icon, state="hidden")
+        canvas.itemconfig(radar_arc, state="hidden")
+        canvas.itemconfig(browser_box, state="hidden")
+        canvas.itemconfig(browser_line, state="hidden")
+        canvas.itemconfig(desktop_cursor_arrow, state="hidden")
+        canvas.itemconfig(desktop_cursor_dot, state="hidden")
+        canvas.itemconfig(desktop_cursor_label, state="hidden")
+
+        target_text = "Standing by"
+        target_color = '#9ca3af'
+        target_outline = '#27272a'
+        show_dots = False
+
+        if visual_state == "THINKING":
+            target_text = "Thinking"
+            target_color = '#fbbf24'
+            target_outline = '#b45309'
+            show_dots = True
+            canvas.itemconfig(sun_aura, fill='#451a03')
+            canvas.itemconfig(sun_glow4, fill='#78350f')
+            canvas.itemconfig(sun_glow3, fill='#b45309')
+            canvas.itemconfig(sun_glow2, fill='#d97706')
+            canvas.itemconfig(sun_glow1, fill='#f59e0b')
+            canvas.itemconfig(core_bg, fill='#fef3c7')
+            canvas.itemconfig(core_arc1, fill='#fcd34d')
+            canvas.itemconfig(core_arc2, fill='#fbbf24')
+            canvas.itemconfig(core_arc3, fill='#f59e0b')
+            canvas.itemconfig(back_arc1, fill='#7c2d12')
+            canvas.itemconfig(back_arc2, fill='#b45309')
+            canvas.itemconfig(back_arc3, fill='#78350f')
+        elif visual_state == "SEARCH":
+            target_text = "Searching"
+            target_color = '#38bdf8'
+            target_outline = '#0284c7'
+            show_dots = True
             canvas.itemconfig(sun_glow3, state="hidden")
             canvas.itemconfig(mcp_diamond, state="hidden")
             canvas.itemconfig(mcp_inner, state="hidden")
@@ -2380,326 +2553,258 @@ def animation_loop():
             canvas.itemconfig(sun_glow2, state="hidden")
             canvas.itemconfig(sun_glow1, state="hidden")
             canvas.itemconfig(core_bg, state="hidden")
-            canvas.itemconfig(shadow1, state="hidden")
-            canvas.itemconfig(shadow2, state="hidden")
-            canvas.itemconfig(shadow3, state="hidden")
             canvas.itemconfig(core_arc1, state="hidden")
             canvas.itemconfig(core_arc2, state="hidden")
             canvas.itemconfig(core_arc3, state="hidden")
-            canvas.itemconfig(term_prompt, state="hidden")
-            canvas.itemconfig(file_icon, state="hidden")
-            canvas.itemconfig(radar_arc, state="hidden")
-            canvas.itemconfig(browser_box, state="hidden")
-            canvas.itemconfig(browser_line, state="hidden")
-            canvas.itemconfig(desktop_cursor_arrow, state="hidden")
-            canvas.itemconfig(desktop_cursor_dot, state="hidden")
-            canvas.itemconfig(desktop_cursor_label, state="hidden")
-            canvas.itemconfig(mode_badge_bg, fill='#1f2937')
-            canvas.itemconfig(mode_badge_text, fill='#4b5563', text=current_mode)
+            canvas.itemconfig(back_arc1, state="hidden")
+            canvas.itemconfig(back_arc2, state="hidden")
+            canvas.itemconfig(back_arc3, state="hidden")
+            if scale > 0.5:
+                canvas.itemconfig(radar_arc, state="normal")
+            # Spin radar
+            canvas.itemconfig(radar_arc, start=(anim_frame * -8) % 360)
+        elif visual_state == "BROWSER":
+            target_text = "Browsing"
+            target_color = '#f97316'
+            target_outline = '#c2410c'
+            show_dots = True
+            canvas.itemconfig(sun_glow3, state="hidden")
+            canvas.itemconfig(mcp_diamond, state="hidden")
+            canvas.itemconfig(mcp_inner, state="hidden")
+            canvas.itemconfig(bg_center, state="hidden")
+            canvas.itemconfig(bg_orbit1, state="hidden")
+            canvas.itemconfig(bg_orbit2, state="hidden")
+            canvas.itemconfig(sun_glow2, state="hidden")
+            canvas.itemconfig(sun_glow1, state="hidden")
+            canvas.itemconfig(core_bg, state="hidden")
+            canvas.itemconfig(core_arc1, state="hidden")
+            canvas.itemconfig(core_arc2, state="hidden")
+            canvas.itemconfig(core_arc3, state="hidden")
+            canvas.itemconfig(back_arc1, state="hidden")
+            canvas.itemconfig(back_arc2, state="hidden")
+            canvas.itemconfig(back_arc3, state="hidden")
+            if scale > 0.5:
+                canvas.itemconfig(browser_box, state="normal")
+                canvas.itemconfig(browser_line, state="normal")
+            bounce = math.sin(anim_frame * 0.15) * 3
+            bw, bh = 12 * scale, 10 * scale
+            canvas.coords(browser_box, cx-bw, cy-bh+bounce, cx+bw, cy+bh+bounce)
+            canvas.coords(browser_line, cx-bw, cy-bh*0.4+bounce, cx+bw, cy-bh*0.4+bounce)
+            
+        elif visual_state == "DESKTOP":
+              target_text = "Desktop"
+              target_color = '#a78bfa'
+              target_outline = '#7c3aed'
+              show_dots = True
+              canvas.itemconfig(sun_glow3, state="hidden")
+              canvas.itemconfig(mcp_diamond, state="hidden")
+              canvas.itemconfig(mcp_inner, state="hidden")
+              canvas.itemconfig(bg_center, state="hidden")
+              canvas.itemconfig(bg_orbit1, state="hidden")
+              canvas.itemconfig(bg_orbit2, state="hidden")
+              canvas.itemconfig(browser_box, state="hidden")
+              canvas.itemconfig(browser_line, state="hidden")
+              canvas.itemconfig(core_arc1, state="hidden")
+              canvas.itemconfig(core_arc2, state="hidden")
+              canvas.itemconfig(core_arc3, state="hidden")
+              canvas.itemconfig(back_arc1, state="hidden")
+              canvas.itemconfig(back_arc2, state="hidden")
+              canvas.itemconfig(back_arc3, state="hidden")
+              if scale > 0.5:
+                  canvas.itemconfig(desktop_cursor_arrow, state="normal")
+                  canvas.itemconfig(desktop_cursor_dot, state="normal")
+                  canvas.itemconfig(desktop_cursor_label, state="normal")
+              bounce = math.sin(anim_frame * 0.15) * 2
+              # Arrow coords: base at cx, cy, moving around
+              ax = cx + math.cos(anim_frame * 0.05) * 8 * scale
+              ay = cy + math.sin(anim_frame * 0.05) * 4 * scale + bounce
+              canvas.coords(desktop_cursor_arrow, ax-10*scale, ay-12*scale, ax-10*scale, ay+6*scale, ax-5*scale, ay+1*scale, ax-1*scale, ay+8*scale, ax+2*scale, ay+7*scale, ax-2*scale, ay, ax+4*scale, ay)
+              canvas.coords(desktop_cursor_dot, ax+2*scale, ay+6*scale, ax+7*scale, ay+11*scale)
+              canvas.coords(desktop_cursor_label, ax+12*scale, ay)
+              canvas.itemconfig(desktop_cursor_label, font=("Segoe UI", max(1, int(7*scale)), "bold"))
+        elif visual_state == "BASH":
+            target_text = "Bash"
+            target_color = '#34d399'
+            target_outline = '#065f46'
+            show_dots = True
+            canvas.itemconfig(sun_glow3, state="hidden")
+            canvas.itemconfig(mcp_diamond, state="hidden")
+            canvas.itemconfig(mcp_inner, state="hidden")
+            canvas.itemconfig(bg_center, state="hidden")
+            canvas.itemconfig(bg_orbit1, state="hidden")
+            canvas.itemconfig(bg_orbit2, state="hidden")
+            canvas.itemconfig(sun_glow2, state="hidden")
+            canvas.itemconfig(sun_glow1, state="hidden")
+            canvas.itemconfig(core_bg, state="hidden")
+            canvas.itemconfig(core_arc1, state="hidden")
+            canvas.itemconfig(core_arc2, state="hidden")
+            canvas.itemconfig(core_arc3, state="hidden")
+            canvas.itemconfig(back_arc1, state="hidden")
+            canvas.itemconfig(back_arc2, state="hidden")
+            canvas.itemconfig(back_arc3, state="hidden")
+            if scale > 0.5:
+                canvas.coords(term_prompt, cx, cy)
+                canvas.itemconfig(term_prompt, state="normal" if anim_frame % 20 < 10 else "hidden", font=("Consolas", max(1, int(11 * scale)), "bold"))
+            
+        elif visual_state == "FILE":
+            target_text = "I/O"
+            target_color = '#818cf8'
+            target_outline = '#3730a3'
+            show_dots = True
+            canvas.itemconfig(sun_glow3, state="hidden")
+            canvas.itemconfig(mcp_diamond, state="hidden")
+            canvas.itemconfig(mcp_inner, state="hidden")
+            canvas.itemconfig(bg_center, state="hidden")
+            canvas.itemconfig(bg_orbit1, state="hidden")
+            canvas.itemconfig(bg_orbit2, state="hidden")
+            canvas.itemconfig(sun_glow2, state="hidden")
+            canvas.itemconfig(sun_glow1, state="hidden")
+            canvas.itemconfig(core_bg, state="hidden")
+            canvas.itemconfig(core_arc1, state="hidden")
+            canvas.itemconfig(core_arc2, state="hidden")
+            canvas.itemconfig(core_arc3, state="hidden")
+            canvas.itemconfig(back_arc1, state="hidden")
+            canvas.itemconfig(back_arc2, state="hidden")
+            canvas.itemconfig(back_arc3, state="hidden")
+            if scale > 0.5:
+                canvas.itemconfig(file_icon, state="normal")
+            bounce = math.sin(anim_frame * 0.1) * 2
+            w, h = 6 * scale, 8 * scale
+            canvas.coords(file_icon, cx-w, cy-h+bounce, cx+w/2, cy-h+bounce, cx+w+2, cy-h/2+bounce, cx+w+2, cy+h+2+bounce, cx-w, cy+h+2+bounce)
 
-        else:
-            canvas.itemconfig(pill, fill='#18181b')
-            canvas.itemconfig(status_text, state='normal')
-            canvas.itemconfig(mode_badge_bg, fill='#27272a')
-            canvas.itemconfig(mode_badge_text, fill='#9ca3af', text=current_mode)
-            
-            visual_state = current_rendered_state
-            # Multiply animation scale by dynamic window size scale
-            scale = transition_scale * (current_width / 240.0)
-            
-            r1 = 16 * scale
-            r2 = 12 * scale
-            r3 = 20 * scale
-            rr = 18 * scale
-            
-            # Massive sun aura (increased star size)
-            canvas.coords(sun_aura, cx-(26+pulse*1.2)*scale, cy-(26+pulse*1.2)*scale, cx+(26+pulse*1.2)*scale, cy+(26+pulse*1.2)*scale)
-            canvas.coords(sun_glow4, cx-(22+pulse*1.0)*scale, cy-(22+pulse*1.0)*scale, cx+(22+pulse*1.0)*scale, cy+(22+pulse*1.0)*scale)
-            canvas.coords(sun_glow3, cx-(18+pulse*0.8)*scale, cy-(18+pulse*0.8)*scale, cx+(18+pulse*0.8)*scale, cy+(18+pulse*0.8)*scale)
-            canvas.coords(sun_glow2, cx-(14+pulse*0.6)*scale, cy-(14+pulse*0.6)*scale, cx+(14+pulse*0.6)*scale, cy+(14+pulse*0.6)*scale)
-            canvas.coords(sun_glow1, cx-(10+pulse*0.3)*scale, cy-(10+pulse*0.3)*scale, cx+(10+pulse*0.3)*scale, cy+(10+pulse*0.3)*scale)
-            canvas.coords(core_bg, cx-(6)*scale, cy-(6)*scale, cx+(6)*scale, cy+(6)*scale)
+        elif visual_state == "MCP":
+            target_text = "MCP Connect"
+            target_color = '#d946ef'
+            target_outline = '#a21caf'
+            show_dots = True
+            canvas.itemconfig(sun_glow3, state="hidden")
+            canvas.itemconfig(mcp_diamond, state="hidden")
+            canvas.itemconfig(mcp_inner, state="hidden")
+            canvas.itemconfig(bg_center, state="hidden")
+            canvas.itemconfig(bg_orbit1, state="hidden")
+            canvas.itemconfig(bg_orbit2, state="hidden")
+            canvas.itemconfig(sun_glow2, state="hidden")
+            canvas.itemconfig(sun_glow1, state="hidden")
+            canvas.itemconfig(core_bg, state="hidden")
+            canvas.itemconfig(core_arc1, state="hidden")
+            canvas.itemconfig(core_arc2, state="hidden")
+            canvas.itemconfig(core_arc3, state="hidden")
+            canvas.itemconfig(back_arc1, state="hidden")
+            canvas.itemconfig(back_arc2, state="hidden")
+            canvas.itemconfig(back_arc3, state="hidden")
+            if scale > 0.5:
+                canvas.itemconfig(mcp_diamond, state="normal")
+                canvas.itemconfig(mcp_inner, state="normal")
+            bounce = math.sin(anim_frame * 0.15) * 2
+            canvas.coords(mcp_diamond, cx, cy-12*scale+bounce, cx+10*scale, cy+bounce, cx, cy+12*scale+bounce, cx-10*scale, cy+bounce)
+            canvas.coords(mcp_inner, cx, cy-6*scale+bounce, cx+5*scale, cy+bounce, cx, cy+6*scale+bounce, cx-5*scale, cy+bounce)
 
-            update_3d_ring(canvas, core_arc1, cx, cy, 14, r1_x, r1_y, r1_z, scale, shadow1, 2*scale)
-            update_3d_ring(canvas, core_arc2, cx, cy, 17, r2_x, r2_y, r2_z, scale, shadow2, 2*scale)
-            update_3d_ring(canvas, core_arc3, cx, cy, 20, r3_x, r3_y, r3_z, scale, shadow3, 2*scale)
-            canvas.coords(radar_arc, cx-rr, cy-rr, cx+rr, cy+rr)
-            
-            canvas.itemconfig(sun_aura, state="normal")
-            canvas.itemconfig(sun_glow4, state="normal")
-            canvas.itemconfig(sun_glow3, state="normal")
-            canvas.itemconfig(sun_glow2, state="normal")
-            canvas.itemconfig(sun_glow1, state="normal")
-            canvas.itemconfig(core_bg, state="normal")
-            canvas.itemconfig(shadow1, state="normal")
-            canvas.itemconfig(shadow2, state="normal")
-            canvas.itemconfig(shadow3, state="normal")
-            canvas.itemconfig(core_arc1, state="normal")
-            canvas.itemconfig(core_arc2, state="normal")
-            canvas.itemconfig(core_arc3, state="normal")
-            canvas.itemconfig(term_prompt, state="hidden")
-            canvas.itemconfig(file_icon, state="hidden")
-            canvas.itemconfig(radar_arc, state="hidden")
-            canvas.itemconfig(browser_box, state="hidden")
-            canvas.itemconfig(browser_line, state="hidden")
-            canvas.itemconfig(desktop_cursor_arrow, state="hidden")
-            canvas.itemconfig(desktop_cursor_dot, state="hidden")
-            canvas.itemconfig(desktop_cursor_label, state="hidden")
+        elif visual_state == "BGTASK":
+            target_text = "Background"
+            target_color = '#14b8a6'
+            target_outline = '#0f766e'
+            show_dots = True
+            canvas.itemconfig(sun_glow3, state="hidden")
+            canvas.itemconfig(mcp_diamond, state="hidden")
+            canvas.itemconfig(mcp_inner, state="hidden")
+            canvas.itemconfig(bg_center, state="hidden")
+            canvas.itemconfig(bg_orbit1, state="hidden")
+            canvas.itemconfig(bg_orbit2, state="hidden")
+            canvas.itemconfig(sun_glow2, state="hidden")
+            canvas.itemconfig(sun_glow1, state="hidden")
+            canvas.itemconfig(core_bg, state="hidden")
+            canvas.itemconfig(core_arc1, state="hidden")
+            canvas.itemconfig(core_arc2, state="hidden")
+            canvas.itemconfig(core_arc3, state="hidden")
+            canvas.itemconfig(back_arc1, state="hidden")
+            canvas.itemconfig(back_arc2, state="hidden")
+            canvas.itemconfig(back_arc3, state="hidden")
+            if scale > 0.5:
+                canvas.itemconfig(bg_center, state="normal")
+                canvas.itemconfig(bg_orbit1, state="normal")
+                canvas.itemconfig(bg_orbit2, state="normal")
+            canvas.coords(bg_center, cx-4*scale, cy-4*scale, cx+4*scale, cy+4*scale)
+            a1 = anim_frame * 0.1
+            r = 14 * scale
+            canvas.coords(bg_orbit1, cx+math.cos(a1)*r-3*scale, cy+math.sin(a1)*r-3*scale, cx+math.cos(a1)*r+3*scale, cy+math.sin(a1)*r+3*scale)
+            a2 = a1 + math.pi
+            canvas.coords(bg_orbit2, cx+math.cos(a2)*r-3*scale, cy+math.sin(a2)*r-3*scale, cx+math.cos(a2)*r+3*scale, cy+math.sin(a2)*r+3*scale)
 
-            target_text = "Standing by"
-            target_color = '#9ca3af'
+        elif visual_state == "RUNNING":
+            target_text = "Processing"
+            target_color = '#e5e7eb'
+            target_outline = '#374151'
+            show_dots = True
+            canvas.itemconfig(sun_aura, fill='#1f2937')
+            canvas.itemconfig(sun_glow4, fill='#374151')
+            canvas.itemconfig(sun_glow3, fill='#4b5563')
+            canvas.itemconfig(sun_glow2, fill='#9ca3af')
+            canvas.itemconfig(sun_glow1, fill='#d1d5db')
+            canvas.itemconfig(core_bg, fill='#ffffff')
+            canvas.itemconfig(core_arc1, fill='#e5e7eb')
+            canvas.itemconfig(core_arc2, fill='#9ca3af')
+            canvas.itemconfig(core_arc3, fill='#d1d5db')
+            canvas.itemconfig(back_arc1, fill='#374151')
+            canvas.itemconfig(back_arc2, fill='#4b5563')
+            canvas.itemconfig(back_arc3, fill='#1f2937')
+            
+        else: # IDLE
+            target_text = "Standing by..." if mobile_clients == 0 else "Standing by (Linked)"
             target_outline = '#27272a'
-            show_dots = False
+            tc = get_plasma_theme_colors(current_plasma_theme, anim_frame)
+            canvas.itemconfig(sun_aura, fill=tc['aura'][0])
+            canvas.itemconfig(sun_glow4, fill=tc['aura'][1])
+            canvas.itemconfig(sun_glow3, fill=tc['aura'][2])
+            canvas.itemconfig(sun_glow2, fill=tc['aura'][3])
+            canvas.itemconfig(sun_glow1, fill=tc['aura'][4])
+            canvas.itemconfig(core_bg, fill=tc['core'])
+            canvas.itemconfig(core_arc1, fill=tc['arcs'][0])
+            canvas.itemconfig(core_arc2, fill=tc['arcs'][1])
+            canvas.itemconfig(core_arc3, fill=tc['arcs'][2])
+            canvas.itemconfig(back_arc1, fill=tc['back_arcs'][0])
+            canvas.itemconfig(back_arc2, fill=tc['back_arcs'][1])
+            canvas.itemconfig(back_arc3, fill=tc['back_arcs'][2])
 
-            if visual_state == "THINKING":
-                target_text = "Thinking"
-                target_color = '#fbbf24'
-                target_outline = '#b45309'
-                show_dots = True
-                canvas.itemconfig(sun_aura, fill='#451a03')
-                canvas.itemconfig(sun_glow4, fill='#78350f')
-                canvas.itemconfig(sun_glow3, fill='#b45309')
-                canvas.itemconfig(sun_glow2, fill='#d97706')
-                canvas.itemconfig(sun_glow1, fill='#f59e0b')
-                canvas.itemconfig(core_bg, fill='#fef3c7')
-                canvas.itemconfig(core_arc1, fill='#fcd34d')
-                canvas.itemconfig(core_arc2, fill='#fbbf24')
-                canvas.itemconfig(core_arc3, fill='#f59e0b')
-            elif visual_state == "SEARCH":
-                target_text = "Searching"
-                target_color = '#38bdf8'
-                target_outline = '#0284c7'
-                show_dots = True
-                canvas.itemconfig(sun_glow3, state="hidden")
-                canvas.itemconfig(mcp_diamond, state="hidden")
-                canvas.itemconfig(mcp_inner, state="hidden")
-                canvas.itemconfig(bg_center, state="hidden")
-                canvas.itemconfig(bg_orbit1, state="hidden")
-                canvas.itemconfig(bg_orbit2, state="hidden")
-                canvas.itemconfig(sun_glow2, state="hidden")
-                canvas.itemconfig(sun_glow1, state="hidden")
-                canvas.itemconfig(core_bg, state="hidden")
-                canvas.itemconfig(core_arc1, state="hidden")
-                canvas.itemconfig(core_arc2, state="hidden")
-                canvas.itemconfig(core_arc3, state="hidden")
-                if scale > 0.5:
-                    canvas.itemconfig(radar_arc, state="normal")
-                # Spin radar
-                canvas.itemconfig(radar_arc, start=(anim_frame * -8) % 360)
-            elif visual_state == "BROWSER":
-                target_text = "Browsing"
-                target_color = '#f97316'
-                target_outline = '#c2410c'
-                show_dots = True
-                canvas.itemconfig(sun_glow3, state="hidden")
-                canvas.itemconfig(mcp_diamond, state="hidden")
-                canvas.itemconfig(mcp_inner, state="hidden")
-                canvas.itemconfig(bg_center, state="hidden")
-                canvas.itemconfig(bg_orbit1, state="hidden")
-                canvas.itemconfig(bg_orbit2, state="hidden")
-                canvas.itemconfig(sun_glow2, state="hidden")
-                canvas.itemconfig(sun_glow1, state="hidden")
-                canvas.itemconfig(core_bg, state="hidden")
-                canvas.itemconfig(core_arc1, state="hidden")
-                canvas.itemconfig(core_arc2, state="hidden")
-                canvas.itemconfig(core_arc3, state="hidden")
-                if scale > 0.5:
-                    canvas.itemconfig(browser_box, state="normal")
-                    canvas.itemconfig(browser_line, state="normal")
-                bounce = math.sin(anim_frame * 0.15) * 3
-                bw, bh = 12 * scale, 10 * scale
-                canvas.coords(browser_box, cx-bw, cy-bh+bounce, cx+bw, cy+bh+bounce)
-                canvas.coords(browser_line, cx-bw, cy-bh*0.4+bounce, cx+bw, cy-bh*0.4+bounce)
-                
-            elif visual_state == "DESKTOP":
-                  target_text = "Desktop"
-                  target_color = '#a78bfa'
-                  target_outline = '#7c3aed'
-                  show_dots = True
-                  canvas.itemconfig(sun_glow3, state="hidden")
-                  canvas.itemconfig(mcp_diamond, state="hidden")
-                  canvas.itemconfig(mcp_inner, state="hidden")
-                  canvas.itemconfig(bg_center, state="hidden")
-                  canvas.itemconfig(bg_orbit1, state="hidden")
-                  canvas.itemconfig(bg_orbit2, state="hidden")
-                  canvas.itemconfig(browser_box, state="hidden")
-                  canvas.itemconfig(browser_line, state="hidden")
-                  if scale > 0.5:
-                      canvas.itemconfig(desktop_cursor_arrow, state="normal")
-                      canvas.itemconfig(desktop_cursor_dot, state="normal")
-                      canvas.itemconfig(desktop_cursor_label, state="normal")
-                  bounce = math.sin(anim_frame * 0.15) * 2
-                  # Arrow coords: base at cx, cy, moving around
-                  ax = cx + math.cos(anim_frame * 0.05) * 8 * scale
-                  ay = cy + math.sin(anim_frame * 0.05) * 4 * scale + bounce
-                  canvas.coords(desktop_cursor_arrow, ax-10*scale, ay-12*scale, ax-10*scale, ay+6*scale, ax-5*scale, ay+1*scale, ax-1*scale, ay+8*scale, ax+2*scale, ay+7*scale, ax-2*scale, ay, ax+4*scale, ay)
-                  canvas.coords(desktop_cursor_dot, ax+2*scale, ay+6*scale, ax+7*scale, ay+11*scale)
-                  canvas.coords(desktop_cursor_label, ax+12*scale, ay)
-                  canvas.itemconfig(desktop_cursor_label, font=("Segoe UI", max(1, int(7*scale)), "bold"))
-            elif visual_state == "BASH":
-                target_text = "Bash"
-                target_color = '#34d399'
-                target_outline = '#065f46'
-                show_dots = True
-                canvas.itemconfig(sun_glow3, state="hidden")
-                canvas.itemconfig(mcp_diamond, state="hidden")
-                canvas.itemconfig(mcp_inner, state="hidden")
-                canvas.itemconfig(bg_center, state="hidden")
-                canvas.itemconfig(bg_orbit1, state="hidden")
-                canvas.itemconfig(bg_orbit2, state="hidden")
-                canvas.itemconfig(sun_glow2, state="hidden")
-                canvas.itemconfig(sun_glow1, state="hidden")
-                canvas.itemconfig(core_bg, state="hidden")
-                canvas.itemconfig(core_arc1, state="hidden")
-                canvas.itemconfig(core_arc2, state="hidden")
-                canvas.itemconfig(core_arc3, state="hidden")
-                if scale > 0.5:
-                    canvas.coords(term_prompt, cx, cy)
-                    canvas.itemconfig(term_prompt, state="normal" if anim_frame % 20 < 10 else "hidden", font=("Consolas", max(1, int(11 * scale)), "bold"))
-                
-            elif visual_state == "FILE":
-                target_text = "I/O"
-                target_color = '#818cf8'
-                target_outline = '#3730a3'
-                show_dots = True
-                canvas.itemconfig(sun_glow3, state="hidden")
-                canvas.itemconfig(mcp_diamond, state="hidden")
-                canvas.itemconfig(mcp_inner, state="hidden")
-                canvas.itemconfig(bg_center, state="hidden")
-                canvas.itemconfig(bg_orbit1, state="hidden")
-                canvas.itemconfig(bg_orbit2, state="hidden")
-                canvas.itemconfig(sun_glow2, state="hidden")
-                canvas.itemconfig(sun_glow1, state="hidden")
-                canvas.itemconfig(core_bg, state="hidden")
-                canvas.itemconfig(core_arc1, state="hidden")
-                canvas.itemconfig(core_arc2, state="hidden")
-                canvas.itemconfig(core_arc3, state="hidden")
-                if scale > 0.5:
-                    canvas.itemconfig(file_icon, state="normal")
-                bounce = math.sin(anim_frame * 0.1) * 2
-                w, h = 6 * scale, 8 * scale
-                canvas.coords(file_icon, cx-w, cy-h+bounce, cx+w/2, cy-h+bounce, cx+w+2, cy-h/2+bounce, cx+w+2, cy+h+2+bounce, cx-w, cy+h+2+bounce)
+        if is_hovering_pill:
+            canvas.itemconfig(pill, outline='#6666ff')
+        else:
+            canvas.itemconfig(pill, outline=target_outline)
 
-            elif visual_state == "MCP":
-                target_text = "MCP Connect"
-                target_color = '#d946ef'
-                target_outline = '#a21caf'
-                show_dots = True
-                canvas.itemconfig(sun_glow3, state="hidden")
-                canvas.itemconfig(mcp_diamond, state="hidden")
-                canvas.itemconfig(mcp_inner, state="hidden")
-                canvas.itemconfig(bg_center, state="hidden")
-                canvas.itemconfig(bg_orbit1, state="hidden")
-                canvas.itemconfig(bg_orbit2, state="hidden")
-                canvas.itemconfig(sun_glow2, state="hidden")
-                canvas.itemconfig(sun_glow1, state="hidden")
-                canvas.itemconfig(core_bg, state="hidden")
-                canvas.itemconfig(core_arc1, state="hidden")
-                canvas.itemconfig(core_arc2, state="hidden")
-                canvas.itemconfig(core_arc3, state="hidden")
-                if scale > 0.5:
-                    canvas.itemconfig(mcp_diamond, state="normal")
-                    canvas.itemconfig(mcp_inner, state="normal")
-                bounce = math.sin(anim_frame * 0.15) * 2
-                canvas.coords(mcp_diamond, cx, cy-12*scale+bounce, cx+10*scale, cy+bounce, cx, cy+12*scale+bounce, cx-10*scale, cy+bounce)
-                canvas.coords(mcp_inner, cx, cy-6*scale+bounce, cx+5*scale, cy+bounce, cx, cy+6*scale+bounce, cx-5*scale, cy+bounce)
-
-            elif visual_state == "BGTASK":
-                target_text = "Background"
-                target_color = '#14b8a6'
-                target_outline = '#0f766e'
-                show_dots = True
-                canvas.itemconfig(sun_glow3, state="hidden")
-                canvas.itemconfig(mcp_diamond, state="hidden")
-                canvas.itemconfig(mcp_inner, state="hidden")
-                canvas.itemconfig(bg_center, state="hidden")
-                canvas.itemconfig(bg_orbit1, state="hidden")
-                canvas.itemconfig(bg_orbit2, state="hidden")
-                canvas.itemconfig(sun_glow2, state="hidden")
-                canvas.itemconfig(sun_glow1, state="hidden")
-                canvas.itemconfig(core_bg, state="hidden")
-                canvas.itemconfig(core_arc1, state="hidden")
-                canvas.itemconfig(core_arc2, state="hidden")
-                canvas.itemconfig(core_arc3, state="hidden")
-                if scale > 0.5:
-                    canvas.itemconfig(bg_center, state="normal")
-                    canvas.itemconfig(bg_orbit1, state="normal")
-                    canvas.itemconfig(bg_orbit2, state="normal")
-                canvas.coords(bg_center, cx-4*scale, cy-4*scale, cx+4*scale, cy+4*scale)
-                a1 = anim_frame * 0.1
-                r = 14 * scale
-                canvas.coords(bg_orbit1, cx+math.cos(a1)*r-3*scale, cy+math.sin(a1)*r-3*scale, cx+math.cos(a1)*r+3*scale, cy+math.sin(a1)*r+3*scale)
-                a2 = a1 + math.pi
-                canvas.coords(bg_orbit2, cx+math.cos(a2)*r-3*scale, cy+math.sin(a2)*r-3*scale, cx+math.cos(a2)*r+3*scale, cy+math.sin(a2)*r+3*scale)
-
-            elif visual_state == "RUNNING":
-                target_text = "Processing"
-                target_color = '#e5e7eb'
-                target_outline = '#374151'
-                show_dots = True
-                canvas.itemconfig(sun_aura, fill='#1f2937')
-                canvas.itemconfig(sun_glow4, fill='#374151')
-                canvas.itemconfig(sun_glow3, fill='#4b5563')
-                canvas.itemconfig(sun_glow2, fill='#9ca3af')
-                canvas.itemconfig(sun_glow1, fill='#d1d5db')
-                canvas.itemconfig(core_bg, fill='#ffffff')
-                canvas.itemconfig(core_arc1, fill='#e5e7eb')
-                canvas.itemconfig(core_arc2, fill='#9ca3af')
-                canvas.itemconfig(core_arc3, fill='#d1d5db')
-                
-            else: # IDLE
-                target_text = "Standing by..."
-                target_outline = '#27272a'
-                canvas.itemconfig(sun_aura, fill='#18181b')
-                canvas.itemconfig(sun_glow4, fill='#1e1e24')
-                canvas.itemconfig(sun_glow3, fill='#27272a')
-                canvas.itemconfig(sun_glow2, fill='#3f3f46')
-                canvas.itemconfig(sun_glow1, fill='#71717a')
-                canvas.itemconfig(core_bg, fill='#ffffff')
-                canvas.itemconfig(core_arc1, fill='#06b6d4')
-                canvas.itemconfig(core_arc2, fill='#3b82f6')
-                canvas.itemconfig(core_arc3, fill='#0ea5e9')
-
-            if is_hovering_pill:
-                canvas.itemconfig(pill, outline='#6666ff')
-            else:
-                canvas.itemconfig(pill, outline=target_outline)
-
-            # --- Typewriter Animation Logic ---
-            global typewriter_idx, typewriter_base, typewriter_target
+        # --- Typewriter Animation Logic ---
+        global typewriter_idx, typewriter_base, typewriter_target
+        
+        # If target text changes, reset the typewriter
+        if target_text != typewriter_target:
+            typewriter_target = target_text
+            typewriter_idx = 0
+            typewriter_base = ""
             
-            # If target text changes, reset the typewriter
-            if target_text != typewriter_target:
-                typewriter_target = target_text
-                typewriter_idx = 0
-                typewriter_base = ""
-                
-            # Type 1 character every 2 frames (approx 25 chars per second at 50fps)
-            if anim_frame % 2 == 0 and typewriter_idx < len(typewriter_target):
-                typewriter_base += typewriter_target[typewriter_idx]
-                typewriter_idx += 1
-                
-            display = typewriter_base
-            # Only show dynamic dots if the base word has finished typing
-            if show_dots and typewriter_idx >= len(typewriter_target):
-                display += dots
-                
-            if not alert_state["active"]:
-                canvas.itemconfig(status_text, text=display, fill=target_color)
+        # Type 1 character every 2 frames (approx 25 chars per second at 50fps)
+        if anim_frame % 2 == 0 and typewriter_idx < len(typewriter_target):
+            typewriter_base += typewriter_target[typewriter_idx]
+            typewriter_idx += 1
+            
+        display = typewriter_base
+        # Only show dynamic dots if the base word has finished typing
+        if show_dots and typewriter_idx >= len(typewriter_target):
+            display += dots
+            
+        if not alert_state["active"]:
+            canvas.itemconfig(status_text, text=display, fill=target_color)
 
-            if surveillance_armed:
-                try:
-                    w = current_width if current_width else 240
-                    canvas.coords(surveillance_dot, w - 25, 15, w - 15, 25)
-                    canvas.itemconfig(surveillance_dot, state='normal')
-                    canvas.tag_raise(surveillance_dot)
-                    canvas.itemconfig(bg_center, state='normal', fill='#22c55e')
-                    canvas.tag_raise(bg_center)
-                except: pass
-            else:
-                try:
-                    canvas.itemconfig(surveillance_dot, state='hidden')
-                except: pass
+        if surveillance_armed:
+            try:
+                w = current_width if current_width else 240
+                canvas.coords(surveillance_dot, w - 25, 15, w - 15, 25)
+                canvas.itemconfig(surveillance_dot, state='normal')
+                canvas.tag_raise(surveillance_dot)
+                canvas.itemconfig(bg_center, state='normal', fill='#22c55e')
+                canvas.tag_raise(bg_center)
+            except: pass
+        else:
+            try:
+                canvas.itemconfig(surveillance_dot, state='hidden')
+            except: pass
 
     elif dashboard_active and anim_frame % 50 == 0:
         if current_section not in ('Settings', 'MCP/Tools', 'Documents'):
