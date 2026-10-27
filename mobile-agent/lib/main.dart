@@ -134,6 +134,10 @@ class AppTokens {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Senior Optimization: Cap Flutter internal ImageCache to 35MB & 120 images (default: 100MB & 1000 images)
+  PaintingBinding.instance.imageCache.maximumSizeBytes = 35 * 1024 * 1024;
+  PaintingBinding.instance.imageCache.maximumSize = 120;
+
   // BUGFIX: Guard against duplicate-app exception if the engine is shared
   // and main() is somehow re-invoked (e.g., background isolate or cold-start via AssistantActivity)
   if (Firebase.apps.isEmpty) {
@@ -1045,6 +1049,9 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       return hour >= _quietHoursStartHour && hour < _quietHoursEndHour;
     }
   }
+  Timer? _standbyGraceTimer;
+  bool _isInForeground = true;
+  bool _isStandbyActive = false;
   String? _activeJobId;
   String _activeJobStatus = '';
   String _activeJobSummary = '';
@@ -1645,19 +1652,98 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     }
   }
 
+  bool _isTaskOrCommandActive() {
+    if (_isThinking || _thinkingSessions.isNotEmpty) return true;
+    if (_activeJobId != null && _activeJobId!.isNotEmpty) {
+      if (_activeJobStatus == 'running' || _activeJobStatus == 'queued' || _activeJobStatus == 'cancelling') {
+        return true;
+      }
+    }
+    if (_bgTasks.any((t) => t['status'] == 'running' || t['status'] == 'queued')) return true;
+    if (_isListening || _isAiSpeaking || _isLiveSession) return true;
+    return false;
+  }
+
+  Future<void> _ensureBackgroundExecutionEnabled({String? reason}) async {
+    if (!Platform.isAndroid) return;
+    if (_isAssistant) return; // Assistant overlay handles its own transparent window lifecycle
+    
+    _standbyGraceTimer?.cancel();
+    _standbyGraceTimer = null;
+    _isStandbyActive = false;
+
+    try {
+      final hasPermission = await FlutterBackground.hasPermissions;
+      if (!hasPermission) return;
+
+      if (!FlutterBackground.isBackgroundExecutionEnabled) {
+        final androidConfig = FlutterBackgroundAndroidConfig(
+          notificationTitle: "Voila Agent",
+          notificationText: reason ?? "Task running in background...",
+          notificationImportance: AndroidNotificationImportance.normal,
+          notificationIcon: const AndroidResource(name: 'ic_launcher', defType: 'mipmap'),
+        );
+        await FlutterBackground.initialize(androidConfig: androidConfig);
+        await FlutterBackground.enableBackgroundExecution();
+        debugPrint('Voila: Foreground service enabled (${reason ?? "active task"})');
+      }
+    } catch (e) {
+      debugPrint('Background execution error: $e');
+    }
+  }
+
+  void _scheduleStandbyGracePeriod() {
+    if (!Platform.isAndroid) return;
+    if (_isInForeground) return; // User is active in app, no standby needed
+    if (_isTaskOrCommandActive()) return; // Task running, keep alive
+
+    _standbyGraceTimer?.cancel();
+
+    // In quiet hours (10 PM - 7 AM), drop into deep standby in 30 seconds
+    final graceDuration = _isQuietHoursActive() 
+        ? const Duration(seconds: 30) 
+        : const Duration(minutes: 4);
+
+    debugPrint('Voila: Scheduling standby grace period (${graceDuration.inSeconds}s)');
+    _standbyGraceTimer = Timer(graceDuration, () async {
+      if (_isInForeground || _isTaskOrCommandActive()) {
+        debugPrint('Voila: Standby aborted because app returned to foreground or task started');
+        return;
+      }
+      await _enterDeepStandby();
+    });
+  }
+
+  Future<void> _enterDeepStandby() async {
+    if (!Platform.isAndroid) return;
+    try {
+      if (FlutterBackground.isBackgroundExecutionEnabled) {
+        debugPrint('Voila: Entering Deep Standby - disabling foreground execution & releasing WakeLock');
+        await FlutterBackground.disableBackgroundExecution();
+        _isStandbyActive = true;
+      }
+      // Memory purge: Clear Flutter internal image caches upon entering standby
+      PaintingBinding.instance.imageCache.clear();
+      PaintingBinding.instance.imageCache.clearLiveImages();
+    } catch (e) {
+      debugPrint('Error entering deep standby: $e');
+    }
+  }
+
   Future<void> _initBackground() async {
     if (!Platform.isAndroid) return;  // BUG-25 fix: flutter_background is Android-only
     try {
       const androidConfig = FlutterBackgroundAndroidConfig(
-        notificationTitle: "Voila Live Active",
-        notificationText: "Maintaining connection in the background...",
+        notificationTitle: "Voila Agent",
+        notificationText: "Standby",
         notificationImportance: AndroidNotificationImportance.normal,
         notificationIcon: AndroidResource(name: 'ic_launcher', defType: 'mipmap'),
       );
       await FlutterBackground.initialize(androidConfig: androidConfig);
-      await FlutterBackground.enableBackgroundExecution();
+      // Progressive Background Architecture: do not force permanent 24/7 background execution
+      // on initial launch while user is in the foreground.
     } catch (e) {
-      debugPrint('Background execution error: $e');
+      debugPrint('Background execution initialization error: $e');
     }
   }
 
@@ -3875,6 +3961,9 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                       _activeJobId = null;
                       _activeJobStatus = '';
                     });
+                    if (!_isInForeground) {
+                      _scheduleStandbyGracePeriod();
+                    }
                   }
                 });
               }
@@ -3893,6 +3982,9 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                 if (resConvId == _currentConversationId || _thinkingSessions.isEmpty) {
                   _isThinking = false;
                   _triggerDataArriving();
+                  if (!_isInForeground) {
+                    _scheduleStandbyGracePeriod();
+                  }
                 }
               });
               
@@ -4201,6 +4293,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     _fcmMessageSubscription?.cancel();  // FCM-02 fix
     _healthCheckTimer?.cancel();
     _bgTaskTimer?.cancel();
+    _standbyGraceTimer?.cancel();
     _channel?.sink.close();
     _controller.dispose();
     _scrollController.dispose();
@@ -4216,16 +4309,50 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      _isInForeground = true;
+      _standbyGraceTimer?.cancel();
+      _standbyGraceTimer = null;
+
       if (!_isAssistant) {
         _checkIntent();
       }
       // Resume background timers upon app foreground
       _startBgTaskChecks();
       _startHealthChecks();
-    } else if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
-      // Pause background timers to eliminate idle battery & network drain
+
+      // If disconnected during deep standby, reconnect smoothly
+      if (!_isConnected) {
+        _connectToBackend();
+      }
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.detached ||
+        state.name == 'hidden') {
+      _isInForeground = false;
+      // Pause polling timers to eliminate idle battery & network drain
       _bgTaskTimer?.cancel();
       _healthCheckTimer?.cancel();
+
+      if (_isTaskOrCommandActive()) {
+        _ensureBackgroundExecutionEnabled(reason: "Executing task in background...");
+      } else {
+        _scheduleStandbyGracePeriod();
+      }
+    }
+  }
+
+  @override
+  void didHaveMemoryPressure() {
+    super.didHaveMemoryPressure();
+    debugPrint('Voila: Low memory pressure warning from Android - trimming caches');
+    PaintingBinding.instance.imageCache.clear();
+    PaintingBinding.instance.imageCache.clearLiveImages();
+    if (_currentConversationId.isNotEmpty && _conversationMessagesCache.containsKey(_currentConversationId)) {
+      final activeList = _conversationMessagesCache[_currentConversationId]!;
+      _conversationMessagesCache.clear();
+      _conversationMessagesCache[_currentConversationId] = activeList;
+    } else {
+      _conversationMessagesCache.clear();
     }
   }
 
@@ -4385,6 +4512,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     debugPrint('Message: $message');
     
     _channel?.sink.add(jsonEncode(message));
+    _ensureBackgroundExecutionEnabled(reason: "Running $_currentMode command...");
     if (mounted) {
       setState(() {
         if (text != '__SCREENSHOT__') {
@@ -7117,6 +7245,8 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   Widget _buildMessagesList(ColorScheme colorScheme) {
     return ListView.builder(
       controller: _scrollController,
+      cacheExtent: 150.0,
+      addRepaintBoundaries: true,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       itemCount: _messages.length + (_isThinking ? 1 : 0),
       itemBuilder: (context, index) {
