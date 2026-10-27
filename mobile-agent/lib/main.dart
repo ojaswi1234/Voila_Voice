@@ -3810,6 +3810,9 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                 });
                 if (status != prevStatus && (status == 'completed' || status == 'failed')) {
                   _notifyTaskCompletion(taskMap);
+                  if (!_isInForeground) {
+                    _scheduleStandbyGracePeriod();
+                  }
                 }
               }
             } else if (jsonResponse is Map && jsonResponse['type'] == 'clipboard_suggestion') {
