@@ -29,6 +29,9 @@ func initTestEnv(t *testing.T) {
 	http.DefaultTransport = &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
+	// Stop any running MCP servers BEFORE TempDir cleanup so Windows file
+	// handles are released before the OS tries to delete the temp directory.
+	t.Cleanup(func() { mcp.GlobalHost.StopAll() })
 	t.Cleanup(func() {
 		os.Chdir(cwd)
 		http.DefaultTransport = oldTransport

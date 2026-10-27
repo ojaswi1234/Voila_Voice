@@ -62,8 +62,8 @@ func TestBGTaskLifecycleAndDedup(t *testing.T) {
 		t.Errorf("Expected dedup to return %s, got %s", taskID1, taskID2)
 	}
 
-	// Wait for the task to finish (poll up to 3 seconds for Windows PowerShell process cold start)
-	for i := 0; i < 30; i++ {
+	// Wait for the task to finish (poll up to 12 seconds for Windows PowerShell process cold start)
+	for i := 0; i < 60; i++ {
 		bgTasksMu.RLock()
 		task, exists := bgTasks[taskID1]
 		status := ""
@@ -74,7 +74,7 @@ func TestBGTaskLifecycleAndDedup(t *testing.T) {
 		if status == "completed" {
 			break
 		}
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(200 * time.Millisecond)
 	}
 
 	bgTasksMu.RLock()
