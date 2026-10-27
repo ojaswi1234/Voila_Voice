@@ -76,10 +76,11 @@ class _ConnectionFlowchartState extends State<ConnectionFlowchart>
           ),
         ],
       ),
-      child: AnimatedBuilder(
-        animation: Listenable.merge([_pulseAnimation, _flowController]),
-        builder: (context, child) {
-          return CustomPaint(
+      child: RepaintBoundary(
+        child: AnimatedBuilder(
+          animation: Listenable.merge([_pulseAnimation, _flowController]),
+          builder: (context, child) {
+            return CustomPaint(
             painter: _ElegantFlowchartPainter(
               pulse: _pulseAnimation.value,
               flow: _flowController.value,
@@ -108,8 +109,9 @@ class _ConnectionFlowchartState extends State<ConnectionFlowchart>
           );
         },
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildNodeLabel(String text, IconData icon, Color color) {
     return Column(

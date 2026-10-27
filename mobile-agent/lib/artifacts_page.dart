@@ -41,6 +41,9 @@ class ArtifactsManager {
         createdAt: DateTime.now(),
       ),
     );
+    if (_artifacts.length > 100) {
+      _artifacts.removeLast();
+    }
   }
 
   static void updateStatus(String id, String status) {

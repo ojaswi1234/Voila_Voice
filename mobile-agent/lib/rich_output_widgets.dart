@@ -1088,24 +1088,28 @@ class _VoilaLiveModeSheetState extends State<VoilaLiveModeSheet> with SingleTick
                 alignment: Alignment.center,
                 children: [
                   // Pulsing animated glow ring
-                  AnimatedBuilder(
-                    animation: _pulseController,
-                    builder: (context, child) {
-                      return Container(
-                        width: 140 + (_pulseController.value * 25),
-                        height: 140 + (_pulseController.value * 25),
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: stateColor.withOpacity(0.06),
-                          border: Border.all(color: stateColor.withOpacity(0.2)),
-                        ),
-                      );
-                    },
+                  RepaintBoundary(
+                    child: AnimatedBuilder(
+                      animation: _pulseController,
+                      builder: (context, child) {
+                        return Container(
+                          width: 140 + (_pulseController.value * 25),
+                          height: 140 + (_pulseController.value * 25),
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: stateColor.withOpacity(0.06),
+                            border: Border.all(color: stateColor.withOpacity(0.2)),
+                          ),
+                        );
+                      },
+                    ),
                   ),
-                  AudioVisualizer(
-                    isListening: _liveState == 'LISTENING',
-                    isSpeaking: _liveState == 'SPEAKING',
-                    soundLevel: _liveState == 'LISTENING' ? 0.6 : 0.1,
+                  RepaintBoundary(
+                    child: AudioVisualizer(
+                      isListening: _liveState == 'LISTENING',
+                      isSpeaking: _liveState == 'SPEAKING',
+                      soundLevel: _liveState == 'LISTENING' ? 0.6 : 0.1,
+                    ),
                   ),
                 ],
               ),

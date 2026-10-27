@@ -344,20 +344,21 @@ class _PulseWaveVisualizerState extends State<PulseWaveVisualizer> with SingleTi
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: widget.onTap,
-      child: AnimatedBuilder(
-        animation: _controller,
-        builder: (context, child) {
-          double wave1 = 1.0 + (_controller.value * 1.5);
-          double wave2 = 1.0 + (((_controller.value + 0.3) % 1.0) * 1.2);
-          double wave3 = 1.0 + (((_controller.value + 0.6) % 1.0) * 0.9);
-          double corePulse = (cSize * 0.11) + (math.sin(_controller.value * math.pi * 2) * 5);
+      child: RepaintBoundary(
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (context, child) {
+            double wave1 = 1.0 + (_controller.value * 1.5);
+            double wave2 = 1.0 + (((_controller.value + 0.3) % 1.0) * 1.2);
+            double wave3 = 1.0 + (((_controller.value + 0.6) % 1.0) * 0.9);
+            double corePulse = (cSize * 0.11) + (math.sin(_controller.value * math.pi * 2) * 5);
 
-          return SizedBox(
-            width: boxSize,
-            height: boxSize,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
+            return SizedBox(
+              width: boxSize,
+              height: boxSize,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
                 Transform.scale(
                   scale: wave1,
                   child: Container(
@@ -406,8 +407,9 @@ class _PulseWaveVisualizerState extends State<PulseWaveVisualizer> with SingleTi
           );
         },
       ),
-    );
-  }
+    ),
+  );
+}
 }
 
 
@@ -510,12 +512,14 @@ class FluidWaterOverlayContainer extends StatefulWidget {
   _FluidWaterOverlayContainerState createState() => _FluidWaterOverlayContainerState();
 }
 
-class _FluidWaterOverlayContainerState extends State<FluidWaterOverlayContainer> with SingleTickerProviderStateMixin {
+class _FluidWaterOverlayContainerState extends State<FluidWaterOverlayContainer>
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late AnimationController _fluidController;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _fluidController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2800),
@@ -523,7 +527,24 @@ class _FluidWaterOverlayContainerState extends State<FluidWaterOverlayContainer>
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.detached ||
+        state.name == 'hidden') {
+      if (_fluidController.isAnimating) {
+        _fluidController.stop();
+      }
+    } else if (state == AppLifecycleState.resumed) {
+      if (!_fluidController.isAnimating) {
+        _fluidController.repeat();
+      }
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _fluidController.dispose();
     super.dispose();
   }
@@ -540,19 +561,21 @@ class _FluidWaterOverlayContainerState extends State<FluidWaterOverlayContainer>
         children: [
           // Background liquid canvas with water ripples and caustic refractions
           Positioned.fill(
-            child: AnimatedBuilder(
-              animation: _fluidController,
-              builder: (context, _) {
-                return CustomPaint(
-                  painter: FluidLiquidPainter(
-                    progress: _fluidController.value,
-                    isListening: widget.isListening,
-                    isSpeaking: widget.isSpeaking,
-                    isThinking: widget.isThinking,
-                    isDark: widget.isDark,
-                  ),
-                );
-              },
+            child: RepaintBoundary(
+              child: AnimatedBuilder(
+                animation: _fluidController,
+                builder: (context, _) {
+                  return CustomPaint(
+                    painter: FluidLiquidPainter(
+                      progress: _fluidController.value,
+                      isListening: widget.isListening,
+                      isSpeaking: widget.isSpeaking,
+                      isThinking: widget.isThinking,
+                      isDark: widget.isDark,
+                    ),
+                  );
+                },
+              ),
             ),
           ),
           // Content layer with floating buoyant elements
@@ -569,6 +592,19 @@ class FluidLiquidPainter extends CustomPainter {
   final bool isSpeaking;
   final bool isThinking;
   final bool isDark;
+
+  static final Paint _glowPaint = Paint();
+  static final Paint _crestPaint = Paint()
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = 1.4;
+  static final Paint _tintPaint = Paint()
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = 2.8;
+  static final Paint _causticPaint = Paint()
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = 1.0;
+  static final Path _wavePath = Path();
+  static final Path _causticPath = Path();
 
   FluidLiquidPainter({
     required this.progress,
@@ -590,15 +626,14 @@ class FluidLiquidPainter extends CustomPainter {
             ? AppTokens.accentSecondary
             : (isListening ? AppTokens.accent : (isDark ? const Color(0xFF6366F1) : const Color(0xFF00E5FF))));
 
-    final Paint glowPaint = Paint()
-      ..shader = RadialGradient(
-        colors: [
-          glowColor.withOpacity(active ? (isDark ? 0.22 : 0.16) : (isDark ? 0.08 : 0.05)),
-          Colors.transparent,
-        ],
-        radius: 0.75,
-      ).createShader(Rect.fromCircle(center: center, radius: size.width * 0.65));
-    canvas.drawRect(Offset.zero & size, glowPaint);
+    _glowPaint.shader = RadialGradient(
+      colors: [
+        glowColor.withOpacity(active ? (isDark ? 0.22 : 0.16) : (isDark ? 0.08 : 0.05)),
+        Colors.transparent,
+      ],
+      radius: 0.75,
+    ).createShader(Rect.fromCircle(center: center, radius: size.width * 0.65));
+    canvas.drawRect(Offset.zero & size, _glowPaint);
 
     // 2. Concentric harmonic water ripples with fluid turbulence
     final double maxRadius = size.width * 0.62;
@@ -609,7 +644,7 @@ class FluidLiquidPainter extends CustomPainter {
       final double r = minRadius + (ringProgress * (maxRadius - minRadius));
       final double alpha = (1.0 - ringProgress) * (active ? 0.36 : 0.16);
 
-      final Path wavePath = Path();
+      _wavePath.reset();
       const int segments = 28;
       for (int s = 0; s <= segments; s++) {
         final double theta = (s / segments) * 2 * math.pi;
@@ -619,44 +654,35 @@ class FluidLiquidPainter extends CustomPainter {
         final double px = center.dx + rad * math.cos(theta);
         final double py = center.dy + rad * math.sin(theta);
         if (s == 0) {
-          wavePath.moveTo(px, py);
+          _wavePath.moveTo(px, py);
         } else {
-          wavePath.lineTo(px, py);
+          _wavePath.lineTo(px, py);
         }
       }
-      wavePath.close();
+      _wavePath.close();
 
       // Specular highlight crest
-      final Paint crestPaint = Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.4
-        ..color = isDark
-            ? Colors.white.withOpacity(alpha * 0.70)
-            : Colors.white.withOpacity(alpha * 0.90);
-      canvas.drawPath(wavePath, crestPaint);
+      _crestPaint.color = isDark
+          ? Colors.white.withOpacity(alpha * 0.70)
+          : Colors.white.withOpacity(alpha * 0.90);
+      canvas.drawPath(_wavePath, _crestPaint);
 
       // Liquid refraction body
-      final Paint tintPaint = Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.8
-        ..color = glowColor.withOpacity(alpha * 0.35);
-      canvas.drawPath(wavePath, tintPaint);
+      _tintPaint.color = glowColor.withOpacity(alpha * 0.35);
+      canvas.drawPath(_wavePath, _tintPaint);
     }
 
     // 3. Gentle fluid caustic contour lines across the water surface
     for (int w = 0; w < 2; w++) {
       final double waveY = (size.height * (0.32 + (w * 0.40))) + math.sin((progress * 2 * math.pi) + w) * 3.5;
-      final Path causticPath = Path();
-      causticPath.moveTo(0, waveY);
+      _causticPath.reset();
+      _causticPath.moveTo(0, waveY);
       for (double x = 0; x <= size.width; x += 16) {
         final double cy = waveY + math.sin((x / size.width * 3 * math.pi) + (progress * 2 * math.pi) + (w * 1.5)) * 3.8;
-        causticPath.lineTo(x, cy);
+        _causticPath.lineTo(x, cy);
       }
-      final Paint causticPaint = Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.0
-        ..color = (isDark ? Colors.white : Colors.cyanAccent).withOpacity(isDark ? 0.04 : 0.10);
-      canvas.drawPath(causticPath, causticPaint);
+      _causticPaint.color = (isDark ? Colors.white : Colors.cyanAccent).withOpacity(isDark ? 0.04 : 0.10);
+      canvas.drawPath(_causticPath, _causticPaint);
     }
   }
 
@@ -745,8 +771,9 @@ class _Volumetric3DMicButtonState extends State<Volumetric3DMicButton> with Sing
         widget.onTap();
       },
       onTapCancel: () => setState(() => _isPressed = false),
-      child: AnimatedBuilder(
-        animation: _pulseController,
+      child: RepaintBoundary(
+        child: AnimatedBuilder(
+          animation: _pulseController,
         builder: (context, _) {
           final double t = _pulseController.value;
 
@@ -906,8 +933,9 @@ class _Volumetric3DMicButtonState extends State<Volumetric3DMicButton> with Sing
           );
         },
       ),
-    );
-  }
+    ),
+  );
+}
 }
 
 
@@ -1053,7 +1081,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       _messagesAgent.add(msg);
       if (_messagesAgent.length > 200) _messagesAgent.removeAt(0);
       if (_currentConversationId.isNotEmpty) {
-        _conversationMessagesCache[_currentConversationId] = List.from(_messagesAgent);
+        _setConversationCache(_currentConversationId, List.from(_messagesAgent));
         _saveConversationHistoryToDiskCache(_currentConversationId, _messagesAgent);
       }
     } else {
@@ -1096,6 +1124,16 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   String _currentConversationId = '';
   List<Map<String, String>> _conversations = [];
   final Map<String, List<Map<String, dynamic>>> _conversationMessagesCache = {};
+
+  void _setConversationCache(String id, List<Map<String, dynamic>> messages) {
+    if (id.isEmpty) return;
+    _conversationMessagesCache.remove(id);
+    _conversationMessagesCache[id] = messages;
+    // Bounded L1 cache: Keep at most 6 recent conversations in RAM, older ones safely retained in disk cache
+    while (_conversationMessagesCache.length > 6) {
+      _conversationMessagesCache.remove(_conversationMessagesCache.keys.first);
+    }
+  }
 
   Future<File> _getCacheFile(String filename) async {
     final dir = await getApplicationDocumentsDirectory();
@@ -1150,7 +1188,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
         final decoded = jsonDecode(raw);
         if (decoded is List) {
           final list = decoded.map((x) => Map<String, dynamic>.from(x as Map)).toList();
-          _conversationMessagesCache[convId] = list;
+          _setConversationCache(convId, list);
           return list;
         }
       }
@@ -1670,9 +1708,11 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
 
     // 1. Instant L1 memory cache hit (0ms)
     if (_conversationMessagesCache.containsKey(id) && _conversationMessagesCache[id]!.isNotEmpty) {
+      final cached = _conversationMessagesCache[id]!;
+      _setConversationCache(id, cached); // Refresh LRU recency
       setState(() {
         _messagesAgent.clear();
-        _messagesAgent.addAll(_conversationMessagesCache[id]!);
+        _messagesAgent.addAll(cached);
       });
       _scrollToBottom();
     } else {
@@ -2115,9 +2155,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
           }
         },
         onSoundLevelChange: (level) {
-          if (mounted) setState(() {
-            _currentSoundLevel = level;
-          });
+          _currentSoundLevel = level;
         },
         listenFor: const Duration(seconds: 60),
         pauseFor: const Duration(seconds: 10),
@@ -3601,7 +3639,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
               }).where((m) => m.isNotEmpty).toList();
 
               if (convId.isNotEmpty) {
-                _conversationMessagesCache[convId] = loadedMessages;
+                _setConversationCache(convId, loadedMessages);
                 _saveConversationHistoryToDiskCache(convId, loadedMessages);
               }
 
@@ -6730,9 +6768,13 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
         await file.writeAsBytes(audioData);
         
         final player = AudioPlayer();
-        await player.play(DeviceFileSource(file.path));
-        await player.onPlayerComplete.first;
-        return true;
+        try {
+          await player.play(DeviceFileSource(file.path));
+          await player.onPlayerComplete.first;
+          return true;
+        } finally {
+          await player.dispose();
+        }
       }
       return false;
     } catch (e) {
@@ -7119,9 +7161,18 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     
     bool isImage = false;
     String displayContent = content;
+    Uint8List? imageBytes;
     if (content.startsWith('__IMAGE__:')) {
       isImage = true;
-      displayContent = content.substring(10).replaceAll(RegExp(r'\s+'), '');
+      if (message['_cachedBytes'] is Uint8List) {
+        imageBytes = message['_cachedBytes'] as Uint8List;
+      } else {
+        try {
+          final cleanBase64 = content.substring(10).replaceAll(RegExp(r'\s+'), '');
+          imageBytes = base64Decode(cleanBase64);
+          message['_cachedBytes'] = imageBytes;
+        } catch (_) {}
+      }
     }
 
     // Guard against hollow empty bubbles
@@ -7163,12 +7214,14 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                   child: isImage
                       ? ClipRRect(
                           borderRadius: BorderRadius.circular(12),
-                          child: Image.memory(
-                            base64Decode(displayContent),
-                            fit: BoxFit.cover,
-                            cacheWidth: 800,
-                            gaplessPlayback: true,
-                          ),
+                          child: (imageBytes != null)
+                              ? Image.memory(
+                                  imageBytes,
+                                  fit: BoxFit.cover,
+                                  cacheWidth: 800,
+                                  gaplessPlayback: true,
+                                )
+                              : const SizedBox.shrink(),
                         )
                       : Text(
                           content,
@@ -7218,12 +7271,14 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                           constraints: BoxConstraints(maxWidth: screenWidth * 0.88),
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(18),
-                            child: Image.memory(
-                              base64Decode(displayContent),
-                              fit: BoxFit.cover,
-                              cacheWidth: 800,
-                              gaplessPlayback: true,
-                            ),
+                            child: (imageBytes != null)
+                                ? Image.memory(
+                                    imageBytes,
+                                    fit: BoxFit.cover,
+                                    cacheWidth: 800,
+                                    gaplessPlayback: true,
+                                  )
+                                : const SizedBox.shrink(),
                           ),
                         )
                       : (isAgent 

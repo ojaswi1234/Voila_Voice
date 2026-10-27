@@ -42,8 +42,8 @@ class _AudioVisualizerState extends State<AudioVisualizer> {
       _controller.amplitude = targetAmp; 
       _controller.speed = 0.1;
     } else {
-      _controller.amplitude = 0.05; 
-      _controller.speed = 0.03; 
+      _controller.amplitude = 0.0; 
+      _controller.speed = 0.0; 
     }
   }
 
@@ -53,8 +53,10 @@ class _AudioVisualizerState extends State<AudioVisualizer> {
       height: 60,
       width: double.infinity,
       alignment: Alignment.center,
-      child: SiriWaveform.ios9(
-        controller: _controller,
+      child: RepaintBoundary(
+        child: SiriWaveform.ios9(
+          controller: _controller,
+        ),
       ),
     );
   }
