@@ -14,12 +14,13 @@ def export_tokens():
         css_content += f"  /* {theme_name} */\n"
         css_content += f"  .{theme_name} {{\n"
         for key, val in theme_data.items():
+            clean_key = key.replace("_", "-")
             if isinstance(val, tuple):
-                css_content += f"    --{key.replace(\"_\", \"-\")}: rgb({val[0]}, {val[1]}, {val[2]});\n"
+                css_content += f"    --{clean_key}: rgb({val[0]}, {val[1]}, {val[2]});\n"
             elif isinstance(val, str):
-                css_content += f"    --{key.replace(\"_\", \"-\")}: {val};\n"
+                css_content += f"    --{clean_key}: {val};\n"
             elif isinstance(val, (int, float)) and not isinstance(val, bool):
-                css_content += f"    --{key.replace(\"_\", \"-\")}: {val};\n"
+                css_content += f"    --{clean_key}: {val};\n"
         css_content += "  }\n"
     
     # default body class mapping
