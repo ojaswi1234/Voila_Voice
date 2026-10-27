@@ -30,6 +30,3 @@ jobs:
       
       - name: Timestamp
         run: echo "Keep-alive ping completed at $(date)"
-      
-      - name: Wait before next ping
-        run: sleep 30

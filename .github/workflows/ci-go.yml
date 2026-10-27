@@ -2,7 +2,7 @@ name: CI — Go Backend & Local Agent
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, feature/tui-dashboard ]
     paths:
       - '**.go'
       - 'go.mod'
@@ -11,11 +11,16 @@ on:
       - 'local-agent/go.sum'
       - '.github/workflows/ci-go.yml'
   pull_request:
-    branches: [ main ]
+    branches: [ main, feature/tui-dashboard ]
     paths:
       - '**.go'
       - 'go.mod'
       - 'go.sum'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   # ─────────────────────────────────────────────────────────────

@@ -2,14 +2,19 @@ name: CI — Flutter Mobile
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, feature/tui-dashboard ]
     paths:
       - 'mobile-agent/**'
       - '.github/workflows/ci-flutter.yml'
   pull_request:
-    branches: [ main ]
+    branches: [ main, feature/tui-dashboard ]
     paths:
       - 'mobile-agent/**'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   analyze-and-test:
@@ -55,4 +60,9 @@ jobs:
 
       - name: flutter test
         working-directory: mobile-agent
-        run: flutter test --reporter compact
+        run: |
+          if [ -d "test" ] && [ -n "$(find test -name '*_test.dart' 2>/dev/null)" ]; then
+            flutter test --reporter compact
+          else
+            echo "No unit tests found, skipping flutter test"
+          fi

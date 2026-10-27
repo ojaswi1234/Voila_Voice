@@ -2,14 +2,19 @@ name: CI — Python Local Agent
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, feature/tui-dashboard ]
     paths:
       - 'local-agent/**.py'
       - '.github/workflows/ci-python.yml'
   pull_request:
-    branches: [ main ]
+    branches: [ main, feature/tui-dashboard ]
     paths:
       - 'local-agent/**.py'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   lint-and-check:
