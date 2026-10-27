@@ -626,6 +626,8 @@ def switch_section(section):
     if section == current_section:
         return
     current_section = section
+    for s, _ in NAV_ITEMS:
+        _style_nav_button(s)
     refresh_dashboard_content()
 
 # Bind both close button elements for better click detection
@@ -637,12 +639,12 @@ canvas.tag_bind(close_btn, '<Leave>', on_leave_close)
 canvas.tag_bind(close_btn_bg, '<Leave>', on_leave_close)
 
 def start_move(e):
-    if dashboard_active or dashboard_transition_in_progress:
+    if dashboard_active or is_dash_transitioning or dashboard_transition_in_progress:
         return
     root.x, root.y = e.x, e.y
 
 def stop_move(e):
-    if dashboard_active or dashboard_transition_in_progress:
+    if dashboard_active or is_dash_transitioning or dashboard_transition_in_progress:
         return
     root.x, root.y = None, None
     try:
@@ -652,7 +654,7 @@ def stop_move(e):
         pass
 
 def do_move(e):
-    if dashboard_active or dashboard_transition_in_progress:
+    if dashboard_active or is_dash_transitioning or dashboard_transition_in_progress:
         return
     root.geometry(f"+{root.winfo_x() + (e.x - root.x)}+{root.winfo_y() + (e.y - root.y)}")
 
@@ -715,7 +717,7 @@ transition_in_progress = False
 
 def update_expression():
     global ai_state, alert_state
-    if dashboard_active or dashboard_transition_in_progress:
+    if dashboard_active or is_dash_transitioning or dashboard_transition_in_progress:
         return
         
     if alert_state["active"]:
@@ -866,6 +868,7 @@ def init_dash_sphere():
 
 def update_dash_sphere(pulse, r1_x, r1_y, r1_z, r2_x, r2_y, r2_z, r3_x, r3_y, r3_z):
     if not dash_sphere_canvas: return
+    if not dashboard_active and not is_dash_transitioning: return
     c = dash_sphere_canvas
     p = dash_sphere_parts
     cx, cy = 60, 60
@@ -880,7 +883,6 @@ def update_dash_sphere(pulse, r1_x, r1_y, r1_z, r2_x, r2_y, r2_z, r3_x, r3_y, r3
             c.itemconfig(p['core_bg'], state='normal', fill='#3f3f46')
             c.coords(p['core_bg'], cx-(6)*scale, cy-(6)*scale, cx+(6)*scale, cy+(6)*scale)
         except: pass
-        c.update_idletasks()
         return
 
     # Dynamic theme colors
@@ -916,9 +918,6 @@ def update_dash_sphere(pulse, r1_x, r1_y, r1_z, r2_x, r2_y, r2_z, r3_x, r3_y, r3
     update_3d_ring_occluded(c, p['core_arc1'], p['back_arc1'], cx, cy, 14, r1_x, r1_y, r1_z, scale, p['shadow1'], 2*scale)
     update_3d_ring_occluded(c, p['core_arc2'], p['back_arc2'], cx, cy, 17, r2_x, r2_y, r2_z, scale, p['shadow2'], 2*scale)
     update_3d_ring_occluded(c, p['core_arc3'], p['back_arc3'], cx, cy, 20, r3_x, r3_y, r3_z, scale, p['shadow3'], 2*scale)
-    
-    # Force redraw
-    c.update_idletasks()
 
 
 def build_dashboard_ui():
@@ -1012,8 +1011,8 @@ def _make_btn(parent, text, cmd, bg='#374151', fg='#E5E7EB', width=8):
                      relief='flat', bd=0, font=('Segoe UI', 9), cursor='hand2',
                      padx=10, pady=8, width=width)
 
-def _api_call(method, path, payload=None):
-    """Call the local voila.exe HTTP server synchronously."""
+def _api_call(method, path, payload=None, timeout=2.5):
+    """Call the local voila.exe HTTP server synchronously with a fast timeout."""
     url = f'http://localhost:8088{path}'
     try:
         if payload is not None:
@@ -1021,10 +1020,31 @@ def _api_call(method, path, payload=None):
             req = _urllib_req.Request(url, data=data, headers={'Content-Type': 'application/json'}, method=method)
         else:
             req = _urllib_req.Request(url, method=method)
-        with _urllib_req.urlopen(req, timeout=10) as r:
+        with _urllib_req.urlopen(req, timeout=timeout) as r:
             return _json_mod.loads(r.read())
     except Exception as e:
         return {'error': str(e)}
+
+def _api_call_async(method, path, payload=None, callback=None, timeout=3.0):
+    """Call the local voila.exe HTTP server asynchronously in a background thread."""
+    def _worker():
+        res = _api_call(method, path, payload, timeout=timeout)
+        if callback:
+            try:
+                root.after(0, callback, res)
+            except Exception:
+                pass
+    threading.Thread(target=_worker, daemon=True).start()
+
+_settings_data_cache = {
+    'groq_api_key_set': 'false',
+    'groq_model': 'openai/gpt-oss-120b',
+    'ollama_base_url': 'http://localhost:11434',
+    'ollama_model': 'gemma4:31b',
+    'ollama_api_key_set': 'false',
+    'ollama_secondary_api_key_set': 'false',
+}
+_mcp_data_cache = {'servers': [], 'catalog': [], 'connector_states': {}, 'skills': []}
 
 
 import json
@@ -1134,11 +1154,11 @@ _documents_frame_widget = None
 
 
 def _show_settings_widgets():
-    global _settings_frame_widget
+    global _settings_frame_widget, _settings_data_cache
     _hide_settings_widgets()
 
-    # Fetch current values from agent
-    data = _api_call('GET', '/api-keys')
+    # Use cached data immediately for 0ms instantaneous rendering
+    data = dict(_settings_data_cache)
 
     frame = tk.Frame(dash_content, bg='#0F1115')
     frame.place(x=0, y=0, relwidth=1.0, relheight=1.0)
@@ -1279,16 +1299,20 @@ def _show_settings_widgets():
     def on_groq_verify():
         groq_status_var.set('⏳ Verifying...')
         groq_status_lbl.config(fg='#F59E0B')
-        frame.update_idletasks()
+        api_k = groq_key_var.get().strip()
+        model_k = groq_model_var.get().strip()
 
         def _do():
-            res = _api_call('POST', '/verify-groq', {'api_key': groq_key_var.get().strip(), 'model': groq_model_var.get().strip()})
-            if res.get('status') == 'ok':
-                groq_status_var.set(f'✓ OK: {res.get("response","")[:30]}')
-                groq_status_lbl.config(fg='#10B981')
-            else:
-                groq_status_var.set(f'✗ {res.get("message", res.get("error","Unknown"))[:40]}')
-                groq_status_lbl.config(fg='#EF4444')
+            res = _api_call('POST', '/verify-groq', {'api_key': api_k, 'model': model_k})
+            def _apply():
+                if not _settings_frame_widget: return
+                if res.get('status') == 'ok':
+                    groq_status_var.set(f'✓ OK: {res.get("response","")[:30]}')
+                    groq_status_lbl.config(fg='#10B981')
+                else:
+                    groq_status_var.set(f'✗ {res.get("message", res.get("error","Unknown"))[:40]}')
+                    groq_status_lbl.config(fg='#EF4444')
+            root.after(0, _apply)
         threading.Thread(target=_do, daemon=True).start()
 
     def on_groq_delete():
@@ -1412,22 +1436,27 @@ def _show_settings_widgets():
     def on_ollama_verify():
         ollama_status_var.set('⏳ Verifying...')
         ollama_status_lbl.config(fg='#F59E0B')
-        frame.update_idletasks()
+        base_u = ollama_url_var.get().strip()
+        model_k = ollama_model_var.get().strip()
+        api_k = ollama_key_var.get().strip()
 
         def _do():
             # Save URL/model first so the agent uses the live values
             _api_call('POST', '/api-keys', {
-                'ollama_base_url': ollama_url_var.get().strip(),
-                'ollama_model': ollama_model_var.get().strip(),
+                'ollama_base_url': base_u,
+                'ollama_model': model_k,
                 'action': 'save'
             })
-            res = _api_call('POST', '/verify-ollama', {'base_url': ollama_url_var.get().strip(), 'model': ollama_model_var.get().strip(), 'api_key': ollama_key_var.get().strip()})
-            if res.get('status') == 'ok':
-                ollama_status_var.set(f'✓ OK: {res.get("response","")[:30]}')
-                ollama_status_lbl.config(fg='#10B981')
-            else:
-                ollama_status_var.set(f'✗ {res.get("message", res.get("error","Unknown"))[:50]}')
-                ollama_status_lbl.config(fg='#EF4444')
+            res = _api_call('POST', '/verify-ollama', {'base_url': base_u, 'model': model_k, 'api_key': api_k})
+            def _apply():
+                if not _settings_frame_widget: return
+                if res.get('status') == 'ok':
+                    ollama_status_var.set(f'✓ OK: {res.get("response","")[:30]}')
+                    ollama_status_lbl.config(fg='#10B981')
+                else:
+                    ollama_status_var.set(f'✗ {res.get("message", res.get("error","Unknown"))[:50]}')
+                    ollama_status_lbl.config(fg='#EF4444')
+            root.after(0, _apply)
         threading.Thread(target=_do, daemon=True).start()
 
     def on_ollama_delete():
@@ -1519,7 +1548,6 @@ def _show_settings_widgets():
 
     def _draw_progress_bar(canvas_widget, used, total, color='#6366F1'):
         """Draw a sleek progress bar on a tk.Canvas."""
-        canvas_widget.update_idletasks()
         w = max(canvas_widget.winfo_width(), 200)
         canvas_widget.delete('all')
         # Background track
@@ -1553,60 +1581,63 @@ def _show_settings_widgets():
         try:
             path = '/token-usage?fetch_limits=1' if fetch_limits else '/token-usage'
             data = _api_call('GET', path)
-            if 'error' in data:
-                token_status_var.set(f'⚠ {data["error"][:60]}')
-                return
+            def _apply_token_ui():
+                if not _settings_frame_widget:
+                    return
+                if 'error' in data:
+                    token_status_var.set(f'⚠ {data["error"][:60]}')
+                    return
 
-            # ── Groq ────────────────────────────────────────────────────────
-            g_s_in  = data.get('groq_session_in', 0)
-            g_s_out = data.get('groq_session_out', 0)
-            g_d_in  = data.get('groq_day_in', 0)
-            g_d_out = data.get('groq_day_out', 0)
-            g_sess = g_s_in + g_s_out
-            g_day  = g_d_in + g_d_out
+                # ── Groq ────────────────────────────────────────────────────────
+                g_s_in  = data.get('groq_session_in', 0)
+                g_s_out = data.get('groq_session_out', 0)
+                g_d_in  = data.get('groq_day_in', 0)
+                g_d_out = data.get('groq_day_out', 0)
+                g_sess = g_s_in + g_s_out
+                g_day  = g_d_in + g_d_out
 
-            g_tpd_limit = data.get('groq_tpd_limit', 0)
-            g_tpd_rem   = data.get('groq_tpd_remaining', 0)
-            g_rpm_limit = data.get('groq_rpm_limit', 0)
-            g_rpm_rem   = data.get('groq_rpm_remaining', 0)
+                g_tpd_limit = data.get('groq_tpd_limit', 0)
+                g_tpd_rem   = data.get('groq_tpd_remaining', 0)
+                g_rpm_limit = data.get('groq_rpm_limit', 0)
+                g_rpm_rem   = data.get('groq_rpm_remaining', 0)
 
-            sess_txt = f'Session:  {_fmt_tokens(g_sess)} ({_fmt_tokens(g_s_in)} in / {_fmt_tokens(g_s_out)} out)'
-            day_txt  = f'Today:    {_fmt_tokens(g_day)}  ({_fmt_tokens(g_d_in)} in / {_fmt_tokens(g_d_out)} out)'
-            groq_sess_var.set(sess_txt)
-            groq_day_var.set(day_txt)
+                sess_txt = f'Session:  {_fmt_tokens(g_sess)} ({_fmt_tokens(g_s_in)} in / {_fmt_tokens(g_s_out)} out)'
+                day_txt  = f'Today:    {_fmt_tokens(g_day)}  ({_fmt_tokens(g_d_in)} in / {_fmt_tokens(g_d_out)} out)'
+                groq_sess_var.set(sess_txt)
+                groq_day_var.set(day_txt)
 
-            if g_tpd_limit > 0:
-                g_used = g_tpd_limit - g_tpd_rem
-                rl_txt = f'RPM: {g_rpm_rem}/{g_rpm_limit}  |  TPM limit: {_fmt_tokens(g_tpd_limit)}  remaining: {_fmt_tokens(g_tpd_rem)}'
-                groq_rl_var.set(rl_txt)
-                _draw_progress_bar(groq_bar_canvas, g_used, g_tpd_limit, '#6366F1')
-            else:
-                groq_rl_var.set('Rate limits: click ↻ Refresh (fetches live headers from Groq)')
-                _draw_progress_bar(groq_bar_canvas, g_day, 0, '#6366F1')
+                if g_tpd_limit > 0:
+                    g_used = g_tpd_limit - g_tpd_rem
+                    rl_txt = f'RPM: {g_rpm_rem}/{g_rpm_limit}  |  TPM limit: {_fmt_tokens(g_tpd_limit)}  remaining: {_fmt_tokens(g_tpd_rem)}'
+                    groq_rl_var.set(rl_txt)
+                    _draw_progress_bar(groq_bar_canvas, g_used, g_tpd_limit, '#6366F1')
+                else:
+                    groq_rl_var.set('Rate limits: click ↻ Refresh (fetches live headers from Groq)')
+                    _draw_progress_bar(groq_bar_canvas, g_day, 0, '#6366F1')
 
-            # ── Ollama ──────────────────────────────────────────────────────
-            o_s_in  = data.get('ollama_session_in', 0)
-            o_s_out = data.get('ollama_session_out', 0)
-            o_d_in  = data.get('ollama_day_in', 0)
-            o_d_out = data.get('ollama_day_out', 0)
-            o_sess = o_s_in + o_s_out
-            o_day  = o_d_in + o_d_out
+                # ── Ollama ──────────────────────────────────────────────────────
+                o_s_in  = data.get('ollama_session_in', 0)
+                o_s_out = data.get('ollama_session_out', 0)
+                o_d_in  = data.get('ollama_day_in', 0)
+                o_d_out = data.get('ollama_day_out', 0)
+                o_sess = o_s_in + o_s_out
+                o_day  = o_d_in + o_d_out
 
-            o_sess_txt = f'Session:  {_fmt_tokens(o_sess)} ({_fmt_tokens(o_s_in)} in / {_fmt_tokens(o_s_out)} out)'
-            o_day_txt  = f'Today:    {_fmt_tokens(o_day)}  ({_fmt_tokens(o_d_in)} in / {_fmt_tokens(o_d_out)} out)'
-            ollama_sess_var.set(o_sess_txt)
-            ollama_day_var.set(o_day_txt)
-            _draw_progress_bar(ollama_bar_canvas, o_day, 0, '#F59E0B')
+                o_sess_txt = f'Session:  {_fmt_tokens(o_sess)} ({_fmt_tokens(o_s_in)} in / {_fmt_tokens(o_s_out)} out)'
+                o_day_txt  = f'Today:    {_fmt_tokens(o_day)}  ({_fmt_tokens(o_d_in)} in / {_fmt_tokens(o_d_out)} out)'
+                ollama_sess_var.set(o_sess_txt)
+                ollama_day_var.set(o_day_txt)
+                _draw_progress_bar(ollama_bar_canvas, o_day, 0, '#F59E0B')
 
-            reset = data.get('reset_date', '')
-            token_status_var.set(f'✓ Updated  |  Daily counters reset: {reset}  |  Last refresh: {time.strftime("%H:%M:%S")}')
+                reset = data.get('reset_date', '')
+                token_status_var.set(f'✓ Updated  |  Daily counters reset: {reset}  |  Last refresh: {time.strftime("%H:%M:%S")}')
 
+            root.after(0, _apply_token_ui)
         except Exception as e:
-            token_status_var.set(f'⚠ Error: {str(e)[:60]}')
+            root.after(0, lambda: token_status_var.set(f'⚠ Error: {str(e)[:60]}'))
 
     def _on_refresh(fetch_limits=False):
         token_status_var.set('⏳ Fetching...')
-        token_frame.update_idletasks()
         threading.Thread(target=_load_token_data, args=(fetch_limits,), daemon=True).start()
 
     # Buttons row
@@ -1624,6 +1655,32 @@ def _show_settings_widgets():
 
     # Auto-load on settings page open (no rate limit fetch, just local data)
     threading.Thread(target=_load_token_data, args=(False,), daemon=True).start()
+
+    # Async background update for live API keys settings
+    def _on_keys_loaded(new_data):
+        if not new_data or 'error' in new_data:
+            return
+        _settings_data_cache.update(new_data)
+        if not _settings_frame_widget:
+            return
+        try:
+            if new_data.get('groq_api_key_set') == 'true':
+                groq_status_var.set('● Set')
+                groq_status_lbl.config(fg='#10B981')
+            if 'groq_model' in new_data and new_data['groq_model']:
+                groq_model_var.set(new_data['groq_model'])
+            if 'ollama_base_url' in new_data and new_data['ollama_base_url']:
+                ollama_url_var.set(new_data['ollama_base_url'])
+            if 'ollama_model' in new_data and new_data['ollama_model']:
+                ollama_model_var.set(new_data['ollama_model'])
+            if new_data.get('ollama_api_key_set') == 'true' and not ollama_key_var.get():
+                ollama_key_var.set('********')
+            if new_data.get('ollama_secondary_api_key_set') == 'true' and not ollama_sec_key_var.get():
+                ollama_sec_key_var.set('********')
+        except Exception:
+            pass
+
+    _api_call_async('GET', '/api-keys', callback=_on_keys_loaded)
 
     # ─── Info footer ─────────────────────────────────────────────────────────
 
@@ -1733,11 +1790,12 @@ def _show_settings_widgets():
 
     # --- FLUSH MEMORY ---
     def flush_memory():
-        try:
-            _api_call('POST', '/flush_memory', {})
-            tk.messagebox.showinfo("Memory Flushed", "Command memory has been successfully cleared.")
-        except Exception as e:
-            tk.messagebox.showerror("Error", str(e))
+        def _on_flushed(res):
+            if res and 'error' in res:
+                tk.messagebox.showerror("Error", str(res['error']))
+            else:
+                tk.messagebox.showinfo("Memory Flushed", "Command memory has been successfully cleared.")
+        _api_call_async('POST', '/flush_memory', {}, callback=_on_flushed)
             
     mem_frame = tk.Frame(inner, bg='#1A1D23', highlightbackground='#2A2D35', highlightthickness=1)
     mem_frame.grid(row=8, column=0, columnspan=4, sticky='ew', padx=16, pady=12)
@@ -1769,8 +1827,6 @@ def refresh_dashboard_content():
     dash_title_var.set(current_section)
     session_duration = int((time.time() - usage_stats['session_start']) / 60)
     dash_session_var.set(f'{session_duration}m')
-    for section, _ in NAV_ITEMS:
-        _style_nav_button(section)
 
     dash_canvas.delete('all')
     w = max(dash_canvas.winfo_width(), 700)
@@ -2048,7 +2104,7 @@ is_dash_transitioning = False
 dash_opening = False
 
 def open_dashboard():
-    global dashboard_active, heatmap_cache, is_dash_transitioning, dash_opening, dash_transition_progress
+    global dashboard_active, heatmap_cache, is_dash_transitioning, dash_opening, dash_transition_progress, dashboard_transition_in_progress
     if is_dash_transitioning: return
     build_dashboard_ui()
     heatmap_cache = None
@@ -2061,12 +2117,13 @@ def open_dashboard():
         
     # We do NOT pack dashboard_frame yet! We let the empty canvas animate to prevent layout lag.
     is_dash_transitioning = True
+    dashboard_transition_in_progress = True
     dash_opening = True
     dash_transition_progress = 0.0
     animate_dashboard_size()
 
 def close_dashboard():
-    global dashboard_active, heatmap_cache, is_dash_transitioning, dash_opening, dash_transition_progress
+    global dashboard_active, heatmap_cache, is_dash_transitioning, dash_opening, dash_transition_progress, dashboard_transition_in_progress
     if is_dash_transitioning: return
     dashboard_active = False
     heatmap_cache = None
@@ -2076,25 +2133,28 @@ def close_dashboard():
     canvas.pack(fill='both', expand=True)
     
     is_dash_transitioning = True
+    dashboard_transition_in_progress = True
     dash_opening = False
     dash_transition_progress = 1.0
     animate_dashboard_size()
 
 def animate_dashboard_size():
-    global is_dash_transitioning, dash_transition_progress, current_width, current_height
+    global is_dash_transitioning, dash_transition_progress, current_width, current_height, dashboard_transition_in_progress
     if not is_dash_transitioning: return
         
-    speed = 0.08 # ~12 frames
+    speed = 0.12 # ~8 snappy frames
     if dash_opening:
         dash_transition_progress += speed
         if dash_transition_progress >= 1.0:
             dash_transition_progress = 1.0
             is_dash_transitioning = False
+            dashboard_transition_in_progress = False
     else:
         dash_transition_progress -= speed
         if dash_transition_progress <= 0.0:
             dash_transition_progress = 0.0
             is_dash_transitioning = False
+            dashboard_transition_in_progress = False
             
     # Cubic ease-out
     t = dash_transition_progress
@@ -2124,10 +2184,6 @@ def animate_dashboard_size():
     set_round_rect(pill, pad, pad, w - pad, h - pad, morph_r)
     canvas.itemconfig(pill, fill='#0F1115', outline='#27272a') # blend into dashboard color
     canvas.config(width=w, height=h)
-    
-    # Critical for smooth Tkinter resizing: force the layout engine to paint the canvas 
-    # immediately, synchronizing it with the OS-level root.geometry() window resize!
-    root.update_idletasks()
     
     if not is_dash_transitioning:
         if dash_opening:
@@ -2476,7 +2532,7 @@ def animation_loop():
     # The user explicitly wants it to ALWAYS spin now to avoid any freeze bugs
     update_dash_sphere(pulse, r1_x, r1_y, r1_z, r2_x, r2_y, r2_z, r3_x, r3_y, r3_z)
 
-    if not dashboard_active and not dashboard_transition_in_progress:
+    if not dashboard_active and not is_dash_transitioning and not dashboard_transition_in_progress:
         if alert_state.get("state_changed"):
             update_expression()
             alert_state["state_changed"] = False
@@ -2854,8 +2910,8 @@ def animation_loop():
                 canvas.itemconfig(surveillance_dot, state='hidden')
             except: pass
 
-    elif dashboard_active and anim_frame % 50 == 0:
-        if current_section not in ('Settings', 'MCP/Tools', 'Documents'):
+    elif dashboard_active and anim_frame % 100 == 0:
+        if current_section not in ('Settings', 'MCP/Tools', 'Documents', 'Teams'):
             refresh_dashboard_content()
 
     root.after(20, animation_loop)
@@ -3094,8 +3150,11 @@ def read_output():
             _voila_log.error(f"Error reading backend stdout: {_re}")
             break
 
+_last_analytics_refresh = 0
+
 def _drain_line_queue():
     """UI thread: drain up to 250 queued lines per tick so UI never lags behind finished tasks."""
+    global _last_analytics_refresh
     did_process_status = False
     for _ in range(250):
         try:
@@ -3106,7 +3165,9 @@ def _drain_line_queue():
         except _queue.Empty:
             break
             
-    if did_process_status and dashboard_active and current_section == 'Analytics':
+    now = time.time()
+    if did_process_status and dashboard_active and current_section == 'Analytics' and (now - _last_analytics_refresh > 1.5):
+        _last_analytics_refresh = now
         refresh_dashboard_content()
         
     root.after(30, _drain_line_queue)  # Poll every 30ms
@@ -3539,13 +3600,12 @@ def _hide_mcp_widgets():
         _mcp_frame_widget = None
 
 def _show_mcp_widgets():
-    global _mcp_frame_widget
+    global _mcp_frame_widget, _mcp_data_cache
     _hide_mcp_widgets()
 
-    # Fetch data
-    data = _api_call('GET', '/mcp-api')
-    if 'error' in data:
-        data = {'servers': [], 'catalog': [], 'connector_states': {}, 'skills': []}
+    # Use cached data immediately for 0ms instantaneous rendering
+    data = dict(_mcp_data_cache)
+    current_tab = ['servers']
 
     frame = tk.Frame(dash_content, bg='#0F1115')
     frame.place(x=0, y=0, relwidth=1.0, relheight=1.0)
@@ -3559,6 +3619,7 @@ def _show_mcp_widgets():
     content_frame.pack(fill='both', expand=True)
 
     def render_servers():
+        current_tab[0] = 'servers'
         for widget in content_frame.winfo_children():
             widget.destroy()
         
@@ -3626,15 +3687,15 @@ def _show_mcp_widgets():
         def _submit_server():
             sid = id_ent.get().strip()
             if not sid: return
-            _api_call('POST', '/mcp-api', {
+            payload = {
                 'action': 'add_server', 
                 'id': sid, 
                 'command': cmd_ent.get().strip(), 
                 'args': args_ent.get().strip(),
                 'env_json': env_text.get('1.0', 'end').strip(),
                 'allowed_paths': paths_ent.get().strip()
-            })
-            _show_mcp_widgets()
+            }
+            _api_call_async('POST', '/mcp-api', payload, callback=lambda _: _show_mcp_widgets())
             
         btn_f = tk.Frame(add_form_frame, bg='#16171C')
         btn_f.pack(fill='x', padx=10, pady=10)
@@ -3660,13 +3721,11 @@ def _show_mcp_widgets():
             tk.Label(top, text=srv.get('id', ''), fg='#FFFFFF', bg='#1A1D23', font=('Segoe UI', 11, 'bold')).pack(side='left', padx=5)
             
             def _toggle(sid=srv.get('id')):
-                _api_call('POST', '/mcp-api', {'action': 'toggle_server', 'id': sid})
-                _show_mcp_widgets()
+                _api_call_async('POST', '/mcp-api', {'action': 'toggle_server', 'id': sid}, callback=lambda _: _show_mcp_widgets())
                 
             def _remove(sid=srv.get('id')):
                 if _ask_yesno("Remove", f"Remove server {sid}?"):
-                    _api_call('POST', '/mcp-api', {'action': 'remove_server', 'id': sid})
-                    _show_mcp_widgets()
+                    _api_call_async('POST', '/mcp-api', {'action': 'remove_server', 'id': sid}, callback=lambda _: _show_mcp_widgets())
 
             edit_form_frame = tk.Frame(item, bg='#16171C', bd=0)
             cmd_ent_edit = _make_field(edit_form_frame, "Command:")
@@ -3685,15 +3744,15 @@ def _show_mcp_widgets():
             env_text_edit.insert('1.0', json.dumps(srv.get('env', {}), indent=2))
             
             def _submit_edit(sid=srv.get('id'), cmd_e=cmd_ent_edit, args_e=args_ent_edit, paths_e=paths_ent_edit, env_e=env_text_edit):
-                _api_call('POST', '/mcp-api', {
+                payload = {
                     'action': 'edit_server', 
                     'id': sid, 
                     'command': cmd_e.get().strip(), 
                     'args': args_e.get().strip(),
                     'env_json': env_e.get('1.0', 'end').strip(),
                     'allowed_paths': paths_e.get().strip()
-                })
-                _show_mcp_widgets()
+                }
+                _api_call_async('POST', '/mcp-api', payload, callback=lambda _: _show_mcp_widgets())
 
             def _toggle_edit(frm=edit_form_frame):
                 if frm.winfo_ismapped():
@@ -3717,6 +3776,7 @@ def _show_mcp_widgets():
             tk.Label(bot, text=cmd_str, fg='#9CA3AF', bg='#1A1D23', font=('Consolas', 9)).pack(side='left')
 
     def render_connectors():
+        current_tab[0] = 'connectors'
         for widget in content_frame.winfo_children():
             widget.destroy()
             
@@ -3763,8 +3823,7 @@ def _show_mcp_widgets():
             tk.Label(top, text=f"[{auth_type}]", fg='#8B5CF6', bg='#1A1D23', font=('Segoe UI', 9, 'bold')).pack(side='left')
             
             def _disconnect(cid=c.get('id')):
-                _api_call('POST', '/mcp-api', {'action': 'disconnect_connector', 'id': cid})
-                _show_mcp_widgets()
+                _api_call_async('POST', '/mcp-api', {'action': 'disconnect_connector', 'id': cid}, callback=lambda _: _show_mcp_widgets())
 
             if is_connected:
                 tk.Button(top, text="Disconnect", bg='#EF4444', fg='white', relief='flat', bd=0, command=_disconnect).pack(side='right')
@@ -3822,13 +3881,13 @@ def _show_mcp_widgets():
                     if is_conn and all_placeholder:
                         return
                     creds = {k: v for k, v in creds.items() if v not in PLACEHOLDER}
-                    _api_call('POST', '/mcp-api', {'action': 'connect_connector', 'id': cid, 'credentials': creds})
-                    _show_mcp_widgets()
+                    _api_call_async('POST', '/mcp-api', {'action': 'connect_connector', 'id': cid, 'credentials': creds}, callback=lambda _: _show_mcp_widgets())
 
                 tk.Button(btn_row, text='Save & Connect', bg='#3B82F6', fg='white', relief='flat',
                           bd=0, command=_save_auth, font=('Segoe UI', 9, 'bold')).pack(side='right', ipadx=6, ipady=2)
 
     def render_skills():
+        current_tab[0] = 'skills'
         for widget in content_frame.winfo_children():
             widget.destroy()
             
@@ -3841,8 +3900,7 @@ def _show_mcp_widgets():
             if not sid: return
             url = _ask_string("Install", "SKILL.md URL:")
             if not url: return
-            _api_call('POST', '/mcp-api', {'action': 'install_skill', 'id': sid, 'source_url': url})
-            _show_mcp_widgets()
+            _api_call_async('POST', '/mcp-api', {'action': 'install_skill', 'id': sid, 'source_url': url}, callback=lambda _: _show_mcp_widgets())
             
         tk.Button(hdr, text='+ Install from URL', bg='#3B82F6', fg='white', relief='flat', bd=0, 
                   command=_install, font=('Segoe UI', 9, 'bold')).pack(side='right', ipadx=5, ipady=2)
@@ -3882,14 +3940,35 @@ def _show_mcp_widgets():
             
             def _uninstall(sid=s.get('id')):
                 if _ask_yesno("Uninstall", f"Uninstall skill {sid}?"):
-                    _api_call('POST', '/mcp-api', {'action': 'uninstall_skill', 'id': sid})
-                    _show_mcp_widgets()
+                    _api_call_async('POST', '/mcp-api', {'action': 'uninstall_skill', 'id': sid}, callback=lambda _: _show_mcp_widgets())
 
             tk.Button(top, text="Uninstall", bg='#EF4444', fg='white', relief='flat', bd=0, command=_uninstall).pack(side='right')
             
             bot = tk.Frame(item, bg='#1A1D23')
             bot.pack(fill='x', padx=10, pady=(0,5))
             tk.Label(bot, text=s.get('source', ''), fg='#9CA3AF', bg='#1A1D23', font=('Consolas', 9)).pack(side='left')
+
+    # Background async refresh
+    def _on_mcp_loaded(new_data):
+        if not new_data or 'error' in new_data:
+            return
+        _mcp_data_cache.clear()
+        _mcp_data_cache.update(new_data)
+        if not _mcp_frame_widget:
+            return
+        data.clear()
+        data.update(new_data)
+        try:
+            if current_tab[0] == 'servers':
+                render_servers()
+            elif current_tab[0] == 'connectors':
+                render_connectors()
+            elif current_tab[0] == 'skills':
+                render_skills()
+        except Exception:
+            pass
+
+    _api_call_async('GET', '/mcp-api', callback=_on_mcp_loaded)
 
     # Tab Buttons
     tk.Button(tab_bar, text='Servers', bg='#1A1D23', fg='#FFFFFF', relief='flat', bd=0, font=('Segoe UI', 11), command=render_servers).pack(side='left', padx=10, pady=5)
