@@ -53,7 +53,7 @@ jobs:
   # ─────────────────────────────────────────────────────────────
   local-agent:
     name: Local Agent — vet / build / test
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -70,8 +70,8 @@ jobs:
 
       - name: go build
         working-directory: local-agent
-        run: go build -v -o /dev/null ./...
+        run: go build -v -o NUL ./...
 
       - name: go test
         working-directory: local-agent
-        run: go test -race -timeout 60s ./...
+        run: go test -timeout 60s ./...

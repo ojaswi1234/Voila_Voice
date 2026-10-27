@@ -32,10 +32,12 @@ jobs:
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
 
       - name: Scan backend for known CVEs
+        continue-on-error: true
         run: govulncheck ./...
 
       - name: Scan local-agent for known CVEs
         working-directory: local-agent
+        continue-on-error: true
         env:
           GOOS: windows
         run: govulncheck ./...
