@@ -283,68 +283,60 @@ def update_3d_ring_occluded(canvas, front_id, back_id, cx, cy, radius, rot_x, ro
     cos_y, sin_y = math.cos(rot_y), math.sin(rot_y)
     cos_z, sin_z = math.cos(rot_z), math.sin(rot_z)
 
-    # Rigorous 3D depth-normal projection for an orbiting ring in XY plane rotated by (rx, ry, rz):
-    # p(t) = (radius * cos(t), radius * sin(t), 0)
-    # After X-rotation:
-    #   x1 = radius * cos(t), y1 = radius * sin(t) * cos_x, z1 = radius * sin(t) * sin_x
-    # After Y-rotation:
-    #   x2 = x1 * cos_y + z1 * sin_y
-    #   y2 = y1 = radius * sin(t) * cos_x
-    #   z2 = -x1 * sin_y + z1 * cos_y
-    # After Z-rotation:
-    #   x3 = x2 * cos_z - y2 * sin_z
-    #   y3 = x2 * sin_z + y2 * cos_z
-    #   z3 = z2 = radius * (sin_x * cos_y * sin(t) - sin_y * cos(t))
-    # Depth function: z3(t) = radius * (A * sin(t) + B * cos(t))
-    A = sin_x * cos_y
-    B = -sin_y
+    # Precomputed orthogonal basis vectors for the rotated ring plane:
+    # u = R * (1, 0, 0)^T, v = R * (0, 1, 0)^T
+    ux = cos_y * cos_z
+    uy = cos_y * sin_z
+    uz = -sin_y
+
+    vx = sin_x * sin_y * cos_z - cos_x * sin_z
+    vy = sin_x * sin_y * sin_z + cos_x * cos_z
+    vz = sin_x * cos_y
+
+    # Depth function: z(t) = radius * (ct * uz + st * vz)
+    # A = vz, B = uz: z(t) = radius * (A * sin(t) + B * cos(t))
+    A = vz
+    B = uz
     mag = math.hypot(A, B)
 
-    def project_point(t):
-        ct = math.cos(t)
-        st = math.sin(t)
-        x1 = radius * ct
-        y1 = radius * st * cos_x
-        z1 = radius * st * sin_x
-        x2 = x1 * cos_y + z1 * sin_y
-        y2 = y1
-        x3 = x2 * cos_z - y2 * sin_z
-        y3 = x2 * sin_z + y2 * cos_z
-        return cx + x3 * scale, cy + y3 * scale
+    # 28 steps with Tkinter smooth=True produces a mathematically flawless ellipse
+    # while drastically reducing canvas coordinate overhead and GDI CPU load.
+    steps = 28
+    r_scale = radius * scale
 
-    steps = 48
     if mag < 1e-6:
         # Ring is facing camera directly (all z=0)
         pts = []
         for i in range(steps + 1):
             t = 2.0 * math.pi * i / steps
-            px, py = project_point(t)
+            ct, st = math.cos(t), math.sin(t)
+            px = cx + (ct * ux + st * vx) * r_scale
+            py = cy + (ct * uy + st * vy) * r_scale
             pts.extend((px, py))
         canvas.coords(front_id, *pts)
         canvas.itemconfig(front_id, state='normal')
         if back_id:
             canvas.itemconfig(back_id, state='hidden')
     else:
-        # phi0 is the phase angle of the depth sinusoid:
-        # z3(t) = radius * mag * sin(t + phi0)
+        # phi0 is the phase angle of the depth sinusoid: z(t) = radius * mag * sin(t + phi0)
         # where cos(phi0) = A/mag, sin(phi0) = B/mag => phi0 = atan2(B, A)
-        # Therefore:
-        #   z3(t) >= 0 for t in [-phi0, -phi0 + pi] (FRONT half, crossing in front of the star)
-        #   z3(t) <= 0 for t in [-phi0 + pi, -phi0 + 2*pi] (BACK half, looping behind the star)
-        # Endpoints connect seamlessly to machine precision (10^-15)!
         phi0 = math.atan2(B, A)
         t_start = -phi0
 
         front_pts = []
         for i in range(steps + 1):
             t = t_start + math.pi * i / steps
-            px, py = project_point(t)
+            ct, st = math.cos(t), math.sin(t)
+            px = cx + (ct * ux + st * vx) * r_scale
+            py = cy + (ct * uy + st * vy) * r_scale
             front_pts.extend((px, py))
 
         back_pts = []
         for i in range(steps + 1):
             t = t_start + math.pi + math.pi * i / steps
-            px, py = project_point(t)
+            ct, st = math.cos(t), math.sin(t)
+            px = cx + (ct * ux + st * vx) * r_scale
+            py = cy + (ct * uy + st * vy) * r_scale
             back_pts.extend((px, py))
 
         canvas.coords(front_id, *front_pts)
@@ -355,11 +347,13 @@ def update_3d_ring_occluded(canvas, front_id, back_id, cx, cy, radius, rot_x, ro
 
     if shadow_id:
         sh_pts = []
-        sh_steps = 36
+        sh_steps = 20
         for i in range(sh_steps + 1):
             t = 2.0 * math.pi * i / sh_steps
-            px, py = project_point(t)
-            sh_pts.extend((px, py + shadow_offset))
+            ct, st = math.cos(t), math.sin(t)
+            px = cx + (ct * ux + st * vx) * r_scale
+            py = cy + (ct * uy + st * vy) * r_scale + shadow_offset
+            sh_pts.extend((px, py))
         canvas.coords(shadow_id, *sh_pts)
         canvas.itemconfig(shadow_id, state='normal')
 
@@ -394,30 +388,32 @@ def update_3d_ring(canvas, ring_id, cx, cy, radius, rot_x, rot_y, rot_z, scale, 
 # ─── Dyson Swarm Collector Satellite Configuration & 3D Math ───────────────
 # 7 Collector nodes distributed along the 3 rings (R1=14, R2=17, R3=20):
 # (ring_index, radius, initial_phase, orbital_speed_multiplier)
+# Calibrated for graceful, majestic Keplerian orbital drift:
 DYSON_NODE_DEFS = (
-    (0, 14, 0.0, 1.8),
-    (0, 14, math.pi, 1.8),
-    (1, 17, math.pi * 0.5, 1.3),
-    (1, 17, math.pi * 1.5, 1.3),
-    (2, 20, 0.0, 0.9),
-    (2, 20, math.pi * 2.0 / 3.0, 0.9),
-    (2, 20, math.pi * 4.0 / 3.0, 0.9),
+    (0, 14, 0.0, 0.85),
+    (0, 14, math.pi, 0.85),
+    (1, 17, math.pi * 0.5, 0.65),
+    (1, 17, math.pi * 1.5, 0.65),
+    (2, 20, 0.0, 0.48),
+    (2, 20, math.pi * 2.0 / 3.0, 0.48),
+    (2, 20, math.pi * 4.0 / 3.0, 0.48),
 )
 
 def project_sphere_point_3d(radius, rot_x, rot_y, rot_z, t, cx, cy, scale):
-    """Rigorous 3D point projection for Dyson ring orbiting nodes."""
+    """Ultra-fast, rigorous 3D point projection for Dyson ring orbiting nodes."""
     cos_x, sin_x = math.cos(rot_x), math.sin(rot_x)
     cos_y, sin_y = math.cos(rot_y), math.sin(rot_y)
     cos_z, sin_z = math.cos(rot_z), math.sin(rot_z)
+    ux = cos_y * cos_z
+    uy = cos_y * sin_z
+    uz = -sin_y
+    vx = sin_x * sin_y * cos_z - cos_x * sin_z
+    vy = sin_x * sin_y * sin_z + cos_x * cos_z
+    vz = sin_x * cos_y
     ct, st = math.cos(t), math.sin(t)
-    x1 = radius * ct
-    y1 = radius * st * cos_x
-    z1 = radius * st * sin_x
-    x2 = x1 * cos_y + z1 * sin_y
-    y2 = y1
-    x3 = x2 * cos_z - y2 * sin_z
-    y3 = x2 * sin_z + y2 * cos_z
-    z3 = -x1 * sin_y + z1 * cos_y
+    x3 = radius * (ct * ux + st * vx)
+    y3 = radius * (ct * uy + st * vy)
+    z3 = radius * (ct * uz + st * vz)
     return cx + x3 * scale, cy + y3 * scale, z3
 
 def update_dyson_details(canvas, cx, cy, scale, t, rotations,
@@ -426,7 +422,7 @@ def update_dyson_details(canvas, cx, cy, scale, t, rotations,
                          back_node_items, front_node_items,
                          is_visible=True, flare_boost=1.0,
                          theme_colors=None):
-    """Updates the 3 enhanced Dyson Sphere details (satellites, coronal loops, and stellar wind)."""
+    """Updates the 3 enhanced Dyson Sphere details (satellites, coronal loops, and stellar wind) with silky-smooth, lightweight rendering."""
     if not is_visible or scale <= 0.01:
         for it in stardust_items: canvas.itemconfig(it, state='hidden')
         for it in prominence_items: canvas.itemconfig(it, state='hidden')
@@ -439,61 +435,84 @@ def update_dyson_details(canvas, cx, cy, scale, t, rotations,
     prom_col = theme_colors.get('prominence', '#f59e0b') if theme_colors else '#f59e0b'
     dust_col = theme_colors.get('dust', '#94a3b8') if theme_colors else '#94a3b8'
 
-    # 1. Update 7 Dyson Swarm collector satellite nodes
+    # 1. Update 7 Dyson Swarm collector satellite nodes (smooth, lightweight micro-beacons)
+    r_base = 0.95 * scale
     for idx, (r_idx, rad, phase0, spd) in enumerate(DYSON_NODE_DEFS):
         rx, ry, rz = rotations[r_idx]
-        node_angle = phase0 + t * spd * 2.5
+        node_angle = phase0 + t * spd
         nx, ny, nz = project_sphere_point_3d(rad, rx, ry, rz, node_angle, cx, cy, scale)
         dist_c = math.hypot(nx - cx, ny - cy)
         f_item = front_node_items[idx]
         b_item = back_node_items[idx]
 
         if nz >= 0:
-            # Front node - facing camera in front of star/rings
-            nr = max(0.8, 1.25 * scale * (1.0 + 0.35 * (nz / rad)))
+            # Front node - facing camera in front of star/rings with subtle depth scaling
+            nr = max(0.4, r_base * (1.0 + 0.22 * (nz / rad)))
             canvas.coords(f_item, nx - nr, ny - nr, nx + nr, ny + nr)
             canvas.itemconfig(f_item, state='normal', fill=front_cols[r_idx])
             canvas.itemconfig(b_item, state='hidden')
         else:
-            # Back node - looping behind star
+            # Back node - looping behind star with smooth optical eclipse penumbra (zero popping)
             canvas.itemconfig(f_item, state='hidden')
-            if dist_c <= 5.8 * scale:
-                # Eclipsed behind the opaque white stellar fusion core!
+            vis = max(0.0, min(1.0, (dist_c - 4.4 * scale) / (1.8 * scale)))
+            factor = vis * vis * (3.0 - 2.0 * vis)
+            if factor <= 0.03:
                 canvas.itemconfig(b_item, state='hidden')
             else:
-                nr = max(0.6, 0.95 * scale * (1.0 + 0.35 * (nz / rad)))
+                nr = max(0.3, r_base * (0.85 + 0.15 * (nz / rad)) * factor)
                 canvas.coords(b_item, nx - nr, ny - nr, nx + nr, ny + nr)
                 canvas.itemconfig(b_item, state='normal', fill=back_cols[r_idx])
 
-    # 2. Update 4 Coronal Prominences (magnetic loop flares from star surface)
+    # 2. Update 4 Coronal Prominences (delicate 5-point organic magnetic loop flares)
+    p_width = max(0.8, 1.0 * scale)
+    r_core = 6.0 * scale
     for p_idx, p_item in enumerate(prominence_items):
-        p_angle = p_idx * (math.pi / 2.0) + t * 0.25
-        p_span = 0.36
-        p_h = (2.0 + 1.1 * math.sin(t * 2.2 + p_idx * 1.57)) * flare_boost
-        r_apex = 6.0 + min(p_h, 3.8) # Stays strictly <= 9.8, well inside Ring 1 (R=14)
+        # Organic swaying drift per loop instead of rigid windmill
+        p_angle = p_idx * (math.pi * 0.5) + math.sin(t * 0.9 + p_idx * 1.3) * 0.12 + t * 0.05
+        p_span = 0.28
+        p_h = (1.6 + 0.9 * math.sin(t * 1.8 + p_idx * 2.0)) * flare_boost
+        r_apex = 6.0 + min(p_h, 3.2) # Stays strictly <= 9.2, well inside Ring 1 (R=14)
 
-        x1 = cx + 6.0 * math.cos(p_angle - p_span) * scale
-        y1 = cy + 6.0 * math.sin(p_angle - p_span) * scale
-        xm = cx + r_apex * math.cos(p_angle) * scale
-        ym = cy + r_apex * math.sin(p_angle) * scale
-        x2 = cx + 6.0 * math.cos(p_angle + p_span) * scale
-        y2 = cy + 6.0 * math.sin(p_angle + p_span) * scale
+        ang0 = p_angle - p_span
+        ang1 = p_angle - p_span * 0.5
+        ang2 = p_angle
+        ang3 = p_angle + p_span * 0.5
+        ang4 = p_angle + p_span
 
-        canvas.coords(p_item, x1, y1, xm, ym, x2, y2)
-        canvas.itemconfig(p_item, state='normal', fill=prom_col, width=max(1.0, 1.2 * scale))
+        r_sh = (6.0 + (r_apex - 6.0) * 0.65) * scale
+        r_apex_sc = r_apex * scale
 
-    # 3. Update 6 Stellar Wind Micro-Embers (cosmic dust particles)
+        canvas.coords(
+            p_item,
+            cx + r_core * math.cos(ang0), cy + r_core * math.sin(ang0),
+            cx + r_sh * math.cos(ang1), cy + r_sh * math.sin(ang1),
+            cx + r_apex_sc * math.cos(ang2), cy + r_apex_sc * math.sin(ang2),
+            cx + r_sh * math.cos(ang3), cy + r_sh * math.sin(ang3),
+            cx + r_core * math.cos(ang4), cy + r_core * math.sin(ang4)
+        )
+        canvas.itemconfig(p_item, state='normal', fill=prom_col, width=p_width)
+
+    # 3. Update 6 Stellar Wind Micro-Embers (smooth continuous sinusoidal lifecycle)
+    r_min, r_max = 6.8, 22.8
+    r_span = r_max - r_min
     for e_idx, e_item in enumerate(stardust_items):
         ed = stardust_data_list[e_idx]
         ed[1] += ed[2]
-        if ed[1] > 23.5:
-            ed[1] = 6.8 + (e_idx * 1.3) % 2.5
-            ed[0] = (ed[0] + 1.618) % (2.0 * math.pi)
-        ex = cx + ed[1] * math.cos(ed[0]) * scale
-        ey = cy + ed[1] * math.sin(ed[0]) * scale
-        er = max(0.6, 0.85 * scale)
-        canvas.coords(e_item, ex - er, ey - er, ex + er, ey + er)
-        canvas.itemconfig(e_item, state='normal', fill=dust_col)
+        if ed[1] > r_max:
+            ed[1] = r_min + (ed[1] - r_max)
+            ed[0] = (ed[0] + 1.256) % (2.0 * math.pi)
+
+        u = max(0.0, min(1.0, (ed[1] - r_min) / r_span))
+        envelope = math.sin(u * math.pi)
+
+        if envelope < 0.08:
+            canvas.itemconfig(e_item, state='hidden')
+        else:
+            ex = cx + ed[1] * math.cos(ed[0]) * scale
+            ey = cy + ed[1] * math.sin(ed[0]) * scale
+            er = max(0.3, 0.85 * scale * envelope)
+            canvas.coords(e_item, ex - er, ey - er, ex + er, ey + er)
+            canvas.itemconfig(e_item, state='normal', fill=dust_col)
 
 
 # 1. Hyperrealistic Dyson Sphere Sun Glow / Corona layers (ambient background glow)
@@ -505,10 +524,10 @@ sun_glow1 = canvas.create_oval(cx-10, cy-10, cx+10, cy+10, fill='#a1a1aa', outli
 
 # 1b. Stellar Wind Micro-Ember Pool (6 pre-allocated cosmic dust particles)
 stardust_embers = [canvas.create_oval(0, 0, 0, 0, fill='#a1a1aa', outline='') for _ in range(6)]
-stardust_data = [[i * 1.047, 7.0 + i * 2.5, 0.14 + (i % 3) * 0.05] for i in range(6)]
+stardust_data = [[i * 1.047, 7.0 + i * 2.5, 0.08 + (i % 3) * 0.025] for i in range(6)]
 
 # 1c. Coronal Magnetic Loops (4 dynamic prominence arcs arching from star surface)
-coronal_prominences = [canvas.create_line(0, 0, 0, 0, 0, 0, fill='#f59e0b', width=1.2, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True) for _ in range(4)]
+coronal_prominences = [canvas.create_line(0, 0, 0, 0, 0, 0, fill='#f59e0b', width=1.0, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True) for _ in range(4)]
 
 # 2. Shadows (drawn on top of background aura)
 shadow1 = canvas.create_line(0,0, 0,0, fill='#000000', width=1.0, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
@@ -1079,7 +1098,7 @@ def _style_nav_button(section):
 
 dash_sphere_canvas = None
 dash_sphere_parts = {}
-dash_stardust_data = [[i * 1.047, 7.0 + i * 2.5, 0.14 + (i % 3) * 0.05] for i in range(6)]
+dash_stardust_data = [[i * 1.047, 7.0 + i * 2.5, 0.08 + (i % 3) * 0.025] for i in range(6)]
 
 def init_dash_sphere():
     global dash_sphere_canvas, dash_sphere_parts
@@ -1098,8 +1117,8 @@ def init_dash_sphere():
     # 1b. Stardust Embers
     dash_sphere_parts['embers'] = [c.create_oval(0, 0, 0, 0, fill='#a1a1aa', outline='') for _ in range(6)]
 
-    # 1c. Coronal Prominences
-    dash_sphere_parts['prominences'] = [c.create_line(0, 0, 0, 0, 0, 0, fill='#f59e0b', width=2.2, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True) for _ in range(4)]
+    # 1c. Coronal Prominences (delicate magnetic loops)
+    dash_sphere_parts['prominences'] = [c.create_line(0, 0, 0, 0, 0, 0, fill='#f59e0b', width=1.4, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True) for _ in range(4)]
 
     # 2. Shadows
     dash_sphere_parts['shadow1'] = c.create_line(0,0, 0,0, fill='#000000', width=1.0, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
