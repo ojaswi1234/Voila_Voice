@@ -780,7 +780,50 @@ def restore_mini_popup_elements(w=240, h=65):
     canvas.itemconfig(pill, state='normal', fill=bg_idle, outline=border_idle, width=2)
 
     canvas.coords(core_bg, cx-6, cy-6, cx+6, cy+6)
-    
+
+    # ── Restore Dyson Sphere ring visibility after dashboard close ─────────────
+    # All face_parts were hidden when the dashboard opened (open_dashboard sets
+    # state='hidden' for every item in face_parts).  The animation_loop only
+    # restores them once is_dash_transitioning is False, but that flag is still
+    # True while animate_dashboard_size() is running its close frames.  So we
+    # must explicitly un-hide and re-position all ring items here so they are
+    # visible the instant the mini popup reappears.
+    if current_plasma_state != "OFF":
+        # Restore ring state to normal
+        for _ring_item in (shadow1, shadow2, shadow3,
+                           back_arc1, back_arc2, back_arc3,
+                           core_arc1, core_arc2, core_arc3):
+            try:
+                canvas.itemconfig(_ring_item, state='normal')
+            except Exception:
+                pass
+        # Immediately compute and apply ring geometry for frame-0 (t based on
+        # current anim_frame so the rings don't jump to origin).
+        _t = anim_frame * 0.01
+        _r1_x = _t * 1.5 + math.sin(_t * 0.8) * 1.2
+        _r1_y = _t * 0.9 + math.cos(_t * 1.1) * 1.5
+        _r1_z = _t * 2.1 + math.sin(_t * 0.5) * 0.8
+        _r2_x = -_t * 0.8 + math.cos(_t * 0.6) * 2.0
+        _r2_y = _t * 1.2 + math.sin(_t * 0.4) * 1.8
+        _r2_z = -_t * 1.5 + math.cos(_t * 0.7) * 1.2
+        _r3_x = _t * 0.5 + math.sin(_t * 0.3) * 2.5
+        _r3_y = -_t * 0.7 + math.cos(_t * 0.25) * 3.0
+        _r3_z = _t * 0.4 + math.sin(_t * 0.2) * 2.0
+        update_3d_ring_occluded(canvas, core_arc1, back_arc1, cx, cy, 14, _r1_x, _r1_y, _r1_z, 1.0, shadow1, 2.0)
+        update_3d_ring_occluded(canvas, core_arc2, back_arc2, cx, cy, 17, _r2_x, _r2_y, _r2_z, 1.0, shadow2, 2.0)
+        update_3d_ring_occluded(canvas, core_arc3, back_arc3, cx, cy, 20, _r3_x, _r3_y, _r3_z, 1.0, shadow3, 2.0)
+    else:
+        # Plasma OFF: hide rings, show grey core
+        for _ring_item in (shadow1, shadow2, shadow3,
+                           back_arc1, back_arc2, back_arc3,
+                           core_arc1, core_arc2, core_arc3):
+            try:
+                canvas.itemconfig(_ring_item, state='hidden')
+            except Exception:
+                pass
+        canvas.itemconfig(core_bg, state='normal', fill='#52525b')
+    # ──────────────────────────────────────────────────────────────────────────
+
     canvas.coords(term_prompt, cx, cy)
     canvas.coords(file_icon, cx-8, cy-10, cx+4, cy-10, cx+10, cy-4, cx+10, cy+12, cx-8, cy+12)
     canvas.coords(radar_arc, cx-22, cy-22, cx+22, cy+22)
