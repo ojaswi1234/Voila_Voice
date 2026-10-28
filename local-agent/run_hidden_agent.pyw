@@ -788,40 +788,29 @@ def restore_mini_popup_elements(w=240, h=65):
     # True while animate_dashboard_size() is running its close frames.  So we
     # must explicitly un-hide and re-position all ring items here so they are
     # visible the instant the mini popup reappears.
-    if current_plasma_state != "OFF":
-        # Restore ring state to normal
-        for _ring_item in (shadow1, shadow2, shadow3,
-                           back_arc1, back_arc2, back_arc3,
-                           core_arc1, core_arc2, core_arc3):
-            try:
-                canvas.itemconfig(_ring_item, state='normal')
-            except Exception:
-                pass
-        # Immediately compute and apply ring geometry for frame-0 (t based on
-        # current anim_frame so the rings don't jump to origin).
-        _t = anim_frame * 0.01
-        _r1_x = _t * 1.5 + math.sin(_t * 0.8) * 1.2
-        _r1_y = _t * 0.9 + math.cos(_t * 1.1) * 1.5
-        _r1_z = _t * 2.1 + math.sin(_t * 0.5) * 0.8
-        _r2_x = -_t * 0.8 + math.cos(_t * 0.6) * 2.0
-        _r2_y = _t * 1.2 + math.sin(_t * 0.4) * 1.8
-        _r2_z = -_t * 1.5 + math.cos(_t * 0.7) * 1.2
-        _r3_x = _t * 0.5 + math.sin(_t * 0.3) * 2.5
-        _r3_y = -_t * 0.7 + math.cos(_t * 0.25) * 3.0
-        _r3_z = _t * 0.4 + math.sin(_t * 0.2) * 2.0
-        update_3d_ring_occluded(canvas, core_arc1, back_arc1, cx, cy, 14, _r1_x, _r1_y, _r1_z, 1.0, shadow1, 2.0)
-        update_3d_ring_occluded(canvas, core_arc2, back_arc2, cx, cy, 17, _r2_x, _r2_y, _r2_z, 1.0, shadow2, 2.0)
-        update_3d_ring_occluded(canvas, core_arc3, back_arc3, cx, cy, 20, _r3_x, _r3_y, _r3_z, 1.0, shadow3, 2.0)
-    else:
-        # Plasma OFF: hide rings, show grey core
-        for _ring_item in (shadow1, shadow2, shadow3,
-                           back_arc1, back_arc2, back_arc3,
-                           core_arc1, core_arc2, core_arc3):
-            try:
-                canvas.itemconfig(_ring_item, state='hidden')
-            except Exception:
-                pass
-        canvas.itemconfig(core_bg, state='normal', fill='#52525b')
+    for _item in (shadow1, shadow2, shadow3,
+                  back_arc1, back_arc2, back_arc3,
+                  sun_aura, sun_glow4, sun_glow3, sun_glow2, sun_glow1, core_bg,
+                  core_arc1, core_arc2, core_arc3):
+        try:
+            canvas.itemconfig(_item, state='normal')
+        except Exception:
+            pass
+    # Immediately compute and apply ring geometry for frame-0 (t based on
+    # current anim_frame so the rings don't jump to origin).
+    _t = anim_frame * 0.01
+    _r1_x = _t * 1.5 + math.sin(_t * 0.8) * 1.2
+    _r1_y = _t * 0.9 + math.cos(_t * 1.1) * 1.5
+    _r1_z = _t * 2.1 + math.sin(_t * 0.5) * 0.8
+    _r2_x = -_t * 0.8 + math.cos(_t * 0.6) * 2.0
+    _r2_y = _t * 1.2 + math.sin(_t * 0.4) * 1.8
+    _r2_z = -_t * 1.5 + math.cos(_t * 0.7) * 1.2
+    _r3_x = _t * 0.5 + math.sin(_t * 0.3) * 2.5
+    _r3_y = -_t * 0.7 + math.cos(_t * 0.25) * 3.0
+    _r3_z = _t * 0.4 + math.sin(_t * 0.2) * 2.0
+    update_3d_ring_occluded(canvas, core_arc1, back_arc1, cx, cy, 14, _r1_x, _r1_y, _r1_z, 1.0, shadow1, 2.0)
+    update_3d_ring_occluded(canvas, core_arc2, back_arc2, cx, cy, 17, _r2_x, _r2_y, _r2_z, 1.0, shadow2, 2.0)
+    update_3d_ring_occluded(canvas, core_arc3, back_arc3, cx, cy, 20, _r3_x, _r3_y, _r3_z, 1.0, shadow3, 2.0)
     # ──────────────────────────────────────────────────────────────────────────
 
     canvas.coords(term_prompt, cx, cy)
@@ -916,17 +905,6 @@ def update_dash_sphere(pulse, r1_x, r1_y, r1_z, r2_x, r2_y, r2_z, r3_x, r3_y, r3
     p = dash_sphere_parts
     cx, cy = 60, 60
     scale = 2.0
-    
-    if current_plasma_state == "OFF":
-        for key in p:
-            if key != 'core_bg':
-                try: c.itemconfig(p[key], state='hidden')
-                except: pass
-        try:
-            c.itemconfig(p['core_bg'], state='normal', fill='#3f3f46')
-            c.coords(p['core_bg'], cx-(6)*scale, cy-(6)*scale, cx+(6)*scale, cy+(6)*scale)
-        except: pass
-        return
 
     # Dynamic theme colors
     tc = get_plasma_theme_colors(current_plasma_theme, anim_frame)
@@ -2615,43 +2593,26 @@ def animation_loop():
         canvas.coords(sun_glow1, cx-(10+pulse*0.3)*scale, cy-(10+pulse*0.3)*scale, cx+(10+pulse*0.3)*scale, cy+(10+pulse*0.3)*scale)
         canvas.coords(core_bg, cx-(6)*scale, cy-(6)*scale, cx+(6)*scale, cy+(6)*scale)
 
-        if current_plasma_state == "OFF":
-            canvas.itemconfig(sun_aura, state="hidden")
-            canvas.itemconfig(sun_glow4, state="hidden")
-            canvas.itemconfig(sun_glow3, state="hidden")
-            canvas.itemconfig(sun_glow2, state="hidden")
-            canvas.itemconfig(sun_glow1, state="hidden")
-            canvas.itemconfig(shadow1, state="hidden")
-            canvas.itemconfig(shadow2, state="hidden")
-            canvas.itemconfig(shadow3, state="hidden")
-            canvas.itemconfig(core_arc1, state="hidden")
-            canvas.itemconfig(core_arc2, state="hidden")
-            canvas.itemconfig(core_arc3, state="hidden")
-            canvas.itemconfig(back_arc1, state="hidden")
-            canvas.itemconfig(back_arc2, state="hidden")
-            canvas.itemconfig(back_arc3, state="hidden")
-            canvas.itemconfig(core_bg, state="normal", fill="#52525b")
-        else:
-            update_3d_ring_occluded(canvas, core_arc1, back_arc1, cx, cy, 14, r1_x, r1_y, r1_z, scale, shadow1, 2*scale)
-            update_3d_ring_occluded(canvas, core_arc2, back_arc2, cx, cy, 17, r2_x, r2_y, r2_z, scale, shadow2, 2*scale)
-            update_3d_ring_occluded(canvas, core_arc3, back_arc3, cx, cy, 20, r3_x, r3_y, r3_z, scale, shadow3, 2*scale)
-            canvas.coords(radar_arc, cx-rr, cy-rr, cx+rr, cy+rr)
-            
-            canvas.itemconfig(sun_aura, state="normal")
-            canvas.itemconfig(sun_glow4, state="normal")
-            canvas.itemconfig(sun_glow3, state="normal")
-            canvas.itemconfig(sun_glow2, state="normal")
-            canvas.itemconfig(sun_glow1, state="normal")
-            canvas.itemconfig(core_bg, state="normal")
-            canvas.itemconfig(shadow1, state="normal")
-            canvas.itemconfig(shadow2, state="normal")
-            canvas.itemconfig(shadow3, state="normal")
-            canvas.itemconfig(core_arc1, state="normal")
-            canvas.itemconfig(core_arc2, state="normal")
-            canvas.itemconfig(core_arc3, state="normal")
-            canvas.itemconfig(back_arc1, state="normal")
-            canvas.itemconfig(back_arc2, state="normal")
-            canvas.itemconfig(back_arc3, state="normal")
+        update_3d_ring_occluded(canvas, core_arc1, back_arc1, cx, cy, 14, r1_x, r1_y, r1_z, scale, shadow1, 2*scale)
+        update_3d_ring_occluded(canvas, core_arc2, back_arc2, cx, cy, 17, r2_x, r2_y, r2_z, scale, shadow2, 2*scale)
+        update_3d_ring_occluded(canvas, core_arc3, back_arc3, cx, cy, 20, r3_x, r3_y, r3_z, scale, shadow3, 2*scale)
+        canvas.coords(radar_arc, cx-rr, cy-rr, cx+rr, cy+rr)
+        
+        canvas.itemconfig(sun_aura, state="normal")
+        canvas.itemconfig(sun_glow4, state="normal")
+        canvas.itemconfig(sun_glow3, state="normal")
+        canvas.itemconfig(sun_glow2, state="normal")
+        canvas.itemconfig(sun_glow1, state="normal")
+        canvas.itemconfig(core_bg, state="normal")
+        canvas.itemconfig(shadow1, state="normal")
+        canvas.itemconfig(shadow2, state="normal")
+        canvas.itemconfig(shadow3, state="normal")
+        canvas.itemconfig(core_arc1, state="normal")
+        canvas.itemconfig(core_arc2, state="normal")
+        canvas.itemconfig(core_arc3, state="normal")
+        canvas.itemconfig(back_arc1, state="normal")
+        canvas.itemconfig(back_arc2, state="normal")
+        canvas.itemconfig(back_arc3, state="normal")
         canvas.itemconfig(term_prompt, state="hidden")
         canvas.itemconfig(file_icon, state="hidden")
         canvas.itemconfig(radar_arc, state="hidden")
@@ -2895,22 +2856,19 @@ def animation_loop():
         else: # IDLE
             target_text = "Standing by..." if mobile_clients == 0 else "Standing by (Linked)"
             target_outline = '#27272a'
-            if current_plasma_state != "OFF":
-                tc = get_plasma_theme_colors(current_plasma_theme, anim_frame)
-                canvas.itemconfig(sun_aura, fill=tc['aura'][0])
-                canvas.itemconfig(sun_glow4, fill=tc['aura'][1])
-                canvas.itemconfig(sun_glow3, fill=tc['aura'][2])
-                canvas.itemconfig(sun_glow2, fill=tc['aura'][3])
-                canvas.itemconfig(sun_glow1, fill=tc['aura'][4])
-                canvas.itemconfig(core_bg, fill=tc['core'])
-                canvas.itemconfig(core_arc1, fill=tc['arcs'][0])
-                canvas.itemconfig(core_arc2, fill=tc['arcs'][1])
-                canvas.itemconfig(core_arc3, fill=tc['arcs'][2])
-                canvas.itemconfig(back_arc1, fill=tc['back_arcs'][0])
-                canvas.itemconfig(back_arc2, fill=tc['back_arcs'][1])
-                canvas.itemconfig(back_arc3, fill=tc['back_arcs'][2])
-            else:
-                canvas.itemconfig(core_bg, fill='#52525b')
+            tc = get_plasma_theme_colors(current_plasma_theme, anim_frame)
+            canvas.itemconfig(sun_aura, fill=tc['aura'][0])
+            canvas.itemconfig(sun_glow4, fill=tc['aura'][1])
+            canvas.itemconfig(sun_glow3, fill=tc['aura'][2])
+            canvas.itemconfig(sun_glow2, fill=tc['aura'][3])
+            canvas.itemconfig(sun_glow1, fill=tc['aura'][4])
+            canvas.itemconfig(core_bg, fill=tc['core'])
+            canvas.itemconfig(core_arc1, fill=tc['arcs'][0])
+            canvas.itemconfig(core_arc2, fill=tc['arcs'][1])
+            canvas.itemconfig(core_arc3, fill=tc['arcs'][2])
+            canvas.itemconfig(back_arc1, fill=tc['back_arcs'][0])
+            canvas.itemconfig(back_arc2, fill=tc['back_arcs'][1])
+            canvas.itemconfig(back_arc3, fill=tc['back_arcs'][2])
 
         if is_hovering_pill:
             canvas.itemconfig(pill, outline='#6666ff')

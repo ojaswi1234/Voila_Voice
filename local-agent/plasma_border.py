@@ -543,20 +543,22 @@ class AmorphousPlasmaOverlay:
                     self.save_settings()
             elif msg.startswith("STATE:"):
                 state = msg.split(":", 1)[1].strip().upper()
-                if state == "OFF":
-                    self.enabled = False
+                if state in ("OFF", "BLANK", "PAUSE"):
+                    # Transient blanking (e.g. during screen captures or brief pause)
+                    # We clear the screen but DO NOT permanently disable or corrupt saved settings on disk!
                     self.state = "OFF"
-                    self.save_settings()
                     self.clear_screen()
                 elif state in ("ON", "ACTIVE", "ENABLE"):
                     self.enabled = True
                     self.state = "IDLE"
                     self.save_settings()
                 else:
+                    # Active AI states: IDLE, THINKING, SEARCH, BROWSER, DESKTOP, BASH, FILE, MCP, BGTASK, RUNNING
                     if not self.enabled:
-                        # Disabled: completely ignore active phrase updates!
+                        # If explicitly disabled via settings, stay disabled
                         return
                     self.state = state
+                    # NOTE: Do NOT call self.save_settings() on high-frequency transient state changes!
             elif msg in ("DISABLE", "OFF"):
                 self.enabled = False
                 self.state = "OFF"
