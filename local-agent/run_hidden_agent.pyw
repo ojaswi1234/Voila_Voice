@@ -211,7 +211,7 @@ def get_plasma_theme_colors(theme_name, frame=0):
     if theme == "gemini":
         return {
             'arcs': ['#4285F4', '#9C5CF6', '#EF4444'],
-            'back_arcs': ['#1D3557', '#4C1D95', '#7F1D1D'],
+            'back_arcs': ['#1D4ED8', '#6D28D9', '#B91C1C'],
             'aura': ['#0f172a', '#1e1b4b', '#2e1065', '#4338ca', '#818cf8'],
             'core': '#FFFFFF',
             'outline': '#4285F4'
@@ -219,7 +219,7 @@ def get_plasma_theme_colors(theme_name, frame=0):
     elif theme == "siri":
         return {
             'arcs': ['#00F0FF', '#EC4899', '#8B5CF6'],
-            'back_arcs': ['#083344', '#701A75', '#3B0764'],
+            'back_arcs': ['#0891B2', '#BE185D', '#6D28D9'],
             'aura': ['#18181b', '#2e1065', '#4c0519', '#86198f', '#d946ef'],
             'core': '#FFFFFF',
             'outline': '#EC4899'
@@ -231,9 +231,9 @@ def get_plasma_theme_colors(theme_name, frame=0):
         arc1 = hsv_to_hex(h1, 0.90, 1.0)
         arc2 = hsv_to_hex(h2, 0.90, 1.0)
         arc3 = hsv_to_hex(h3, 0.90, 1.0)
-        back1 = hsv_to_hex(h1, 0.85, 0.40)
-        back2 = hsv_to_hex(h2, 0.85, 0.40)
-        back3 = hsv_to_hex(h3, 0.85, 0.40)
+        back1 = hsv_to_hex(h1, 0.80, 0.55)
+        back2 = hsv_to_hex(h2, 0.80, 0.55)
+        back3 = hsv_to_hex(h3, 0.80, 0.55)
         aura_h = (frame * 0.008) % 1.0
         return {
             'arcs': [arc1, arc2, arc3],
@@ -245,7 +245,7 @@ def get_plasma_theme_colors(theme_name, frame=0):
     elif theme == "solar_gold":
         return {
             'arcs': ['#F59E0B', '#F97316', '#EF4444'],
-            'back_arcs': ['#451A03', '#7C2D12', '#7F1D1D'],
+            'back_arcs': ['#B45309', '#C2410C', '#B91C1C'],
             'aura': ['#18181b', '#451a03', '#78350f', '#b45309', '#f59e0b'],
             'core': '#FFFBEB',
             'outline': '#F59E0B'
@@ -253,7 +253,7 @@ def get_plasma_theme_colors(theme_name, frame=0):
     else:  # cyber_cyan / default
         return {
             'arcs': ['#00F5FF', '#6366F1', '#38BDF8'],
-            'back_arcs': ['#083344', '#1E1B4B', '#0C4A6E'],
+            'back_arcs': ['#0E7490', '#4338CA', '#0284C7'],
             'aura': ['#18181b', '#082f49', '#0c4a6e', '#0369a1', '#38bdf8'],
             'core': '#F0F9FF',
             'outline': '#00F5FF'
@@ -269,48 +269,71 @@ import math
 
 
 def update_3d_ring_occluded(canvas, front_id, back_id, cx, cy, radius, rot_x, rot_y, rot_z, scale, shadow_id=None, shadow_offset=0):
-    A = math.sin(rot_x) * math.cos(rot_y)
-    B = math.sin(rot_y)
-    mag_sq = A * A + B * B
+    cos_x, sin_x = math.cos(rot_x), math.sin(rot_x)
+    cos_y, sin_y = math.cos(rot_y), math.sin(rot_y)
+    cos_z, sin_z = math.cos(rot_z), math.sin(rot_z)
 
-    cos_rx, sin_rx = math.cos(rot_x), math.sin(rot_x)
-    cos_ry, sin_ry = math.cos(rot_y), math.sin(rot_y)
-    cos_rz, sin_rz = math.cos(rot_z), math.sin(rot_z)
+    # Rigorous 3D depth-normal projection for an orbiting ring in XY plane rotated by (rx, ry, rz):
+    # p(t) = (radius * cos(t), radius * sin(t), 0)
+    # After X-rotation:
+    #   x1 = radius * cos(t), y1 = radius * sin(t) * cos_x, z1 = radius * sin(t) * sin_x
+    # After Y-rotation:
+    #   x2 = x1 * cos_y + z1 * sin_y
+    #   y2 = y1 = radius * sin(t) * cos_x
+    #   z2 = -x1 * sin_y + z1 * cos_y
+    # After Z-rotation:
+    #   x3 = x2 * cos_z - y2 * sin_z
+    #   y3 = x2 * sin_z + y2 * cos_z
+    #   z3 = z2 = radius * (sin_x * cos_y * sin(t) - sin_y * cos(t))
+    # Depth function: z3(t) = radius * (A * sin(t) + B * cos(t))
+    A = sin_x * cos_y
+    B = -sin_y
+    mag = math.hypot(A, B)
 
     def project_point(t):
-        x = radius * math.cos(t)
-        y = radius * math.sin(t)
-        z = 0.0
-        y1 = y * cos_rx - z * sin_rx
-        z1 = y * sin_rx + z * cos_rx
-        x2 = x * cos_ry + z1 * sin_ry
-        x3 = x2 * cos_rz - y1 * sin_rz
-        y3 = x2 * sin_rz + y1 * cos_rz
+        ct = math.cos(t)
+        st = math.sin(t)
+        x1 = radius * ct
+        y1 = radius * st * cos_x
+        z1 = radius * st * sin_x
+        x2 = x1 * cos_y + z1 * sin_y
+        y2 = y1
+        x3 = x2 * cos_z - y2 * sin_z
+        y3 = x2 * sin_z + y2 * cos_z
         return cx + x3 * scale, cy + y3 * scale
 
-    steps = 40
-    if mag_sq < 1e-6:
-        # Ring is facing camera directly: all front
-        front_pts = []
+    steps = 48
+    if mag < 1e-6:
+        # Ring is facing camera directly (all z=0)
+        pts = []
         for i in range(steps + 1):
             t = 2.0 * math.pi * i / steps
             px, py = project_point(t)
-            front_pts.extend((px, py))
-        canvas.coords(front_id, *front_pts)
+            pts.extend((px, py))
+        canvas.coords(front_id, *pts)
         canvas.itemconfig(front_id, state='normal')
         if back_id:
             canvas.itemconfig(back_id, state='hidden')
     else:
-        phi = math.atan2(B, A)
+        # phi0 is the phase angle of the depth sinusoid:
+        # z3(t) = radius * mag * sin(t + phi0)
+        # where cos(phi0) = A/mag, sin(phi0) = B/mag => phi0 = atan2(B, A)
+        # Therefore:
+        #   z3(t) >= 0 for t in [-phi0, -phi0 + pi] (FRONT half, crossing in front of the star)
+        #   z3(t) <= 0 for t in [-phi0 + pi, -phi0 + 2*pi] (BACK half, looping behind the star)
+        # Endpoints connect seamlessly to machine precision (10^-15)!
+        phi0 = math.atan2(B, A)
+        t_start = -phi0
+
         front_pts = []
         for i in range(steps + 1):
-            t = phi + math.pi * i / steps
+            t = t_start + math.pi * i / steps
             px, py = project_point(t)
             front_pts.extend((px, py))
 
         back_pts = []
         for i in range(steps + 1):
-            t = (phi + math.pi) + math.pi * i / steps
+            t = t_start + math.pi + math.pi * i / steps
             px, py = project_point(t)
             back_pts.extend((px, py))
 
@@ -322,12 +345,11 @@ def update_3d_ring_occluded(canvas, front_id, back_id, cx, cy, radius, rot_x, ro
 
     if shadow_id:
         sh_pts = []
-        sh_steps = 30
-        for i in range(sh_steps):
+        sh_steps = 36
+        for i in range(sh_steps + 1):
             t = 2.0 * math.pi * i / sh_steps
             px, py = project_point(t)
             sh_pts.extend((px, py + shadow_offset))
-        sh_pts.extend((sh_pts[0], sh_pts[1]))
         canvas.coords(shadow_id, *sh_pts)
         canvas.itemconfig(shadow_id, state='normal')
 
@@ -358,28 +380,30 @@ def update_3d_ring(canvas, ring_id, cx, cy, radius, rot_x, rot_y, rot_z, scale, 
             sh_pts.extend((points[i], points[i+1] + shadow_offset))
         canvas.coords(shadow_id, *sh_pts)
 
-# Shadows (drawn first so they are at the bottom)
-shadow1 = canvas.create_line(0,0, 0,0, fill='#000000', width=1.0, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
-shadow2 = canvas.create_line(0,0, 0,0, fill='#000000', width=1.5, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
-shadow3 = canvas.create_line(0,0, 0,0, fill='#000000', width=2.0, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
-
-# Back Rings (orbit behind the sun for realistic 3D occlusion)
-back_arc1 = canvas.create_line(0,0, 0,0, fill='#083344', width=1.0, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
-back_arc2 = canvas.create_line(0,0, 0,0, fill='#1e1b4b', width=1.5, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
-back_arc3 = canvas.create_line(0,0, 0,0, fill='#0c4a6e', width=2.0, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
-
-# Hyperrealistic Dyson Sphere Sun Glow layers
+# 1. Hyperrealistic Dyson Sphere Sun Glow / Corona layers (ambient background glow)
 sun_aura = canvas.create_oval(cx-26, cy-26, cx+26, cy+26, fill='#1e1e24', outline='')
 sun_glow4 = canvas.create_oval(cx-22, cy-22, cx+22, cy+22, fill='#27272a', outline='')
 sun_glow3 = canvas.create_oval(cx-18, cy-18, cx+18, cy+18, fill='#3f3f46', outline='')
 sun_glow2 = canvas.create_oval(cx-14, cy-14, cx+14, cy+14, fill='#52525b', outline='')
 sun_glow1 = canvas.create_oval(cx-10, cy-10, cx+10, cy+10, fill='#a1a1aa', outline='')
+
+# 2. Shadows (drawn on top of background aura)
+shadow1 = canvas.create_line(0,0, 0,0, fill='#000000', width=1.0, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
+shadow2 = canvas.create_line(0,0, 0,0, fill='#000000', width=1.5, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
+shadow3 = canvas.create_line(0,0, 0,0, fill='#000000', width=2.0, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
+
+# 3. Back Rings (orbit behind the dense star core, but IN FRONT OF the ambient glow!)
+back_arc1 = canvas.create_line(0,0, 0,0, fill='#083344', width=1.2, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
+back_arc2 = canvas.create_line(0,0, 0,0, fill='#1e1b4b', width=1.5, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
+back_arc3 = canvas.create_line(0,0, 0,0, fill='#0c4a6e', width=1.8, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
+
+# 4. Dense Stellar Fusion Core (solid white core - occludes back rings as they pass directly behind the nucleus)
 core_bg = canvas.create_oval(cx-6, cy-6, cx+6, cy+6, fill='#ffffff', outline='')
 
-# Front Rings (drawn over the sun)
-core_arc1 = canvas.create_line(0,0, 0,0, fill='#06b6d4', width=1.0, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
-core_arc2 = canvas.create_line(0,0, 0,0, fill='#3b82f6', width=1.5, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
-core_arc3 = canvas.create_line(0,0, 0,0, fill='#0ea5e9', width=2.0, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
+# 5. Front Rings (orbit in front of the star core - brilliant and neon glowing)
+core_arc1 = canvas.create_line(0,0, 0,0, fill='#06b6d4', width=1.5, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
+core_arc2 = canvas.create_line(0,0, 0,0, fill='#3b82f6', width=2.0, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
+core_arc3 = canvas.create_line(0,0, 0,0, fill='#0ea5e9', width=2.4, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
 
 # Special State Icons (hidden by default)
 
@@ -418,6 +442,16 @@ status_text = canvas.create_text(70, 44, text="Standing by...", fill="#9ca3af", 
 close_btn_bg = canvas.create_oval(205, 22, 225, 42, fill="", outline="", width=0, state='normal')
 close_btn = canvas.create_text(215, 32, text="✖", fill="#6b7280", font=("Segoe UI", 10, "bold"), anchor="center")
 surveillance_dot = canvas.create_oval(0, 0, 0, 0, fill="#22c55e", outline="", state="hidden")
+
+# Guarantee exact 3D Dyson Sphere layer stacking on canvas:
+# 1. Aura glow -> 2. Shadows -> 3. Back arcs -> 4. Dense Core -> 5. Front arcs -> 6. UI controls
+for _layer_item in (sun_aura, sun_glow4, sun_glow3, sun_glow2, sun_glow1,
+                    shadow1, shadow2, shadow3,
+                    back_arc1, back_arc2, back_arc3,
+                    core_bg,
+                    core_arc1, core_arc2, core_arc3,
+                    mode_badge_bg, mode_badge_text, title_text, status_text, close_btn_bg, close_btn):
+    canvas.tag_raise(_layer_item)
 
 # ─── LOCAL/CLOUD mode toggle  ────────────────────────────────────────────
 MODES = ["LOCAL", "GROQ", "OLLAMA"]
@@ -836,9 +870,14 @@ def restore_mini_popup_elements(w=240, h=65):
     canvas.coords(close_btn, 215, 32)
     canvas.itemconfig(close_btn, state='normal', fill="#6b7280", font=("Segoe UI", 10, "bold"))
     
-    # Ensure they are clickable above the pill
-    canvas.tag_raise(close_btn_bg)
-    canvas.tag_raise(close_btn)
+    # Ensure exact 3D Dyson Sphere layer stacking on restore:
+    for _layer_item in (sun_aura, sun_glow4, sun_glow3, sun_glow2, sun_glow1,
+                        shadow1, shadow2, shadow3,
+                        back_arc1, back_arc2, back_arc3,
+                        core_bg,
+                        core_arc1, core_arc2, core_arc3,
+                        mode_badge_bg, mode_badge_text, title_text, status_text, close_btn_bg, close_btn):
+        canvas.tag_raise(_layer_item)
 
     update_expression()
 
@@ -881,22 +920,38 @@ def init_dash_sphere():
     dash_sphere_canvas = tk.Canvas(dash_sidebar, width=120, height=120, bg='#16171C', highlightthickness=0)
     dash_sphere_canvas.pack(pady=(16, 0))
     c = dash_sphere_canvas
-    dash_sphere_parts['shadow1'] = c.create_line(0,0, 0,0, fill='#000000', width=1.0, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
-    dash_sphere_parts['shadow2'] = c.create_line(0,0, 0,0, fill='#000000', width=1.5, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
-    dash_sphere_parts['shadow3'] = c.create_line(0,0, 0,0, fill='#000000', width=2.0, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
 
-    dash_sphere_parts['back_arc1'] = c.create_line(0,0, 0,0, fill='#06b6d4', width=1.0, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
-    dash_sphere_parts['back_arc2'] = c.create_line(0,0, 0,0, fill='#3b82f6', width=1.5, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
-    dash_sphere_parts['back_arc3'] = c.create_line(0,0, 0,0, fill='#0ea5e9', width=2.0, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
+    # 1. Ambient Sun Glow / Corona (background)
     dash_sphere_parts['sun_aura'] = c.create_oval(0,0,0,0, fill='#1e1e24', outline='')
     dash_sphere_parts['sun_glow4'] = c.create_oval(0,0,0,0, fill='#27272a', outline='')
     dash_sphere_parts['sun_glow3'] = c.create_oval(0,0,0,0, fill='#3f3f46', outline='')
     dash_sphere_parts['sun_glow2'] = c.create_oval(0,0,0,0, fill='#52525b', outline='')
     dash_sphere_parts['sun_glow1'] = c.create_oval(0,0,0,0, fill='#a1a1aa', outline='')
+
+    # 2. Shadows
+    dash_sphere_parts['shadow1'] = c.create_line(0,0, 0,0, fill='#000000', width=1.0, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
+    dash_sphere_parts['shadow2'] = c.create_line(0,0, 0,0, fill='#000000', width=1.5, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
+    dash_sphere_parts['shadow3'] = c.create_line(0,0, 0,0, fill='#000000', width=2.0, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
+
+    # 3. Back Rings (orbit behind stellar core, but visible over ambient glow)
+    dash_sphere_parts['back_arc1'] = c.create_line(0,0, 0,0, fill='#06b6d4', width=1.2, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
+    dash_sphere_parts['back_arc2'] = c.create_line(0,0, 0,0, fill='#3b82f6', width=1.5, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
+    dash_sphere_parts['back_arc3'] = c.create_line(0,0, 0,0, fill='#0ea5e9', width=1.8, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
+
+    # 4. Dense Fusion Core (white nucleus)
     dash_sphere_parts['core_bg'] = c.create_oval(0,0,0,0, fill='#ffffff', outline='')
-    dash_sphere_parts['core_arc1'] = c.create_line(0,0, 0,0, fill='#06b6d4', width=1.0, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
-    dash_sphere_parts['core_arc2'] = c.create_line(0,0, 0,0, fill='#3b82f6', width=1.5, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
-    dash_sphere_parts['core_arc3'] = c.create_line(0,0, 0,0, fill='#0ea5e9', width=2.0, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
+
+    # 5. Front Rings (bright neon front arcs)
+    dash_sphere_parts['core_arc1'] = c.create_line(0,0, 0,0, fill='#06b6d4', width=1.5, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
+    dash_sphere_parts['core_arc2'] = c.create_line(0,0, 0,0, fill='#3b82f6', width=2.0, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
+    dash_sphere_parts['core_arc3'] = c.create_line(0,0, 0,0, fill='#0ea5e9', width=2.4, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
+
+    for _d_part in ('sun_aura', 'sun_glow4', 'sun_glow3', 'sun_glow2', 'sun_glow1',
+                    'shadow1', 'shadow2', 'shadow3',
+                    'back_arc1', 'back_arc2', 'back_arc3',
+                    'core_bg',
+                    'core_arc1', 'core_arc2', 'core_arc3'):
+        c.tag_raise(dash_sphere_parts[_d_part])
 
 def update_dash_sphere(pulse, r1_x, r1_y, r1_z, r2_x, r2_y, r2_z, r3_x, r3_y, r3_z):
     if not dash_sphere_canvas: return
