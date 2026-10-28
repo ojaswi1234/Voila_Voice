@@ -214,7 +214,9 @@ def get_plasma_theme_colors(theme_name, frame=0):
             'back_arcs': ['#1D4ED8', '#6D28D9', '#B91C1C'],
             'aura': ['#0f172a', '#1e1b4b', '#2e1065', '#4338ca', '#818cf8'],
             'core': '#FFFFFF',
-            'outline': '#4285F4'
+            'outline': '#4285F4',
+            'prominence': '#A855F7',
+            'dust': '#C084FC'
         }
     elif theme == "siri":
         return {
@@ -222,7 +224,9 @@ def get_plasma_theme_colors(theme_name, frame=0):
             'back_arcs': ['#0891B2', '#BE185D', '#6D28D9'],
             'aura': ['#18181b', '#2e1065', '#4c0519', '#86198f', '#d946ef'],
             'core': '#FFFFFF',
-            'outline': '#EC4899'
+            'outline': '#EC4899',
+            'prominence': '#F472B6',
+            'dust': '#E879F9'
         }
     elif theme == "vibgyor":
         h1 = (frame * 0.012 + 0.00) % 1.0
@@ -240,7 +244,9 @@ def get_plasma_theme_colors(theme_name, frame=0):
             'back_arcs': [back1, back2, back3],
             'aura': ['#18181b', hsv_to_hex((aura_h+0.5)%1.0, 0.7, 0.2), hsv_to_hex((aura_h+0.25)%1.0, 0.8, 0.35), hsv_to_hex(aura_h, 0.85, 0.55), hsv_to_hex(aura_h, 0.7, 0.85)],
             'core': '#FFFFFF',
-            'outline': arc1
+            'outline': arc1,
+            'prominence': arc1,
+            'dust': arc2
         }
     elif theme == "solar_gold":
         return {
@@ -248,7 +254,9 @@ def get_plasma_theme_colors(theme_name, frame=0):
             'back_arcs': ['#B45309', '#C2410C', '#B91C1C'],
             'aura': ['#18181b', '#451a03', '#78350f', '#b45309', '#f59e0b'],
             'core': '#FFFBEB',
-            'outline': '#F59E0B'
+            'outline': '#F59E0B',
+            'prominence': '#F59E0B',
+            'dust': '#FCD34D'
         }
     else:  # cyber_cyan / default
         return {
@@ -256,7 +264,9 @@ def get_plasma_theme_colors(theme_name, frame=0):
             'back_arcs': ['#0E7490', '#4338CA', '#0284C7'],
             'aura': ['#18181b', '#082f49', '#0c4a6e', '#0369a1', '#38bdf8'],
             'core': '#F0F9FF',
-            'outline': '#00F5FF'
+            'outline': '#00F5FF',
+            'prominence': '#00F5FF',
+            'dust': '#7DD3FC'
         }
 
 bg_idle = '#18181b' # Obsidian background
@@ -380,12 +390,125 @@ def update_3d_ring(canvas, ring_id, cx, cy, radius, rot_x, rot_y, rot_z, scale, 
             sh_pts.extend((points[i], points[i+1] + shadow_offset))
         canvas.coords(shadow_id, *sh_pts)
 
+
+# ─── Dyson Swarm Collector Satellite Configuration & 3D Math ───────────────
+# 7 Collector nodes distributed along the 3 rings (R1=14, R2=17, R3=20):
+# (ring_index, radius, initial_phase, orbital_speed_multiplier)
+DYSON_NODE_DEFS = (
+    (0, 14, 0.0, 1.8),
+    (0, 14, math.pi, 1.8),
+    (1, 17, math.pi * 0.5, 1.3),
+    (1, 17, math.pi * 1.5, 1.3),
+    (2, 20, 0.0, 0.9),
+    (2, 20, math.pi * 2.0 / 3.0, 0.9),
+    (2, 20, math.pi * 4.0 / 3.0, 0.9),
+)
+
+def project_sphere_point_3d(radius, rot_x, rot_y, rot_z, t, cx, cy, scale):
+    """Rigorous 3D point projection for Dyson ring orbiting nodes."""
+    cos_x, sin_x = math.cos(rot_x), math.sin(rot_x)
+    cos_y, sin_y = math.cos(rot_y), math.sin(rot_y)
+    cos_z, sin_z = math.cos(rot_z), math.sin(rot_z)
+    ct, st = math.cos(t), math.sin(t)
+    x1 = radius * ct
+    y1 = radius * st * cos_x
+    z1 = radius * st * sin_x
+    x2 = x1 * cos_y + z1 * sin_y
+    y2 = y1
+    x3 = x2 * cos_z - y2 * sin_z
+    y3 = x2 * sin_z + y2 * cos_z
+    z3 = -x1 * sin_y + z1 * cos_y
+    return cx + x3 * scale, cy + y3 * scale, z3
+
+def update_dyson_details(canvas, cx, cy, scale, t, rotations,
+                         stardust_items, stardust_data_list,
+                         prominence_items,
+                         back_node_items, front_node_items,
+                         is_visible=True, flare_boost=1.0,
+                         theme_colors=None):
+    """Updates the 3 enhanced Dyson Sphere details (satellites, coronal loops, and stellar wind)."""
+    if not is_visible or scale <= 0.01:
+        for it in stardust_items: canvas.itemconfig(it, state='hidden')
+        for it in prominence_items: canvas.itemconfig(it, state='hidden')
+        for it in back_node_items: canvas.itemconfig(it, state='hidden')
+        for it in front_node_items: canvas.itemconfig(it, state='hidden')
+        return
+
+    front_cols = theme_colors.get('arcs', ['#06b6d4', '#3b82f6', '#0ea5e9']) if theme_colors else ['#06b6d4', '#3b82f6', '#0ea5e9']
+    back_cols = theme_colors.get('back_arcs', ['#083344', '#1e1b4b', '#0c4a6e']) if theme_colors else ['#083344', '#1e1b4b', '#0c4a6e']
+    prom_col = theme_colors.get('prominence', '#f59e0b') if theme_colors else '#f59e0b'
+    dust_col = theme_colors.get('dust', '#94a3b8') if theme_colors else '#94a3b8'
+
+    # 1. Update 7 Dyson Swarm collector satellite nodes
+    for idx, (r_idx, rad, phase0, spd) in enumerate(DYSON_NODE_DEFS):
+        rx, ry, rz = rotations[r_idx]
+        node_angle = phase0 + t * spd * 2.5
+        nx, ny, nz = project_sphere_point_3d(rad, rx, ry, rz, node_angle, cx, cy, scale)
+        dist_c = math.hypot(nx - cx, ny - cy)
+        f_item = front_node_items[idx]
+        b_item = back_node_items[idx]
+
+        if nz >= 0:
+            # Front node - facing camera in front of star/rings
+            nr = max(0.8, 1.25 * scale * (1.0 + 0.35 * (nz / rad)))
+            canvas.coords(f_item, nx - nr, ny - nr, nx + nr, ny + nr)
+            canvas.itemconfig(f_item, state='normal', fill=front_cols[r_idx])
+            canvas.itemconfig(b_item, state='hidden')
+        else:
+            # Back node - looping behind star
+            canvas.itemconfig(f_item, state='hidden')
+            if dist_c <= 5.8 * scale:
+                # Eclipsed behind the opaque white stellar fusion core!
+                canvas.itemconfig(b_item, state='hidden')
+            else:
+                nr = max(0.6, 0.95 * scale * (1.0 + 0.35 * (nz / rad)))
+                canvas.coords(b_item, nx - nr, ny - nr, nx + nr, ny + nr)
+                canvas.itemconfig(b_item, state='normal', fill=back_cols[r_idx])
+
+    # 2. Update 4 Coronal Prominences (magnetic loop flares from star surface)
+    for p_idx, p_item in enumerate(prominence_items):
+        p_angle = p_idx * (math.pi / 2.0) + t * 0.25
+        p_span = 0.36
+        p_h = (2.0 + 1.1 * math.sin(t * 2.2 + p_idx * 1.57)) * flare_boost
+        r_apex = 6.0 + min(p_h, 3.8) # Stays strictly <= 9.8, well inside Ring 1 (R=14)
+
+        x1 = cx + 6.0 * math.cos(p_angle - p_span) * scale
+        y1 = cy + 6.0 * math.sin(p_angle - p_span) * scale
+        xm = cx + r_apex * math.cos(p_angle) * scale
+        ym = cy + r_apex * math.sin(p_angle) * scale
+        x2 = cx + 6.0 * math.cos(p_angle + p_span) * scale
+        y2 = cy + 6.0 * math.sin(p_angle + p_span) * scale
+
+        canvas.coords(p_item, x1, y1, xm, ym, x2, y2)
+        canvas.itemconfig(p_item, state='normal', fill=prom_col, width=max(1.0, 1.2 * scale))
+
+    # 3. Update 6 Stellar Wind Micro-Embers (cosmic dust particles)
+    for e_idx, e_item in enumerate(stardust_items):
+        ed = stardust_data_list[e_idx]
+        ed[1] += ed[2]
+        if ed[1] > 23.5:
+            ed[1] = 6.8 + (e_idx * 1.3) % 2.5
+            ed[0] = (ed[0] + 1.618) % (2.0 * math.pi)
+        ex = cx + ed[1] * math.cos(ed[0]) * scale
+        ey = cy + ed[1] * math.sin(ed[0]) * scale
+        er = max(0.6, 0.85 * scale)
+        canvas.coords(e_item, ex - er, ey - er, ex + er, ey + er)
+        canvas.itemconfig(e_item, state='normal', fill=dust_col)
+
+
 # 1. Hyperrealistic Dyson Sphere Sun Glow / Corona layers (ambient background glow)
 sun_aura = canvas.create_oval(cx-26, cy-26, cx+26, cy+26, fill='#1e1e24', outline='')
 sun_glow4 = canvas.create_oval(cx-22, cy-22, cx+22, cy+22, fill='#27272a', outline='')
 sun_glow3 = canvas.create_oval(cx-18, cy-18, cx+18, cy+18, fill='#3f3f46', outline='')
 sun_glow2 = canvas.create_oval(cx-14, cy-14, cx+14, cy+14, fill='#52525b', outline='')
 sun_glow1 = canvas.create_oval(cx-10, cy-10, cx+10, cy+10, fill='#a1a1aa', outline='')
+
+# 1b. Stellar Wind Micro-Ember Pool (6 pre-allocated cosmic dust particles)
+stardust_embers = [canvas.create_oval(0, 0, 0, 0, fill='#a1a1aa', outline='') for _ in range(6)]
+stardust_data = [[i * 1.047, 7.0 + i * 2.5, 0.14 + (i % 3) * 0.05] for i in range(6)]
+
+# 1c. Coronal Magnetic Loops (4 dynamic prominence arcs arching from star surface)
+coronal_prominences = [canvas.create_line(0, 0, 0, 0, 0, 0, fill='#f59e0b', width=1.2, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True) for _ in range(4)]
 
 # 2. Shadows (drawn on top of background aura)
 shadow1 = canvas.create_line(0,0, 0,0, fill='#000000', width=1.0, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
@@ -397,6 +520,9 @@ back_arc1 = canvas.create_line(0,0, 0,0, fill='#083344', width=1.2, capstyle=tk.
 back_arc2 = canvas.create_line(0,0, 0,0, fill='#1e1b4b', width=1.5, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
 back_arc3 = canvas.create_line(0,0, 0,0, fill='#0c4a6e', width=1.8, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
 
+# 3b. Back Harvester Nodes (satellites looping behind star disc)
+back_nodes = [canvas.create_oval(0, 0, 0, 0, fill='#0891b2', outline='') for _ in range(7)]
+
 # 4. Dense Stellar Fusion Core (solid white core - occludes back rings as they pass directly behind the nucleus)
 core_bg = canvas.create_oval(cx-6, cy-6, cx+6, cy+6, fill='#ffffff', outline='')
 
@@ -404,6 +530,9 @@ core_bg = canvas.create_oval(cx-6, cy-6, cx+6, cy+6, fill='#ffffff', outline='')
 core_arc1 = canvas.create_line(0,0, 0,0, fill='#06b6d4', width=1.5, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
 core_arc2 = canvas.create_line(0,0, 0,0, fill='#3b82f6', width=2.0, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
 core_arc3 = canvas.create_line(0,0, 0,0, fill='#0ea5e9', width=2.4, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
+
+# 5b. Front Harvester Nodes (satellites crossing in front of star and rings)
+front_nodes = [canvas.create_oval(0, 0, 0, 0, fill='#ffffff', outline='') for _ in range(7)]
 
 # Special State Icons (hidden by default)
 
@@ -425,7 +554,20 @@ desktop_cursor_dot = canvas.create_oval(cx+2, cy+6, cx+7, cy+11, fill="#a78bfa",
 desktop_cursor_label = canvas.create_text(cx+12, cy, text="AI", fill="#a78bfa", font=("Segoe UI", 7, "bold"), anchor="w", state="hidden")
 
 # Keep variables compatible with animation loop
-face_parts = (shadow1, shadow2, shadow3, back_arc1, back_arc2, back_arc3, sun_aura, sun_glow4, sun_glow3, sun_glow2, sun_glow1, core_bg, core_arc1, core_arc2, core_arc3, term_prompt, file_icon, radar_arc, browser_box, browser_line, desktop_cursor_arrow, desktop_cursor_dot, desktop_cursor_label, mcp_diamond, mcp_inner, bg_center, bg_orbit1, bg_orbit2)
+face_parts = (
+    sun_aura, sun_glow4, sun_glow3, sun_glow2, sun_glow1,
+    *stardust_embers,
+    *coronal_prominences,
+    shadow1, shadow2, shadow3,
+    back_arc1, back_arc2, back_arc3,
+    *back_nodes,
+    core_bg,
+    core_arc1, core_arc2, core_arc3,
+    *front_nodes,
+    term_prompt, file_icon, radar_arc, browser_box, browser_line,
+    desktop_cursor_arrow, desktop_cursor_dot, desktop_cursor_label,
+    mcp_diamond, mcp_inner, bg_center, bg_orbit1, bg_orbit2
+)
 cloud_parts = () # Empty, we don't use a thought cloud anymore
 
 # Typography Layout
@@ -444,12 +586,16 @@ close_btn = canvas.create_text(215, 32, text="✖", fill="#6b7280", font=("Segoe
 surveillance_dot = canvas.create_oval(0, 0, 0, 0, fill="#22c55e", outline="", state="hidden")
 
 # Guarantee exact 3D Dyson Sphere layer stacking on canvas:
-# 1. Aura glow -> 2. Shadows -> 3. Back arcs -> 4. Dense Core -> 5. Front arcs -> 6. UI controls
+# 1. Aura glow -> 2. Stardust embers -> 3. Coronal prominences -> 4. Shadows -> 5. Back arcs -> 6. Back nodes -> 7. Dense Core -> 8. Front arcs -> 9. Front nodes -> 10. UI controls
 for _layer_item in (sun_aura, sun_glow4, sun_glow3, sun_glow2, sun_glow1,
+                    *stardust_embers,
+                    *coronal_prominences,
                     shadow1, shadow2, shadow3,
                     back_arc1, back_arc2, back_arc3,
+                    *back_nodes,
                     core_bg,
                     core_arc1, core_arc2, core_arc3,
+                    *front_nodes,
                     mode_badge_bg, mode_badge_text, title_text, status_text, close_btn_bg, close_btn):
     canvas.tag_raise(_layer_item)
 
@@ -822,10 +968,15 @@ def restore_mini_popup_elements(w=240, h=65):
     # True while animate_dashboard_size() is running its close frames.  So we
     # must explicitly un-hide and re-position all ring items here so they are
     # visible the instant the mini popup reappears.
-    for _item in (shadow1, shadow2, shadow3,
+    for _item in (sun_aura, sun_glow4, sun_glow3, sun_glow2, sun_glow1,
+                  *stardust_embers,
+                  *coronal_prominences,
+                  shadow1, shadow2, shadow3,
                   back_arc1, back_arc2, back_arc3,
-                  sun_aura, sun_glow4, sun_glow3, sun_glow2, sun_glow1, core_bg,
-                  core_arc1, core_arc2, core_arc3):
+                  *back_nodes,
+                  core_bg,
+                  core_arc1, core_arc2, core_arc3,
+                  *front_nodes):
         try:
             canvas.itemconfig(_item, state='normal')
         except Exception:
@@ -845,6 +996,17 @@ def restore_mini_popup_elements(w=240, h=65):
     update_3d_ring_occluded(canvas, core_arc1, back_arc1, cx, cy, 14, _r1_x, _r1_y, _r1_z, 1.0, shadow1, 2.0)
     update_3d_ring_occluded(canvas, core_arc2, back_arc2, cx, cy, 17, _r2_x, _r2_y, _r2_z, 1.0, shadow2, 2.0)
     update_3d_ring_occluded(canvas, core_arc3, back_arc3, cx, cy, 20, _r3_x, _r3_y, _r3_z, 1.0, shadow3, 2.0)
+    _tc = get_plasma_theme_colors(current_plasma_theme, anim_frame)
+    update_dyson_details(
+        canvas, cx, cy, 1.0, _t,
+        ((_r1_x, _r1_y, _r1_z), (_r2_x, _r2_y, _r2_z), (_r3_x, _r3_y, _r3_z)),
+        stardust_embers, stardust_data,
+        coronal_prominences,
+        back_nodes, front_nodes,
+        is_visible=True,
+        flare_boost=1.0,
+        theme_colors=_tc
+    )
     # ──────────────────────────────────────────────────────────────────────────
 
     canvas.coords(term_prompt, cx, cy)
@@ -872,10 +1034,14 @@ def restore_mini_popup_elements(w=240, h=65):
     
     # Ensure exact 3D Dyson Sphere layer stacking on restore:
     for _layer_item in (sun_aura, sun_glow4, sun_glow3, sun_glow2, sun_glow1,
+                        *stardust_embers,
+                        *coronal_prominences,
                         shadow1, shadow2, shadow3,
                         back_arc1, back_arc2, back_arc3,
+                        *back_nodes,
                         core_bg,
                         core_arc1, core_arc2, core_arc3,
+                        *front_nodes,
                         mode_badge_bg, mode_badge_text, title_text, status_text, close_btn_bg, close_btn):
         canvas.tag_raise(_layer_item)
 
@@ -913,6 +1079,7 @@ def _style_nav_button(section):
 
 dash_sphere_canvas = None
 dash_sphere_parts = {}
+dash_stardust_data = [[i * 1.047, 7.0 + i * 2.5, 0.14 + (i % 3) * 0.05] for i in range(6)]
 
 def init_dash_sphere():
     global dash_sphere_canvas, dash_sphere_parts
@@ -928,6 +1095,12 @@ def init_dash_sphere():
     dash_sphere_parts['sun_glow2'] = c.create_oval(0,0,0,0, fill='#52525b', outline='')
     dash_sphere_parts['sun_glow1'] = c.create_oval(0,0,0,0, fill='#a1a1aa', outline='')
 
+    # 1b. Stardust Embers
+    dash_sphere_parts['embers'] = [c.create_oval(0, 0, 0, 0, fill='#a1a1aa', outline='') for _ in range(6)]
+
+    # 1c. Coronal Prominences
+    dash_sphere_parts['prominences'] = [c.create_line(0, 0, 0, 0, 0, 0, fill='#f59e0b', width=2.2, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True) for _ in range(4)]
+
     # 2. Shadows
     dash_sphere_parts['shadow1'] = c.create_line(0,0, 0,0, fill='#000000', width=1.0, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
     dash_sphere_parts['shadow2'] = c.create_line(0,0, 0,0, fill='#000000', width=1.5, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
@@ -938,6 +1111,9 @@ def init_dash_sphere():
     dash_sphere_parts['back_arc2'] = c.create_line(0,0, 0,0, fill='#3b82f6', width=1.5, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
     dash_sphere_parts['back_arc3'] = c.create_line(0,0, 0,0, fill='#0ea5e9', width=1.8, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
 
+    # 3b. Back Harvester Nodes
+    dash_sphere_parts['back_nodes'] = [c.create_oval(0, 0, 0, 0, fill='#0891b2', outline='') for _ in range(7)]
+
     # 4. Dense Fusion Core (white nucleus)
     dash_sphere_parts['core_bg'] = c.create_oval(0,0,0,0, fill='#ffffff', outline='')
 
@@ -946,12 +1122,24 @@ def init_dash_sphere():
     dash_sphere_parts['core_arc2'] = c.create_line(0,0, 0,0, fill='#3b82f6', width=2.0, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
     dash_sphere_parts['core_arc3'] = c.create_line(0,0, 0,0, fill='#0ea5e9', width=2.4, capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True)
 
-    for _d_part in ('sun_aura', 'sun_glow4', 'sun_glow3', 'sun_glow2', 'sun_glow1',
-                    'shadow1', 'shadow2', 'shadow3',
-                    'back_arc1', 'back_arc2', 'back_arc3',
-                    'core_bg',
-                    'core_arc1', 'core_arc2', 'core_arc3'):
+    # 5b. Front Harvester Nodes
+    dash_sphere_parts['front_nodes'] = [c.create_oval(0, 0, 0, 0, fill='#ffffff', outline='') for _ in range(7)]
+
+    for _d_part in ('sun_aura', 'sun_glow4', 'sun_glow3', 'sun_glow2', 'sun_glow1'):
         c.tag_raise(dash_sphere_parts[_d_part])
+    for _em in dash_sphere_parts['embers']:
+        c.tag_raise(_em)
+    for _pr in dash_sphere_parts['prominences']:
+        c.tag_raise(_pr)
+    for _d_part in ('shadow1', 'shadow2', 'shadow3', 'back_arc1', 'back_arc2', 'back_arc3'):
+        c.tag_raise(dash_sphere_parts[_d_part])
+    for _bn in dash_sphere_parts['back_nodes']:
+        c.tag_raise(_bn)
+    c.tag_raise(dash_sphere_parts['core_bg'])
+    for _d_part in ('core_arc1', 'core_arc2', 'core_arc3'):
+        c.tag_raise(dash_sphere_parts[_d_part])
+    for _fn in dash_sphere_parts['front_nodes']:
+        c.tag_raise(_fn)
 
 def update_dash_sphere(pulse, r1_x, r1_y, r1_z, r2_x, r2_y, r2_z, r3_x, r3_y, r3_z):
     if not dash_sphere_canvas: return
@@ -979,8 +1167,12 @@ def update_dash_sphere(pulse, r1_x, r1_y, r1_z, r2_x, r2_y, r2_z, r3_x, r3_y, r3
     except Exception:
         pass
 
-    # Ensure they are visible
-    for key in p:
+    # Ensure background aura, shadows, core, and rings are visible
+    for key in ('sun_aura', 'sun_glow4', 'sun_glow3', 'sun_glow2', 'sun_glow1',
+                'shadow1', 'shadow2', 'shadow3',
+                'back_arc1', 'back_arc2', 'back_arc3',
+                'core_bg',
+                'core_arc1', 'core_arc2', 'core_arc3'):
         try: c.itemconfig(p[key], state='normal')
         except: pass
 
@@ -994,6 +1186,17 @@ def update_dash_sphere(pulse, r1_x, r1_y, r1_z, r2_x, r2_y, r2_z, r3_x, r3_y, r3
     update_3d_ring_occluded(c, p['core_arc1'], p['back_arc1'], cx, cy, 14, r1_x, r1_y, r1_z, scale, p['shadow1'], 2*scale)
     update_3d_ring_occluded(c, p['core_arc2'], p['back_arc2'], cx, cy, 17, r2_x, r2_y, r2_z, scale, p['shadow2'], 2*scale)
     update_3d_ring_occluded(c, p['core_arc3'], p['back_arc3'], cx, cy, 20, r3_x, r3_y, r3_z, scale, p['shadow3'], 2*scale)
+
+    update_dyson_details(
+        c, cx, cy, scale, anim_frame * 0.01,
+        ((r1_x, r1_y, r1_z), (r2_x, r2_y, r2_z), (r3_x, r3_y, r3_z)),
+        p['embers'], dash_stardust_data,
+        p['prominences'],
+        p['back_nodes'], p['front_nodes'],
+        is_visible=True,
+        flare_boost=1.0,
+        theme_colors=tc
+    )
 
 
 def build_dashboard_ui():
@@ -2681,12 +2884,23 @@ def animation_loop():
         target_color = '#9ca3af'
         target_outline = '#27272a'
         show_dots = False
+        dyson_active = True
+        flare_boost = 1.0
+        cur_sphere_theme = None
 
         if visual_state == "THINKING":
             target_text = "Thinking"
             target_color = '#fbbf24'
             target_outline = '#b45309'
             show_dots = True
+            dyson_active = True
+            flare_boost = 1.35
+            cur_sphere_theme = {
+                'arcs': ['#fcd34d', '#fbbf24', '#f59e0b'],
+                'back_arcs': ['#7c2d12', '#b45309', '#78350f'],
+                'prominence': '#f59e0b',
+                'dust': '#fde68a'
+            }
             canvas.itemconfig(sun_aura, fill='#451a03')
             canvas.itemconfig(sun_glow4, fill='#78350f')
             canvas.itemconfig(sun_glow3, fill='#b45309')
@@ -2700,6 +2914,7 @@ def animation_loop():
             canvas.itemconfig(back_arc2, fill='#b45309')
             canvas.itemconfig(back_arc3, fill='#78350f')
         elif visual_state == "SEARCH":
+            dyson_active = False
             target_text = "Searching"
             target_color = '#38bdf8'
             target_outline = '#0284c7'
@@ -2724,6 +2939,7 @@ def animation_loop():
             # Spin radar
             canvas.itemconfig(radar_arc, start=(anim_frame * -8) % 360)
         elif visual_state == "BROWSER":
+            dyson_active = False
             target_text = "Browsing"
             target_color = '#f97316'
             target_outline = '#c2410c'
@@ -2752,6 +2968,7 @@ def animation_loop():
             canvas.coords(browser_line, cx-bw, cy-bh*0.4+bounce, cx+bw, cy-bh*0.4+bounce)
             
         elif visual_state == "DESKTOP":
+              dyson_active = False
               target_text = "Desktop"
               target_color = '#a78bfa'
               target_outline = '#7c3aed'
@@ -2783,6 +3000,7 @@ def animation_loop():
               canvas.coords(desktop_cursor_label, ax+12*scale, ay)
               canvas.itemconfig(desktop_cursor_label, font=("Segoe UI", max(1, int(7*scale)), "bold"))
         elif visual_state == "BASH":
+            dyson_active = False
             target_text = "Bash"
             target_color = '#34d399'
             target_outline = '#065f46'
@@ -2807,6 +3025,7 @@ def animation_loop():
                 canvas.itemconfig(term_prompt, state="normal" if anim_frame % 20 < 10 else "hidden", font=("Consolas", max(1, int(11 * scale)), "bold"))
             
         elif visual_state == "FILE":
+            dyson_active = False
             target_text = "I/O"
             target_color = '#818cf8'
             target_outline = '#3730a3'
@@ -2833,6 +3052,7 @@ def animation_loop():
             canvas.coords(file_icon, cx-w, cy-h+bounce, cx+w/2, cy-h+bounce, cx+w+2, cy-h/2+bounce, cx+w+2, cy+h+2+bounce, cx-w, cy+h+2+bounce)
 
         elif visual_state == "MCP":
+            dyson_active = False
             target_text = "MCP Connect"
             target_color = '#d946ef'
             target_outline = '#a21caf'
@@ -2860,6 +3080,7 @@ def animation_loop():
             canvas.coords(mcp_inner, cx, cy-6*scale+bounce, cx+5*scale, cy+bounce, cx, cy+6*scale+bounce, cx-5*scale, cy+bounce)
 
         elif visual_state == "BGTASK":
+            dyson_active = False
             target_text = "Background"
             target_color = '#14b8a6'
             target_outline = '#0f766e'
@@ -2895,6 +3116,14 @@ def animation_loop():
             target_color = '#e5e7eb'
             target_outline = '#374151'
             show_dots = True
+            dyson_active = True
+            flare_boost = 1.2
+            cur_sphere_theme = {
+                'arcs': ['#e5e7eb', '#9ca3af', '#d1d5db'],
+                'back_arcs': ['#374151', '#4b5563', '#1f2937'],
+                'prominence': '#e5e7eb',
+                'dust': '#9ca3af'
+            }
             canvas.itemconfig(sun_aura, fill='#1f2937')
             canvas.itemconfig(sun_glow4, fill='#374151')
             canvas.itemconfig(sun_glow3, fill='#4b5563')
@@ -2911,7 +3140,10 @@ def animation_loop():
         else: # IDLE
             target_text = "Standing by..." if mobile_clients == 0 else "Standing by (Linked)"
             target_outline = '#27272a'
+            dyson_active = True
+            flare_boost = 1.0
             tc = get_plasma_theme_colors(current_plasma_theme, anim_frame)
+            cur_sphere_theme = tc
             canvas.itemconfig(sun_aura, fill=tc['aura'][0])
             canvas.itemconfig(sun_glow4, fill=tc['aura'][1])
             canvas.itemconfig(sun_glow3, fill=tc['aura'][2])
@@ -2924,6 +3156,17 @@ def animation_loop():
             canvas.itemconfig(back_arc1, fill=tc['back_arcs'][0])
             canvas.itemconfig(back_arc2, fill=tc['back_arcs'][1])
             canvas.itemconfig(back_arc3, fill=tc['back_arcs'][2])
+
+        update_dyson_details(
+            canvas, cx, cy, scale, t,
+            ((r1_x, r1_y, r1_z), (r2_x, r2_y, r2_z), (r3_x, r3_y, r3_z)),
+            stardust_embers, stardust_data,
+            coronal_prominences,
+            back_nodes, front_nodes,
+            is_visible=dyson_active,
+            flare_boost=flare_boost,
+            theme_colors=cur_sphere_theme
+        )
 
         if is_hovering_pill:
             canvas.itemconfig(pill, outline='#6666ff')
