@@ -692,46 +692,102 @@ def _notify_plasma_border(cmd_str):
     except Exception:
         pass
 
-def start_plasma_border(theme=None):
-    global plasma_process, current_plasma_state, current_plasma_theme
+def stop_plasma_border():
+    global plasma_process, current_plasma_state, _last_plasma_state
+    current_plasma_state = "OFF"
+    _last_plasma_state = None
     try:
-        is_enabled = (current_plasma_state != "OFF")
-        chosen_theme = theme or current_plasma_theme
-        if os.path.exists(PLASMA_SETTINGS_PATH):
+        _notify_plasma_border("STATE:OFF")
+        _notify_plasma_border("DISABLE")
+        _notify_plasma_border("EXIT")
+    except Exception:
+        pass
+    if plasma_process and plasma_process.poll() is None:
+        try:
+            plasma_process.terminate()
+            plasma_process.wait(timeout=1.0)
+        except Exception:
+            try:
+                plasma_process.kill()
+            except Exception:
+                pass
+        plasma_process = None
+    # Kill any lingering or orphaned plasma_border processes
+    try:
+        import psutil
+        for p in psutil.process_iter(['pid', 'name', 'cmdline']):
+            try:
+                cmdline = p.info.get('cmdline') or []
+                if any('plasma_border.py' in str(arg) for arg in cmdline):
+                    p.kill()
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+def start_plasma_border(theme=None, force_state=None):
+    global plasma_process, current_plasma_state, current_plasma_theme, _last_plasma_state
+    try:
+        if force_state is not None:
+            current_plasma_state = force_state
+        elif os.path.exists(PLASMA_SETTINGS_PATH):
             try:
                 with open(PLASMA_SETTINGS_PATH, "r", encoding="utf-8") as _sf:
                     _sdata = json.load(_sf)
                     if _sdata.get("state") == "OFF":
-                        is_enabled = False
                         current_plasma_state = "OFF"
+                    elif _sdata.get("state"):
+                        current_plasma_state = _sdata["state"]
                     if _sdata.get("theme"):
-                        chosen_theme = _sdata["theme"]
-                        current_plasma_theme = chosen_theme
+                        current_plasma_theme = _sdata["theme"]
             except Exception:
                 pass
 
-        if not is_enabled:
-            # If disabled, terminate any running process immediately
-            if plasma_process and plasma_process.poll() is None:
-                try:
-                    plasma_process.terminate()
-                except Exception:
-                    pass
-                plasma_process = None
+        if current_plasma_state == "OFF":
+            stop_plasma_border()
             return
 
-        # If already running cleanly, do not spawn another
+        chosen_theme = theme or current_plasma_theme
+        target_state = current_plasma_state if current_plasma_state not in ("OFF", "BLANK") else "IDLE"
+        _last_plasma_state = None
+
+        # If already running cleanly, send state & theme update
         if plasma_process and plasma_process.poll() is None:
+            _notify_plasma_border(f"THEME:{chosen_theme}")
+            _notify_plasma_border("ENABLE")
+            _notify_plasma_border(f"STATE:{target_state}")
             return
+
+        # Kill any orphaned plasma_border processes to avoid UDP bind collisions
+        try:
+            import psutil
+            for p in psutil.process_iter(['pid', 'name', 'cmdline']):
+                try:
+                    cmdline = p.info.get('cmdline') or []
+                    if any('plasma_border.py' in str(arg) for arg in cmdline):
+                        p.kill()
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
         script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "plasma_border.py")
         if os.path.exists(script):
             plasma_process = subprocess.Popen(
-                [sys.executable, script, "--port", str(PLASMA_PORT), "--theme", chosen_theme],
+                [sys.executable, script, "--port", str(PLASMA_PORT), "--theme", chosen_theme, "--state", target_state],
                 creationflags=CREATE_NO_WINDOW
             )
             _assign_process_to_job(plasma_process.pid)
-            _voila_log.info(f"Plasma border started PID={plasma_process.pid} theme={chosen_theme}")
+            _voila_log.info(f"Plasma border started PID={plasma_process.pid} theme={chosen_theme} state={target_state}")
+
+            # Send staggered wake messages to ensure UDP sync once socket is bound
+            def _wake():
+                for delay in (0.2, 0.5):
+                    time.sleep(delay)
+                    _notify_plasma_border(f"THEME:{chosen_theme}")
+                    _notify_plasma_border("ENABLE")
+                    _notify_plasma_border(f"STATE:{target_state}")
+            threading.Thread(target=_wake, daemon=True).start()
     except Exception as e:
         _voila_log.error(f"Failed to start plasma border: {e}")
 
@@ -759,13 +815,11 @@ import atexit
 
 def cleanup_processes():
     try:
-        _notify_plasma_border("EXIT")
-        if plasma_process and plasma_process.poll() is None:
-            plasma_process.terminate()
+        stop_plasma_border()
     except Exception:
         pass
     try:
-        subprocess.run(['wmic', 'process', 'where', 'commandline like "%plasma_border.py%" or commandline like "%gemini_live_bridge.py%"', 'call', 'terminate'], creationflags=subprocess.CREATE_NO_WINDOW, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(['wmic', 'process', 'where', 'commandline like "%gemini_live_bridge.py%"', 'call', 'terminate'], creationflags=subprocess.CREATE_NO_WINDOW, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except Exception:
         pass
     try:
@@ -1989,14 +2043,33 @@ def _show_settings_widgets():
     plasma_frame.grid(row=7, column=0, columnspan=4, padx=16, pady=(12, 6), sticky='ew')
 
     _p_settings_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "plasma_settings.json")
+    if os.path.exists(_p_settings_path):
+        try:
+            with open(_p_settings_path, "r", encoding="utf-8") as _pf:
+                _pdata = json.load(_pf)
+                if _pdata.get("theme"):
+                    current_plasma_theme = _pdata["theme"]
+                if _pdata.get("state"):
+                    current_plasma_state = _pdata["state"]
+        except Exception:
+            pass
+
     _cur_p_theme = current_plasma_theme
     _cur_p_state = current_plasma_state
-    plasma_status_var = tk.StringVar(value="Status: ACTIVE" if current_plasma_state != "OFF" else "Status: OFF")
+    plasma_status_var = tk.StringVar(value="● Glow: ACTIVE" if current_plasma_state != "OFF" else "○ Glow: OFF")
 
     p_header_row = tk.Frame(plasma_frame, bg='#1A1D23')
     p_header_row.pack(fill='x', padx=12, pady=(8, 4))
     tk.Label(p_header_row, text='Fullscreen perimeter glow with animated iridescent plasma when Voila starts.',
              bg='#1A1D23', fg='#9CA3AF', font=('Segoe UI', 9)).pack(side='left')
+
+    def _update_toggle_btn():
+        if current_plasma_state != "OFF":
+            plasma_status_var.set("● Glow: ACTIVE")
+            tgl_btn.config(bg='#059669', fg='#FFFFFF', activebackground='#10B981', activeforeground='#FFFFFF')
+        else:
+            plasma_status_var.set("○ Glow: OFF")
+            tgl_btn.config(bg='#374151', fg='#9CA3AF', activebackground='#4B5563', activeforeground='#FFFFFF')
 
     def _toggle_plasma_border():
         global current_plasma_state, plasma_process
@@ -2004,32 +2077,29 @@ def _show_settings_widgets():
         if current_plasma_state == "OFF":
             current_plasma_state = "IDLE"
             _cur_p_state = "IDLE"
-            plasma_status_var.set("Status: ACTIVE")
-            start_plasma_border(current_plasma_theme)
+            # 1. Immediately persist to settings file so any process/reader gets active
+            try:
+                with open(PLASMA_SETTINGS_PATH, "w", encoding="utf-8") as _pf:
+                    json.dump({"theme": current_plasma_theme, "state": "IDLE"}, _pf, indent=2)
+            except Exception:
+                pass
+            _update_toggle_btn()
+            # 2. Start plasma border with force_state="IDLE"
+            start_plasma_border(current_plasma_theme, force_state="IDLE")
             _notify_plasma_border("ENABLE")
             _notify_plasma_border("STATE:IDLE")
         else:
             current_plasma_state = "OFF"
             _cur_p_state = "OFF"
-            plasma_status_var.set("Status: OFF")
-            _notify_plasma_border("STATE:OFF")
-            _notify_plasma_border("DISABLE")
-            if plasma_process and plasma_process.poll() is None:
-                try:
-                    plasma_process.terminate()
-                except Exception:
-                    pass
-                plasma_process = None
+            # 1. Immediately persist "OFF" to settings file
             try:
-                subprocess.run(['wmic', 'process', 'where', 'commandline like "%plasma_border.py%"', 'call', 'terminate'],
-                               creationflags=subprocess.CREATE_NO_WINDOW, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                with open(PLASMA_SETTINGS_PATH, "w", encoding="utf-8") as _pf:
+                    json.dump({"theme": current_plasma_theme, "state": "OFF"}, _pf, indent=2)
             except Exception:
                 pass
-        try:
-            with open(PLASMA_SETTINGS_PATH, "w", encoding="utf-8") as _pf:
-                json.dump({"theme": current_plasma_theme, "state": current_plasma_state}, _pf, indent=2)
-        except Exception:
-            pass
+            _update_toggle_btn()
+            # 2. Stop plasma border
+            stop_plasma_border()
 
     p_btn_row = tk.Frame(plasma_frame, bg='#1A1D23')
     p_btn_row.pack(fill='x', padx=12, pady=(4, 12))
@@ -2080,11 +2150,11 @@ def _show_settings_widgets():
 
     tgl_btn = tk.Button(
         p_btn_row, textvariable=plasma_status_var,
-        bg='#374151', fg='#A7F3D0', activebackground='#4B5563', activeforeground='#FFFFFF',
         relief='flat', bd=0, padx=10, pady=4, font=('Segoe UI', 8, 'bold'), cursor='hand2',
         command=_toggle_plasma_border
     )
     tgl_btn.pack(side='right', padx=4)
+    _update_toggle_btn()
 
     # --- FLUSH MEMORY ---
     def flush_memory():

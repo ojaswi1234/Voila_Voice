@@ -102,6 +102,7 @@ patch*.ps1
 fix_*.py
 test_*.py
 check_*.py
+!local-agent/tests/**
 t[0-9]*.txt
 t[0-9]*.ps
 t[0-9]*.ps1

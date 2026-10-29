@@ -490,8 +490,9 @@ class AmorphousPlasmaOverlay:
 
     def save_settings(self):
         try:
+            persisted_state = "OFF" if not self.enabled else ("IDLE" if self.state in ("OFF", "BLANK", "PAUSE") else self.state)
             with open(self.settings_file, "w", encoding="utf-8") as f:
-                json.dump({"theme": self.theme_name, "state": "OFF" if not self.enabled else self.state}, f, indent=2)
+                json.dump({"theme": self.theme_name, "state": persisted_state}, f, indent=2)
         except Exception:
             pass
 
@@ -559,12 +560,12 @@ class AmorphousPlasmaOverlay:
                         return
                     self.state = state
                     # NOTE: Do NOT call self.save_settings() on high-frequency transient state changes!
-            elif msg in ("DISABLE", "OFF"):
+            elif msg in ("DISABLE", "OFF", "STOP"):
                 self.enabled = False
                 self.state = "OFF"
                 self.save_settings()
                 self.clear_screen()
-            elif msg in ("ENABLE", "ON"):
+            elif msg in ("ENABLE", "ON", "START", "ACTIVE"):
                 self.enabled = True
                 self.state = "IDLE"
                 self.save_settings()
