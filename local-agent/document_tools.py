@@ -788,7 +788,7 @@ def create_pdf(kwargs):
             if (el.tagName === 'PRE' || el.tagName === 'CODE') return;
             
             // Check for ASCII or Unicode arrows
-            if (text.includes("->") || text.includes("<-") || text.includes("--") || text.match(/\\\\[.*\\\\]/) ||
+            if (text.includes("->") || text.includes("<-") || text.includes("--") || text.includes("[") ||
                 text.includes("↓") || text.includes("→") || text.includes("←") || text.includes("↑") ||
                 text.includes("↔") || text.includes("↕") || text.includes("â†")) {{
                 
@@ -818,7 +818,7 @@ def create_pdf(kwargs):
                         }} else if (["<---", "<--", "<-", "←", "↑"].includes(p)) {{
                             currentEdge = "---";
                         }} else {{
-                            let label = p.replace(/\\[/g, '').replace(/\\]/g, '').replace(/\*/g, '').replace(/\+/g, '').replace(/\|/g, '').replace(/\(/g, '').replace(/\)/g, '').trim();
+                            let label = p.replace(/[\x5b\x5d*+|()]/g, "").trim();
                             if (!label) return;
                             
                             // Truncate overly long text blocks that aren't real nodes
@@ -1234,6 +1234,81 @@ def read_docx(kwargs):
         return f"Error reading DOCX: {e}"
 
 
+
+def analyze_document_structure(kwargs):
+    """
+    Inspects source document (.pdf or .docx) and returns an executive structural blueprint (<400 tokens).
+    Avoids LLM context window bloat while mapping out headings, tables, bullets, and watermarks.
+    """
+    try:
+        from document_duplication import engine
+    except ImportError:
+        import document_duplication
+        engine = document_duplication.engine
+
+    source_path = kwargs.get('source_path') or kwargs.get('path')
+    if not source_path:
+        return "Error: 'source_path' parameter is required for analyze_document_structure."
+    
+    include_full_text = kwargs.get('include_full_text', False)
+    if isinstance(include_full_text, str):
+        include_full_text = include_full_text.lower() in ('true', '1', 'yes')
+
+    try:
+        blueprint = engine.analyze_structure(source_path, include_full_text=include_full_text)
+        return json.dumps(blueprint, indent=2)
+    except Exception as e:
+        return f"Error analyzing document structure: {str(e)}\n{traceback.format_exc()}"
+
+
+def duplicate_document(kwargs):
+    """
+    Duplicates an existing PDF or DOCX file with 100% locked visual layout, typography,
+    colors, page setup, and components, while mutating only text content and cloning archetypes.
+    """
+    try:
+        from document_duplication import engine
+    except ImportError:
+        import document_duplication
+        engine = document_duplication.engine
+
+    source_path = kwargs.get('source_path') or kwargs.get('path')
+    output_path = kwargs.get('output_path') or kwargs.get('target_path')
+
+    if not source_path:
+        return "Error: 'source_path' parameter is required for duplicate_document."
+    
+    if not output_path:
+        base, ext = os.path.splitext(source_path)
+        output_path = f"{base}_duplicated{ext}"
+
+    instruction = kwargs.get('instruction', '')
+    replacements = kwargs.get('replacements')
+    additions = kwargs.get('additions')
+    length_controls = kwargs.get('length_controls')
+    watermark = kwargs.get('watermark')
+    watermark_opacity = kwargs.get('watermark_opacity', 0.10)
+    output_format = kwargs.get('format') or kwargs.get('output_format')
+    if not output_format:
+        output_format = 'pdf' if output_path.lower().endswith('.pdf') else 'docx'
+
+    try:
+        res = engine.duplicate(
+            source_path=source_path,
+            output_path=output_path,
+            instruction=instruction,
+            replacements=replacements,
+            additions=additions,
+            length_controls=length_controls,
+            watermark=watermark,
+            watermark_opacity=watermark_opacity,
+            output_format=output_format
+        )
+        return res
+    except Exception as e:
+        return f"Error duplicating document: {str(e)}\n{traceback.format_exc()}"
+
+
 def main():
     try:
         input_data = sys.stdin.read()
@@ -1245,7 +1320,7 @@ def main():
 
         actions = {
             "read_csv": read_csv, "create_csv": create_csv, "read_excel": read_excel, "create_excel": create_excel, "modify_excel": modify_excel,
-            "read_pdf": read_pdf, "read_docx": read_docx, "read_doc": read_docx, "create_pdf": create_pdf, "create_doc": create_doc, "create_ppt": create_ppt, "create_docx": create_docx
+            "read_pdf": read_pdf, "read_docx": read_docx, "read_doc": read_docx, "create_pdf": create_pdf, "create_doc": create_doc, "create_ppt": create_ppt, "create_docx": create_docx, "duplicate_document": duplicate_document, "analyze_document_structure": analyze_document_structure
         }
         if action not in actions:
             print(f"Error: Unknown action '{action}'")

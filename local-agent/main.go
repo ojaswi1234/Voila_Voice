@@ -4053,7 +4053,81 @@ var availableTools = []toolDef{
 	{
 		Type: "function",
 		Function: toolFuncDef{
+			Name:        "analyze_document_structure",
+			Description: "Inspect an existing PDF or Word Document (.docx) and generate an Executive Structural Blueprint (<400 tokens) detailing headings, tables, bullet lists, word count estimates, and detected watermarks without bloating the context window.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"source_path": map[string]interface{}{
+						"type":        "string",
+						"description": "Absolute or relative path to the source document (.pdf or .docx).",
+					},
+					"include_full_text": map[string]interface{}{
+						"type":        "boolean",
+						"description": "If true, returns complete raw text IR. Defaults to false for concise blueprint.",
+					},
+				},
+				"required": []string{"source_path"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "duplicate_document",
+			Description: "High-fidelity document duplication engine. Clones and locks 100% of the visual styling, typography, page setups, tables, margins, and embedded images from an existing PDF or Word Document, while modifying only text content. Supports Component Archetype Inheritance for additions (tables, bullets, sections) and complete Watermark Lifecycle management (add, modify, or strip with 'remove').",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"source_path": map[string]interface{}{
+						"type":        "string",
+						"description": "Path to the source document (.pdf or .docx) to duplicate.",
+					},
+					"output_path": map[string]interface{}{
+						"type":        "string",
+						"description": "Path to save the duplicated document (defaults to Desktop or _duplicated suffix).",
+					},
+					"instruction": map[string]interface{}{
+						"type":        "string",
+						"description": "Natural language instruction guiding the topic change, text modifications, or watermark actions.",
+					},
+					"replacements": map[string]interface{}{
+						"type":        "object",
+						"description": "Key-value dictionary mapping section IDs, headings, or source text phrases to new replacement text.",
+					},
+					"additions": map[string]interface{}{
+						"type": "array",
+						"items": map[string]interface{}{
+							"type": "object",
+						},
+						"description": "Array of elements to add (e.g. {'action': 'add_table', 'columns': [...], 'rows': [...]}, {'action': 'add_bullets', 'items': [...]}, {'action': 'add_section', 'heading': '...', 'text': '...'}). New elements automatically inherit the exact styling DNA of matching components in the source document.",
+					},
+					"length_controls": map[string]interface{}{
+						"type":        "object",
+						"description": "Controls for document length (e.g. {'target_words_per_para': 50}).",
+					},
+					"watermark": map[string]interface{}{
+						"type":        "string",
+						"description": "Watermark management: Pass 'remove' (or 'none') to strip watermarks cleanly with zero text distortion. Pass text (e.g. 'CONFIDENTIAL', 'DRAFT') to add or modify watermark. Omit to preserve original.",
+					},
+					"watermark_opacity": map[string]interface{}{
+						"type":        "number",
+						"description": "Watermark opacity from 0.05 to 0.30 (default 0.10).",
+					},
+					"format": map[string]interface{}{
+						"type":        "string",
+						"description": "Output format: 'pdf' (default) or 'docx'.",
+					},
+				},
+				"required": []string{"source_path"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
 			Name:        "create_pdf",
+
 			Description: "Create a PDF file with text content.",
 			Parameters: map[string]interface{}{
 				"type": "object",
@@ -4540,6 +4614,10 @@ func executeTool(ctx context.Context, toolName string, argsJSON json.RawMessage,
 			pseudoCommand = "write_doc " + resolveAgentPath(getString("path"))
 		case "read_pdf", "read_doc", "read_docx", "read_excel", "read_csv":
 			pseudoCommand = "read_doc " + resolveAgentPath(getString("path"))
+		case "duplicate_document":
+			pseudoCommand = "duplicate_document " + resolveAgentPath(getString("source_path")) + " -> " + resolveAgentPath(getString("output_path"))
+		case "analyze_document_structure":
+			pseudoCommand = "analyze_doc " + resolveAgentPath(getString("source_path"))
 		case "browser_automation":
 			pseudoCommand = "browser " + getString("action") + " " + getString("url") + getString("selector")
 		default:
@@ -4601,6 +4679,13 @@ func callPythonDocumentTool(toolName string, argsJSON json.RawMessage) string {
 		return "error: could not find executable directory"
 	}
 	scriptPath := filepath.Join(filepath.Dir(exeDir), "document_tools.py")
+	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
+		if _, err := os.Stat("document_tools.py"); err == nil {
+			scriptPath = "document_tools.py"
+		} else if _, err := os.Stat(filepath.Join("local-agent", "document_tools.py")); err == nil {
+			scriptPath = filepath.Join("local-agent", "document_tools.py")
+		}
+	}
 
 	payload := map[string]interface{}{
 		"action": toolName,
@@ -4889,6 +4974,23 @@ func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMes
 				args["path"] = filepath.Join(homeDir, "Desktop", fileName)
 			} else {
 				args["path"] = resolveAgentPath(pathStr)
+			}
+		}
+	}
+
+	// Intercept source_path and output_path for document duplication
+	if spVal, exists := args["source_path"]; exists {
+		if spStr, ok := spVal.(string); ok {
+			args["source_path"] = resolveAgentPath(spStr)
+		}
+	}
+	if opVal, exists := args["output_path"]; exists {
+		if opStr, ok := opVal.(string); ok {
+			homeDir, _ := os.UserHomeDir()
+			if filepath.IsAbs(opStr) {
+				args["output_path"] = opStr
+			} else {
+				args["output_path"] = filepath.Join(homeDir, "Desktop", filepath.Base(opStr))
 			}
 		}
 	}
@@ -5645,7 +5747,7 @@ func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMes
 		}
 		return `{"ok":false, "error":"unknown_action"}`
 
-case "browser_automation":
+	case "browser_automation":
 		action := getString("action")
 		url := getString("url")
 		selector := getString("selector")
@@ -6395,7 +6497,15 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
    - You MUST autonomously select the best 'theme' based on the topic (e.g., 'cyberpunk' for tech, 'corporate_blue' for finance, 'forest_sage' for ecology).
    - Use LaTeX features ('\\newpage', '\\tableofcontents', '\\onehalfspacing', 'tabularx' tables, '\\chapter') to ensure the document is voluminous, exhaustive, and professionally structured automatically.
    
-5. HOW TO STOP: To exit the loop and speak to the user, you MUST return a normal text message and completely OMIT the tool calls. If you call a tool, you are trapped in the loop.`
+5. HOW TO STOP: To exit the loop and speak to the user, you MUST return a normal text message and completely OMIT the tool calls. If you call a tool, you are trapped in the loop.
+6. HIGH-FIDELITY DOCUMENT DUPLICATION & REPLICATION ENGINE ('duplicate_document', 'analyze_document_structure'):
+   - When the user asks to duplicate, clone, replicate, or re-theme an existing document (e.g. "duplicate doc.pdf with topic X", "remove watermark", "add a table with original styling"):
+   - Locating Documents: If the document path is ambiguous or unspecified, autonomously use 'run_terminal' (e.g. dir /s /b) or 'list_dir' to locate the exact source PDF or DOCX file.
+   - Rapid Structural Analysis: Call 'analyze_document_structure' to obtain an executive structural blueprint (<400 tokens) with heading hierarchy, table columns, bullet counts, and watermark status without bloating your context window.
+   - High-Fidelity Replication: Call 'duplicate_document' with 'source_path', 'output_path', 'replacements', 'additions', 'length_controls', and 'watermark'.
+   - Archetype Inheritance: If adding new elements (tables, bullets, callout boxes), the engine automatically clones the styling DNA (header fills, borders, row striping, bullet glyphs) of the original document.
+   - Watermark Management: Pass watermark="remove" to strip all watermarks cleanly with zero text distortion, or pass watermark="CONFIDENTIAL" (or any text) to add/modify watermarks.
+`
 	}
 	if wsMem := getWorkspaceMemory(); wsMem != "" {
 		systemPrompt += wsMem
@@ -7072,7 +7182,15 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
    - You MUST autonomously select the best 'theme' based on the topic (e.g., 'cyberpunk' for tech, 'corporate_blue' for finance, 'forest_sage' for ecology).
    - Use LaTeX features ('\\newpage', '\\tableofcontents', '\\onehalfspacing', 'tabularx' tables, '\\chapter') to ensure the document is voluminous, exhaustive, and professionally structured automatically.
    
-5. HOW TO STOP: To exit the loop and speak to the user, you MUST return a normal text message and completely OMIT the tool calls. If you call a tool, you are trapped in the loop.`
+5. HOW TO STOP: To exit the loop and speak to the user, you MUST return a normal text message and completely OMIT the tool calls. If you call a tool, you are trapped in the loop.
+6. HIGH-FIDELITY DOCUMENT DUPLICATION & REPLICATION ENGINE ('duplicate_document', 'analyze_document_structure'):
+   - When the user asks to duplicate, clone, replicate, or re-theme an existing document (e.g. "duplicate doc.pdf with topic X", "remove watermark", "add a table with original styling"):
+   - Locating Documents: If the document path is ambiguous or unspecified, autonomously use 'run_terminal' (e.g. dir /s /b) or 'list_dir' to locate the exact source PDF or DOCX file.
+   - Rapid Structural Analysis: Call 'analyze_document_structure' to obtain an executive structural blueprint (<400 tokens) with heading hierarchy, table columns, bullet counts, and watermark status without bloating your context window.
+   - High-Fidelity Replication: Call 'duplicate_document' with 'source_path', 'output_path', 'replacements', 'additions', 'length_controls', and 'watermark'.
+   - Archetype Inheritance: If adding new elements (tables, bullets, callout boxes), the engine automatically clones the styling DNA (header fills, borders, row striping, bullet glyphs) of the original document.
+   - Watermark Management: Pass watermark="remove" to strip all watermarks cleanly with zero text distortion, or pass watermark="CONFIDENTIAL" (or any text) to add/modify watermarks.
+`
 	}
 	if wsMem := getWorkspaceMemory(); wsMem != "" {
 		systemPrompt += wsMem
