@@ -1235,11 +1235,18 @@ def read_docx(kwargs):
 
 
 
-def analyze_document_structure(kwargs):
+def analyze_document_structure(kwargs=None, **extra):
     """
     Inspects source document (.pdf or .docx) and returns an executive structural blueprint (<400 tokens).
     Avoids LLM context window bloat while mapping out headings, tables, bullets, and watermarks.
     """
+    if kwargs is None:
+        kwargs = {}
+    elif not isinstance(kwargs, dict):
+        kwargs = {"source_path": str(kwargs)}
+    if extra:
+        kwargs.update(extra)
+
     try:
         from document_duplication import engine
     except ImportError:
@@ -1261,11 +1268,18 @@ def analyze_document_structure(kwargs):
         return f"Error analyzing document structure: {str(e)}\n{traceback.format_exc()}"
 
 
-def duplicate_document(kwargs):
+def duplicate_document(kwargs=None, **extra):
     """
     Duplicates an existing PDF or DOCX file with 100% locked visual layout, typography,
     colors, page setup, and components, while mutating only text content and cloning archetypes.
     """
+    if kwargs is None:
+        kwargs = {}
+    elif not isinstance(kwargs, dict):
+        kwargs = {"source_path": str(kwargs)}
+    if extra:
+        kwargs.update(extra)
+
     try:
         from document_duplication import engine
     except ImportError:

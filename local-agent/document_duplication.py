@@ -50,6 +50,14 @@ except ImportError:
 # Helper Utilities & Color Conversions
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _is_char_bold(fontname: Any) -> bool:
+    """Check if fontname indicates a bold, black, or heavy typeface."""
+    if not fontname:
+        return False
+    fn = str(fontname).lower()
+    return any(k in fn for k in ("bold", "bx", "black", "heavy", "demi", "semibold"))
+
+
 def _color_to_hex(color: Any) -> str:
     """Convert RGB/RGBA tuple or list to hex string #RRGGBB."""
     if not color:
@@ -162,7 +170,6 @@ class DocumentLayoutExtractor:
     def extract_pdf(self, pdf_path: str, asset_dir: str) -> Dict[str, Any]:
         """Extracts structure, styles, tables, images, and watermarks from PDF."""
         extracted_images = []
-        # 1. Extract raw images with PyPDF
         try:
             reader = pypdf.PdfReader(pdf_path)
             for page_idx, page in enumerate(reader.pages):
@@ -178,19 +185,20 @@ class DocumentLayoutExtractor:
                         "path": out_img_path,
                         "name": img_name
                     })
-        except Exception as e:
-            # Non-fatal image extraction fallback
+        except Exception:
             pass
 
-        # 2. Extract layout, text, typography, tables, and watermarks with pdfplumber
         skeleton_sections = []
         detected_watermark = None
         global_fonts = {}
         global_colors = {}
         all_font_sizes = []
+        heading_font_sizes = []
         page_widths = []
         page_heights = []
         sec_counter = 0
+        detected_footer_text = ""
+        has_divider = False
 
         with pdfplumber.open(pdf_path) as pdf:
             total_pages = len(pdf.pages)
@@ -240,13 +248,16 @@ class DocumentLayoutExtractor:
                     all_font_sizes.append(f_size)
                     global_colors[f_color] = global_colors.get(f_color, 0) + 1
 
+                for l in page.lines:
+                    if l.get('width', 0) > 300 and l.get('stroking_color'):
+                        has_divider = True
+
                 # 2. Extract Tables on this page
                 table_objs = page.find_tables()
                 extracted_table_bboxes = []
                 for t_idx, t_obj in enumerate(table_objs):
                     bbox = t_obj.bbox
                     tbl_height = bbox[3] - bbox[1]
-                    # Filter out rogue full-page boxes
                     if tbl_height > p_height * 0.85:
                         continue
                     t_data = t_obj.extract()
@@ -254,6 +265,24 @@ class DocumentLayoutExtractor:
                         extracted_table_bboxes.append(t_obj.bbox)
                         headers = [str(col or '').strip() for col in t_data[0]]
                         rows = [[str(cell or '').strip() for cell in r] for r in t_data[1:]]
+
+                        header_bg = "#1a73e8"
+                        for r in page.rects:
+                            if abs(r.get("top", 0) - bbox[1]) < 3 and r.get("fill"):
+                                header_bg = _color_to_hex(r.get("non_stroking_color"))
+                                break
+
+                        highlight_rows = []
+                        for row_idx in range(len(rows)):
+                            is_hl = False
+                            for r in page.rects:
+                                if abs(r.get("top", 0) - (bbox[1] + 15 + row_idx * 16)) < 8:
+                                    rc = r.get("non_stroking_color")
+                                    if isinstance(rc, (list, tuple)) and len(rc) >= 3 and rc[0] > 0.85 and rc[2] > 0.95:
+                                        is_hl = True
+                                        break
+                            highlight_rows.append(is_hl)
+
                         sec_counter += 1
                         page_sections.append({
                             "id": f"table_{sec_counter}",
@@ -262,10 +291,12 @@ class DocumentLayoutExtractor:
                             "top": float(t_obj.bbox[1]),
                             "columns": headers,
                             "rows": rows,
+                            "highlight_rows": highlight_rows,
                             "col_count": len(headers),
                             "row_count": len(rows),
                             "style": {
-                                "header_bg": "#f1f3f4",
+                                "header_bg": header_bg,
+                                "header_color": "#ffffff" if header_bg.lower() != "#ffffff" else "#202124",
                                 "border_color": "#dadce0",
                                 "zebra": True
                             }
@@ -306,6 +337,7 @@ class DocumentLayoutExtractor:
                 bullet_start_top = 0.0
                 prose_buffer = []
                 prose_start_top = 0.0
+                prev_line_bottom = None
 
                 def flush_buffers():
                     nonlocal sec_counter, bullet_start_top, prose_start_top
@@ -339,55 +371,133 @@ class DocumentLayoutExtractor:
                     if not line:
                         continue
                     line_top = float(l_info.get("top", 0.0))
+                    line_bot = float(l_info.get("bottom", line_top + 10.0))
 
-                    # Ignore pure page numbers
-                    if re.match(r'^(page\s+\d+(\s+of\s+\d+)?|\d+)$', line, re.IGNORECASE):
+                    if re.search(r'Page\s+\d+(\s+of\s+\d+)?', line, re.IGNORECASE) and line_top > p_height * 0.88:
+                        if not detected_footer_text:
+                            detected_footer_text = re.sub(r'Page\s+\d+(\s+of\s+\d+)?.*', '', line).strip()
                         continue
 
-                    bullet_match = re.match(r'^[\u2022\u25cf\u25cb\u25aa\-\*\–]\s*(.+)$', line)
-                    numbered_match = re.match(r'^\d+[\.\)]\s*(.+)$', line)
+                    line = line.replace("(cid:127)", "•").replace("\x7f", "•").replace("\uf0b7", "•")
+                    line = re.sub(r'(^|\s+)n\s+', r'\1☐ ', line)
+                    line = re.sub(r'\s+fi\s+', ' → ', line)
 
+                    chars = l_info.get("chars", [])
+                    f_sizes = [float(c.get("size", 10.0)) for c in chars]
+                    avg_size = sum(f_sizes) / max(1, len(f_sizes))
+                    is_bold = any(_is_char_bold(c.get("fontname") or "") for c in chars)
+
+                    # Paragraph gap break check
+                    gap = (line_top - prev_line_bottom) if prev_line_bottom is not None else 0
+                    if gap > 4.2:
+                        flush_buffers()
+
+                    prev_line_bottom = line_bot
+
+                    bullet_match = re.match(r'^[•\-\*–]\s*(.+)$', line)
                     if bullet_match:
                         if prose_buffer: flush_buffers()
                         if not bullet_buffer: bullet_start_top = line_top
                         bullet_buffer.append(bullet_match.group(1))
-                    elif numbered_match:
-                        if prose_buffer: flush_buffers()
-                        if not bullet_buffer: bullet_start_top = line_top
-                        bullet_buffer.append(numbered_match.group(1))
+                        continue
+
+                    if line.startswith('☐ '):
+                        flush_buffers()
+                        sec_counter += 1
+                        page_sections.append({
+                            "id": f"check_{sec_counter}",
+                            "type": "checklist",
+                            "page": page_idx + 1,
+                            "top": line_top,
+                            "text": line
+                        })
+                        continue
+
+                    if avg_size >= 14 and page_idx == 0 and line_top < 120:
+                        flush_buffers()
+                        sec_counter += 1
+                        page_sections.append({
+                            "id": f"title_{sec_counter}",
+                            "type": "title",
+                            "page": page_idx + 1,
+                            "top": line_top,
+                            "text": line
+                        })
+                    elif avg_size >= 9.0 and page_idx == 0 and line_top < 100 and not is_bold:
+                        flush_buffers()
+                        sec_counter += 1
+                        page_sections.append({
+                            "id": f"subtitle_{sec_counter}",
+                            "type": "subtitle",
+                            "page": page_idx + 1,
+                            "top": line_top,
+                            "text": line
+                        })
+                    elif avg_size <= 7.5 and page_idx == 0 and line_top < 115:
+                        flush_buffers()
+                        sec_counter += 1
+                        page_sections.append({
+                            "id": f"meta_{sec_counter}",
+                            "type": "meta",
+                            "page": page_idx + 1,
+                            "top": line_top,
+                            "text": line,
+                            "has_divider": True
+                        })
+                    elif (is_bold and avg_size >= 11.0 and len(line.split()) <= 14) or (is_bold and re.match(r'^\d+[\.\)]?\s+[A-Z]', line) and avg_size >= 10.5 and len(line.split()) <= 14):
+                        flush_buffers()
+                        sec_counter += 1
+                        heading_font_sizes.append(avg_size)
+                        page_sections.append({
+                            "id": f"heading_{sec_counter}",
+                            "type": "heading",
+                            "page": page_idx + 1,
+                            "top": line_top,
+                            "level": 1,
+                            "text": line
+                        })
+                    elif is_bold and (avg_size >= 9.5 or re.match(r'^[A-Z]\.\s+', line)) and len(line.split()) <= 14 and not line.endswith(':'):
+                        flush_buffers()
+                        sec_counter += 1
+                        page_sections.append({
+                            "id": f"heading_{sec_counter}",
+                            "type": "heading",
+                            "page": page_idx + 1,
+                            "top": line_top,
+                            "level": 2,
+                            "text": line
+                        })
+                    elif is_bold and (line.endswith(':') or line.startswith(('Setup:', 'How to', 'Highlight:', 'Exact recent', 'Weak if:', 'Follow-ups:', 'What they', 'Preparation:', 'Common pitfalls:', '2-3 min template:', 'Tier 1', 'Tier 2', 'Last-Minute Checklist'))):
+                        flush_buffers()
+                        sec_counter += 1
+                        page_sections.append({
+                            "id": f"lead_{sec_counter}",
+                            "type": "lead_bold",
+                            "page": page_idx + 1,
+                            "top": line_top,
+                            "text": line
+                        })
                     else:
-                        is_short = len(line.split()) <= 10
-                        if is_short and (line.isupper() or line.istitle() or re.match(r'^[0-9]+(\.[0-9]+)*\s+[A-Z]', line)):
-                            flush_buffers()
-                            sec_counter += 1
-                            level = 1 if len(line) < 30 else 2
-                            page_sections.append({
-                                "id": f"heading_{sec_counter}",
-                                "type": "heading",
-                                "page": page_idx + 1,
-                                "top": line_top,
-                                "level": level,
-                                "text": line
-                            })
-                        else:
-                            if bullet_buffer: flush_buffers()
-                            if not prose_buffer: prose_start_top = line_top
-                            prose_buffer.append(line)
+                        if bullet_buffer: flush_buffers()
+                        if not prose_buffer: prose_start_top = line_top
+                        prose_buffer.append(line)
 
                 flush_buffers()
 
-                # Sort elements on this page by their natural vertical coordinate (top)
                 page_sections.sort(key=lambda s: s.get("top", 0.0))
                 skeleton_sections.extend(page_sections)
 
                 if page_idx < total_pages - 1:
                     skeleton_sections.append({"type": "page_break", "page": page_idx + 1})
 
-        # Synthesize styling profile and archetypes
+        from collections import Counter
         dominant_font = max(global_fonts.items(), key=lambda x: x[1])[0] if global_fonts else "Segoe UI"
         primary_font = _clean_font_name(dominant_font)
 
-        # Clean watermark text if captured
+        body_font_size = Counter(all_font_sizes).most_common(1)[0][0] if all_font_sizes else 10.0
+        h1_font_size = max(heading_font_sizes) if heading_font_sizes else (body_font_size * 1.4)
+        h2_font_size = min(heading_font_sizes) if heading_font_sizes else (body_font_size * 1.2)
+
         if detected_watermark and detected_watermark.get("text"):
             detected_watermark["text"] = detected_watermark["text"].strip()
             if len(detected_watermark["text"]) < 2:
@@ -400,6 +510,12 @@ class DocumentLayoutExtractor:
         style_profile = {
             "font_family_body": primary_font,
             "font_family_heading": primary_font,
+            "font_size_body": body_font_size,
+            "font_size_title": 16.5 if body_font_size < 9.5 else 22.0,
+            "font_size_h1": round(h1_font_size, 1),
+            "font_size_h2": round(h2_font_size, 1),
+            "font_size_table": 8.0 if body_font_size <= 9.0 else 9.5,
+            "line_height": 1.30 if body_font_size <= 9.0 else 1.50,
             "color_primary": "#ffffff",
             "color_text": "#202124",
             "color_heading": "#1a73e8",
@@ -407,35 +523,36 @@ class DocumentLayoutExtractor:
             "color_card": "#f8f9fa",
             "color_card_border": "#dadce0",
             "page_size": page_size_name,
-            "margins_mm": 20
+            "margins_mm": 17 if body_font_size <= 9.0 else 20,
+            "footer_title": detected_footer_text or "Voila Voice",
+            "has_divider": has_divider
         }
 
-        # Archetype Registry for cloning additions
         archetypes = {
             "table": {
-                "header_bg": "#f1f3f4",
-                "header_color": "#202124",
+                "header_bg": "#1a73e8",
+                "header_color": "#ffffff",
                 "header_font": primary_font,
                 "border_color": "#dadce0",
                 "zebra": True,
-                "padding_px": 10
+                "padding_px": 5
             },
             "bullets": {
                 "bullet_char": "•",
-                "indent_rem": 1.5,
-                "spacing_rem": 0.4
+                "indent_rem": 1.2,
+                "spacing_rem": 0.2
             },
             "heading": {
                 "font": primary_font,
                 "color": "#1a73e8",
-                "h1_size_rem": 1.7,
-                "h2_size_rem": 1.3
+                "h1_size_rem": 1.4,
+                "h2_size_rem": 1.1
             },
             "callout": {
                 "border_color": "#1a73e8",
                 "bg_color": "rgba(26, 115, 232, 0.08)",
-                "padding_rem": 1.0,
-                "radius_px": 6
+                "padding_rem": 0.8,
+                "radius_px": 4
             }
         }
 
@@ -588,8 +705,9 @@ class DocumentLayoutExtractor:
 
         for sec in skeleton.get("sections", []):
             stype = sec.get("type")
-            if stype == "heading":
-                headings.append(f"H{sec.get('level', 1)}: {sec.get('text', '')}")
+            if stype in ("heading", "title"):
+                lvl = sec.get('level', 1) if stype == "heading" else 1
+                headings.append(f"H{lvl}: {sec.get('text', '')}")
             elif stype == "prose":
                 words = sec.get("word_count", 0)
                 total_prose_words += words
@@ -849,12 +967,19 @@ class DocumentReconstructor:
 
         font_body = styles.get("font_family_body", "Segoe UI, sans-serif")
         font_heading = styles.get("font_family_heading", "Segoe UI, sans-serif")
+        font_size_body = styles.get("font_size_body", 10.0)
+        font_size_title = styles.get("font_size_title", 18.0)
+        font_size_h1 = styles.get("font_size_h1", 12.0)
+        font_size_h2 = styles.get("font_size_h2", 10.0)
+        font_size_table = styles.get("font_size_table", 8.0)
+        line_height = styles.get("line_height", 1.34)
         color_text = styles.get("color_text", "#202124")
         color_heading = styles.get("color_heading", "#1a73e8")
         color_accent = styles.get("color_accent", "#1a73e8")
         color_bg = styles.get("color_primary", "#ffffff")
         page_size = styles.get("page_size", "A4")
-        margin_mm = styles.get("margins_mm", 20)
+        margins_mm = styles.get("margins_mm", 17)
+        footer_title = styles.get("footer_title", "").strip()
 
         # Build Watermark HTML/CSS
         watermark_html = ""
@@ -865,7 +990,6 @@ class DocumentReconstructor:
             w_angle = watermark.get("angle", -45.0)
             w_color = watermark.get("color", "#888888")
 
-            # Scale font size dynamically to avoid Chromium clipping off the page canvas
             char_count = max(1, len(w_text))
             if char_count <= 10:
                 font_size_pt = 52
@@ -901,51 +1025,94 @@ class DocumentReconstructor:
             """
             watermark_html = f'<div class="watermark-layer">{w_text}</div>'
 
-        # Generate HTML content from sections
-        body_elements = []
-        for sec in sections:
-            stype = sec.get("type")
-            if stype == "heading":
-                lvl = min(max(1, sec.get("level", 2)), 6)
-                body_elements.append(f'<h{lvl}>{sec.get("text", "")}</h{lvl}>')
-            elif stype == "prose":
-                body_elements.append(f'<p>{sec.get("text", "")}</p>')
-            elif stype == "bullets":
-                bullet_char = sec.get("bullet_char", "•")
-                items = sec.get("items", [])
-                items_html = "".join(f'<li>{it}</li>' for it in items)
-                body_elements.append(f'<ul class="styled-list">{items_html}</ul>')
-            elif stype == "table":
-                cols = sec.get("columns", [])
-                rows = sec.get("rows", [])
-                t_style = sec.get("style", {})
-                header_bg = t_style.get("header_bg", "#f1f3f4")
-                border_color = t_style.get("border_color", "#dadce0")
+        # Group sections by page to ensure strict page budgeting
+        pages_dict = {}
+        has_explicit_pages = any(sec.get("page") for sec in sections)
+        if has_explicit_pages:
+            for sec in sections:
+                if sec.get("type") == "page_break":
+                    continue
+                p_num = sec.get("page", 1)
+                pages_dict.setdefault(p_num, []).append(sec)
+        else:
+            current_page = 1
+            pages_dict[current_page] = []
+            for sec in sections:
+                if sec.get("type") == "page_break":
+                    current_page += 1
+                    pages_dict[current_page] = []
+                else:
+                    pages_dict[current_page].append(sec)
 
-                th_html = "".join(f'<th>{c}</th>' for c in cols)
-                tr_html = []
-                for r in rows:
-                    tds = "".join(f'<td>{cell}</td>' for cell in r)
-                    tr_html.append(f'<tr>{tds}</tr>')
-                body_elements.append(f"""
-                <div class="table-container">
-                  <table>
-                    <thead><tr>{th_html}</tr></thead>
-                    <tbody>{''.join(tr_html)}</tbody>
-                  </table>
-                </div>
-                """)
-            elif stype == "image":
-                img_path = sec.get("image_path", "")
-                if os.path.exists(img_path):
-                    # Use absolute file URI with forward slashes
-                    uri = "file:///" + os.path.abspath(img_path).replace("\\", "/")
-                    w_pct = sec.get("width_percent", 80)
-                    body_elements.append(f'<div class="image-container"><img src="{uri}" style="max-width:{w_pct}%;" /></div>')
-            elif stype == "page_break":
-                body_elements.append('<div class="page-break"></div>')
+        html_pages = []
+        for p_num in sorted(pages_dict.keys()):
+            p_elems = pages_dict[p_num]
+            body_elements = []
+            for sec in p_elems:
+                stype = sec.get("type")
+                if stype == "title":
+                    body_elements.append(f'<h1 class="doc-title">{sec.get("text", "")}</h1>')
+                elif stype == "subtitle":
+                    body_elements.append(f'<div class="doc-subtitle">{sec.get("text", "")}</div>')
+                elif stype == "meta":
+                    div_html = '<hr class="blue-divider" />' if sec.get("has_divider") else ''
+                    body_elements.append(f'<div class="doc-meta">{sec.get("text", "")}</div>{div_html}')
+                elif stype == "heading":
+                    lvl = sec.get("level", 1)
+                    cls = "section-heading" if lvl == 1 else "subsection-heading"
+                    body_elements.append(f'<h{lvl+1} class="{cls}">{sec.get("text", "")}</h{lvl+1}>')
+                elif stype == "lead_bold":
+                    body_elements.append(f'<p class="bold-lead">{sec.get("text", "")}</p>')
+                elif stype in ("prose", "paragraph"):
+                    body_elements.append(f'<p>{sec.get("text", "")}</p>')
+                elif stype == "bullets":
+                    items_html = "".join(f'<li>• {it}</li>' for it in sec.get("items", []))
+                    body_elements.append(f'<ul class="styled-list">{items_html}</ul>')
+                elif stype == "checklist":
+                    body_elements.append(f'<p class="checklist-line">{sec.get("text", "")}</p>')
+                elif stype == "table":
+                    cols = sec.get("columns", [])
+                    rows = sec.get("rows", [])
+                    t_style = sec.get("style", {})
+                    h_bg = t_style.get("header_bg", color_heading)
+                    h_col = t_style.get("header_color", "#ffffff")
+                    b_col = t_style.get("border_color", "#dadce0")
+                    hl_rows = sec.get("highlight_rows", [])
 
-        html_body = "\n".join(body_elements)
+                    th_html = "".join(f'<th>{c}</th>' for c in cols)
+                    tr_html = []
+                    for r_idx, r in enumerate(rows):
+                        is_hl = hl_rows[r_idx] if r_idx < len(hl_rows) else False
+                        cls = ' class="highlight-row"' if is_hl else ''
+                        tds = "".join(f'<td>{cell}</td>' for cell in r)
+                        tr_html.append(f'<tr{cls}>{tds}</tr>')
+                    body_elements.append(f"""
+                    <div class="table-container">
+                      <table style="--hdr-bg: {h_bg}; --hdr-col: {h_col}; border-color: {b_col};">
+                        <thead><tr>{th_html}</tr></thead>
+                        <tbody>{''.join(tr_html)}</tbody>
+                      </table>
+                    </div>
+                    """)
+                elif stype == "image":
+                    img_path = sec.get("image_path", "")
+                    if os.path.exists(img_path):
+                        uri = "file:///" + os.path.abspath(img_path).replace("\\", "/")
+                        w_pct = sec.get("width_percent", 80)
+                        body_elements.append(f'<div class="image-container"><img src="{uri}" style="max-width:{w_pct}%;" /></div>')
+                elif stype == "callout":
+                    body_elements.append(f'<div class="callout"><p>{sec.get("text", "")}</p></div>')
+                else:
+                    txt = sec.get("text", "")
+                    if txt:
+                        body_elements.append(f'<p>{txt}</p>')
+
+            page_inner = "\n".join(body_elements)
+            html_pages.append(f'<div class="pdf-page">\n{page_inner}\n</div>')
+
+        html_body = "\n".join(html_pages)
+        footer_clean = footer_title.replace('"', '\"')
+        footer_css_content = f'"{footer_clean} Page " counter(page) " of " counter(pages)' if footer_clean else '"Page " counter(page) " of " counter(pages)'
 
         full_html = f"""<!DOCTYPE html>
 <html>
@@ -955,89 +1122,134 @@ class DocumentReconstructor:
     <style>
     @page {{
         size: {page_size};
-        margin: {margin_mm}mm;
+        margin: 14mm {margins_mm}mm 14mm {margins_mm}mm;
         @bottom-right {{
-            content: "Page " counter(page);
-            font-size: 9pt;
-            color: #888888;
+            content: {footer_css_content};
+            font-size: 8pt;
+            color: #5f6368;
             font-family: {font_body};
         }}
     }}
     body {{
         font-family: {font_body};
+        font-size: {font_size_body}pt;
+        line-height: {line_height};
         color: {color_text};
-        line-height: 1.65;
-        font-size: 10.5pt;
         margin: 0;
         padding: 0;
     }}
+    .pdf-page {{
+        page-break-after: always;
+        break-after: page;
+    }}
+    .pdf-page:last-child {{
+        page-break-after: avoid;
+        break-after: avoid;
+    }}
+    .doc-title {{
+        font-size: {font_size_title}pt;
+        font-weight: bold;
+        color: {color_text};
+        margin: 0 0 3px 0;
+    }}
+    .doc-subtitle {{
+        font-size: 9.5pt;
+        color: {color_text};
+        margin: 0 0 3px 0;
+    }}
+    .doc-meta {{
+        font-size: 7pt;
+        color: #5f6368;
+        margin: 0 0 4px 0;
+    }}
+    .blue-divider {{
+        border: none;
+        border-top: 1.5px solid {color_heading};
+        margin: 3px 0 8px 0;
+    }}
     h1, h2, h3, h4 {{
         font-family: {font_heading};
-        color: {color_heading};
+        margin: 0;
         break-after: avoid;
         page-break-after: avoid;
     }}
-    h1 {{
-        font-size: 22pt;
-        margin-top: 1.2em;
-        margin-bottom: 0.5em;
+    .section-heading {{
+        font-size: {font_size_h1}pt;
+        font-weight: bold;
+        color: {color_heading};
+        margin: 8px 0 3px 0;
     }}
-    h2 {{
-        font-size: 16pt;
-        margin-top: 1.2em;
-        margin-bottom: 0.4em;
+    .subsection-heading {{
+        font-size: {font_size_h2}pt;
+        font-weight: bold;
+        color: {color_text};
+        margin: 6px 0 2px 0;
     }}
-    h3 {{
-        font-size: 12.5pt;
-        margin-top: 1.0em;
-        margin-bottom: 0.3em;
+    .bold-lead {{
+        font-weight: bold;
+        margin: 3px 0 1px 0;
+    }}
+    .checklist-line {{
+        margin: 2px 0;
     }}
     p {{
-        margin-top: 0.5em;
-        margin-bottom: 0.8em;
-        text-align: justify;
+        margin: 2px 0 4px 0;
+        text-align: left;
     }}
     .styled-list {{
-        margin: 0.6em 0 1em 1.5em;
-        padding-left: 0.5em;
+        list-style: none;
+        margin: 2px 0 4px 6px;
+        padding: 0;
     }}
     .styled-list li {{
-        margin-bottom: 0.4em;
+        margin-bottom: 2px;
     }}
     .table-container {{
         width: 100%;
-        margin: 1.5em 0;
+        margin: 6px 0;
         break-inside: avoid;
         page-break-inside: avoid;
     }}
     table {{
         width: 100%;
         border-collapse: collapse;
-        font-size: 9.5pt;
+        font-size: {font_size_table}pt;
+        line-height: 1.20;
     }}
     th, td {{
-        padding: 8px 10px;
+        padding: 3px 5px;
         border: 1px solid #dadce0;
         text-align: left;
+        vertical-align: top;
     }}
     th {{
-        background-color: #f1f3f4;
-        font-family: {font_heading};
-        color: {color_heading};
+        background-color: var(--hdr-bg, {color_heading});
+        color: var(--hdr-col, #ffffff);
         font-weight: bold;
     }}
     tr:nth-child(even) td {{
         background-color: #f8f9fa;
     }}
+    tr.highlight-row td {{
+        background-color: #e8f0fe;
+        font-weight: bold;
+    }}
     .image-container {{
         text-align: center;
-        margin: 1.5em 0;
+        margin: 1em 0;
         break-inside: avoid;
         page-break-inside: avoid;
     }}
     .image-container img {{
         height: auto;
         border-radius: 4px;
+    }}
+    .callout {{
+        border-left: 3px solid {color_heading};
+        background: #f8f9fa;
+        padding: 6px 10px;
+        margin: 4px 0;
+        border-radius: 2px;
     }}
     .page-break {{
         page-break-before: always;
@@ -1052,7 +1264,6 @@ class DocumentReconstructor:
 </body>
 </html>
 """
-        # Save temporary HTML and render PDF with Playwright
         fd, temp_html_path = tempfile.mkstemp(suffix=".html")
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(full_html)
