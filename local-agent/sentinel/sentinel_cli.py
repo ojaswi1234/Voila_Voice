@@ -51,6 +51,7 @@ from sentinel.lan_guardian import lan_guardian
 from sentinel.secret_scanner import secret_scanner
 from sentinel.identity_radar import identity_radar
 from sentinel.system_defense import SystemDefense
+from sentinel.alert_dispatcher import alert_dispatcher, notify_plasma_border
 
 
 def print_banner():
@@ -69,11 +70,13 @@ def main():
         "triage-file", "scan-downloads", "quarantine-file", "list-vault", "restore-file",
         "scan-lan", "audit-gateway", "take-network-baseline",
         "scan-secrets", "check-breach",
-        "lock-workstation", "isolate-host", "lift-isolation", "isolation-status"
+        "lock-workstation", "isolate-host", "lift-isolation", "isolation-status",
+        "trigger-hazard-glow", "clear-hazard-glow", "dispatch-alert"
     ], help="Command to execute")
     parser.add_argument("--target", "-t", type=str, help="Target file path for triage or quarantine")
     parser.add_argument("--dir", "-d", type=str, help="Target directory for secret scanning")
     parser.add_argument("--secret", "-s", type=str, help="Credential or secret string to test against breach radar")
+    parser.add_argument("--msg", "-m", type=str, help="Message/description for incident dispatch")
     parser.add_argument("--id", type=str, help="Vault ID for restoration")
     parser.add_argument("--json", action="store_true", help="Output results in raw JSON format")
 
@@ -361,6 +364,42 @@ def main():
             print_banner()
             status_str = "ACTIVE (Host Isolated)" if active else "INACTIVE (Normal Networking)"
             print(f"Emergency Network Isolation Status: {status_str}")
+
+    elif args.command == "trigger-hazard-glow":
+        res = notify_plasma_border("SECURITY_HAZARD")
+        if args.json:
+            print(json.dumps({"plasma_triggered": res, "state": "SECURITY_HAZARD"}))
+        else:
+            print_banner()
+            print("[OK] Plasma Hazard Glow triggered (STATE:SECURITY_HAZARD sent to UDP port 19885).")
+            print("  Screen border pulses in intense crimson and amber coronal hazard flares.")
+
+    elif args.command == "clear-hazard-glow":
+        res = notify_plasma_border("IDLE")
+        if args.json:
+            print(json.dumps({"plasma_cleared": res, "state": "IDLE"}))
+        else:
+            print_banner()
+            print("[OK] Plasma Hazard Glow cleared (STATE:IDLE sent to UDP port 19885).")
+
+    elif args.command == "dispatch-alert":
+        desc = args.msg if args.msg else "Manual Threat Alert dispatched via Voila Sentinel CLI"
+        result = alert_dispatcher.dispatch(
+            threat_type="manual_threat",
+            description=desc,
+            severity="high",
+            trip_circuit=False
+        )
+        if args.json:
+            print(json.dumps(result, indent=2))
+        else:
+            print_banner()
+            print(f"[OK] Threat incident dispatched across multi-node pipeline.")
+            print(f"  Threat Type: {result.get('threat_type')}")
+            print(f"  Description: {result.get('description')}")
+            print(f"  Visual Plasma Alert: {result.get('plasma_visual_alert')}")
+            print(f"  Cloud Relay Status: {result.get('cloud_relay_status')}")
+            print(f"  Forensic Record: {alert_dispatcher.incidents_log}")
 
 
 if __name__ == "__main__":

@@ -142,3 +142,4 @@ local-agent/cursor_pos_*.txt
 .sentinel_key
 .bridge_token
 *.sig
+local-agent/sentinel/data/sentinel_incidents.jsonl

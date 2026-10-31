@@ -20,6 +20,7 @@ from .persistence_inspector import PersistenceInspector
 from .lan_guardian import lan_guardian
 from .secret_scanner import secret_scanner
 from .identity_radar import identity_radar
+from .alert_dispatcher import alert_dispatcher
 
 
 class SentinelCore:
@@ -112,6 +113,17 @@ class SentinelCore:
         else:
             status = "CRITICAL_EXPOSURE"
 
+        # Multi-Node & Visual Alert Dispatch on Critical Threat Posture
+        alert_dispatch_res = None
+        if status == "CRITICAL_EXPOSURE":
+            alert_dispatch_res = alert_dispatcher.dispatch(
+                threat_type="sentinel_threat",
+                description=f"Workstation security posture critical ({score:.0f}/100): " + "; ".join(findings[:3]),
+                severity="high",
+                trip_circuit=True,
+                incident_details={"findings": findings, "posture_score": score}
+            )
+
         # Generate Conversational Executive Summary
         if not findings:
             summary = "Your workstation security posture is pristine. No suspicious processes, autoruns, or exposed developer ports detected."
@@ -125,6 +137,7 @@ class SentinelCore:
             "executive_summary": summary,
             "findings_count": len(findings),
             "findings": findings,
+            "alert_dispatch": alert_dispatch_res,
             "telemetry": {
                 "ports": ports_result,
                 "processes": process_result,

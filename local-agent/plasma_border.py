@@ -350,6 +350,44 @@ STATE_PROFILES = {
         "shimmer_freq": 10.0,
         "shimmer_amp": 0.10,
         "peak_alpha": 240.0,
+    },
+    "SECURITY_HAZARD": {
+        # Active Threat Alert: Intense Crimson Coronal Pulses with Amber Flame & White Strobe
+        "palette": np.array([
+            [0, 0, 255],       # Pure Crimson Red (BGR)
+            [0, 140, 255],     # Amber Flame
+            [20, 20, 220],     # Blood Coral
+            [255, 255, 255],   # White Cognitive Warning Flash
+            [0, 0, 255],       # Loopback Crimson
+        ], dtype=np.float32),
+        "speed": 0.85,
+        "base_depth": 48.0,
+        "wave_amp1": 26.0,
+        "wave_amp2": 14.0,
+        "pulse_freq": 7.5,
+        "pulse_amp": 0.28,
+        "shimmer_freq": 14.0,
+        "shimmer_amp": 0.12,
+        "peak_alpha": 250.0,
+    },
+    "ISOLATED": {
+        # Host Network Isolation Active: Deep Calm Steel Blue & Ice Cyan Boundary
+        "palette": np.array([
+            [200, 100, 30],    # Deep Cobalt Blue
+            [240, 200, 80],    # Steel Cyan
+            [255, 240, 150],   # Ice White
+            [180, 80, 20],     # Midnight Blue
+            [200, 100, 30],    # Loopback Cobalt
+        ], dtype=np.float32),
+        "speed": 0.20,
+        "base_depth": 32.0,
+        "wave_amp1": 10.0,
+        "wave_amp2": 5.0,
+        "pulse_freq": 1.8,
+        "pulse_amp": 0.10,
+        "shimmer_freq": 3.0,
+        "shimmer_amp": 0.03,
+        "peak_alpha": 200.0,
     }
 }
 
