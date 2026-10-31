@@ -1,0 +1,19 @@
+{
+  "items": {
+    "862041b6-905": {
+      "vault_id": "862041b6-905",
+      "status": "RESTORED",
+      "original_path": "C:\\Users\\ojasw\\.gemini\\antigravity-cli\\brain\\a1239bc7-f2b0-4be8-9897-d0d7a07cb4fc\\scratch\\suspicious_dropper.ps1",
+      "original_filename": "suspicious_dropper.ps1",
+      "file_size": 316,
+      "sha256": "e21bc5094785ea4573a7a909ec7d738d0248f3376a4708381acc4c8e4835899a",
+      "quarantined_at": "2026-10-31 17:24:29",
+      "threat_score": 65.0,
+      "reasons": [
+        "Base64 Encoded PowerShell Command (-enc)",
+        "Hidden Execution Window (-w hidden)"
+      ],
+      "restored_at": "2026-10-31 17:24:56"
+    }
+  }
+}
