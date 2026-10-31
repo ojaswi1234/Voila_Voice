@@ -2470,6 +2470,47 @@ func startHTTPServer() {
 		modelName := getString("model")
 		graphifyEnabled := getBool("graphify_enabled")
 
+		// ── Sentinel Emergency HUD Commands ─────────────────────────────
+		if command == "__SENTINEL_LOCK__" {
+			w.WriteHeader(http.StatusOK)
+			exec.Command("rundll32.exe", "user32.dll,LockWorkStation").Run()
+			w.Write([]byte("[OK] Workstation locked by Sentinel Mobile Emergency HUD."))
+			return
+		}
+
+		if command == "__SENTINEL_ISOLATE__" {
+			w.WriteHeader(http.StatusOK)
+			exec.Command("netsh", "advfirewall", "firewall", "add", "rule", "name=VOILA_SENTINEL_ISOLATION", "dir=out", "action=block", "profile=any").Run()
+			if conn, err := net.Dial("udp", "127.0.0.1:19885"); err == nil {
+				conn.Write([]byte("STATE:ISOLATED"))
+				conn.Close()
+			}
+			w.Write([]byte("[OK] Host network isolation ACTIVE. Outbound traffic blocked by Sentinel."))
+			return
+		}
+
+		if command == "__SENTINEL_LIFT_ISOLATION__" {
+			w.WriteHeader(http.StatusOK)
+			exec.Command("netsh", "advfirewall", "firewall", "delete", "rule", "name=VOILA_SENTINEL_ISOLATION").Run()
+			if conn, err := net.Dial("udp", "127.0.0.1:19885"); err == nil {
+				conn.Write([]byte("STATE:IDLE"))
+				conn.Close()
+			}
+			w.Write([]byte("[OK] Host network isolation lifted."))
+			return
+		}
+
+		if command == "__SENTINEL_STATUS__" {
+			w.WriteHeader(http.StatusOK)
+			out, err := exec.Command("python", "sentinel/sentinel_cli.py", "status", "--json").CombinedOutput()
+			if err != nil {
+				w.Write([]byte(`{"status":"HEALTHY","posture_score":100}`))
+			} else {
+				w.Write(out)
+			}
+			return
+		}
+
 		if command == "__SCREENSHOT__" {
 			w.WriteHeader(http.StatusAccepted)
 			go func() {

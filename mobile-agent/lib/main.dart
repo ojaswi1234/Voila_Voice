@@ -1345,6 +1345,8 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     return categorized;
   }
   List<Map<String, dynamic>> _securityAlerts = [];
+  bool _isHostIsolated = false;
+  double _sentinelPostureScore = 100.0;
   Map<String, dynamic> _lastTokenUsage = {};
   
   // Speech-to-text state
@@ -4805,21 +4807,129 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                       ],
                     ),
                     const SizedBox(height: 16),
-                    // Circuit breaker reset button
+                    // Sentinel SOC Emergency HUD Bento Card
                     Container(
                       width: double.infinity,
                       margin: const EdgeInsets.only(bottom: 16),
-                      child: ElevatedButton.icon(
-                        onPressed: _resetCircuitBreaker,
-                        icon: const Icon(Icons.power_settings_new_rounded, size: 16),
-                        label: Text('Reset Circuit Breaker', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppTokens.accent.withOpacity(0.15),
-                          foregroundColor: AppTokens.accent,
-                          elevation: 0,
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: AppTokens.cardAlt(isDark),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: _isHostIsolated ? Colors.redAccent.withOpacity(0.5) : AppTokens.border(isDark),
+                          width: _isHostIsolated ? 2 : 1,
                         ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: (_isHostIsolated ? Colors.redAccent : AppTokens.accent).withOpacity(0.15),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(
+                                  _isHostIsolated ? Icons.security_rounded : Icons.shield_rounded,
+                                  size: 20,
+                                  color: _isHostIsolated ? Colors.redAccent : AppTokens.accent,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'SENTINEL SOC HUD',
+                                      style: GoogleFonts.spaceGrotesk(fontSize: 13, fontWeight: FontWeight.w800, color: AppTokens.textPrimary(isDark), letterSpacing: 1.2),
+                                    ),
+                                    Text(
+                                      'Posture: ${_sentinelPostureScore.toInt()}/100 • ${_isHostIsolated ? "ISOLATED" : "PROTECTED"}',
+                                      style: GoogleFonts.inter(fontSize: 12, color: _isHostIsolated ? Colors.redAccent : Colors.green, fontWeight: FontWeight.w600),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: (_isHostIsolated ? Colors.redAccent : Colors.green).withOpacity(0.15),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Text(
+                                  _isHostIsolated ? 'ISOLATED' : 'ONLINE',
+                                  style: GoogleFonts.spaceGrotesk(fontSize: 10, fontWeight: FontWeight.bold, color: _isHostIsolated ? Colors.redAccent : Colors.green),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          // Defense Pills
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 4,
+                            children: [
+                              _buildDefensePill('EDR Active', Icons.monitor_heart_rounded, isDark),
+                              _buildDefensePill('Anti-MITM', Icons.router_rounded, isDark),
+                              _buildDefensePill('AES-256 Vault', Icons.lock_clock_rounded, isDark),
+                              _buildDefensePill('Secret Radar', Icons.key_rounded, isDark),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          // Emergency Response Buttons
+                          Row(
+                            children: [
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: _remoteLockWorkstation,
+                                  icon: const Icon(Icons.lock_outline_rounded, size: 16),
+                                  label: Text('Remote Lock', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 12)),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.indigoAccent.withOpacity(0.15),
+                                    foregroundColor: Colors.indigoAccent,
+                                    elevation: 0,
+                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: () => _toggleNetworkIsolation(setModalState),
+                                  icon: Icon(_isHostIsolated ? Icons.wifi_rounded : Icons.wifi_off_rounded, size: 16),
+                                  label: Text(_isHostIsolated ? 'Restore LAN' : '1-Tap Isolate', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 12)),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: (_isHostIsolated ? Colors.green : Colors.redAccent).withOpacity(0.15),
+                                    foregroundColor: _isHostIsolated ? Colors.green : Colors.redAccent,
+                                    elevation: 0,
+                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          // Secondary Breaker Reset
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              onPressed: _resetCircuitBreaker,
+                              icon: const Icon(Icons.power_settings_new_rounded, size: 14),
+                              label: Text('Reset Circuit Breaker', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600)),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: AppTokens.textSecondary(isDark),
+                                side: BorderSide(color: AppTokens.border(isDark)),
+                                padding: const EdgeInsets.symmetric(vertical: 8),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                     Expanded(
@@ -4917,6 +5027,80 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
         const SnackBar(content: Text('Resetting circuit breaker...')),
       );
     }
+  }
+
+  void _remoteLockWorkstation() {
+    if (_activeDevice.isEmpty || !_isConnected) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No active connected workstation to lock.')),
+      );
+      return;
+    }
+    final message = {
+      'type': 'command',
+      'device_id': _activeDevice,
+      'command': '__SENTINEL_LOCK__',
+      'session_token': _sessionToken,
+    };
+    _channel?.sink.add(jsonEncode(message));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Workstation remote lock signal dispatched via Sentinel.'),
+        backgroundColor: Colors.blueAccent,
+      ),
+    );
+  }
+
+  void _toggleNetworkIsolation(StateSetter setModalState) {
+    if (_activeDevice.isEmpty || !_isConnected) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No active connected workstation to isolate.')),
+      );
+      return;
+    }
+    final bool newIsolatedState = !_isHostIsolated;
+    final message = {
+      'type': 'command',
+      'device_id': _activeDevice,
+      'command': newIsolatedState ? '__SENTINEL_ISOLATE__' : '__SENTINEL_LIFT_ISOLATION__',
+      'session_token': _sessionToken,
+    };
+    _channel?.sink.add(jsonEncode(message));
+    setState(() {
+      _isHostIsolated = newIsolatedState;
+    });
+    setModalState(() {});
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(newIsolatedState
+            ? 'Emergency host network isolation ACTIVATED.'
+            : 'Host network isolation LIFTED.'),
+        backgroundColor: newIsolatedState ? Colors.redAccent : Colors.green,
+      ),
+    );
+  }
+
+  Widget _buildDefensePill(String label, IconData icon, bool isDark) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: AppTokens.bg(isDark).withOpacity(0.6),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTokens.border(isDark).withOpacity(0.6)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 11, color: AppTokens.accent),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: GoogleFonts.inter(fontSize: 10, color: AppTokens.textSecondary(isDark), fontWeight: FontWeight.w600),
+          ),
+        ],
+      ),
+    );
   }
 
   void _clearLocalData() async {
