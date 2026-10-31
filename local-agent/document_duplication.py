@@ -52,6 +52,14 @@ try:
 except ImportError:
     sync_playwright = None
 
+try:
+    from handwriting_engine import handwriting_replicator
+except ImportError:
+    try:
+        from .handwriting_engine import handwriting_replicator
+    except ImportError:
+        handwriting_replicator = None
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helper Utilities & Color Conversions
@@ -1705,7 +1713,32 @@ class DocumentDuplicationEngine:
         has_additions = bool(additions and len(additions) > 0)
         has_length_controls = bool(length_controls and any(v for v in length_controls.values()))
 
-        # DUAL-ENGINE ROUTING:
+        # TRI-ENGINE ROUTING:
+        # Check if source is an image or a scanned/raster/handwritten PDF
+        is_raster_or_handwritten = ext in (".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".webp")
+        if not is_raster_or_handwritten and ext == ".pdf" and pymupdf is not None:
+            try:
+                chk_doc = pymupdf.open(resolved_source)
+                total_text_len = sum(len(page.get_text().strip()) for page in chk_doc)
+                chk_doc.close()
+                if total_text_len < 25:
+                    is_raster_or_handwritten = True
+            except Exception:
+                pass
+
+        # Engine 3: Scanned & Handwritten Document Engine (Dual-Script OCR + Style Cloning)
+        if is_raster_or_handwritten and handwriting_replicator is not None:
+            try:
+                out_file = handwriting_replicator.duplicate_in_place(
+                    source_path=resolved_source,
+                    output_path=output_path,
+                    replacements=replacements,
+                    instruction=instruction
+                )
+                return f"Successfully duplicated handwritten/scanned document to: {out_file}"
+            except Exception as e:
+                pass  # Fall through if handwritten engine encounters unhandled format
+
         # Engine 1: Surgical In-Place PDF Canvas Mutation (100% Bit-for-Bit Lossless)
         if ext == ".pdf" and fmt == "pdf" and not has_additions and not has_length_controls and pymupdf is not None:
             try:

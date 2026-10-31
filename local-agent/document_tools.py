@@ -1323,6 +1323,64 @@ def duplicate_document(kwargs=None, **extra):
         return f"Error duplicating document: {str(e)}\n{traceback.format_exc()}"
 
 
+def ocr_document(kwargs=None, **extra):
+    """
+    Performs 100% offline dual-script (English & Hindi/Devanagari) OCR on a scanned document or image.
+    Extracts text lines, bounding boxes, confidence scores, and script classifications.
+    """
+    if kwargs is None:
+        kwargs = {}
+    elif not isinstance(kwargs, dict):
+        kwargs = {"path": str(kwargs)}
+    if extra:
+        kwargs.update(extra)
+
+    path = kwargs.get('path') or kwargs.get('source_path')
+    if not path or not os.path.exists(path):
+        return f"Error: Valid 'path' or 'source_path' required. File not found: {path}"
+
+    script_hint = kwargs.get('script_hint', 'auto')
+
+    try:
+        from handwriting_engine import DocumentOCRLocator
+        import cv2
+        import numpy as np
+
+        locator = DocumentOCRLocator()
+        ext = os.path.splitext(path)[1].lower()
+
+        images = []
+        if ext == ".pdf":
+            import pymupdf
+            doc = pymupdf.open(path)
+            for page in doc:
+                pix = page.get_pixmap(dpi=200)
+                img = cv2.imdecode(np.frombuffer(pix.tobytes("png"), np.uint8), cv2.IMREAD_COLOR)
+                images.append(img)
+            doc.close()
+        else:
+            img = cv2.imread(path)
+            if img is not None:
+                images.append(img)
+
+        if not images:
+            return "Error: Could not decode document images for OCR."
+
+        results = []
+        for p_idx, img in enumerate(images):
+            blocks = locator.locate_and_transcribe(img, script_hint=script_hint)
+            results.append({
+                "page": p_idx + 1,
+                "total_blocks": len(blocks),
+                "blocks": blocks,
+                "full_text": "\n".join(b["text"] for b in blocks)
+            })
+
+        return json.dumps(results if len(results) > 1 else results[0], indent=2, ensure_ascii=False)
+    except Exception as e:
+        return f"Error executing OCR: {str(e)}\n{traceback.format_exc()}"
+
+
 def main():
     try:
         input_data = sys.stdin.read()
@@ -1334,7 +1392,8 @@ def main():
 
         actions = {
             "read_csv": read_csv, "create_csv": create_csv, "read_excel": read_excel, "create_excel": create_excel, "modify_excel": modify_excel,
-            "read_pdf": read_pdf, "read_docx": read_docx, "read_doc": read_docx, "create_pdf": create_pdf, "create_doc": create_doc, "create_ppt": create_ppt, "create_docx": create_docx, "duplicate_document": duplicate_document, "analyze_document_structure": analyze_document_structure
+            "read_pdf": read_pdf, "read_docx": read_docx, "read_doc": read_docx, "create_pdf": create_pdf, "create_doc": create_doc, "create_ppt": create_ppt, "create_docx": create_docx, "duplicate_document": duplicate_document, "analyze_document_structure": analyze_document_structure,
+            "ocr_document": ocr_document
         }
         if action not in actions:
             print(f"Error: Unknown action '{action}'")
