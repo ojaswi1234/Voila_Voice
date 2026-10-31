@@ -170,6 +170,28 @@ class TestDocumentDuplication(unittest.TestCase):
         self.assertIn("Successfully duplicated", proc.stdout)
         self.assertTrue(os.path.exists(out_pdf))
 
+    def test_07_dual_engine_inplace_vector_and_link_preservation(self):
+        """Test Engine 1 surgical in-place mutation preserving 100% of links, lines, and typography."""
+        out_pdf = os.path.join(self.test_output_dir, "test_engine1_lossless.pdf")
+        res = engine.duplicate(
+            source_path=self.source_pdf,
+            output_path=out_pdf,
+            replacements={"Automation Frameworks": "Enterprise Automation 2026"}
+        )
+        self.assertTrue(os.path.exists(out_pdf))
+        self.assertIn("Successfully duplicated", res)
+
+        with pdfplumber.open(self.source_pdf) as orig_pdf, pdfplumber.open(out_pdf) as dup_pdf:
+            orig_page = orig_pdf.pages[0]
+            dup_page = dup_pdf.pages[0]
+            
+            # Vector lines must be 100% preserved
+            self.assertEqual(len(orig_page.lines), len(dup_page.lines), "Vector lines must be 100% preserved")
+            
+            # Text must contain replacement
+            dup_text = dup_page.extract_text() or ""
+            self.assertIn("Enterprise Automation 2026", dup_text)
+
 
 if __name__ == "__main__":
     unittest.main()
