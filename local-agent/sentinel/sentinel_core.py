@@ -17,6 +17,7 @@ from typing import Dict, Any, List
 from .ports_auditor import PortsAuditor
 from .process_watchdog import ProcessWatchdog
 from .persistence_inspector import PersistenceInspector
+from .lan_guardian import lan_guardian
 
 
 class SentinelCore:
@@ -29,12 +30,13 @@ class SentinelCore:
         self.persistence_inspector = PersistenceInspector(data_dir=data_dir)
 
     def evaluate_host_posture(self) -> Dict[str, Any]:
-        """Runs a complete Phase 1 host sweep and calculates security posture."""
+        """Runs a complete host sweep and calculates security posture."""
         t0 = time.time()
 
         ports_result = PortsAuditor.audit()
         process_result = ProcessWatchdog.scan()
         persist_result = self.persistence_inspector.audit()
+        lan_result = lan_guardian.scan_local_devices()
 
         elapsed_ms = (time.time() - t0) * 1000.0
 
@@ -78,6 +80,13 @@ class SentinelCore:
             score -= min(10.0, persist_result["new_entries_count"] * 2.0)
             findings.append(f"NOTICE: Detected {persist_result['new_entries_count']} new startup items added since baseline.")
 
+        # 4. Evaluate LAN & Gateway Integrity (Anti-MITM)
+        gw = lan_result.get("gateway", {})
+        if gw.get("is_spoofed"):
+            score -= 45.0
+            for r in gw.get("reasons", []):
+                findings.append(r)
+
         score = max(0.0, min(100.0, score))
 
         if score >= 90.0:
@@ -103,7 +112,8 @@ class SentinelCore:
             "telemetry": {
                 "ports": ports_result,
                 "processes": process_result,
-                "persistence": persist_result
+                "persistence": persist_result,
+                "network": lan_result
             }
         }
 

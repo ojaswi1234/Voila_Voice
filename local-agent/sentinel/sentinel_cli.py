@@ -42,6 +42,7 @@ from sentinel.persistence_inspector import PersistenceInspector
 from sentinel.pe_triage import StaticPETriage
 from sentinel.quarantine_vault import quarantine_vault
 from sentinel.download_sentinel import download_sentinel
+from sentinel.lan_guardian import lan_guardian
 
 
 def print_banner():
@@ -57,7 +58,8 @@ def main():
     parser = argparse.ArgumentParser(description="Voila Sentinel Security CLI")
     parser.add_argument("command", choices=[
         "status", "audit-ports", "scan-processes", "audit-persistence", "take-baseline",
-        "triage-file", "scan-downloads", "quarantine-file", "list-vault", "restore-file"
+        "triage-file", "scan-downloads", "quarantine-file", "list-vault", "restore-file",
+        "scan-lan", "audit-gateway", "take-network-baseline"
     ], help="Command to execute")
     parser.add_argument("--target", "-t", type=str, help="Target file path for triage or quarantine")
     parser.add_argument("--id", type=str, help="Vault ID for restoration")
@@ -225,6 +227,49 @@ def main():
                 print(f"  SHA-256 Verified: {result['sha256']}")
             else:
                 print(f"[ERROR] Restoration failed: {result.get('message')}")
+
+    elif args.command == "scan-lan":
+        result = lan_guardian.scan_local_devices()
+        if args.json:
+            print(json.dumps(result, indent=2))
+        else:
+            print_banner()
+            print(f"Risk Level: {result['risk_level']} | Active Adapter: {result.get('active_adapter')} ({result.get('local_ip')})")
+            print(f"Subnet Devices Discovered: {result['total_subnet_devices']} | Scan Duration: {result['scan_duration_ms']}ms")
+            gw = result.get("gateway", {})
+            print(f"\nGateway Router: {gw.get('gateway_ip')} [{gw.get('gateway_mac')}] - {gw.get('gateway_vendor')}")
+            print(f"Gateway Status: {gw.get('status')}")
+            if result["devices"]:
+                print("\nActive Subnet Assets:")
+                for d in result["devices"]:
+                    flag = " [NEW]" if d.get("is_new_to_network") else ""
+                    print(f"  - {d['ip']:<16} {d['mac']:<18} ({d['type']}) : {d['vendor']}{flag}")
+
+    elif args.command == "audit-gateway":
+        result = lan_guardian.audit_gateway()
+        if args.json:
+            print(json.dumps(result, indent=2))
+        else:
+            print_banner()
+            print(f"Gateway IP: {result.get('gateway_ip')} | Gateway MAC: {result.get('gateway_mac')}")
+            print(f"Hardware Vendor: {result.get('gateway_vendor')}")
+            print(f"Status: {result.get('status')}")
+            if result.get("is_spoofed"):
+                print("\n[CRITICAL ALERT] Gateway ARP spoofing detected!")
+                for r in result.get("reasons", []):
+                    print(f"  - {r}")
+            else:
+                print("\n[OK] Gateway ARP integrity verified. No cache poisoning detected.")
+
+    elif args.command == "take-network-baseline":
+        result = lan_guardian.take_network_baseline()
+        if args.json:
+            print(json.dumps(result, indent=2))
+        else:
+            print_banner()
+            print(f"[OK] Network baseline snapshot captured successfully.")
+            print(f"  Gateway IP: {result.get('gateway_ip')} [{result.get('gateway_mac')}]")
+            print(f"  Recorded {result.get('devices_count')} active subnet devices to {result.get('baseline_file')}")
 
 
 if __name__ == "__main__":
