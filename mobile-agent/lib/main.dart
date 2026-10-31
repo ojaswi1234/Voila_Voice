@@ -2197,9 +2197,44 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
             });
             
             if (_isLiveSession && finalWords.isNotEmpty) {
+               final String lowerWords = finalWords.toLowerCase();
+
+               // SENTINEL VOICE TRIAGE INTERCEPTOR
+               if (lowerWords.contains("sentinel status") || lowerWords.contains("security status") || lowerWords.contains("security triage") || lowerWords.contains("cyber status")) {
+                 _showSecurityAlerts();
+                 _speak("Opening Sentinel Security Operations Center. Workstation defense posture is fully active.");
+                 _silenceTimer?.cancel();
+                 return;
+               }
+               if (lowerWords.contains("lock workstation") || lowerWords.contains("lock computer") || lowerWords.contains("lock screen")) {
+                 _remoteLockWorkstation();
+                 _speak("Initiating workstation lockdown via Sentinel.");
+                 _silenceTimer?.cancel();
+                 return;
+               }
+               if (lowerWords.contains("isolate host") || lowerWords.contains("isolate workstation") || lowerWords.contains("emergency isolate") || lowerWords.contains("cut network")) {
+                 if (!_isHostIsolated) {
+                   _toggleNetworkIsolation((fn) => fn());
+                   _speak("Emergency host network isolation activated. Outbound WAN is severed.");
+                 } else {
+                   _speak("Workstation is already isolated.");
+                 }
+                 _silenceTimer?.cancel();
+                 return;
+               }
+               if (lowerWords.contains("lift isolation") || lowerWords.contains("restore network") || lowerWords.contains("restore internet")) {
+                 if (_isHostIsolated) {
+                   _toggleNetworkIsolation((fn) => fn());
+                   _speak("Host network isolation lifted. LAN and WAN connectivity restored.");
+                 } else {
+                   _speak("Network isolation is not currently active.");
+                 }
+                 _silenceTimer?.cancel();
+                 return;
+               }
+
                // SMART NLP ADDRESSEE DETECTION HEURISTIC
                // Enhanced to prevent false positives while still catching actual side-conversations
-               final String lowerWords = finalWords.toLowerCase();
                int conversationalMarkers = 0;
                
                // Filler words get penalized but are not enough to trigger on their own
@@ -4876,6 +4911,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                               _buildDefensePill('Anti-MITM', Icons.router_rounded, isDark),
                               _buildDefensePill('AES-256 Vault', Icons.lock_clock_rounded, isDark),
                               _buildDefensePill('Secret Radar', Icons.key_rounded, isDark),
+                              _buildDefensePill('Mesh Defense', Icons.hub_rounded, isDark),
                             ],
                           ),
                           const SizedBox(height: 16),
@@ -5029,56 +5065,111 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     }
   }
 
-  void _remoteLockWorkstation() {
-    if (_activeDevice.isEmpty || !_isConnected) {
+  Future<bool> _dispatchMeshCommand(String command) async {
+    try {
+      final dev = _devices[_activeDevice] ?? _savedDevices[_activeDevice];
+      String? addr = dev is Map ? dev['address']?.toString() : null;
+      if (addr == null || addr.isEmpty) {
+        addr = 'http://127.0.0.1:8088';
+      }
+      if (addr.endsWith('/')) addr = addr.substring(0, addr.length - 1);
+      final url = Uri.parse('$addr/execute');
+      final resp = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'command': command,
+          'device_id': _activeDevice,
+          'session_token': _sessionToken,
+        }),
+      ).timeout(const Duration(seconds: 4));
+      return resp.statusCode == 200;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  void _remoteLockWorkstation() async {
+    if (_activeDevice.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No active connected workstation to lock.')),
+        const SnackBar(content: Text('No active workstation selected to lock.')),
       );
       return;
     }
-    final message = {
-      'type': 'command',
-      'device_id': _activeDevice,
-      'command': '__SENTINEL_LOCK__',
-      'session_token': _sessionToken,
-    };
-    _channel?.sink.add(jsonEncode(message));
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Workstation remote lock signal dispatched via Sentinel.'),
-        backgroundColor: Colors.blueAccent,
-      ),
-    );
+    if (_isConnected) {
+      final message = {
+        'type': 'command',
+        'device_id': _activeDevice,
+        'command': '__SENTINEL_LOCK__',
+        'session_token': _sessionToken,
+      };
+      _channel?.sink.add(jsonEncode(message));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Workstation lock dispatched via Cloud Sentinel.'),
+          backgroundColor: Colors.blueAccent,
+        ),
+      );
+    } else {
+      // Mesh Defense LAN Fallback
+      final ok = await _dispatchMeshCommand('__SENTINEL_LOCK__');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(ok
+              ? 'Workstation locked via Mesh LAN Defense.'
+              : 'Failed to reach workstation via Cloud or Mesh LAN.'),
+          backgroundColor: ok ? Colors.blueAccent : Colors.redAccent,
+        ),
+      );
+    }
   }
 
-  void _toggleNetworkIsolation(StateSetter setModalState) {
-    if (_activeDevice.isEmpty || !_isConnected) {
+  void _toggleNetworkIsolation(StateSetter setModalState) async {
+    if (_activeDevice.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No active connected workstation to isolate.')),
+        const SnackBar(content: Text('No active workstation selected to isolate.')),
       );
       return;
     }
     final bool newIsolatedState = !_isHostIsolated;
-    final message = {
-      'type': 'command',
-      'device_id': _activeDevice,
-      'command': newIsolatedState ? '__SENTINEL_ISOLATE__' : '__SENTINEL_LIFT_ISOLATION__',
-      'session_token': _sessionToken,
-    };
-    _channel?.sink.add(jsonEncode(message));
-    setState(() {
-      _isHostIsolated = newIsolatedState;
-    });
-    setModalState(() {});
+    bool dispatched = false;
+    if (_isConnected) {
+      final message = {
+        'type': 'command',
+        'device_id': _activeDevice,
+        'command': newIsolatedState ? '__SENTINEL_ISOLATE__' : '__SENTINEL_LIFT_ISOLATION__',
+        'session_token': _sessionToken,
+      };
+      _channel?.sink.add(jsonEncode(message));
+      dispatched = true;
+    } else {
+      // Mesh Defense LAN Fallback
+      dispatched = await _dispatchMeshCommand(
+        newIsolatedState ? '__SENTINEL_ISOLATE__' : '__SENTINEL_LIFT_ISOLATION__',
+      );
+    }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(newIsolatedState
-            ? 'Emergency host network isolation ACTIVATED.'
-            : 'Host network isolation LIFTED.'),
-        backgroundColor: newIsolatedState ? Colors.redAccent : Colors.green,
-      ),
-    );
+    if (dispatched) {
+      setState(() {
+        _isHostIsolated = newIsolatedState;
+      });
+      setModalState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(newIsolatedState
+              ? 'Emergency host network isolation ACTIVATED ${_isConnected ? "" : "(via Mesh LAN)"}.'
+              : 'Host network isolation LIFTED ${_isConnected ? "" : "(via Mesh LAN)"}.'),
+          backgroundColor: newIsolatedState ? Colors.redAccent : Colors.green,
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to route isolation command via Cloud or Mesh LAN.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    }
   }
 
   Widget _buildDefensePill(String label, IconData icon, bool isDark) {

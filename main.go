@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha1"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
@@ -20,6 +21,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -37,7 +39,26 @@ var sessionSigningKey []byte
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
-		return true
+		origin := r.Header.Get("Origin")
+		if origin == "" || origin == "null" {
+			return true
+		}
+		if strings.HasPrefix(origin, "http://localhost") || strings.HasPrefix(origin, "http://127.0.0.1") ||
+			strings.HasPrefix(origin, "https://localhost") || strings.HasPrefix(origin, "https://127.0.0.1") {
+			return true
+		}
+		allowed := os.Getenv("ALLOWED_ORIGIN")
+		if allowed != "" && (origin == allowed || strings.HasSuffix(origin, allowed)) {
+			return true
+		}
+		if strings.Contains(origin, "voila-voice.onrender.com") {
+			return true
+		}
+		if os.Getenv("ALLOW_ALL_ORIGINS") == "true" {
+			return true
+		}
+		log.Printf("[CSWSH BLOCKED] Rejected WebSocket connection from unauthorized origin: %s", origin)
+		return false
 	},
 }
 
@@ -60,15 +81,68 @@ const mockCommandThreshold = 3 // Trip breaker after N mock commands
 const maxAlerts = 100 // Ring buffer size
 
 type SecurityAlert struct {
-	ID        string
-	Type      string // mock_command | auth_fail | rate_limit | breaker_open | breaker_close
-	Timestamp time.Time
-	IP        string
-	Geo       string // optional
-	DeviceID  string
-	ClientID  string
-	Detail    string
-	Severity  string // low|medium|high
+	ID        string    `json:"id"`
+	Type      string    `json:"type"` // mock_command | auth_fail | rate_limit | breaker_open | breaker_close | pe_malware | rogue_gateway | process_anomaly | github_leak | hibp_breach
+	Timestamp time.Time `json:"timestamp"`
+	IP        string    `json:"ip"`
+	Geo       string    `json:"geo"` // optional
+	DeviceID  string    `json:"device_id"`
+	ClientID  string    `json:"client_id"`
+	Detail    string    `json:"detail"`
+	Severity  string    `json:"severity"` // low|medium|high|critical
+	Resolved  bool      `json:"resolved"`
+}
+
+type ThreatItem struct {
+	Indicator   string    `json:"indicator"`
+	Type        string    `json:"type"`        // "sha256", "ip", "commit_leak", "c2"
+	Description string    `json:"description"`
+	Severity    string    `json:"severity"`
+	FirstSeen   time.Time `json:"first_seen"`
+	Source      string    `json:"source"`
+}
+
+type ThreatIntelCache struct {
+	mu         sync.RWMutex
+	indicators map[string]ThreatItem
+}
+
+func NewThreatIntelCache() *ThreatIntelCache {
+	c := &ThreatIntelCache{
+		indicators: make(map[string]ThreatItem),
+	}
+	c.indicators["e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"] = ThreatItem{
+		Indicator:   "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+		Type:        "sha256",
+		Description: "Empty file test signature",
+		Severity:    "low",
+		FirstSeen:   time.Now(),
+		Source:      "sentinel_seed",
+	}
+	return c
+}
+
+func (c *ThreatIntelCache) AddIndicator(item ThreatItem) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.indicators[item.Indicator] = item
+}
+
+func (c *ThreatIntelCache) CheckIndicator(indicator string) (ThreatItem, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	item, exists := c.indicators[indicator]
+	return item, exists
+}
+
+func (c *ThreatIntelCache) ListIndicators() []ThreatItem {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	list := make([]ThreatItem, 0, len(c.indicators))
+	for _, item := range c.indicators {
+		list = append(list, item)
+	}
+	return list
 }
 
 type Device struct {
@@ -161,6 +235,7 @@ type Backend struct {
 	queueMu           sync.Mutex
 	fcmClient *messaging.Client
 	lastTokenSnapshot map[string]map[string]interface{}
+	threatIntel       *ThreatIntelCache
 }
 
 type WebSocketClient struct {
@@ -180,6 +255,7 @@ func NewBackend() *Backend {
 		mockCommandCounts: make(map[string]int),
 		offlineQueue:      make(map[string][]QueuedMessage),
 		lastTokenSnapshot: make(map[string]map[string]interface{}),
+		threatIntel:       NewThreatIntelCache(),
 	}
 	
 	// Initialize Firebase FCM Client
@@ -393,8 +469,12 @@ func (b *Backend) sendFCMAlert(deviceID string, alert SecurityAlert) {
 
 func (b *Backend) broadcastSecurityAlert(alert SecurityAlert) {
 	alertBytes, _ := json.Marshal(map[string]interface{}{
-		"type": "security_alert",
-		"alert": alert,
+		"type":       "security_alert",
+		"alert":      alert,
+		"alert_type": alert.Type,
+		"details":    alert.Detail,
+		"severity":   alert.Severity,
+		"timestamp":  alert.Timestamp.Format(time.RFC3339),
 	})
 	
 	for clientID := range b.clients {
@@ -1226,6 +1306,28 @@ func handleWebhookAlert(b *Backend) http.HandlerFunc {
 		sev, _ := req["severity"].(string)
 		
 		b.addSecurityAlert(alertType, sourceIp, deviceID, "local-agent", desc, sev)
+		
+		// Unify into Cloud Threat Intel Core if indicator/sha256 provided
+		if sha, ok := req["sha256"].(string); ok && sha != "" {
+			b.threatIntel.AddIndicator(ThreatItem{
+				Indicator:   sha,
+				Type:        "sha256",
+				Description: desc,
+				Severity:    sev,
+				FirstSeen:   time.Now(),
+				Source:      "local_agent_pe",
+			})
+		}
+		if ind, ok := req["indicator"].(string); ok && ind != "" {
+			b.threatIntel.AddIndicator(ThreatItem{
+				Indicator:   ind,
+				Type:        alertType,
+				Description: desc,
+				Severity:    sev,
+				FirstSeen:   time.Now(),
+				Source:      "local_agent_telemetry",
+			})
+		}
 		
 		trip, _ := req["trip_circuit"].(bool)
 		if trip {
@@ -2293,6 +2395,20 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				})
 				b.dispatcher.Dispatch(clientID, messageType, jsonData)
 				
+			case "get_threat_intel":
+				if !verifySessionToken(sessionToken, deviceID) {
+					b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: Unauthorized"))
+					continue
+				}
+				b.mu.RLock()
+				intelList := b.threatIntel.ListIndicators()
+				b.mu.RUnlock()
+				jsonData, _ := json.Marshal(map[string]interface{}{
+					"type": "threat_intel_list",
+					"indicators": intelList,
+				})
+				b.dispatcher.Dispatch(clientID, messageType, jsonData)
+				
 			case "circuit_reset":
 				// Require valid session token + security phrase re-check
 				if !verifySessionToken(sessionToken, deviceID) {
@@ -2396,6 +2512,295 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 
 var startTime time.Time
 
+
+// --- SENTINEL CLOUD DAEMONS & THREAT INTELLIGENCE CORE ---
+
+var leakPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`AIza[0-9A-Za-z_-]{35}`),
+	regexp.MustCompile(`AKIA[0-9A-Z]{16}`),
+	regexp.MustCompile(`xox[baprs]-[0-9a-zA-Z]{10,48}`),
+	regexp.MustCompile(`ghp_[0-9a-zA-Z]{36}`),
+	regexp.MustCompile(`-----BEGIN (RSA |EC )?PRIVATE KEY-----`),
+}
+
+func startGitHubLeaksPoller(backend *Backend) {
+	ticker := time.NewTicker(15 * time.Minute)
+	defer ticker.Stop()
+
+	go func() {
+		time.Sleep(5 * time.Second)
+		scanGitHubLeaks(backend)
+	}()
+
+	for range ticker.C {
+		scanGitHubLeaks(backend)
+	}
+}
+
+func scanGitHubLeaks(backend *Backend) {
+	monitoredRepo := os.Getenv("GITHUB_MONITORED_REPO")
+	if monitoredRepo == "" {
+		return
+	}
+	client := &http.Client{Timeout: 10 * time.Second}
+	req, err := http.NewRequest("GET", fmt.Sprintf("https://api.github.com/repos/%s/commits", monitoredRepo), nil)
+	if err != nil {
+		return
+	}
+	req.Header.Set("User-Agent", "Voila-Sentinel-Cloud/1.0")
+	token := os.Getenv("GITHUB_TOKEN")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := client.Do(req)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		return
+	}
+	defer resp.Body.Close()
+
+	var commits []struct {
+		Sha    string `json:"sha"`
+		Commit struct {
+			Message string `json:"message"`
+		} `json:"commit"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&commits); err != nil {
+		return
+	}
+
+	for _, c := range commits {
+		for _, re := range leakPatterns {
+			if re.MatchString(c.Commit.Message) {
+				backend.addSecurityAlert(
+					"github_leak",
+					"github.com",
+					"cloud-sentinel",
+					"github_poller",
+					fmt.Sprintf("Secret signature match in commit %s: pattern %s", c.Sha[:7], re.String()),
+					"high",
+				)
+				backend.threatIntel.AddIndicator(ThreatItem{
+					Indicator:   c.Sha,
+					Type:        "commit_leak",
+					Description: fmt.Sprintf("Leaked credential in commit %s", c.Sha[:7]),
+					Severity:    "high",
+					FirstSeen:   time.Now(),
+					Source:      "github_poller",
+				})
+				break
+			}
+		}
+	}
+}
+
+func startHIBPBreachRadar(backend *Backend) {
+	ticker := time.NewTicker(60 * time.Minute)
+	defer ticker.Stop()
+
+	go func() {
+		time.Sleep(8 * time.Second)
+		checkHIBPBreachRadar(backend)
+	}()
+
+	for range ticker.C {
+		checkHIBPBreachRadar(backend)
+	}
+}
+
+func checkHIBPBreachRadar(backend *Backend) {
+	monitoredEmails := os.Getenv("SENTINEL_MONITORED_IDENTITIES")
+	if monitoredEmails == "" {
+		return
+	}
+	emails := strings.Split(monitoredEmails, ",")
+	client := &http.Client{Timeout: 10 * time.Second}
+
+	for _, email := range emails {
+		email = strings.TrimSpace(email)
+		if email == "" {
+			continue
+		}
+		h := sha1.New()
+		h.Write([]byte(email))
+		hash := strings.ToUpper(hex.EncodeToString(h.Sum(nil)))
+		if len(hash) < 5 {
+			continue
+		}
+		prefix := hash[:5]
+		suffix := hash[5:]
+
+		resp, err := client.Get(fmt.Sprintf("https://api.pwnedpasswords.com/range/%s", prefix))
+		if err != nil {
+			continue
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		if strings.Contains(string(body), suffix) {
+			backend.addSecurityAlert(
+				"hibp_breach",
+				"api.pwnedpasswords.com",
+				"cloud-sentinel",
+				"hibp_radar",
+				fmt.Sprintf("Identity hash suffix surfaced in breach dumps for %s", email[:3]+"***"),
+				"high",
+			)
+		}
+		time.Sleep(1 * time.Second)
+	}
+}
+
+func startOAuthScopeAuditor(backend *Backend) {
+	ticker := time.NewTicker(30 * time.Minute)
+	defer ticker.Stop()
+
+	go func() {
+		time.Sleep(12 * time.Second)
+		auditOAuthScopes(backend)
+	}()
+
+	for range ticker.C {
+		auditOAuthScopes(backend)
+	}
+}
+
+func auditOAuthScopes(backend *Backend) {
+	scopes := os.Getenv("GOOGLE_OAUTH_SCOPES")
+	if scopes == "" {
+		return
+	}
+	riskyScopes := []string{
+		"https://mail.google.com/",
+		"https://www.googleapis.com/auth/gmail.modify",
+		"https://www.googleapis.com/auth/drive",
+		"https://www.googleapis.com/auth/cloud-platform",
+	}
+	for _, risky := range riskyScopes {
+		if strings.Contains(scopes, risky) {
+			backend.addSecurityAlert(
+				"oauth_risk",
+				"accounts.google.com",
+				"cloud-sentinel",
+				"oauth_auditor",
+				fmt.Sprintf("High-privilege OAuth scope detected: %s", risky),
+				"medium",
+			)
+			break
+		}
+	}
+}
+
+func handleSentinelThreatIntel(b *Backend) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		if r.Method == http.MethodGet {
+			indicators := b.threatIntel.ListIndicators()
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"status":     "OK",
+				"count":      len(indicators),
+				"indicators": indicators,
+			})
+			return
+		}
+
+		if r.Method == http.MethodPost {
+			var req map[string]interface{}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, "Bad request", http.StatusBadRequest)
+				return
+			}
+			indicator, _ := req["indicator"].(string)
+			threatType, _ := req["type"].(string)
+			desc, _ := req["description"].(string)
+			sev, _ := req["severity"].(string)
+			source, _ := req["source"].(string)
+			if source == "" {
+				source = "api_client"
+			}
+			if indicator == "" {
+				http.Error(w, "Missing indicator", http.StatusBadRequest)
+				return
+			}
+
+			item := ThreatItem{
+				Indicator:   indicator,
+				Type:        threatType,
+				Description: desc,
+				Severity:    sev,
+				FirstSeen:   time.Now(),
+				Source:      source,
+			}
+			b.threatIntel.AddIndicator(item)
+			b.addSecurityAlert("threat_intel_ingest", r.RemoteAddr, "cloud-sentinel", "api", fmt.Sprintf("New threat IOC added: %s (%s)", indicator, desc), sev)
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(map[string]interface{}{"status": "ADDED", "indicator": indicator})
+			return
+		}
+
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func handleSentinelIncidents(b *Backend) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		b.mu.RLock()
+		alertsCopy := make([]SecurityAlert, b.alertCount)
+		for i := 0; i < b.alertCount; i++ {
+			alertsCopy[i] = b.securityAlerts[(b.alertHead+i)%maxAlerts]
+		}
+		b.mu.RUnlock()
+
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status": "OK",
+			"total":  len(alertsCopy),
+			"alerts": alertsCopy,
+		})
+	}
+}
+
+func handleSentinelResolveIncident(b *Backend) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var req map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Bad request", http.StatusBadRequest)
+			return
+		}
+		alertID, _ := req["id"].(string)
+		if alertID == "" {
+			http.Error(w, "Missing alert id", http.StatusBadRequest)
+			return
+		}
+
+		b.mu.Lock()
+		found := false
+		for i := 0; i < b.alertCount; i++ {
+			idx := (b.alertHead + i) % maxAlerts
+			if b.securityAlerts[idx].ID == alertID {
+				b.securityAlerts[idx].Resolved = true
+				found = true
+				break
+			}
+		}
+		b.mu.Unlock()
+
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		if found {
+			json.NewEncoder(w).Encode(map[string]interface{}{"status": "RESOLVED", "id": alertID})
+		} else {
+			http.Error(w, "Alert not found", http.StatusNotFound)
+		}
+	}
+}
+
 func main() {
 	startTime = time.Now()
 	backend := NewBackend()
@@ -2430,9 +2835,17 @@ func main() {
 
 	log.Printf("Registered devices: %s (%s), %s (%s)", device1Name, device1Addr, device2Name, device2Addr)
 
+	// Launch 24/7 Cloud Sentinel Daemons
+	go startGitHubLeaksPoller(backend)
+	go startHIBPBreachRadar(backend)
+	go startOAuthScopeAuditor(backend)
+
 	http.HandleFunc("/ws", handleWebSocket(backend))
 	http.HandleFunc("/webhook/result", handleWebhookResult(backend))
 	http.HandleFunc("/webhook/alert", handleWebhookAlert(backend))
+	http.HandleFunc("/sentinel/threat-intel", handleSentinelThreatIntel(backend))
+	http.HandleFunc("/sentinel/incidents", handleSentinelIncidents(backend))
+	http.HandleFunc("/sentinel/incidents/resolve", handleSentinelResolveIncident(backend))
 	http.HandleFunc("/webhook/approval_request", handleWebhookApprovalReq(backend))
 	http.HandleFunc("/webhook/status", handleWebhookStatus(backend))
 	http.HandleFunc("/webhook/token-usage", func(w http.ResponseWriter, r *http.Request) {

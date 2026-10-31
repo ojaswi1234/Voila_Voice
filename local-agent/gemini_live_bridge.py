@@ -127,7 +127,23 @@ def get_live_tools():
         }
     )
 
-    return [types.Tool(function_declarations=[decl_terminal, decl_read_file, decl_desktop, decl_screenshot])]
+    decl_sentinel_triage = types.FunctionDeclaration(
+        name="sentinel_triage",
+        description="Query or manage endpoint cybersecurity defense, incident status, process anomaly triage, network isolation, or quarantine vault",
+        behavior="NON_BLOCKING",
+        parameters={
+            "type": "OBJECT",
+            "properties": {
+                "action": {
+                    "type": "STRING",
+                    "description": "The security triage action: 'status' (overall posture), 'scan_processes' (anomaly check), 'scan_ports' (listening sockets), 'scan_lan' (ARP/network recon), 'isolate' (emergency network cut), 'lift_isolation' (restore LAN/WAN), 'quarantine_list' (vault contents)"
+                }
+            },
+            "required": ["action"]
+        }
+    )
+
+    return [types.Tool(function_declarations=[decl_terminal, decl_read_file, decl_desktop, decl_screenshot, decl_sentinel_triage])]
 
 async def execute_local_tool(name: str, args: dict) -> str:
     """Executes a local tool call on the desktop."""
@@ -216,6 +232,71 @@ Write-Output "Screenshot captured ($($bytes.Length) bytes, plasma-free)"
             stdout, _ = await proc.communicate()
             notify_plasma_border("IDLE")
             return stdout.decode("utf-8", errors="replace").strip()
+
+        elif name == "sentinel_triage":
+            action = args.get("action", "status")
+            try:
+                from sentinel.sentinel_core import SentinelCore
+                from sentinel.system_defense import SystemDefense
+
+                if action == "status":
+                    sc = SentinelCore()
+                    status = sc.evaluate_host_posture()
+                    return json.dumps({
+                        "posture_score": status.get("posture_score", 100.0),
+                        "network_isolated": SystemDefense.is_isolated(),
+                        "summary": status.get("executive_summary", "Security posture is healthy."),
+                        "findings_count": status.get("findings_count", 0),
+                    })
+                elif action == "scan_processes":
+                    from sentinel.process_watchdog import ProcessWatchdog
+                    audit = ProcessWatchdog.scan()
+                    anomalies = audit.get("anomalies", [])
+                    return json.dumps({
+                        "suspicious_count": len(anomalies),
+                        "message": f"Process scan complete. Found {len(anomalies)} anomalies.",
+                        "anomalies": anomalies
+                    })
+                elif action == "scan_ports":
+                    from sentinel.ports_auditor import PortsAuditor
+                    audit = PortsAuditor.audit()
+                    return json.dumps({
+                        "total_listening": audit.get("total_listening", 0),
+                        "exposed_dev_servers": audit.get("exposed_dev_servers", []),
+                        "exposed_high_risk": audit.get("exposed_high_risk", []),
+                        "risk_level": audit.get("risk_level", "HEALTHY")
+                    })
+                elif action == "scan_lan":
+                    from sentinel.lan_guardian import LANGuardian
+                    lg = LANGuardian()
+                    gw = lg.audit_gateway()
+                    return json.dumps({
+                        "gateway_status": gw.get("status", "UNKNOWN"),
+                        "is_spoofed": gw.get("is_spoofed", False),
+                        "gateway_vendor": gw.get("gateway_vendor", "Unknown"),
+                        "message": "Gateway ARP verified clean." if not gw.get("is_spoofed") else "WARNING: Gateway ARP spoofing detected!"
+                    })
+                elif action == "isolate":
+                    res = SystemDefense.isolate_network()
+                    from sentinel.alert_dispatcher import notify_plasma_hazard
+                    notify_plasma_hazard("ISOLATED")
+                    return json.dumps({"action": "isolate", "result": res})
+                elif action == "lift_isolation":
+                    res = SystemDefense.lift_isolation()
+                    from sentinel.alert_dispatcher import notify_plasma_hazard
+                    notify_plasma_hazard("NORMAL")
+                    return json.dumps({"action": "lift_isolation", "result": res})
+                elif action == "quarantine_list":
+                    from sentinel.quarantine_vault import QuarantineVault
+                    manifest = QuarantineVault.list_vault()
+                    return json.dumps({
+                        "vault_count": len(manifest),
+                        "items": manifest
+                    })
+                else:
+                    return f"Unknown sentinel triage action: {action}"
+            except Exception as se:
+                return f"Sentinel triage execution error: {str(se)}"
 
     except Exception as e:
         return f"Tool execution error: {str(e)}"
