@@ -1,0 +1,93 @@
+{
+  "entry_count": 11,
+  "entries": {
+    "HKCU_Run::OneDrive": {
+      "type": "REGISTRY",
+      "location": "HKCU_Run",
+      "name": "OneDrive",
+      "command": "\"C:\\Program Files\\Microsoft OneDrive\\OneDrive.exe\" /background",
+      "binary_path": "C:\\Program Files\\Microsoft OneDrive\\OneDrive.exe",
+      "sha256": "a3560e7eb0ed5230fc385b4ac482adb899403cb553618067f30e3f5405d29cf1"
+    },
+    "HKCU_Run::Visual Studio Code Tunnel": {
+      "type": "REGISTRY",
+      "location": "HKCU_Run",
+      "name": "Visual Studio Code Tunnel",
+      "command": "\"c:\\Users\\ojasw\\AppData\\Local\\Programs\\Microsoft VS Code\\bin\\code-tunnel.exe\" --verbose --cli-data-dir C:\\Users\\ojasw\\.vscode\\cli tunnel service internal-run --log-to-file C:\\Users\\ojasw\\.vscode\\cli\\tunnel-service.log",
+      "binary_path": "c:\\Users\\ojasw\\AppData\\Local\\Programs\\Microsoft VS Code\\bin\\code-tunnel.exe",
+      "sha256": null
+    },
+    "HKCU_Run::Microsoft.Lists": {
+      "type": "REGISTRY",
+      "location": "HKCU_Run",
+      "name": "Microsoft.Lists",
+      "command": "C:\\Program Files\\Microsoft OneDrive\\26.134.0713.0007\\OneDrive.Sync.Service.exe",
+      "binary_path": "C:\\Program Files\\Microsoft OneDrive\\26.134.0713.0007\\OneDrive.Sync.Service.exe",
+      "sha256": "8651c838c51d50fe33ab99c669834575c81909796417f0021e9da8b5b832f429"
+    },
+    "HKCU_Run::MicrosoftCopilotAutoLaunch_12892996AA05248856EE7A8584943928": {
+      "type": "REGISTRY",
+      "location": "HKCU_Run",
+      "name": "MicrosoftCopilotAutoLaunch_12892996AA05248856EE7A8584943928",
+      "command": "\"C:\\Program Files (x86)\\Microsoft\\Copilot\\Application\\mscopilot.exe\" --no-startup-window --win-session-start",
+      "binary_path": "C:\\Program Files (x86)\\Microsoft\\Copilot\\Application\\mscopilot.exe",
+      "sha256": null
+    },
+    "HKCU_Run::GoogleChromeAutoLaunch_A748AE1A92EDB735FBC6269988C51E6B": {
+      "type": "REGISTRY",
+      "location": "HKCU_Run",
+      "name": "GoogleChromeAutoLaunch_A748AE1A92EDB735FBC6269988C51E6B",
+      "command": "\"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe\" --no-startup-window /prefetch:5",
+      "binary_path": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+      "sha256": "9f404d549975473934abf80e596147312f01f1d68de6afc73a24331a2e35ae25"
+    },
+    "HKCU_Run::MicrosoftEdgeAutoLaunch_B9BB18CC39CA8612C8FD8644E253CA91": {
+      "type": "REGISTRY",
+      "location": "HKCU_Run",
+      "name": "MicrosoftEdgeAutoLaunch_B9BB18CC39CA8612C8FD8644E253CA91",
+      "command": "\"C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe\" --win-session-start",
+      "binary_path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+      "sha256": "f87d927bed3597f19c70af67bc786dd22e4eca3b5c7cc050336a016bb42f7fda"
+    },
+    "HKCU_Run::MicrosoftEdgeAutoLaunch_09687F0DBE74CE163AE62A4DD6D0CD1E": {
+      "type": "REGISTRY",
+      "location": "HKCU_Run",
+      "name": "MicrosoftEdgeAutoLaunch_09687F0DBE74CE163AE62A4DD6D0CD1E",
+      "command": "\"C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe\" --win-session-start",
+      "binary_path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+      "sha256": "f87d927bed3597f19c70af67bc786dd22e4eca3b5c7cc050336a016bb42f7fda"
+    },
+    "HKCU_Run::AntigravityCliDaemon": {
+      "type": "REGISTRY",
+      "location": "HKCU_Run",
+      "name": "AntigravityCliDaemon",
+      "command": "C:\\Users\\ojasw\\AppData\\Local\\agy\\bin\\agy.exe remote-control serve",
+      "binary_path": "C:\\Users\\ojasw\\AppData\\Local\\agy\\bin\\agy.exe",
+      "sha256": "SKIPPED_OVERSIZE"
+    },
+    "HKLM_Run::SecurityHealth": {
+      "type": "REGISTRY",
+      "location": "HKLM_Run",
+      "name": "SecurityHealth",
+      "command": "%windir%\\system32\\SecurityHealthSystray.exe",
+      "binary_path": "C:\\WINDOWS\\system32\\SecurityHealthSystray.exe",
+      "sha256": "ead5bbb7752377bb4d9bf8dcc38a34969e254e5da87889b8d4b4788e3be0b0ef"
+    },
+    "HKLM_Run::RtsCM": {
+      "type": "REGISTRY",
+      "location": "HKLM_Run",
+      "name": "RtsCM",
+      "command": "RTSCM64.EXE",
+      "binary_path": "RTSCM64.EXE",
+      "sha256": null
+    },
+    "C:\\Users\\ojasw\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup::Wispr Flow.lnk": {
+      "type": "STARTUP_FOLDER",
+      "location": "C:\\Users\\ojasw\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup",
+      "name": "Wispr Flow.lnk",
+      "command": "C:\\Users\\ojasw\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\Wispr Flow.lnk",
+      "binary_path": "C:\\Users\\ojasw\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\Wispr Flow.lnk",
+      "sha256": "e7f56da2e52e6be6bbd555bb38e4241384ad0372665720c2ebf06a14be723bb5"
+    }
+  }
+}
