@@ -18,6 +18,8 @@ from .ports_auditor import PortsAuditor
 from .process_watchdog import ProcessWatchdog
 from .persistence_inspector import PersistenceInspector
 from .lan_guardian import lan_guardian
+from .secret_scanner import secret_scanner
+from .identity_radar import identity_radar
 
 
 class SentinelCore:
@@ -29,7 +31,7 @@ class SentinelCore:
         os.makedirs(data_dir, exist_ok=True)
         self.persistence_inspector = PersistenceInspector(data_dir=data_dir)
 
-    def evaluate_host_posture(self) -> Dict[str, Any]:
+    def evaluate_host_posture(self, workspace_path: str = None) -> Dict[str, Any]:
         """Runs a complete host sweep and calculates security posture."""
         t0 = time.time()
 
@@ -37,6 +39,11 @@ class SentinelCore:
         process_result = ProcessWatchdog.scan()
         persist_result = self.persistence_inspector.audit()
         lan_result = lan_guardian.scan_local_devices()
+
+        # Workspace Secret Sweep
+        if not workspace_path:
+            workspace_path = os.getcwd()
+        secrets_result = secret_scanner.scan_directory(workspace_path, max_files=150)
 
         elapsed_ms = (time.time() - t0) * 1000.0
 
@@ -87,6 +94,15 @@ class SentinelCore:
             for r in gw.get("reasons", []):
                 findings.append(r)
 
+        # 5. Evaluate Workspace Secrets Exposure
+        for s in secrets_result.get("findings", []):
+            if s["severity"] == "CRITICAL":
+                score -= 25.0
+                findings.append(f"CRITICAL: Exposed {s['type']} in {os.path.basename(s['source'])} (Line {s['line']}: {s['masked']}).")
+            elif s["severity"] == "HIGH":
+                score -= 15.0
+                findings.append(f"WARNING: Exposed {s['type']} in {os.path.basename(s['source'])} (Line {s['line']}: {s['masked']}).")
+
         score = max(0.0, min(100.0, score))
 
         if score >= 90.0:
@@ -113,7 +129,8 @@ class SentinelCore:
                 "ports": ports_result,
                 "processes": process_result,
                 "persistence": persist_result,
-                "network": lan_result
+                "network": lan_result,
+                "secrets": secrets_result
             }
         }
 

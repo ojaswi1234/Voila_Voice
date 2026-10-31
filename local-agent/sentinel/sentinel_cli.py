@@ -3,7 +3,7 @@
 Voila Sentinel CLI - Endpoint Telemetry & Threat Defense Interface
 ================================================================================
 Commands:
-  status             - Complete posture sweep (Ports + Processes + Persistence)
+  status             - Complete posture sweep (Ports + Processes + Persistence + LAN + Secrets)
   audit-ports        - Audits listening TCP/UDP sockets for wildcard/dev-server leakage
   scan-processes     - Inspects active process tree for obfuscated & suspicious commands
   audit-persistence  - Audits Registry Run keys and Startup folder against baseline
@@ -13,6 +13,11 @@ Commands:
   quarantine-file    - Safely scrambles and isolates an untrusted file into the vault
   list-vault         - Displays all quarantined items and audit manifest
   restore-file       - Reversibly restores a false-positive file back to disk
+  scan-lan           - Passively discovers active LAN devices and monitors router ARP
+  audit-gateway      - Verifies gateway MAC address against cache poisoning (Anti-MITM)
+  take-network-base  - Snapshots local network topology baseline
+  scan-secrets       - Recursively audits code & configs for cloud tokens & API keys
+  check-breach       - Evaluates credential exposure via k-Anonymity (zero plaintext leak)
 ================================================================================
 """
 
@@ -43,6 +48,8 @@ from sentinel.pe_triage import StaticPETriage
 from sentinel.quarantine_vault import quarantine_vault
 from sentinel.download_sentinel import download_sentinel
 from sentinel.lan_guardian import lan_guardian
+from sentinel.secret_scanner import secret_scanner
+from sentinel.identity_radar import identity_radar
 
 
 def print_banner():
@@ -59,9 +66,12 @@ def main():
     parser.add_argument("command", choices=[
         "status", "audit-ports", "scan-processes", "audit-persistence", "take-baseline",
         "triage-file", "scan-downloads", "quarantine-file", "list-vault", "restore-file",
-        "scan-lan", "audit-gateway", "take-network-baseline"
+        "scan-lan", "audit-gateway", "take-network-baseline",
+        "scan-secrets", "check-breach"
     ], help="Command to execute")
     parser.add_argument("--target", "-t", type=str, help="Target file path for triage or quarantine")
+    parser.add_argument("--dir", "-d", type=str, help="Target directory for secret scanning")
+    parser.add_argument("--secret", "-s", type=str, help="Credential or secret string to test against breach radar")
     parser.add_argument("--id", type=str, help="Vault ID for restoration")
     parser.add_argument("--json", action="store_true", help="Output results in raw JSON format")
 
@@ -270,6 +280,44 @@ def main():
             print(f"[OK] Network baseline snapshot captured successfully.")
             print(f"  Gateway IP: {result.get('gateway_ip')} [{result.get('gateway_mac')}]")
             print(f"  Recorded {result.get('devices_count')} active subnet devices to {result.get('baseline_file')}")
+
+    elif args.command == "scan-secrets":
+        target_dir = args.dir if args.dir else os.getcwd()
+        result = secret_scanner.scan_directory(target_dir)
+        if args.json:
+            print(json.dumps(result, indent=2))
+        else:
+            print_banner()
+            print(f"Risk Level: {result.get('risk_level')} | Scanned: {result.get('files_scanned')} files")
+            print(f"Directory: {result.get('scanned_directory')}")
+            findings = result.get("findings", [])
+            print(f"Total Secrets Found: {len(findings)}")
+            if findings:
+                print("\n[!] Exposed Credentials Detected:")
+                for f in findings:
+                    print(f"  - [{f['severity']}] {f['type']} at line {f['line']}")
+                    print(f"    File: {f['source']}")
+                    print(f"    Token Mask: {f['masked']}")
+            else:
+                print("\n[OK] Zero exposed secrets, API keys, or private keys detected.")
+
+    elif args.command == "check-breach":
+        if not args.secret:
+            print("Error: --secret <string> required for check-breach")
+            sys.exit(1)
+        result = identity_radar.check_pwned_secret(args.secret)
+        if args.json:
+            print(json.dumps(result, indent=2))
+        else:
+            print_banner()
+            print("Privacy Status: k-Anonymity Preserved (Transmitted SHA-1 prefix only)")
+            print(f"SHA-1 Prefix Transmitted: {result.get('sha1_prefix')}*****")
+            print(f"Verdict: {result.get('risk_verdict')}")
+            if result.get("is_breached"):
+                print(f"\n[CRITICAL WARNING] This credential was found in {result.get('breach_count'):,} public breach records!")
+                print("Action Required: Rotate this credential immediately. It is known to adversary dictionaries.")
+            else:
+                print(f"\n[OK] Credential does not appear in known public data breaches.")
 
 
 if __name__ == "__main__":
