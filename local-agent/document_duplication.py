@@ -1375,6 +1375,122 @@ class DocumentReconstructor:
 # High-Level Engine Facade
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _extract_and_patch_font(doc: Any, xref: int) -> Optional[bytes]:
+    """Extract embedded TrueType/OpenType font from PDF and ensure standard Unicode cmap."""
+    try:
+        font_info = doc.extract_font(xref)
+        if not font_info or len(font_info) < 4:
+            return None
+        content = font_info[3]
+        if not content or len(content) < 100:
+            return None
+
+        import io
+        from fontTools.ttLib import TTFont
+        from fontTools.ttLib.tables._c_m_a_p import CmapSubtable
+
+        tt = TTFont(io.BytesIO(content))
+        has_unicode = False
+        if 'cmap' in tt:
+            for t in tt['cmap'].tables:
+                if t.platformID == 3 and t.platEncID in (1, 10):
+                    has_unicode = True
+                    break
+            if not has_unicode and len(tt['cmap'].tables) > 0:
+                first_cmap = tt['cmap'].tables[0].cmap
+                subtable = CmapSubtable.newSubtable(4)
+                subtable.platformID = 3
+                subtable.platEncID = 1
+                subtable.language = 0
+                subtable.cmap = dict(first_cmap)
+                tt['cmap'].tables.append(subtable)
+
+        out_buf = io.BytesIO()
+        tt.save(out_buf)
+        return out_buf.getvalue()
+    except Exception:
+        return None
+
+
+def _get_font_file_for_span(doc: Any, span: Dict[str, Any], page_fonts: List[Any], font_cache: Dict[int, Any]) -> Tuple[Optional[str], str]:
+    """
+    Returns (font_file_path, font_name) matching the span's font typography.
+    Prioritizes the exact embedded font extracted from the PDF, then Windows system font, then Base-14.
+    """
+    span_font = str(span.get("font", "")).lower()
+    span_flags = span.get("flags", 0)
+    is_bold = bool(span_flags & 2 or any(k in span_font for k in ("bold", "bx", "black", "heavy", "demi", "semibold")))
+    is_italic = bool(span_flags & 1 or any(k in span_font for k in ("italic", "oblique")))
+
+    best_xref = None
+    clean_span_font = re.sub(r'^[a-z]{6}\+', '', span_font)
+    for f in page_fonts:
+        xref = f[0]
+        pdf_f_name = str(f[3]).lower()
+        clean_pdf_font = re.sub(r'^[a-z]{6}\+', '', pdf_f_name)
+        if clean_span_font and (clean_span_font in clean_pdf_font or clean_pdf_font in clean_span_font):
+            best_xref = xref
+            break
+
+    if not best_xref:
+        for f in page_fonts:
+            xref = f[0]
+            f_name = str(f[3]).lower()
+            f_bold = any(k in f_name for k in ("bold", "bx", "black"))
+            f_italic = any(k in f_name for k in ("italic", "oblique"))
+            if f_bold == is_bold and f_italic == is_italic:
+                best_xref = xref
+                break
+
+    if best_xref and best_xref in font_cache:
+        return font_cache[best_xref]
+
+    if best_xref:
+        font_bytes = _extract_and_patch_font(doc, best_xref)
+        if font_bytes:
+            fd, temp_font_path = tempfile.mkstemp(suffix=".ttf")
+            os.close(fd)
+            with open(temp_font_path, "wb") as f_out:
+                f_out.write(font_bytes)
+            font_alias = f"ExtFont_{best_xref}"
+            font_cache[best_xref] = (temp_font_path, font_alias)
+            return temp_font_path, font_alias
+
+    # Windows system fonts fallback
+    is_serif = any(k in span_font for k in ("serif", "times", "roman", "liberation", "cmr", "cambria", "georgia"))
+    is_mono = any(k in span_font for k in ("mono", "courier", "consolas"))
+    win_fonts = r"C:\Windows\Fonts"
+    sys_font_path = None
+
+    if os.path.exists(win_fonts):
+        if is_serif:
+            cand = os.path.join(win_fonts, "timesbd.ttf" if is_bold else ("timesi.ttf" if is_italic else "times.ttf"))
+            if os.path.exists(cand):
+                sys_font_path = cand
+        elif is_mono:
+            cand = os.path.join(win_fonts, "courbd.ttf" if is_bold else "cour.ttf")
+            if os.path.exists(cand):
+                sys_font_path = cand
+        else:
+            cand = os.path.join(win_fonts, "arialbd.ttf" if is_bold else ("ariali.ttf" if is_italic else "arial.ttf"))
+            if os.path.exists(cand):
+                sys_font_path = cand
+
+    if sys_font_path:
+        alias = "SysFont_" + ("Bold" if is_bold else "Reg")
+        return sys_font_path, alias
+
+    # Base-14 standard fallback
+    if is_serif:
+        base14 = "tibo" if is_bold else ("tiit" if is_italic else "tiro")
+    elif is_mono:
+        base14 = "cobo" if is_bold else "cour"
+    else:
+        base14 = "hebo" if is_bold else ("heit" if is_italic else "helv")
+
+    return None, base14
+
+
 class DocumentDuplicationEngine:
     """End-to-end engine for analyzing and duplicating documents."""
 
@@ -1404,6 +1520,7 @@ class DocumentDuplicationEngine:
 
         resolved_source = self.extractor.resolve_source_path(source_path)
         doc = pymupdf.open(resolved_source)
+        font_cache: Dict[int, Any] = {}
 
         if isinstance(replacements, str):
             try:
@@ -1412,116 +1529,137 @@ class DocumentDuplicationEngine:
                 replacements = {}
         replacements = replacements or {}
 
-        for page_idx in range(len(doc)):
-            page = doc[page_idx]
-            text_dict = page.get_text("dict")
+        try:
+            for page_idx in range(len(doc)):
+                page = doc[page_idx]
+                text_dict = page.get_text("dict")
+                page_fonts = page.get_fonts(full=True)
 
-            for old_text, new_text in replacements.items():
-                if not old_text:
-                    continue
-                old_str = str(old_text).strip()
-                new_str = str(new_text)
+                for old_text, new_text in replacements.items():
+                    if not old_text:
+                        continue
+                    old_str = str(old_text).strip()
+                    new_str = str(new_text)
 
-                rects = page.search_for(old_str)
-                is_line_match = False
+                    rects = page.search_for(old_str)
+                    is_line_match = False
 
-                if not rects or len(old_str.split()) <= 4:
-                    for b in text_dict.get("blocks", []):
-                        for l in b.get("lines", []):
-                            line_text = "".join(s.get("text", "") for s in l.get("spans", [])).strip()
-                            if line_text and (line_text.lower() == old_str.lower() or 
-                                             (len(old_str) >= 4 and re.search(rf"^(?:work\s+)?{re.escape(old_str)}[s]?$", line_text, flags=re.IGNORECASE)) or
-                                             (len(line_text.split()) <= 6 and old_str.lower() in line_text.lower())):
-                                l_rect = pymupdf.Rect(l["bbox"])
-                                rects = [l_rect]
-                                is_line_match = True
-                                break
-                        if is_line_match:
-                            break
-
-                for rect in rects:
-                    font_name = "helv"
-                    font_size = 10.0
-                    font_color = (0.0, 0.0, 0.0)
-                    is_bold = False
-                    is_italic = False
-
-                    for b in text_dict.get("blocks", []):
-                        for l in b.get("lines", []):
-                            for s in l.get("spans", []):
-                                s_rect = pymupdf.Rect(s["bbox"])
-                                if s_rect.intersects(rect):
-                                    font_size = float(s.get("size", font_size))
-                                    c = s.get("color", 0)
-                                    font_color = (((c >> 16) & 255) / 255.0, ((c >> 8) & 255) / 255.0, (c & 255) / 255.0)
-                                    s_font = str(s.get("font", "")).lower()
-                                    if any(k in s_font for k in ("bold", "bx", "black", "heavy", "demi", "semibold")) or (s.get("flags", 0) & 2):
-                                        is_bold = True
-                                    if any(k in s_font for k in ("italic", "oblique")) or (s.get("flags", 0) & 1):
-                                        is_italic = True
-                                    if any(k in s_font for k in ("serif", "times", "roman", "liberation", "cmr", "cambria", "georgia")):
-                                        font_name = "tibo" if is_bold else "tiro"
-                                    elif any(k in s_font for k in ("mono", "courier", "consolas")):
-                                        font_name = "cobo" if is_bold else "cour"
-                                    else:
-                                        font_name = "hebo" if is_bold else "helv"
+                    if not rects or len(old_str.split()) <= 4:
+                        for b in text_dict.get("blocks", []):
+                            for l in b.get("lines", []):
+                                line_text = "".join(s.get("text", "") for s in l.get("spans", [])).strip()
+                                if line_text and (line_text.lower() == old_str.lower() or 
+                                                 (len(old_str) >= 4 and re.search(rf"^(?:work\s+)?{re.escape(old_str)}[s]?$", line_text, flags=re.IGNORECASE)) or
+                                                 (len(line_text.split()) <= 6 and old_str.lower() in line_text.lower())):
+                                    l_rect = pymupdf.Rect(l["bbox"])
+                                    rects = [l_rect]
+                                    is_line_match = True
                                     break
+                            if is_line_match:
+                                break
 
-                    page.add_redact_annot(rect, fill=(1, 1, 1))
-                    page.apply_redactions()
+                    for rect in rects:
+                        font_size = 10.0
+                        font_color = (0.0, 0.0, 0.0)
+                        target_span = None
 
-                    baseline_y = rect.y1 - (rect.height * 0.18)
-                    page.insert_text(
-                        pymupdf.Point(rect.x0, baseline_y),
-                        new_str,
-                        fontname=font_name,
-                        fontsize=font_size,
-                        color=font_color
-                    )
+                        for b in text_dict.get("blocks", []):
+                            for l in b.get("lines", []):
+                                for s in l.get("spans", []):
+                                    s_rect = pymupdf.Rect(s["bbox"])
+                                    if s_rect.intersects(rect):
+                                        target_span = s
+                                        font_size = float(s.get("size", font_size))
+                                        c = s.get("color", 0)
+                                        font_color = (((c >> 16) & 255) / 255.0, ((c >> 8) & 255) / 255.0, (c & 255) / 255.0)
+                                        break
+                                if target_span:
+                                    break
+                            if target_span:
+                                break
 
-                for link in page.get_links():
-                    uri = link.get("uri")
-                    if uri and old_str in uri:
-                        link["uri"] = uri.replace(old_str, new_str)
-                        page.update_link(link)
+                        font_file, font_name = (None, "helv")
+                        if target_span:
+                            font_file, font_name = _get_font_file_for_span(doc, target_span, page_fonts, font_cache)
 
-        if watermark:
-            wm_action = watermark.strip().lower()
-            if wm_action in ("remove", "none", "delete"):
-                for page in doc:
-                    raw = page.get_text("rawdict")
-                    for b in raw.get("blocks", []):
-                        for l in b.get("lines", []):
-                            dir_vec = l.get("dir", (1.0, 0.0))
-                            if abs(dir_vec[1]) > 0.2:
-                                page.add_redact_annot(l.get("bbox"), fill=(1, 1, 1))
-                    page.apply_redactions()
-            elif wm_action not in ("preserve", "keep"):
-                for page in doc:
-                    raw = page.get_text("rawdict")
-                    for b in raw.get("blocks", []):
-                        for l in b.get("lines", []):
-                            dir_vec = l.get("dir", (1.0, 0.0))
-                            if abs(dir_vec[1]) > 0.2:
-                                page.add_redact_annot(l.get("bbox"), fill=(1, 1, 1))
-                    page.apply_redactions()
+                        page.add_redact_annot(rect, fill=(1, 1, 1))
+                        page.apply_redactions()
 
-                    m = pymupdf.Matrix(45)
-                    p = pymupdf.Point(page.rect.width / 2, page.rect.height / 2)
-                    wm_rect = pymupdf.Rect(page.rect.width * 0.1, page.rect.height * 0.3, page.rect.width * 0.9, page.rect.height * 0.7)
-                    page.insert_textbox(
-                        wm_rect,
-                        watermark,
-                        fontsize=44,
-                        fontname="hebo",
-                        color=(0.85, 0.85, 0.85),
-                        morph=(p, m)
-                    )
+                        origin = target_span.get("origin") if target_span else None
+                        if origin:
+                            insert_pt = pymupdf.Point(origin[0], origin[1])
+                        else:
+                            baseline_y = rect.y1 - (rect.height * 0.18)
+                            insert_pt = pymupdf.Point(rect.x0, baseline_y)
 
-        os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
-        doc.save(output_path, garbage=4, deflate=True)
-        doc.close()
-        return output_path
+                        if font_file:
+                            page.insert_text(
+                                insert_pt,
+                                new_str,
+                                fontname=font_name,
+                                fontfile=font_file,
+                                fontsize=font_size,
+                                color=font_color
+                            )
+                        else:
+                            page.insert_text(
+                                insert_pt,
+                                new_str,
+                                fontname=font_name,
+                                fontsize=font_size,
+                                color=font_color
+                            )
+
+                    for link in page.get_links():
+                        uri = link.get("uri")
+                        if uri and old_str in uri:
+                            link["uri"] = uri.replace(old_str, new_str)
+                            page.update_link(link)
+
+            if watermark:
+                wm_action = watermark.strip().lower()
+                if wm_action in ("remove", "none", "delete"):
+                    for page in doc:
+                        raw = page.get_text("rawdict")
+                        for b in raw.get("blocks", []):
+                            for l in b.get("lines", []):
+                                dir_vec = l.get("dir", (1.0, 0.0))
+                                if abs(dir_vec[1]) > 0.2:
+                                    page.add_redact_annot(l.get("bbox"), fill=(1, 1, 1))
+                        page.apply_redactions()
+                elif wm_action not in ("preserve", "keep"):
+                    for page in doc:
+                        raw = page.get_text("rawdict")
+                        for b in raw.get("blocks", []):
+                            for l in b.get("lines", []):
+                                dir_vec = l.get("dir", (1.0, 0.0))
+                                if abs(dir_vec[1]) > 0.2:
+                                    page.add_redact_annot(l.get("bbox"), fill=(1, 1, 1))
+                        page.apply_redactions()
+
+                        m = pymupdf.Matrix(45)
+                        p = pymupdf.Point(page.rect.width / 2, page.rect.height / 2)
+                        wm_rect = pymupdf.Rect(page.rect.width * 0.1, page.rect.height * 0.3, page.rect.width * 0.9, page.rect.height * 0.7)
+                        page.insert_textbox(
+                            wm_rect,
+                            watermark,
+                            fontsize=44,
+                            fontname="hebo",
+                            color=(0.85, 0.85, 0.85),
+                            morph=(p, m)
+                        )
+
+            os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+            doc.save(output_path, garbage=4, deflate=True)
+            doc.close()
+            return output_path
+        finally:
+            for pth, _ in font_cache.values():
+                if pth and os.path.exists(pth) and pth.startswith(tempfile.gettempdir()):
+                    try:
+                        os.remove(pth)
+                    except Exception:
+                        pass
 
     def duplicate(self, source_path: str, output_path: str,
                   instruction: Optional[str] = "",
