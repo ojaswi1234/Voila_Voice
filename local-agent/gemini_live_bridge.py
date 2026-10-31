@@ -134,6 +134,20 @@ async def execute_local_tool(name: str, args: dict) -> str:
     try:
         if name == "run_terminal":
             cmd = args.get("command", "")
+            try:
+                from aegis.aegis_core import StaticRules
+                allowed, reason = StaticRules.check_payload("run_terminal", cmd, window_title="Live Voice Bridge")
+                if not allowed:
+                    return f"[BLOCKED BY AEGIS GUARDRAILS]: Command violates safety policy ({reason})"
+            except Exception:
+                pass
+            try:
+                from sentinel.process_watchdog import ProcessWatchdog
+                is_anom, sev, reasons = ProcessWatchdog.evaluate_command_line(cmd)
+                if is_anom and sev in ("CRITICAL", "HIGH"):
+                    return f"[BLOCKED BY SENTINEL EDR]: Command blocked due to high-risk behavioral anomaly: {', '.join(reasons)}"
+            except Exception:
+                pass
             proc = await asyncio.create_subprocess_shell(
                 f'powershell -NoProfile -Command "{cmd}"',
                 stdout=asyncio.subprocess.PIPE,
@@ -146,6 +160,10 @@ async def execute_local_tool(name: str, args: dict) -> str:
 
         elif name == "read_file":
             path = args.get("path", "")
+            clean_path = os.path.abspath(path).lower()
+            blocked_keys = [".vault_secret", ".sentinel_key", ".bridge_token", "vault_manifest", "\\system32\\config"]
+            if any(k in clean_path for k in blocked_keys):
+                return "[ACCESS DENIED BY AEGIS]: Prohibited from reading internal security keys or sensitive system stores."
             if os.path.exists(path):
                 with open(path, "r", encoding="utf-8", errors="replace") as f:
                     return f.read(4000)
@@ -453,7 +471,9 @@ async def main():
         return
     port = int(os.environ.get("VOILA_LIVE_PORT", DEFAULT_PORT))
     print(f"Starting Voila Gemini Live Bridge on ws://127.0.0.1:{port}...")
-    async with websockets.serve(handle_client, "127.0.0.1", port):
+    # Enforce strict CSWSH defense: only non-browser clients (None) or local web origins permitted
+    trusted_origins = [None, "http://127.0.0.1", "http://localhost", f"http://127.0.0.1:{port}", f"http://localhost:{port}"]
+    async with websockets.serve(handle_client, "127.0.0.1", port, origins=trusted_origins):
         await asyncio.Future()
 
 if __name__ == "__main__":

@@ -50,6 +50,7 @@ from sentinel.download_sentinel import download_sentinel
 from sentinel.lan_guardian import lan_guardian
 from sentinel.secret_scanner import secret_scanner
 from sentinel.identity_radar import identity_radar
+from sentinel.system_defense import SystemDefense
 
 
 def print_banner():
@@ -67,7 +68,8 @@ def main():
         "status", "audit-ports", "scan-processes", "audit-persistence", "take-baseline",
         "triage-file", "scan-downloads", "quarantine-file", "list-vault", "restore-file",
         "scan-lan", "audit-gateway", "take-network-baseline",
-        "scan-secrets", "check-breach"
+        "scan-secrets", "check-breach",
+        "lock-workstation", "isolate-host", "lift-isolation", "isolation-status"
     ], help="Command to execute")
     parser.add_argument("--target", "-t", type=str, help="Target file path for triage or quarantine")
     parser.add_argument("--dir", "-d", type=str, help="Target directory for secret scanning")
@@ -318,6 +320,47 @@ def main():
                 print("Action Required: Rotate this credential immediately. It is known to adversary dictionaries.")
             else:
                 print(f"\n[OK] Credential does not appear in known public data breaches.")
+
+    elif args.command == "lock-workstation":
+        result = SystemDefense.lock_workstation()
+        if args.json:
+            print(json.dumps(result, indent=2))
+        else:
+            print_banner()
+            if result.get("status") == "SUCCESS":
+                print("[OK] Workstation locked successfully.")
+            else:
+                print(f"[ERROR] Could not lock workstation: {result.get('message')}")
+
+    elif args.command == "isolate-host":
+        result = SystemDefense.isolate_network()
+        if args.json:
+            print(json.dumps(result, indent=2))
+        else:
+            print_banner()
+            if result.get("status") == "SUCCESS":
+                print("[OK] Host network isolation ACTIVE.")
+                print("  Outbound traffic blocked via Windows Firewall rule 'VOILA_SENTINEL_ISOLATION'.")
+                print("  Localhost loopback preserved.")
+            else:
+                print(f"[{result.get('status')}] {result.get('message')}")
+
+    elif args.command == "lift-isolation":
+        result = SystemDefense.lift_isolation()
+        if args.json:
+            print(json.dumps(result, indent=2))
+        else:
+            print_banner()
+            print(f"[OK] {result.get('message')}")
+
+    elif args.command == "isolation-status":
+        active = SystemDefense.is_isolated()
+        if args.json:
+            print(json.dumps({"isolated": active}))
+        else:
+            print_banner()
+            status_str = "ACTIVE (Host Isolated)" if active else "INACTIVE (Normal Networking)"
+            print(f"Emergency Network Isolation Status: {status_str}")
 
 
 if __name__ == "__main__":

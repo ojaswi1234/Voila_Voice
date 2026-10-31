@@ -136,3 +136,9 @@ local-agent/cursor_pos_*.txt
 
 .local.env
 *.local.env
+
+# Machine-local Sentinel Secrets & Signatures
+.vault_secret
+.sentinel_key
+.bridge_token
+*.sig

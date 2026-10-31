@@ -19,6 +19,8 @@ import time
 import subprocess
 from typing import Dict, List, Any, Optional, Tuple
 
+from .baseline_integrity import BaselineIntegrity
+
 
 class LANGuardian:
     """Passive local area network monitor and anti-spoofing sentinel."""
@@ -158,20 +160,20 @@ class LANGuardian:
             }
 
         # Check against baseline
-        has_baseline = os.path.exists(self.baseline_file)
-        baseline_data = {}
-        if has_baseline:
-            try:
-                with open(self.baseline_file, "r", encoding="utf-8") as f:
-                    baseline_data = json.load(f)
-            except Exception:
-                has_baseline = False
+        baseline_data, integrity_status = BaselineIntegrity.load_signed_json(self.baseline_file, data_dir=self.data_dir)
+        has_baseline = (baseline_data is not None)
 
-        base_gw_ip = baseline_data.get("gateway_ip")
-        base_gw_mac = baseline_data.get("gateway_mac")
+        base_gw_ip = baseline_data.get("gateway_ip") if baseline_data else None
+        base_gw_mac = baseline_data.get("gateway_mac") if baseline_data else None
 
         spoofing_detected = False
         reasons = []
+
+        if integrity_status == "TAMPERED":
+            spoofing_detected = True
+            reasons.append(
+                "CRITICAL: Network Baseline Cryptographic Signature Mismatch! Gateway baseline was modified externally without authorization."
+            )
 
         if has_baseline and base_gw_ip == gateway_ip:
             if base_gw_mac and base_gw_mac != cur_gw_mac:
@@ -189,6 +191,7 @@ class LANGuardian:
             "gateway_vendor": self.resolve_vendor(cur_gw_mac),
             "is_spoofed": spoofing_detected,
             "has_baseline": has_baseline,
+            "integrity_status": integrity_status,
             "baseline_gateway_mac": base_gw_mac,
             "reasons": reasons
         }
@@ -201,15 +204,9 @@ class LANGuardian:
         gw_audit = self.audit_gateway()
 
         # Check known devices baseline
-        has_baseline = os.path.exists(self.baseline_file)
-        known_macs = set()
-        if has_baseline:
-            try:
-                with open(self.baseline_file, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    known_macs = set(data.get("known_macs", []))
-            except Exception:
-                pass
+        baseline_data, integrity_status = BaselineIntegrity.load_signed_json(self.baseline_file, data_dir=self.data_dir)
+        has_baseline = (baseline_data is not None)
+        known_macs = set(baseline_data.get("known_macs", [])) if baseline_data else set()
 
         new_devices = []
         for d in devices:
@@ -239,7 +236,7 @@ class LANGuardian:
         }
 
     def take_network_baseline(self) -> Dict[str, Any]:
-        """Snapshots current gateway and active subnet devices as trusted baseline."""
+        """Snapshots current gateway and active subnet devices as trusted cryptographically sealed baseline."""
         net_info = self.get_active_network_info()
         devices = self.parse_kernel_arp_table()
         gw_audit = self.audit_gateway()
@@ -254,14 +251,14 @@ class LANGuardian:
             "devices_snapshot": devices
         }
 
-        with open(self.baseline_file, "w", encoding="utf-8") as f:
-            json.dump(baseline_data, f, indent=2)
+        sig = BaselineIntegrity.save_signed_json(self.baseline_file, baseline_data, data_dir=self.data_dir)
 
         return {
             "status": "SUCCESS",
             "gateway_ip": net_info.get("gateway_ip"),
             "gateway_mac": gw_audit.get("gateway_mac"),
             "devices_count": len(devices),
+            "signature": sig,
             "baseline_file": self.baseline_file
         }
 

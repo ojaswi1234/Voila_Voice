@@ -35,6 +35,59 @@ class ProcessWatchdog:
     LOLBINS = ("certutil.exe", "bitsadmin.exe", "mshta.exe", "regsvr32.exe", "wmic.exe")
 
     @classmethod
+    def evaluate_command_line(cls, cmd: str) -> tuple:
+        """Evaluates a raw command line string for malicious, obfuscated, or LOLBin patterns.
+        Returns: (is_anomaly: bool, severity: str, reasons: List[str])
+        """
+        if not cmd:
+            return False, "CLEAN", []
+        cmd_lower = cmd.lower()
+        reasons = []
+        severity = "CLEAN"
+
+        # Check for encoded commands
+        if "-enc" in cmd_lower or "-encodedcommand" in cmd_lower:
+            reasons.append("Base64 Encoded Command Line (-enc)")
+            severity = "HIGH"
+
+        # Check for hidden window style
+        if "-w hidden" in cmd_lower or "-windowstyle hidden" in cmd_lower:
+            reasons.append("Hidden Execution Window (-w hidden)")
+            if severity != "HIGH":
+                severity = "MEDIUM"
+
+        # Check for in-memory download & execution
+        if any(term in cmd_lower for term in ("downloadstring", "invoke-expression", "iex(", "iwr http", "curl http")):
+            reasons.append("In-Memory Remote Download & Execution (IEX)")
+            severity = "HIGH"
+
+        # Check Shannon Entropy on long command lines
+        if len(cmd) > 120:
+            entropy = calculate_shannon_entropy(cmd)
+            if entropy > 5.1:
+                reasons.append(f"High Command-Line Entropy ({entropy:.2f})")
+                if severity != "HIGH":
+                    severity = "MEDIUM"
+
+        # Check LOLBins abuse
+        if any(bin_name in cmd_lower for bin_name in ("certutil", "bitsadmin", "mshta", "regsvr32")):
+            if "certutil" in cmd_lower and ("-urlcache" in cmd_lower or "-split" in cmd_lower):
+                reasons.append("Certutil Ingress Tool Transfer (-urlcache)")
+                severity = "HIGH"
+            elif "bitsadmin" in cmd_lower and "/transfer" in cmd_lower:
+                reasons.append("Bitsadmin Ingress Tool Transfer (/transfer)")
+                severity = "HIGH"
+            elif "mshta" in cmd_lower and "http" in cmd_lower:
+                reasons.append("MSHTA Remote Script Execution")
+                severity = "HIGH"
+            elif "regsvr32" in cmd_lower and ("/s" in cmd_lower and "/u" in cmd_lower and "/i:" in cmd_lower):
+                reasons.append("Regsvr32 Squiblydoo Bypass (/s /u /i:)")
+                severity = "HIGH"
+
+        is_anom = (len(reasons) > 0)
+        return is_anom, severity, reasons
+
+    @classmethod
     def scan(cls) -> Dict[str, Any]:
         """Scans current process table and flags suspicious behaviors."""
         total_checked = 0

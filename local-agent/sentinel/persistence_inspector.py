@@ -17,6 +17,8 @@ import hashlib
 import winreg
 from typing import Dict, List, Any, Optional
 
+from .baseline_integrity import BaselineIntegrity
+
 
 def hash_file_sha256(filepath: str, max_size_mb: int = 50) -> Optional[str]:
     """Computes SHA-256 hash of a file safely with streaming chunks."""
@@ -123,34 +125,36 @@ class PersistenceInspector:
         return entries
 
     def take_baseline(self) -> Dict[str, Any]:
-        """Snapshots current entries as the trusted baseline."""
+        """Snapshots current entries as the trusted cryptographically sealed baseline."""
         entries = self.enumerate_current_entries()
         baseline_data = {
             "entry_count": len(entries),
             "entries": {f"{e['location']}::{e['name']}": e for e in entries}
         }
-        with open(self.baseline_file, "w", encoding="utf-8") as f:
-            json.dump(baseline_data, f, indent=2)
-        return {"status": "SUCCESS", "baseline_count": len(entries), "file": self.baseline_file}
+        sig = BaselineIntegrity.save_signed_json(self.baseline_file, baseline_data, data_dir=self.data_dir)
+        return {"status": "SUCCESS", "baseline_count": len(entries), "signature": sig, "file": self.baseline_file}
 
     def audit(self) -> Dict[str, Any]:
-        """Audits current autoruns, checking against baseline and heuristic red flags."""
+        """Audits current autoruns, checking against baseline, HMAC signature, and heuristic red flags."""
         current_entries = self.enumerate_current_entries()
         current_map = {f"{e['location']}::{e['name']}": e for e in current_entries}
 
-        has_baseline = os.path.exists(self.baseline_file)
-        baseline_map = {}
-        if has_baseline:
-            try:
-                with open(self.baseline_file, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    baseline_map = data.get("entries", {})
-            except Exception:
-                has_baseline = False
+        baseline_data, integrity_status = BaselineIntegrity.load_signed_json(self.baseline_file, data_dir=self.data_dir)
+        has_baseline = (baseline_data is not None)
+        baseline_map = baseline_data.get("entries", {}) if baseline_data else {}
 
         new_entries = []
         modified_entries = []
         suspicious_entries = []
+
+        # Check for baseline tampering
+        if integrity_status == "TAMPERED":
+            suspicious_entries.append({
+                "name": "CRITICAL: Persistence Baseline Cryptographic Signature Mismatch!",
+                "location": self.baseline_file,
+                "command": "EXTERNAL_TAMPERING_DETECTED",
+                "reasons": ["Baseline file HMAC-SHA256 signature mismatch: autoruns baseline was modified externally without authorization."]
+            })
 
         for key, entry in current_map.items():
             cmd_lower = entry["command"].lower()
@@ -189,6 +193,7 @@ class PersistenceInspector:
         return {
             "risk_level": risk_level,
             "has_baseline": has_baseline,
+            "integrity_status": integrity_status,
             "total_current_autoruns": len(current_entries),
             "new_entries_count": len(new_entries),
             "modified_entries_count": len(modified_entries),
