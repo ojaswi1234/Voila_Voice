@@ -6,9 +6,15 @@ import 'dart:async';
 class SurveillanceSheet extends StatefulWidget {
   final String backendUrl;
   final String deviceId;
+  final String? sessionToken;
   static void Function(Map<String, dynamic>)? onStatusUpdate;
 
-  const SurveillanceSheet({Key? key, required this.backendUrl, required this.deviceId}) : super(key: key);
+  const SurveillanceSheet({
+    Key? key,
+    required this.backendUrl,
+    required this.deviceId,
+    this.sessionToken,
+  }) : super(key: key);
 
   @override
   _SurveillanceSheetState createState() => _SurveillanceSheetState();
@@ -52,6 +58,14 @@ class _SurveillanceSheetState extends State<SurveillanceSheet> {
     return url;
   }
 
+  Map<String, String> _buildHeaders() {
+    final headers = <String, String>{};
+    if (widget.sessionToken != null && widget.sessionToken!.isNotEmpty) {
+      headers['Authorization'] = 'Bearer ${widget.sessionToken}';
+    }
+    return headers;
+  }
+
   Future<void> _fetchStatus() async {
     setState(() => loading = true);
     await _pollStatus();
@@ -60,7 +74,7 @@ class _SurveillanceSheetState extends State<SurveillanceSheet> {
 
   Future<void> _pollStatus() async {
     try {
-      final res = await http.get(Uri.parse(_getUrl('status')));
+      final res = await http.get(Uri.parse(_getUrl('status')), headers: _buildHeaders()).timeout(const Duration(seconds: 5));
       if (res.statusCode == 200 && mounted) {
         final data = jsonDecode(res.body);
         final String newAlert = data['last_alert_reason'] ?? '';
@@ -84,7 +98,7 @@ class _SurveillanceSheetState extends State<SurveillanceSheet> {
   Future<void> _sendCommand(String cmd) async {
     setState(() => loading = true);
     try {
-      await http.get(Uri.parse(_getUrl(cmd)));
+      await http.get(Uri.parse(_getUrl(cmd)), headers: _buildHeaders()).timeout(const Duration(seconds: 5));
     } catch (e) {}
     await _fetchStatus();
   }

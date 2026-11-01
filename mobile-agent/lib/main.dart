@@ -4011,7 +4011,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
             } else if (jsonResponse is Map && jsonResponse['type'] == 'queued') {
               // Task queued! Keep loader spinning.
               return;
-            } else if (jsonResponse is Map && jsonResponse.containsKey('summary')) {
+            } else if (jsonResponse is Map && (jsonResponse.containsKey('summary') || jsonResponse.containsKey('output_enc') || jsonResponse['status'] == 'encrypted')) {
               // Always clear the thinking/processing state when any response
               // arrives — including screenshots. Previously the screenshot branch
               // only called _triggerDataArriving() but forgot to set
@@ -4027,13 +4027,60 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                   }
                 }
               });
-              
-              String summaryToSpeak = jsonResponse['summary'];
-              if (jsonResponse['delayed'] == true) {
+
+              String rawOutput = (jsonResponse['output'] as String? ?? '').trim();
+              String rawSummary = (jsonResponse['summary'] as String? ?? '').trim();
+
+              // Transparent E2E Decryption for encrypted webhook responses
+              if (jsonResponse.containsKey('output_enc') || jsonResponse.containsKey('error_enc') || jsonResponse['status'] == 'encrypted') {
+                final phrase = _cachedSecurityPhrase;
+                final encOutput = jsonResponse['output_enc']?.toString() ?? '';
+                final encError = jsonResponse['error_enc']?.toString() ?? '';
+
+                if (phrase.isNotEmpty) {
+                  if (encOutput.isNotEmpty) {
+                    final decOutput = CryptoUtils.decrypt(encOutput, phrase).trim();
+                    if (decOutput.startsWith('{') && decOutput.endsWith('}')) {
+                      try {
+                        final parsed = jsonDecode(decOutput);
+                        if (parsed is Map) {
+                          if (parsed['output'] != null) rawOutput = parsed['output'].toString().trim();
+                          if (parsed['summary'] != null) rawSummary = parsed['summary'].toString().trim();
+                        } else {
+                          rawOutput = decOutput;
+                        }
+                      } catch (_) {
+                        rawOutput = decOutput;
+                      }
+                    } else {
+                      rawOutput = decOutput;
+                    }
+                  }
+                  if (encError.isNotEmpty) {
+                    final decError = CryptoUtils.decrypt(encError, phrase).trim();
+                    if (decError.isNotEmpty && !decError.startsWith('Decryption error:')) {
+                      if (rawOutput.isNotEmpty) {
+                        rawOutput = '$rawOutput\nError: $decError';
+                      } else {
+                        rawOutput = 'Error: $decError';
+                      }
+                    }
+                  }
+                } else {
+                  rawOutput = '[Encrypted response: security phrase required to decrypt]';
+                }
+              }
+
+              String summaryToSpeak = rawSummary.isNotEmpty ? rawSummary : (jsonResponse['summary'] as String? ?? '');
+              if (summaryToSpeak.isEmpty && rawOutput.isNotEmpty && !rawOutput.startsWith('__IMAGE__:')) {
+                summaryToSpeak = rawOutput.length > 200 ? '${rawOutput.substring(0, 197)}...' : rawOutput;
+              }
+
+              if (jsonResponse['delayed'] == true && summaryToSpeak.isNotEmpty) {
                 summaryToSpeak = "Hey boss, last task that you gave me before you got disconnected, is now completed. " + summaryToSpeak;
               }
               
-              if (_willTalk) {
+              if (_willTalk && summaryToSpeak.isNotEmpty) {
                 unawaited(_speak(summaryToSpeak));  // REMAIN-02 fix: async speak, don't block stream
               }
               
@@ -4045,8 +4092,6 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                 }
               }
 
-              final rawOutput = (jsonResponse['output'] as String? ?? '').trim();
-              final rawSummary = (jsonResponse['summary'] as String? ?? '').trim();
               String contentStr = rawOutput.isNotEmpty
                   ? rawOutput
                   : (rawSummary.isNotEmpty ? rawSummary : 'Task completed successfully.');
@@ -4055,8 +4100,12 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
               }
               _updateActiveConversationSnippet(contentStr);
               _interceptImageForAssistant(contentStr);
+
+              final isError = jsonResponse['status'] == 'failed' ||
+                  (jsonResponse['error_enc'] != null && jsonResponse['error_enc'].toString().isNotEmpty);
+
               _addMessage({
-                'type': 'response',
+                'type': isError ? 'error' : 'response',
                 'content': contentStr,
                 'summary': summaryToSpeak,
                 'status': jsonResponse['status'],
@@ -4199,7 +4248,11 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       httpUrl = httpUrl.replaceAll('wss://', 'https://');
       httpUrl = httpUrl.replaceAll('/ws', '/proxy/$_activeDevice/bg-tasks'); // the backend proxy route
       
-      final response = await http.get(Uri.parse(httpUrl)).timeout(const Duration(seconds: 5));
+      final Map<String, String> headers = {};
+      if (_sessionToken.isNotEmpty) {
+        headers['Authorization'] = 'Bearer $_sessionToken';
+      }
+      final response = await http.get(Uri.parse(httpUrl), headers: headers).timeout(const Duration(seconds: 5));
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (mounted) {
@@ -5489,6 +5542,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                         builder: (context) => SurveillanceSheet(
                           backendUrl: backendUrl,
                           deviceId: _activeDevice,
+                          sessionToken: _sessionToken,
                         ),
                       );
                     }),
