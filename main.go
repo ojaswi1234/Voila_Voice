@@ -610,7 +610,9 @@ func (b *Backend) notifyAgentCircuit(agentAddress, state string) {
 		req.Header.Set("X-Exec-Secret", secret)
 	}
 	
-	client.Do(req)
+	if resp, err := client.Do(req); err == nil && resp != nil {
+		resp.Body.Close()
+	}
 }
 
 func (b *Backend) resetCircuitBreaker(deviceID string) bool {
@@ -2395,7 +2397,9 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 							req.Header.Set("Content-Type", "application/json")
 							req.Header.Set("X-Exec-Secret", device.SecurityPhraseHash)
 							client := safeHTTPClient()
-							client.Do(req)
+							if resp, err := client.Do(req); err == nil && resp != nil {
+								resp.Body.Close()
+							}
 						}
 					}()
 				}

@@ -48,13 +48,19 @@ func pingOllama(ctx context.Context, baseURL string, apiKey string) bool {
 	req, _ := http.NewRequestWithContext(ctx, "GET", strings.TrimRight(baseURL, "/")+"/models", nil)
 	if apiKey != "" { req.Header.Set("Authorization", "Bearer "+apiKey) }
 	resp, err := client.Do(req)
-	if err == nil && resp.StatusCode == 200 { return true }
+	if err == nil && resp != nil {
+		resp.Body.Close()
+		if resp.StatusCode == 200 { return true }
+	}
 	
 	// Otherwise test standard Ollama endpoint
 	req2, _ := http.NewRequestWithContext(ctx, "GET", strings.TrimRight(baseURL, "/")+"/api/tags", nil)
 	if apiKey != "" { req2.Header.Set("Authorization", "Bearer "+apiKey) }
 	resp2, err2 := client.Do(req2)
-	if err2 == nil && resp2.StatusCode == 200 { return true }
+	if err2 == nil && resp2 != nil {
+		resp2.Body.Close()
+		if resp2.StatusCode == 200 { return true }
+	}
 	
 	return false
 }

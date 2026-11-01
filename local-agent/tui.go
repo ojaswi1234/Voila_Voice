@@ -98,7 +98,9 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					secret := hashPhrase(connData.SecurityPhrase, connData.DeviceID)
 					req, _ := http.NewRequest("POST", "http://127.0.0.1:8080/stop", nil)
 					req.Header.Set("X-Exec-Secret", secret)
-					(&http.Client{Timeout: 2 * time.Second}).Do(req)
+					if resp, err := (&http.Client{Timeout: 2 * time.Second}).Do(req); err == nil && resp != nil {
+						resp.Body.Close()
+					}
 				}
 			}()
 			m.state.ErrorMsg = "FORCE KILLED BY USER"
