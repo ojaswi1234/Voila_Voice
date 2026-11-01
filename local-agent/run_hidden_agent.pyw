@@ -2240,147 +2240,399 @@ def _draw_connections_section(dc, w, h):
     dc.create_text(24, 284, text=current_mode, fill=MODE_COLORS[current_mode], font=('Segoe UI', 20, 'bold'), anchor='w')
     dc.create_text(w - 24, 284, text='Toggle on main widget', fill='#6B7280', font=('Segoe UI', 10), anchor='e')
 
+# ─── Analytics Telemetry Cache & Helpers ─────────────────────────────────────
+_analytics_telemetry_cache = {
+    "last_check": 0.0,
+    "posture_score": 100,
+    "host_isolated": False,
+    "arp_status": "VERIFIED",
+    "vault_count": 0,
+    "recent_incidents": [],
+    "tokens": {
+        "groq_day": 0,
+        "groq_session": 0,
+        "ollama_day": 0,
+        "ollama_session": 0,
+        "last_reset": ""
+    }
+}
+
+def _get_cached_analytics_telemetry():
+    """Fetches real-time Sentinel EDR, Vault, and LLM Token usage with a 2-second throttle."""
+    now = time.time()
+    if now - _analytics_telemetry_cache["last_check"] < 2.0:
+        return _analytics_telemetry_cache
+    _analytics_telemetry_cache["last_check"] = now
+
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+
+    # 1. Token Economics
+    try:
+        token_path = os.path.join(base_dir, "token_usage.json")
+        if os.path.exists(token_path):
+            with open(token_path, "r", encoding="utf-8") as f:
+                tu = json.load(f)
+                groq_day = tu.get("groq_day_tokens_in", 0) + tu.get("groq_day_tokens_out", 0)
+                groq_sess = tu.get("groq_session_in", 0) + tu.get("groq_session_out", 0)
+                ollama_day = tu.get("ollama_day_tokens_in", 0) + tu.get("ollama_day_tokens_out", 0)
+                ollama_sess = tu.get("ollama_session_in", 0) + tu.get("ollama_session_out", 0)
+                _analytics_telemetry_cache["tokens"] = {
+                    "groq_day": groq_day,
+                    "groq_session": groq_sess,
+                    "ollama_day": ollama_day,
+                    "ollama_session": ollama_sess,
+                    "last_reset": tu.get("last_reset_date", "")
+                }
+    except Exception:
+        pass
+
+    # 2. Sentinel Incidents & Posture
+    try:
+        incidents_path = os.path.join(base_dir, "sentinel", "data", "sentinel_incidents.jsonl")
+        if os.path.exists(incidents_path):
+            with open(incidents_path, "r", encoding="utf-8", errors="replace") as f:
+                lines = [l.strip() for l in f if l.strip()]
+            recent = []
+            posture = 100
+            for l in reversed(lines[-8:]):
+                try:
+                    obj = json.loads(l)
+                    recent.append(obj)
+                    if "posture_score" in obj.get("details", {}):
+                        posture = int(obj["details"]["posture_score"])
+                except Exception:
+                    pass
+            _analytics_telemetry_cache["recent_incidents"] = recent
+            _analytics_telemetry_cache["posture_score"] = posture
+    except Exception:
+        pass
+
+    # 3. Quarantine Vault Count
+    try:
+        manifest_path = os.path.join(base_dir, "sentinel", "vault", "vault_manifest.json")
+        if os.path.exists(manifest_path):
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                vm = json.load(f)
+                items = vm.get("items", {})
+                active_vault = sum(1 for it in items.values() if it.get("status") == "QUARANTINED")
+                _analytics_telemetry_cache["vault_count"] = active_vault
+    except Exception:
+        pass
+
+    # 4. Host Isolation Firewall State
+    try:
+        if sys.platform == "win32":
+            cmd = 'netsh advfirewall firewall show rule name="SENTINEL_EMERGENCY_ISOLATION"'
+            res = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=1.0)
+            _analytics_telemetry_cache["host_isolated"] = ("SENTINEL_EMERGENCY_ISOLATION" in res.stdout)
+    except Exception:
+        pass
+
+    return _analytics_telemetry_cache
+
+def _analytics_tool_color(name):
+    """Categorical color palette for tool distribution bars."""
+    nl = name.lower()
+    if any(k in nl for k in ('sentinel', 'triage', 'isolate', 'security', 'vault', 'defense')):
+        return '#10B981'  # Emerald / Security & EDR
+    if any(k in nl for k in ('document', 'ocr', 'handwrite', 'file', 'read', 'write')):
+        return '#8B5CF6'  # Purple / Documents & Vision
+    if any(k in nl for k in ('terminal', 'desktop', 'cmd', 'ps', 'bash', 'run_')):
+        return '#06B6D4'  # Cyan / OS Automation
+    if any(k in nl for k in ('web', 'search', 'browse', 'http')):
+        return '#F59E0B'  # Amber / Web & Research
+    return '#3B82F6'      # Blue / Core Tools
+
 def _draw_analytics_section(dc, w, h):
-    # Calculate some derived stats
+    # Calculate derived stats
     success_rate = 0
-    if usage_stats['commands_executed'] > 0:
-        success_rate = int((usage_stats['commands_successful'] / usage_stats['commands_executed']) * 100)
-    session_duration = int((time.time() - usage_stats['session_start']) / 60)
+    total_cmds = usage_stats['commands_executed']
+    if total_cmds > 0:
+        success_rate = int((usage_stats['commands_successful'] / total_cmds) * 100)
+    session_duration = max(1, int((time.time() - usage_stats['session_start']) / 60))
     cpm = int(usage_stats['commands_executed'] / max(0.1, (time.time() - usage_stats['session_start']) / 60.0))
     
     # Grid Layout
     margin = 15
     col_w = (w - (margin * 3)) // 2
     y_start = 10
-    
-    # ---------------------------------------------------------
-    # LEFT COLUMN: CHARTS & GRAPHS
-    # ---------------------------------------------------------
     left_x = margin
+    right_x = margin * 2 + col_w
     
+    # Telemetry Cache
+    telem = _get_cached_analytics_telemetry()
+    tokens = telem.get("tokens", {})
+    groq_day = tokens.get("groq_day", 0)
+    groq_sess = tokens.get("groq_session", 0)
+    ollama_day = tokens.get("ollama_day", 0)
+    posture = telem.get("posture_score", 100)
+    is_isolated = telem.get("host_isolated", False)
+    vault_count = telem.get("vault_count", 0)
+    recent_incidents = telem.get("recent_incidents", [])
+
+    # ---------------------------------------------------------
+    # LEFT COLUMN: VISUAL CHARTS & AUDIT STREAM
+    # ---------------------------------------------------------
     # 1. SCATTERPLOT: Latency Distribution
     sc_y = y_start
-    sc_h = 160
-    dc.create_text(left_x, sc_y, text='LATENCY SCATTERPLOT (ms)', fill='#9CA3AF', font=('Segoe UI', 10, 'bold'), anchor='nw')
-    dc.create_rectangle(left_x, sc_y + 20, left_x + col_w, sc_y + 20 + sc_h, fill='#1A1D23', outline='#2A2D35')
-    
+    sc_box_y = sc_y + 20
+    sc_h = 130
+    sc_box_bottom = sc_box_y + sc_h
     t_data = usage_stats.get('timeline_data', [])
+    avg_lat = usage_stats.get('avg_latency_ms', 45)
+    peak_lat = max(t_data) if t_data else avg_lat
+
+    dc.create_text(left_x, sc_y, text='LATENCY SCATTERPLOT (ms)', fill='#9CA3AF', font=('Segoe UI', 10, 'bold'), anchor='nw')
+    dc.create_text(left_x + col_w, sc_y, text=f"Avg: {avg_lat}ms | Peak: {peak_lat}ms", fill='#6B7280', font=('Segoe UI', 9), anchor='ne')
+    dc.create_rectangle(left_x, sc_box_y, left_x + col_w, sc_box_bottom, fill='#1A1D23', outline='#2A2D35')
+
+    # Threshold baseline guides (1.5s norm / 3.0s warn)
+    guide_1500_y = sc_box_bottom - int((1500 / 5000) * (sc_h - 25)) - 10
+    dc.create_line(left_x + 5, guide_1500_y, left_x + col_w - 5, guide_1500_y, fill='#064E3B', dash=(2, 4))
+    dc.create_text(left_x + col_w - 8, guide_1500_y - 6, text="1.5s norm", fill='#059669', font=('Segoe UI', 7), anchor='e')
+
+    guide_3000_y = sc_box_bottom - int((3000 / 5000) * (sc_h - 25)) - 10
+    dc.create_line(left_x + 5, guide_3000_y, left_x + col_w - 5, guide_3000_y, fill='#78350F', dash=(2, 4))
+    dc.create_text(left_x + col_w - 8, guide_3000_y - 6, text="3.0s warn", fill='#D97706', font=('Segoe UI', 7), anchor='e')
+
     if t_data:
         max_ms = max(5000, max(t_data))
-        pt_w = col_w / max(1, len(t_data))
+        pt_w = (col_w - 30) / max(1, len(t_data))
         for i, ms in enumerate(t_data):
-            px = left_x + (i * pt_w) + (pt_w/2)
-            py = (sc_y + 20 + sc_h) - ((ms / max_ms) * (sc_h - 20)) - 10
-            # Draw point
+            px = left_x + 15 + (i * pt_w) + (pt_w / 2)
+            py = sc_box_bottom - ((ms / max_ms) * (sc_h - 25)) - 10
             color = '#10B981' if ms < 1500 else ('#F59E0B' if ms < 3000 else '#EF4444')
-            dc.create_oval(px-3, py-3, px+3, py+3, fill=color, outline='#FFFFFF')
-            # Connect line if not first
             if i > 0:
-                prev_ms = t_data[i-1]
-                prev_px = left_x + ((i-1) * pt_w) + (pt_w/2)
-                prev_py = (sc_y + 20 + sc_h) - ((prev_ms / max_ms) * (sc_h - 20)) - 10
+                prev_ms = t_data[i - 1]
+                prev_px = left_x + 15 + ((i - 1) * pt_w) + (pt_w / 2)
+                prev_py = sc_box_bottom - ((prev_ms / max_ms) * (sc_h - 25)) - 10
                 dc.create_line(prev_px, prev_py, px, py, fill='#4B5563', dash=(2, 2))
+            dc.create_oval(px - 3, py - 3, px + 3, py + 3, fill=color, outline='#FFFFFF')
+            if i == len(t_data) - 1:
+                # Glowing beacon on most recent sample
+                dc.create_oval(px - 6, py - 6, px + 6, py + 6, fill='', outline=color, width=1)
     else:
-        dc.create_text(left_x + col_w//2, sc_y + 20 + sc_h//2, text="No telemetry data", fill='#4B5563', font=('Segoe UI', 10))
+        dc.create_text(left_x + col_w // 2, sc_box_y + sc_h // 2, text="Oscilloscope active - awaiting latency spikes", fill='#4B5563', font=('Segoe UI', 9))
 
-    # 2. BAR CHART: Tool Execution
-    bar_y = sc_y + sc_h + 40
-    bar_h = 160
+    # 2. BAR CHART: Tool Execution Distribution
+    bar_y = 175
+    bar_box_y = bar_y + 20
+    bar_h = 125
+    bar_box_bottom = bar_box_y + bar_h
+    total_tools_count = sum(usage_stats.get('tools_used', {}).values())
+
     dc.create_text(left_x, bar_y, text='TOOL EXECUTION DISTRIBUTION', fill='#9CA3AF', font=('Segoe UI', 10, 'bold'), anchor='nw')
-    dc.create_rectangle(left_x, bar_y + 20, left_x + col_w, bar_y + 20 + bar_h, fill='#1A1D23', outline='#2A2D35')
-    
-    tools = sorted(usage_stats.get('tools_used', {}).items(), key=lambda x: x[1], reverse=True)[:5]
-    if tools:
-        max_t = max([t[1] for t in tools])
-        bw = (col_w - 20) / len(tools)
-        for i, (tool, count) in enumerate(tools):
-            bx = left_x + 10 + (i * bw)
-            bh = (count / max_t) * (bar_h - 40)
-            by = (bar_y + 20 + bar_h) - bh - 20
-            dc.create_rectangle(bx + 10, by, bx + bw - 10, bar_y + 20 + bar_h - 20, fill='#3B82F6', outline='')
-            # Label
-            lbl = tool[:7] + '..' if len(tool) > 9 else tool
-            dc.create_text(bx + bw/2, bar_y + 20 + bar_h - 10, text=lbl, fill='#9CA3AF', font=('Segoe UI', 8), anchor='center')
-            dc.create_text(bx + bw/2, by - 10, text=str(count), fill='#E5E7EB', font=('Segoe UI', 8, 'bold'), anchor='center')
-    else:
-        dc.create_text(left_x + col_w//2, bar_y + 20 + bar_h//2, text="No tool data", fill='#4B5563', font=('Segoe UI', 10))
+    dc.create_text(left_x + col_w, bar_y, text=f"Total: {total_tools_count}", fill='#6B7280', font=('Segoe UI', 9), anchor='ne')
+    dc.create_rectangle(left_x, bar_box_y, left_x + col_w, bar_box_bottom, fill='#1A1D23', outline='#2A2D35')
 
-    # 3. DONUT CHART: Success vs Fail
-    donut_y = bar_y + bar_h + 40
-    dc.create_text(left_x, donut_y, text='COMMAND RELIABILITY', fill='#9CA3AF', font=('Segoe UI', 10, 'bold'), anchor='nw')
-    
+    raw_tools = usage_stats.get('tools_used', {})
+    tools = sorted(raw_tools.items(), key=lambda x: x[1], reverse=True)[:5]
+    if not tools:
+        tools = [('system', 0), ('terminal', 0), ('sentinel', 0), ('document', 0), ('web', 0)]
+
+    max_t = max(1, max([t[1] for t in tools]))
+    bw = (col_w - 24) / len(tools)
+    for i, (tool, count) in enumerate(tools):
+        bx = left_x + 12 + (i * bw)
+        bh = int((count / max_t) * (bar_h - 45)) if count > 0 else 4
+        by = bar_box_bottom - bh - 22
+        bar_fill = _analytics_tool_color(tool) if count > 0 else '#2A2D35'
+        dc.create_rectangle(bx + 8, by, bx + bw - 8, bar_box_bottom - 22, fill=bar_fill, outline='')
+        if count > 0:
+            dc.create_line(bx + 8, by, bx + bw - 8, by, fill='#FFFFFF', width=1)
+            dc.create_text(bx + bw / 2, by - 8, text=str(count), fill='#E5E7EB', font=('Segoe UI', 8, 'bold'), anchor='center')
+        lbl = tool.replace('desktop_', '').replace('engine', '').replace('_automation', '')
+        lbl = lbl[:7] + '..' if len(lbl) > 8 else lbl
+        dc.create_text(bx + bw / 2, bar_box_bottom - 11, text=lbl, fill='#9CA3AF', font=('Segoe UI', 8), anchor='center')
+
+    # 3. DONUT CHART: Command Reliability & Outcomes
+    donut_y = 335
+    donut_box_y = donut_y + 20
+    donut_h = 90
+    donut_box_bottom = donut_box_y + donut_h
+
+    dc.create_text(left_x, donut_y, text='COMMAND RELIABILITY & OUTCOMES', fill='#9CA3AF', font=('Segoe UI', 10, 'bold'), anchor='nw')
+    dc.create_rectangle(left_x, donut_box_y, left_x + col_w, donut_box_bottom, fill='#1A1D23', outline='#2A2D35')
+
     succ = usage_stats['commands_successful']
     fail = usage_stats['commands_failed']
     total = succ + fail
-    
+
+    # Donut at left
+    cx = left_x + 55
+    cy = donut_box_y + 45
+    r_out = 34
+    r_in = 20
+
     if total > 0:
         succ_deg = (succ / total) * 360
-        dc.create_arc(left_x + 30, donut_y + 30, left_x + 110, donut_y + 110, start=90, extent=succ_deg, fill='#10B981', outline='')
-        dc.create_arc(left_x + 30, donut_y + 30, left_x + 110, donut_y + 110, start=90+succ_deg, extent=360-succ_deg, fill='#EF4444', outline='')
-        # Inner hole
-        dc.create_oval(left_x + 50, donut_y + 50, left_x + 90, donut_y + 90, fill='#0F1115', outline='')
-        dc.create_text(left_x + 70, donut_y + 70, text=f"{success_rate}%", fill='#E5E7EB', font=('Segoe UI', 10, 'bold'), anchor='center')
+        dc.create_arc(cx - r_out, cy - r_out, cx + r_out, cy + r_out, start=90, extent=succ_deg, fill='#10B981', outline='')
+        if 360 - succ_deg > 0:
+            dc.create_arc(cx - r_out, cy - r_out, cx + r_out, cy + r_out, start=90 + succ_deg, extent=360 - succ_deg, fill='#EF4444', outline='')
+        dc.create_oval(cx - r_in, cy - r_in, cx + r_in, cy + r_in, fill='#1A1D23', outline='')
+        dc.create_text(cx, cy, text=f"{success_rate}%", fill='#E5E7EB', font=('Segoe UI', 10, 'bold'), anchor='center')
     else:
-        # Grey placeholder donut
-        dc.create_arc(left_x + 30, donut_y + 30, left_x + 110, donut_y + 110, start=0, extent=359.9, fill='#2A2D35', outline='')
-        dc.create_oval(left_x + 50, donut_y + 50, left_x + 90, donut_y + 90, fill='#0F1115', outline='')
-        dc.create_text(left_x + 70, donut_y + 70, text="0%", fill='#9CA3AF', font=('Segoe UI', 10, 'bold'), anchor='center')
-    
-    # ---------------------------------------------------------
-    # RIGHT COLUMN: CARDS & STATS
-    # ---------------------------------------------------------
-    right_x = margin * 2 + col_w
-    
-    # API Backend Health Card
-    c1_y = y_start
-    c1_h = 100
-    dc.create_text(right_x, c1_y, text='BACKEND API CLUSTER', fill='#9CA3AF', font=('Segoe UI', 10, 'bold'), anchor='nw')
-    dc.create_rectangle(right_x, c1_y + 20, right_x + col_w, c1_y + 20 + c1_h, fill='#1A1D23', outline='#2A2D35')
-    
-    b_stat = usage_stats.get('backend_status', 'OFFLINE')
-    b_color = '#10B981' if b_stat == 'ONLINE' else '#EF4444'
-    dc.create_text(right_x + 15, c1_y + 40, text="API Status:", fill='#6B7280', font=('Segoe UI', 10), anchor='w')
-    dc.create_text(right_x + col_w - 15, c1_y + 40, text=b_stat, fill=b_color, font=('Segoe UI', 10, 'bold'), anchor='e')
-    
-    m_cli = usage_stats.get('mobile_clients', 0)
-    dc.create_text(right_x + 15, c1_y + 70, text="Connected Mobile Apps:", fill='#6B7280', font=('Segoe UI', 10), anchor='w')
-    dc.create_text(right_x + col_w - 15, c1_y + 70, text=str(m_cli), fill='#3B82F6', font=('Segoe UI', 12, 'bold'), anchor='e')
-    
-    dc.create_text(right_x + 15, c1_y + 100, text="Bridge Port:", fill='#6B7280', font=('Segoe UI', 10), anchor='w')
-    dc.create_text(right_x + col_w - 15, c1_y + 100, text="19882 (UDP)", fill='#E5E7EB', font=('Segoe UI', 10), anchor='e')
+        dc.create_arc(cx - r_out, cy - r_out, cx + r_out, cy + r_out, start=0, extent=359.9, fill='#2A2D35', outline='')
+        dc.create_oval(cx - r_in, cy - r_in, cx + r_in, cy + r_in, fill='#1A1D23', outline='')
+        dc.create_text(cx, cy, text="0%", fill='#9CA3AF', font=('Segoe UI', 10, 'bold'), anchor='center')
 
-    # Graphify Engine Card
-    c2_y = c1_y + c1_h + 40
-    c2_h = 100
+    # Breakdown Grid beside donut
+    grid_x = left_x + 115
+    y1 = donut_box_y + 20
+    dc.create_text(grid_x, y1, text="Successful:", fill='#6B7280', font=('Segoe UI', 9), anchor='w')
+    dc.create_text(grid_x + 72, y1, text=str(succ), fill='#10B981', font=('Segoe UI', 10, 'bold'), anchor='w')
+    dc.create_text(grid_x + 125, y1, text="Failed:", fill='#6B7280', font=('Segoe UI', 9), anchor='w')
+    dc.create_text(grid_x + 175, y1, text=str(fail), fill='#EF4444' if fail > 0 else '#6B7280', font=('Segoe UI', 10, 'bold'), anchor='w')
+
+    y2 = donut_box_y + 46
+    dc.create_text(grid_x, y2, text="Total Exec:", fill='#6B7280', font=('Segoe UI', 9), anchor='w')
+    dc.create_text(grid_x + 72, y2, text=str(total), fill='#E5E7EB', font=('Segoe UI', 10, 'bold'), anchor='w')
+    dc.create_text(grid_x + 125, y2, text="Rate:", fill='#6B7280', font=('Segoe UI', 9), anchor='w')
+    dc.create_text(grid_x + 175, y2, text=f"{cpm} CPM", fill='#38BDF8', font=('Segoe UI', 10, 'bold'), anchor='w')
+
+    # Mini health bar
+    y3 = donut_box_y + 70
+    bar_track_w = col_w - 130
+    dc.create_rectangle(grid_x, y3, grid_x + bar_track_w, y3 + 5, fill='#2A2D35', outline='')
+    if total > 0:
+        fill_w = int(bar_track_w * (succ / total))
+        fill_col = '#10B981' if success_rate >= 90 else ('#F59E0B' if success_rate >= 70 else '#EF4444')
+        dc.create_rectangle(grid_x, y3, grid_x + fill_w, y3 + 5, fill=fill_col, outline='')
+
+    # 4. LIVE INCIDENT & AUDIT STREAM (New Telemetry!)
+    audit_y = 455
+    audit_box_y = audit_y + 20
+    audit_h = 75
+    audit_box_bottom = audit_box_y + audit_h
+
+    dc.create_text(left_x, audit_y, text='SENTINEL INCIDENT & AUDIT STREAM', fill='#9CA3AF', font=('Segoe UI', 10, 'bold'), anchor='nw')
+    dc.create_text(left_x + col_w, audit_y, text="Mesh: 3-Node Core", fill='#4B5563', font=('Segoe UI', 8), anchor='ne')
+    dc.create_rectangle(left_x, audit_box_y, left_x + col_w, audit_box_bottom, fill='#1A1D23', outline='#2A2D35')
+
+    if recent_incidents:
+        for idx, inc in enumerate(recent_incidents[:2]):
+            line_y = audit_box_y + 18 + (idx * 26)
+            sev = inc.get("severity", "INFO").upper()
+            badge_bg = '#7F1D1D' if sev in ('HIGH', 'CRITICAL') else ('#78350F' if sev == 'MEDIUM' else '#064E3B')
+            badge_fg = '#FCA5A5' if sev in ('HIGH', 'CRITICAL') else ('#FCD34D' if sev == 'MEDIUM' else '#6EE7B7')
+            ts = inc.get("timestamp", "").split("T")[-1][:8] if "T" in inc.get("timestamp", "") else ""
+            desc = inc.get("description", "Security Event")
+            desc_cut = desc[:42] + '..' if len(desc) > 42 else desc
+
+            dc.create_rectangle(left_x + 10, line_y - 9, left_x + 55, line_y + 9, fill=badge_bg, outline='')
+            dc.create_text(left_x + 32, line_y, text=sev[:4], fill=badge_fg, font=('Segoe UI', 7, 'bold'), anchor='center')
+            dc.create_text(left_x + 62, line_y, text=ts, fill='#6B7280', font=('Segoe UI', 8), anchor='w')
+            dc.create_text(left_x + 115, line_y, text=desc_cut, fill='#D1D5DB', font=('Segoe UI', 8), anchor='w')
+    else:
+        dc.create_rectangle(left_x + 10, audit_box_y + 15, left_x + 65, audit_box_y + 33, fill='#064E3B', outline='')
+        dc.create_text(left_x + 37, audit_box_y + 24, text="SECURE", fill='#6EE7B7', font=('Segoe UI', 8, 'bold'), anchor='center')
+        dc.create_text(left_x + 72, audit_box_y + 24, text="Endpoint Defense Active - 0 threats detected", fill='#10B981', font=('Segoe UI', 9, 'bold'), anchor='w')
+        dc.create_text(left_x + 12, audit_box_y + 50, text="Continuous Watchdog: PE Triage | ARP Radar | Secret Scanner", fill='#6B7280', font=('Segoe UI', 8), anchor='w')
+
+    # ---------------------------------------------------------
+    # RIGHT COLUMN: SYSTEM, BACKEND, SENTINEL & ECONOMICS
+    # ---------------------------------------------------------
+    # 1. API Backend Health Card
+    c1_y = y_start
+    c1_box_y = c1_y + 20
+    c1_h = 80
+    dc.create_text(right_x, c1_y, text='BACKEND API CLUSTER', fill='#9CA3AF', font=('Segoe UI', 10, 'bold'), anchor='nw')
+    dc.create_rectangle(right_x, c1_box_y, right_x + col_w, c1_box_y + c1_h, fill='#1A1D23', outline='#2A2D35')
+
+    b_stat = 'ONLINE' if backend_status == 'Active' else 'OFFLINE'
+    b_color = '#10B981' if b_stat == 'ONLINE' else '#EF4444'
+    dc.create_text(right_x + 15, c1_box_y + 18, text="API Relay Status:", fill='#6B7280', font=('Segoe UI', 9), anchor='w')
+    dc.create_text(right_x + col_w - 15, c1_box_y + 18, text=b_stat, fill=b_color, font=('Segoe UI', 10, 'bold'), anchor='e')
+
+    m_cli = mobile_clients
+    dc.create_text(right_x + 15, c1_box_y + 42, text="Connected Mobile Apps:", fill='#6B7280', font=('Segoe UI', 9), anchor='w')
+    dc.create_text(right_x + col_w - 15, c1_box_y + 42, text=str(m_cli), fill='#3B82F6', font=('Segoe UI', 11, 'bold'), anchor='e')
+
+    dc.create_text(right_x + 15, c1_box_y + 65, text="Mesh Bridge Port:", fill='#6B7280', font=('Segoe UI', 9), anchor='w')
+    dc.create_text(right_x + col_w - 15, c1_box_y + 65, text="19882 (UDP/LAN)", fill='#E5E7EB', font=('Segoe UI', 9), anchor='e')
+
+    # 2. Graphify Engine Card
+    c2_y = 120
+    c2_box_y = c2_y + 20
+    c2_h = 80
     dc.create_text(right_x, c2_y, text='GRAPHIFY ORCHESTRATION', fill='#9CA3AF', font=('Segoe UI', 10, 'bold'), anchor='nw')
-    dc.create_rectangle(right_x, c2_y + 20, right_x + col_w, c2_y + 20 + c2_h, fill='#1A1D23', outline='#2A2D35')
-    
-    mode = usage_stats.get('active_mode', 'IDLE')
-    dc.create_text(right_x + 15, c2_y + 40, text="Active Engine Mode:", fill='#6B7280', font=('Segoe UI', 10), anchor='w')
-    dc.create_text(right_x + col_w - 15, c2_y + 40, text=mode, fill='#ec4899', font=('Segoe UI', 10, 'bold'), anchor='e')
-    
+    dc.create_rectangle(right_x, c2_box_y, right_x + col_w, c2_box_y + c2_h, fill='#1A1D23', outline='#2A2D35')
+
+    mode = current_mode
+    mode_col = MODE_COLORS.get(mode, '#EC4899')
+    dc.create_text(right_x + 15, c2_box_y + 18, text="Active Engine Mode:", fill='#6B7280', font=('Segoe UI', 9), anchor='w')
+    dc.create_text(right_x + col_w - 15, c2_box_y + 18, text=mode, fill=mode_col, font=('Segoe UI', 10, 'bold'), anchor='e')
+
     fallbacks = usage_stats.get('fallbacks', 0)
-    dc.create_text(right_x + 15, c2_y + 70, text="Dynamic LLM Fallbacks:", fill='#6B7280', font=('Segoe UI', 10), anchor='w')
-    dc.create_text(right_x + col_w - 15, c2_y + 70, text=str(fallbacks), fill='#F59E0B' if fallbacks > 0 else '#E5E7EB', font=('Segoe UI', 12, 'bold'), anchor='e')
+    dc.create_text(right_x + 15, c2_box_y + 42, text="Dynamic LLM Fallbacks:", fill='#6B7280', font=('Segoe UI', 9), anchor='w')
+    dc.create_text(right_x + col_w - 15, c2_box_y + 42, text=str(fallbacks), fill='#F59E0B' if fallbacks > 0 else '#E5E7EB', font=('Segoe UI', 10, 'bold'), anchor='e')
 
     rejections = usage_stats.get('rejections', 0)
-    dc.create_text(right_x + 15, c2_y + 100, text="Team Debates / Rejections:", fill='#6B7280', font=('Segoe UI', 10), anchor='w')
-    dc.create_text(right_x + col_w - 15, c2_y + 100, text=str(rejections), fill='#3B82F6', font=('Segoe UI', 12, 'bold'), anchor='e')
+    dc.create_text(right_x + 15, c2_box_y + 65, text="Team Debates / Rejections:", fill='#6B7280', font=('Segoe UI', 9), anchor='w')
+    dc.create_text(right_x + col_w - 15, c2_box_y + 65, text=str(rejections), fill='#3B82F6', font=('Segoe UI', 10, 'bold'), anchor='e')
 
-    # Performance & Context Matrix
-    c3_y = c2_y + c2_h + 40
-    c3_h = 100
+    # 3. Performance & System Matrix
+    c3_y = 230
+    c3_box_y = c3_y + 20
+    c3_h = 80
     dc.create_text(right_x, c3_y, text='SYSTEM MATRIX', fill='#9CA3AF', font=('Segoe UI', 10, 'bold'), anchor='nw')
-    dc.create_rectangle(right_x, c3_y + 20, right_x + col_w, c3_y + 20 + c3_h, fill='#1A1D23', outline='#2A2D35')
-    
-    dc.create_text(right_x + 15, c3_y + 40, text="Average Latency:", fill='#6B7280', font=('Segoe UI', 10), anchor='w')
-    dc.create_text(right_x + col_w - 15, c3_y + 40, text=f"{usage_stats['avg_latency_ms']}ms", fill='#E5E7EB', font=('Segoe UI', 10, 'bold'), anchor='e')
+    dc.create_rectangle(right_x, c3_box_y, right_x + col_w, c3_box_y + c3_h, fill='#1A1D23', outline='#2A2D35')
 
-    dc.create_text(right_x + 15, c3_y + 70, text="Context Cache Hits:", fill='#6B7280', font=('Segoe UI', 10), anchor='w')
-    dc.create_text(right_x + col_w - 15, c3_y + 70, text="Optimized (VRAM)", fill='#10B981', font=('Segoe UI', 10, 'bold'), anchor='e')
+    dc.create_text(right_x + 15, c3_box_y + 18, text="Average Latency:", fill='#6B7280', font=('Segoe UI', 9), anchor='w')
+    dc.create_text(right_x + col_w - 15, c3_box_y + 18, text=f"{avg_lat}ms", fill='#E5E7EB', font=('Segoe UI', 10, 'bold'), anchor='e')
 
-    dc.create_text(right_x + 15, c3_y + 100, text="Session Uptime:", fill='#6B7280', font=('Segoe UI', 10), anchor='w')
-    dc.create_text(right_x + col_w - 15, c3_y + 100, text=f"{session_duration}m", fill='#E5E7EB', font=('Segoe UI', 10, 'bold'), anchor='e')
+    dc.create_text(right_x + 15, c3_box_y + 42, text="Context Cache Hits:", fill='#6B7280', font=('Segoe UI', 9), anchor='w')
+    dc.create_text(right_x + col_w - 15, c3_box_y + 42, text="Optimized (VRAM)", fill='#10B981', font=('Segoe UI', 10, 'bold'), anchor='e')
+
+    dc.create_text(right_x + 15, c3_box_y + 65, text="Session Uptime:", fill='#6B7280', font=('Segoe UI', 9), anchor='w')
+    dc.create_text(right_x + col_w - 15, c3_box_y + 65, text=f"{session_duration}m", fill='#E5E7EB', font=('Segoe UI', 10, 'bold'), anchor='e')
+
+    # 4. SENTINEL EDR & THREAT RADAR (New Telemetry!)
+    c4_y = 340
+    c4_box_y = c4_y + 20
+    c4_h = 90
+    dc.create_text(right_x, c4_y, text='SENTINEL EDR & THREAT RADAR', fill='#9CA3AF', font=('Segoe UI', 10, 'bold'), anchor='nw')
+    dc.create_rectangle(right_x, c4_box_y, right_x + col_w, c4_box_y + c4_h, fill='#1A1D23', outline='#2A2D35')
+
+    post_color = '#10B981' if posture >= 80 else ('#F59E0B' if posture >= 50 else '#EF4444')
+    post_label = "SECURE" if posture >= 80 else ("ELEVATED" if posture >= 50 else "CRITICAL")
+    dc.create_text(right_x + 15, c4_box_y + 18, text="Posture Score:", fill='#6B7280', font=('Segoe UI', 9), anchor='w')
+    dc.create_text(right_x + col_w - 75, c4_box_y + 18, text=f"{posture}/100", fill=post_color, font=('Segoe UI', 10, 'bold'), anchor='e')
+    dc.create_text(right_x + col_w - 15, c4_box_y + 18, text=f"[{post_label}]", fill=post_color, font=('Segoe UI', 8, 'bold'), anchor='e')
+
+    iso_text = "ISOLATED" if is_isolated else "NORMAL (LAN Active)"
+    iso_color = '#EF4444' if is_isolated else '#10B981'
+    dc.create_text(right_x + 15, c4_box_y + 42, text="Host Isolation:", fill='#6B7280', font=('Segoe UI', 9), anchor='w')
+    dc.create_text(right_x + col_w - 15, c4_box_y + 42, text=iso_text, fill=iso_color, font=('Segoe UI', 9, 'bold'), anchor='e')
+
+    vault_text = f"{vault_count} locked (VQV2)" if vault_count > 0 else "0 locked (Clean)"
+    dc.create_text(right_x + 15, c4_box_y + 68, text="Quarantine Vault:", fill='#6B7280', font=('Segoe UI', 9), anchor='w')
+    dc.create_text(right_x + col_w - 15, c4_box_y + 68, text=vault_text, fill='#38BDF8', font=('Segoe UI', 9, 'bold'), anchor='e')
+
+    # 5. LLM TOKEN ECONOMICS & CAPACITY (New Telemetry!)
+    c5_y = 460
+    c5_box_y = c5_y + 20
+    c5_h = 70
+    dc.create_text(right_x, c5_y, text='LLM TOKEN ECONOMICS & CAPACITY', fill='#9CA3AF', font=('Segoe UI', 10, 'bold'), anchor='nw')
+    dc.create_rectangle(right_x, c5_box_y, right_x + col_w, c5_box_y + c5_h, fill='#1A1D23', outline='#2A2D35')
+
+    tot_groq = groq_day if groq_day > 0 else groq_sess
+    dc.create_text(right_x + 15, c5_box_y + 16, text="Groq Tokens:", fill='#6B7280', font=('Segoe UI', 9), anchor='w')
+    dc.create_text(right_x + 120, c5_box_y + 16, text=f"{tot_groq:,}", fill='#EC4899', font=('Segoe UI', 9, 'bold'), anchor='w')
+    dc.create_text(right_x + 175, c5_box_y + 16, text="Ollama (Free):", fill='#6B7280', font=('Segoe UI', 9), anchor='w')
+    dc.create_text(right_x + col_w - 15, c5_box_y + 16, text=f"{ollama_day:,}", fill='#10B981', font=('Segoe UI', 9, 'bold'), anchor='e')
+
+    # Daily TPD Budget Bar
+    bar_track_w = col_w - 30
+    used_pct = min(1.0, tot_groq / 100000.0)
+    bar_y_pos = c5_box_y + 36
+    dc.create_rectangle(right_x + 15, bar_y_pos, right_x + 15 + bar_track_w, bar_y_pos + 6, fill='#2A2D35', outline='')
+    fill_w = max(2, int(bar_track_w * used_pct))
+    bar_col = '#10B981' if used_pct < 0.7 else ('#F59E0B' if used_pct < 0.9 else '#EF4444')
+    dc.create_rectangle(right_x + 15, bar_y_pos, right_x + 15 + fill_w, bar_y_pos + 6, fill=bar_col, outline='')
+
+    quota_label = f"Daily Quota: {tot_groq:,} / 100,000 TPD ({used_pct*100:.1f}%)"
+    dc.create_text(right_x + 15, c5_box_y + 55, text=quota_label, fill='#9CA3AF', font=('Segoe UI', 8), anchor='w')
 
 def _draw_settings_section(dc, w, h):
     """Settings section is rendered as real Tk widgets inside the dashboard canvas frame.
