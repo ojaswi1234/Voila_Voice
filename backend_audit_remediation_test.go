@@ -2,7 +2,9 @@ package main
 
 import (
 	"bytes"
+	"crypto/subtle"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -46,6 +48,25 @@ func TestProxyEndpointWhitelist(t *testing.T) {
 	proxyHandler(wTrav, reqTrav)
 	if wTrav.Code != http.StatusForbidden && wTrav.Code != http.StatusBadRequest {
 		t.Fatalf("Expected 403 or 400 for path traversal, got %d", wTrav.Code)
+	}
+
+	// 4. Test unauthenticated /proxy/dev-1/bg-tasks
+	reqUnauth := httptest.NewRequest("GET", "/proxy/dev-1/bg-tasks", nil)
+	wUnauth := httptest.NewRecorder()
+	proxyHandler(wUnauth, reqUnauth)
+	if wUnauth.Code != http.StatusUnauthorized {
+		t.Fatalf("Expected 401 Unauthorized for unauthenticated proxy call, got %d", wUnauth.Code)
+	}
+
+	// 5. Test authenticated /proxy/dev-1/bg-tasks with valid session token
+	validToken, _ := createSessionToken("dev-1", "client-1")
+	reqAuth := httptest.NewRequest("GET", "/proxy/dev-1/bg-tasks", nil)
+	reqAuth.Header.Set("Authorization", "Bearer "+validToken)
+	wAuth := httptest.NewRecorder()
+	proxyHandler(wAuth, reqAuth)
+	// Passes auth check and reaches device check / HTTP client
+	if wAuth.Code == http.StatusUnauthorized || wAuth.Code == http.StatusForbidden {
+		t.Fatalf("Expected proxy request to pass auth, got code %d", wAuth.Code)
 	}
 }
 
@@ -302,5 +323,61 @@ func TestSessionSigningKeyThreadSafety(t *testing.T) {
 		if !bytes.Equal(firstKey, results[i]) {
 			t.Fatalf("Data race / key inconsistency: key at idx %d differs from idx 0", i)
 		}
+	}
+}
+
+
+func TestTokenUsageAuth(t *testing.T) {
+	backend := &Backend{
+		devices:           make(map[string]*Device),
+		clients:           make(map[string]*WebSocketClient),
+		lastTokenSnapshot: make(map[string]map[string]interface{}),
+	}
+	backend.devices["dev-1"] = &Device{
+		ID:                 "dev-1",
+		SecurityPhraseHash: hashPhrase("testphrase", "dev-1"),
+	}
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]interface{}
+		json.NewDecoder(r.Body).Decode(&payload)
+		deviceID, _ := payload["device_id"].(string)
+		secretHash, _ := payload["secret_hash"].(string)
+
+		backend.mu.Lock()
+		device, exists := backend.devices[deviceID]
+		if exists && device.SecurityPhraseHash != "" {
+			if secretHash == "" || subtle.ConstantTimeCompare([]byte(device.SecurityPhraseHash), []byte(secretHash)) != 1 {
+				backend.mu.Unlock()
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+		}
+		backend.mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	})
+
+	// 1. Without secret_hash - MUST be 401 Unauthorized
+	reqNoHash := httptest.NewRequest("POST", "/webhook/token-usage", bytes.NewReader([]byte(`{"device_id":"dev-1"}`)))
+	wNoHash := httptest.NewRecorder()
+	handler(wNoHash, reqNoHash)
+	if wNoHash.Code != http.StatusUnauthorized {
+		t.Fatalf("Expected 401 Unauthorized for empty secret_hash, got %d", wNoHash.Code)
+	}
+
+	// 2. With wrong secret_hash - MUST be 401 Unauthorized
+	reqWrong := httptest.NewRequest("POST", "/webhook/token-usage", bytes.NewReader([]byte(`{"device_id":"dev-1","secret_hash":"wrong"}`)))
+	wWrong := httptest.NewRecorder()
+	handler(wWrong, reqWrong)
+	if wWrong.Code != http.StatusUnauthorized {
+		t.Fatalf("Expected 401 Unauthorized for invalid secret_hash, got %d", wWrong.Code)
+	}
+
+	// 3. With correct secret_hash - MUST be 200 OK
+	reqValid := httptest.NewRequest("POST", "/webhook/token-usage", bytes.NewReader([]byte(fmt.Sprintf(`{"device_id":"dev-1","secret_hash":"%s"}`, hashPhrase("testphrase", "dev-1")))))
+	wValid := httptest.NewRecorder()
+	handler(wValid, reqValid)
+	if wValid.Code != http.StatusOK {
+		t.Fatalf("Expected 200 OK for valid secret_hash, got %d", wValid.Code)
 	}
 }

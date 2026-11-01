@@ -163,6 +163,9 @@ func (s *TunnelServer) EstablishTunnel(stream voilav1.DesktopTunnelService_Estab
 
 				if !exists {
 					d = &Device{ID: deviceID}
+					if authPhrase != "" {
+						d.SecurityPhraseHash = hashPhrase(authPhrase, deviceID)
+					}
 					s.backend.devices[deviceID] = d
 					if s.backend.activeDevice == "" {
 						s.backend.activeDevice = deviceID

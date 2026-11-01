@@ -1548,7 +1548,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   }
 
   void _sendFCMToken(String token) {
-    if (_activeDevice.isNotEmpty && _isConnected) {
+    if (_activeDevice.isNotEmpty && _isConnected && _sessionToken.isNotEmpty) {
       _channel?.sink.add(jsonEncode({
         'type': 'register_fcm_token',
         'device_id': _activeDevice,

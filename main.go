@@ -1705,7 +1705,7 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 			sessionToken, _ := msg["session_token"].(string)
 
 			// Require token for sensitive operations
-			requiresAuth := msgType == "command" || msgType == "lock_device" || msgType == "unlock_device" || msgType == "clear_all_devices"
+			requiresAuth := msgType == "command" || msgType == "stop_command" || msgType == "lock_device" || msgType == "unlock_device" || msgType == "clear_all_devices" || msgType == "surveillance_action" || msgType == "approve_job" || msgType == "cancel_job" || msgType == "kill_task" || msgType == "register_fcm_token"
 			if requiresAuth {
 				// Special check for clear_all_devices which didn't use device_id originally
 				targetDeviceID := deviceID
@@ -3052,6 +3052,13 @@ func handleProxy(backend *Backend) http.HandlerFunc {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Content-Type", "application/json")
 
+		if r.Method == http.MethodOptions {
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
 		pathParts := strings.Split(r.URL.Path, "/")
 		if len(pathParts) < 4 {
 			http.Error(w, "Invalid proxy path", http.StatusBadRequest)
@@ -3065,6 +3072,21 @@ func handleProxy(backend *Backend) http.HandlerFunc {
 		if !isAllowed || strings.Contains(endpoint, "..") {
 			w.WriteHeader(http.StatusForbidden)
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": "Access to requested proxy endpoint is forbidden", "tasks": []interface{}{}})
+			return
+		}
+
+		// Enforce session authorization on proxy endpoints
+		authHeader := r.Header.Get("Authorization")
+		token := ""
+		if strings.HasPrefix(authHeader, "Bearer ") {
+			token = strings.TrimPrefix(authHeader, "Bearer ")
+		} else if qToken := r.URL.Query().Get("token"); qToken != "" {
+			token = qToken
+		}
+
+		if !verifySessionToken(token, deviceID) {
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": "Unauthorized: valid session token required for proxy access", "tasks": []interface{}{}})
 			return
 		}
 
@@ -3180,8 +3202,8 @@ func main() {
 
 		backend.mu.Lock()
 		device, exists := backend.devices[deviceID]
-		if exists && device.SecurityPhraseHash != "" && secretHash != "" {
-			if subtle.ConstantTimeCompare([]byte(device.SecurityPhraseHash), []byte(secretHash)) != 1 {
+		if exists && device.SecurityPhraseHash != "" {
+			if secretHash == "" || subtle.ConstantTimeCompare([]byte(device.SecurityPhraseHash), []byte(secretHash)) != 1 {
 				backend.mu.Unlock()
 				http.Error(w, "Unauthorized", http.StatusUnauthorized)
 				return
