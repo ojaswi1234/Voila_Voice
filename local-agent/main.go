@@ -611,6 +611,9 @@ func pushTokenUsage(connData ConnectionData) {
 		return
 	}
 	usage["device_id"] = connData.DeviceID
+	if connData.SecurityPhrase != "" {
+		usage["secret_hash"] = hashPhrase(connData.SecurityPhrase, connData.DeviceID)
+	}
 	payload, err := json.Marshal(usage)
 	if err != nil {
 		return
@@ -7608,10 +7611,14 @@ func registerWithBackend(data ConnectionData, publicAddress string) error {
 
 func sendHeartbeat(data ConnectionData, publicAddress string) error {
 	// Send periodic heartbeat to keep device marked as online
-	body, _ := json.Marshal(map[string]string{
+	payload := map[string]string{
 		"device_id": data.DeviceID,
 		"address":   publicAddress,
-	})
+	}
+	if data.SecurityPhrase != "" {
+		payload["secret_hash"] = hashPhrase(data.SecurityPhrase, data.DeviceID)
+	}
+	body, _ := json.Marshal(payload)
 
 	req, err := http.NewRequest(http.MethodPost, strings.TrimRight(data.BackendURL, "/")+"/heartbeat", bytes.NewReader(body))
 	if err != nil {

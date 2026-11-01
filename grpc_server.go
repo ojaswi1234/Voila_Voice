@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"github.com/gorilla/websocket"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
 	voilav1 "voice-cli-system/proto/v1"
@@ -33,6 +35,9 @@ var globalTunnelManager = &DesktopTunnelManager{
 func (m *DesktopTunnelManager) Register(deviceID string, ch chan *voilav1.ExecutionCommand) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if old, exists := m.tunnels[deviceID]; exists && old != ch {
+		close(old)
+	}
 	m.tunnels[deviceID] = ch
 	log.Printf("[gRPC Tunnel] Desktop connected and registered: %s", deviceID)
 }
@@ -132,11 +137,30 @@ func (s *TunnelServer) EstablishTunnel(stream voilav1.DesktopTunnelService_Estab
 
 		if deviceID == "" && telemetry.DeviceId != "" {
 			deviceID = telemetry.DeviceId
-			globalTunnelManager.Register(deviceID, cmdChan)
+
+			// Verify gRPC tunnel authentication if device has a registered security phrase
+			var authPhrase string
+			if md, ok := metadata.FromIncomingContext(stream.Context()); ok {
+				if phrases := md.Get("x-security-phrase"); len(phrases) > 0 {
+					authPhrase = phrases[0]
+				}
+			}
 
 			if s.backend != nil {
 				s.backend.mu.Lock()
 				d, exists := s.backend.devices[deviceID]
+				if exists && d.SecurityPhraseHash != "" {
+					var calculatedHash string
+					if authPhrase != "" {
+						calculatedHash = hashPhrase(authPhrase, deviceID)
+					}
+					if subtle.ConstantTimeCompare([]byte(d.SecurityPhraseHash), []byte(calculatedHash)) != 1 {
+						s.backend.mu.Unlock()
+						log.Printf("[gRPC Tunnel] Rejected unauthorized tunnel connection for device: %s", deviceID)
+						return status.Errorf(codes.Unauthenticated, "Invalid or missing security phrase for device %s", deviceID)
+					}
+				}
+
 				if !exists {
 					d = &Device{ID: deviceID}
 					s.backend.devices[deviceID] = d
@@ -154,6 +178,8 @@ func (s *TunnelServer) EstablishTunnel(stream voilav1.DesktopTunnelService_Estab
 				s.backend.mu.Unlock()
 				go s.backend.broadcastDevices()
 			}
+
+			globalTunnelManager.Register(deviceID, cmdChan)
 		}
 
 		// Update device heartbeat timestamp

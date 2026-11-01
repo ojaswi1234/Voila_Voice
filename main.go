@@ -125,6 +125,13 @@ func NewThreatIntelCache() *ThreatIntelCache {
 func (c *ThreatIntelCache) AddIndicator(item ThreatItem) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	// Cap indicators at 5,000 items to prevent unbounded memory growth
+	if len(c.indicators) >= 5000 {
+		for k := range c.indicators {
+			delete(c.indicators, k)
+			break
+		}
+	}
 	c.indicators[item.Indicator] = item
 }
 
@@ -174,41 +181,18 @@ type DeliveryJob struct {
 }
 
 type DeliveryDispatcher struct {
-	JobQueue chan DeliveryJob
-	quit     chan bool
+	backend *Backend
 }
 
 func NewDeliveryDispatcher(maxWorkers, maxQueueSize int, backend *Backend) *DeliveryDispatcher {
-	dispatcher := &DeliveryDispatcher{
-		JobQueue: make(chan DeliveryJob, maxQueueSize),
-		quit:     make(chan bool),
-	}
-
-	for i := 0; i < maxWorkers; i++ {
-		go func(workerID int) {
-			for {
-				select {
-				case job := <-dispatcher.JobQueue:
-					err := backend.writeMessage(job.ClientID, job.MessageType, job.Payload)
-					if err != nil {
-						// log.Printf("[Worker %d] Failed to deliver to %s: %v", workerID, job.ClientID, err)
-					}
-				case <-dispatcher.quit:
-					return
-				}
-			}
-		}(i)
-	}
-	return dispatcher
+	return &DeliveryDispatcher{backend: backend}
 }
 
 func (d *DeliveryDispatcher) Dispatch(clientID string, msgType int, payload []byte) {
-	select {
-	case d.JobQueue <- DeliveryJob{ClientID: clientID, MessageType: msgType, Payload: payload}:
-		// Successfully queued
-	default:
-		log.Printf("[Worker Queue] Warning: Queue full, dropping message for %s", clientID)
+	if d == nil || d.backend == nil {
+		return
 	}
+	d.backend.dispatchToClient(clientID, msgType, payload)
 }
 // ---------------------------------------------------------
 
@@ -218,6 +202,11 @@ type QueuedMessage struct {
 	ExpiresAt time.Time
 }
 
+type IPRateLimitEntry struct {
+	Failures   int
+	LastFailed time.Time
+}
+
 type Backend struct {
 	devices      map[string]*Device
 	activeDevice string
@@ -225,7 +214,7 @@ type Backend struct {
 	mu           sync.RWMutex
 	clients      map[string]*WebSocketClient
 	dispatcher   *DeliveryDispatcher
-	ipRateLimits map[string]int // IP -> failures
+	ipRateLimits map[string]*IPRateLimitEntry // IP -> rate limit status
 	// Bug #17 Fix: True circular ring buffer - no O(N) reallocation
 	securityAlerts    [maxAlerts]SecurityAlert
 	alertHead         int // index of oldest alert
@@ -242,7 +231,70 @@ type WebSocketClient struct {
 	conn        *websocket.Conn
 	clientID    string
 	connectedAt time.Time
+	sendChan    chan DeliveryJob
 	writeMu     sync.Mutex
+}
+
+func (c *WebSocketClient) writePump() {
+	for job := range c.sendChan {
+		c.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+		if err := c.conn.WriteMessage(job.MessageType, job.Payload); err != nil {
+			log.Printf("[writePump] Write error for %s: %v", c.clientID, err)
+			return
+		}
+	}
+}
+
+func (b *Backend) dispatchToClient(clientID string, msgType int, payload []byte) {
+	b.mu.RLock()
+	client, exists := b.clients[clientID]
+	b.mu.RUnlock()
+	if !exists || client == nil {
+		return
+	}
+	select {
+	case client.sendChan <- DeliveryJob{ClientID: clientID, MessageType: msgType, Payload: payload}:
+	default:
+		log.Printf("[WebSocket] Warning: send buffer full for %s, dropping frame", clientID)
+	}
+}
+
+func (b *Backend) isIPRateLimited(ip string) bool {
+	if entry, ok := b.ipRateLimits[ip]; ok {
+		if entry.Failures > 5 && time.Since(entry.LastFailed) < 15*time.Minute {
+			return true
+		}
+	}
+	return false
+}
+
+func (b *Backend) recordIPFailure(ip string) {
+	if entry, ok := b.ipRateLimits[ip]; ok {
+		entry.Failures++
+		entry.LastFailed = time.Now()
+	} else {
+		b.ipRateLimits[ip] = &IPRateLimitEntry{Failures: 1, LastFailed: time.Now()}
+	}
+}
+
+func (b *Backend) resetIPLimit(ip string) {
+	delete(b.ipRateLimits, ip)
+}
+
+func getClientIP(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		parts := strings.Split(xff, ",")
+		if len(parts) > 0 {
+			ip := strings.TrimSpace(parts[0])
+			if ip != "" {
+				return stripPort(ip)
+			}
+		}
+	}
+	if xrip := r.Header.Get("X-Real-IP"); xrip != "" {
+		return stripPort(strings.TrimSpace(xrip))
+	}
+	return stripPort(r.RemoteAddr)
 }
 
 func NewBackend() *Backend {
@@ -251,7 +303,7 @@ func NewBackend() *Backend {
 		activeDevice:      "",
 		tokenCounter:      0,
 		clients:           make(map[string]*WebSocketClient),
-		ipRateLimits:      make(map[string]int),
+		ipRateLimits:      make(map[string]*IPRateLimitEntry),
 		mockCommandCounts: make(map[string]int),
 		offlineQueue:      make(map[string][]QueuedMessage),
 		lastTokenSnapshot: make(map[string]map[string]interface{}),
@@ -605,18 +657,21 @@ func (b *Backend) _deprecated_generateMockResponse(command string) string {
 }
 
 
+var (
+	sessionSigningKeyOnce sync.Once
+)
+
 func getSessionSigningKey() []byte {
-	if len(sessionSigningKey) > 0 {
-		return sessionSigningKey
-	}
-	key := os.Getenv("SESSION_SIGNING_KEY")
-	if key != "" {
-		sessionSigningKey = []byte(key)
-		return sessionSigningKey
-	}
-	// Generate random 32-byte key
-	sessionSigningKey = make([]byte, 32)
-	rand.Read(sessionSigningKey)
+	sessionSigningKeyOnce.Do(func() {
+		key := os.Getenv("SESSION_SIGNING_KEY")
+		if key != "" {
+			sessionSigningKey = []byte(key)
+			return
+		}
+		// Generate random 32-byte key
+		sessionSigningKey = make([]byte, 32)
+		rand.Read(sessionSigningKey)
+	})
 	return sessionSigningKey
 }
 
@@ -737,9 +792,19 @@ func (b *Backend) markStaleDevices() {
 		}
 	}
 	
+	// Auto-release stale/deadlocked device locks after 5 minutes
+	for id, device := range b.devices {
+		if device.LockedBy != "" && !device.LockedAt.IsZero() && now.Sub(device.LockedAt) > 5*time.Minute {
+			log.Printf("Auto-releasing stale device lock on %s (locked by %s since %v ago)", id, device.LockedBy, now.Sub(device.LockedAt))
+			device.LockedBy = ""
+			device.LockedAt = time.Time{}
+			changed = true
+		}
+	}
+
 	// Bug #3 Fix: Evict stale IP rate limit entries (reset after 1h) to prevent map growth
-	for ip, failures := range b.ipRateLimits {
-		if failures == 0 {
+	for ip, entry := range b.ipRateLimits {
+		if entry.Failures == 0 || now.Sub(entry.LastFailed) > 1*time.Hour {
 			delete(b.ipRateLimits, ip)
 		}
 	}
@@ -747,6 +812,23 @@ func (b *Backend) markStaleDevices() {
 	if changed {
 		go b.broadcastDevices()
 	}
+
+	// Prune expired offline queue items
+	b.queueMu.Lock()
+	for devID, msgs := range b.offlineQueue {
+		var validMsgs []QueuedMessage
+		for _, m := range msgs {
+			if now.Before(m.ExpiresAt) {
+				validMsgs = append(validMsgs, m)
+			}
+		}
+		if len(validMsgs) == 0 {
+			delete(b.offlineQueue, devID)
+		} else {
+			b.offlineQueue[devID] = validMsgs
+		}
+	}
+	b.queueMu.Unlock()
 }
 
 func (b *Backend) startPresenceTicker() {
@@ -950,7 +1032,11 @@ func (b *Backend) lockDevice(deviceID, clientID string) error {
 	
 	// Check if already locked by another client
 	if device.LockedBy != "" && device.LockedBy != clientID {
-		return fmt.Errorf("device already locked by another mobile device")
+		if !device.LockedAt.IsZero() && time.Since(device.LockedAt) > 5*time.Minute {
+			log.Printf("Overriding stale lock on device %s (was locked by %s since %v ago)", deviceID, device.LockedBy, time.Since(device.LockedAt))
+		} else {
+			return fmt.Errorf("device already locked by another mobile device")
+		}
 	}
 	
 	// Lock the device
@@ -1002,7 +1088,13 @@ func (b *Backend) isDeviceLocked(deviceID, clientID string) bool {
 	}
 	
 	// Device is locked and client doesn't have the lock
-	return device.LockedBy != "" && device.LockedBy != clientID
+	if device.LockedBy != "" && device.LockedBy != clientID {
+		if !device.LockedAt.IsZero() && time.Since(device.LockedAt) > 5*time.Minute {
+			return false
+		}
+		return true
+	}
+	return false
 }
 
 func generateAuthToken() string {
@@ -1264,13 +1356,18 @@ func handleWebhookStatus(b *Backend) http.HandlerFunc {
 			resp := map[string]string{
 				"type": "status_update",
 				"status": status,
+				"device_id": deviceID,
 			}
 			jsonResponse, _ := json.Marshal(resp)
 			b.mu.RLock()
-			for cID := range b.clients {
-				b.dispatcher.Dispatch(cID, websocket.TextMessage, jsonResponse)
+			var targetClient string
+			if device, ok := b.devices[deviceID]; ok {
+				targetClient = device.LockedBy
 			}
 			b.mu.RUnlock()
+			if targetClient != "" {
+				b.dispatcher.Dispatch(targetClient, websocket.TextMessage, jsonResponse)
+			}
 		}
 		w.WriteHeader(http.StatusOK)
 	}
@@ -1453,18 +1550,28 @@ func handleWebhookResult(b *Backend) http.HandlerFunc {
 					"new_conversation_id": newConvID,
 				}
 				jsonResponse, _ := json.Marshal(response)
-				// Directly push to the FCM worker queue for all active clients (handles reconnections naturally)
 				b.mu.RLock()
-				for cID := range b.clients {
-					b.dispatcher.Dispatch(cID, websocket.TextMessage, jsonResponse)
-				}
+				targetClient, online := b.clients[clientID]
 				b.mu.RUnlock()
+				if online && targetClient != nil {
+					b.dispatcher.Dispatch(clientID, websocket.TextMessage, jsonResponse)
+				} else {
+					b.queueMu.Lock()
+					if len(b.offlineQueue[deviceID]) < 50 {
+						b.offlineQueue[deviceID] = append(b.offlineQueue[deviceID], QueuedMessage{
+							Payload:   jsonResponse,
+							ExpiresAt: time.Now().Add(1 * time.Hour),
+						})
+					}
+					b.queueMu.Unlock()
+				}
 			} else if errorMsg != "" {
 				b.mu.RLock()
-				for cID := range b.clients {
-					b.dispatcher.Dispatch(cID, websocket.TextMessage, []byte("ERROR: "+errorMsg))
-				}
+				targetClient, online := b.clients[clientID]
 				b.mu.RUnlock()
+				if online && targetClient != nil {
+					b.dispatcher.Dispatch(clientID, websocket.TextMessage, []byte("ERROR: "+errorMsg))
+				}
 			} else {
 				summary := ""
 				lowerMode := strings.ToLower(mode)
@@ -1494,20 +1601,20 @@ func handleWebhookResult(b *Backend) http.HandlerFunc {
 				}
 				jsonResponse, _ := json.Marshal(response)
 				b.mu.RLock()
-				clientCount := len(b.clients)
-				if clientCount > 0 {
-					for cID := range b.clients {
-						b.dispatcher.Dispatch(cID, websocket.TextMessage, jsonResponse)
-					}
+				targetClient, online := b.clients[clientID]
+				b.mu.RUnlock()
+				if online && targetClient != nil {
+					b.dispatcher.Dispatch(clientID, websocket.TextMessage, jsonResponse)
 				} else {
 					b.queueMu.Lock()
-					b.offlineQueue[deviceID] = append(b.offlineQueue[deviceID], QueuedMessage{
-						Payload:   jsonResponse,
-						ExpiresAt: time.Now().Add(1 * time.Hour),
-					})
+					if len(b.offlineQueue[deviceID]) < 50 {
+						b.offlineQueue[deviceID] = append(b.offlineQueue[deviceID], QueuedMessage{
+							Payload:   jsonResponse,
+							ExpiresAt: time.Now().Add(1 * time.Hour),
+						})
+					}
 					b.queueMu.Unlock()
 				}
-				b.mu.RUnlock()
 			}
 		}
 		w.WriteHeader(http.StatusOK)
@@ -1522,24 +1629,30 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 			return
 		}
 		clientID := fmt.Sprintf("client-%d", time.Now().UnixNano())
-		clientIP := r.RemoteAddr
+		clientIP := getClientIP(r)
+		client := &WebSocketClient{
+			conn:        conn,
+			clientID:    clientID,
+			sendChan:    make(chan DeliveryJob, 256),
+			connectedAt: time.Now(),
+		}
 		
 		defer func() {
 			conn.Close()
 			// Clean up client from map
 			b.mu.Lock()
-			delete(b.clients, clientID)
+			if cl, ok := b.clients[clientID]; ok {
+				close(cl.sendChan)
+				delete(b.clients, clientID)
+			}
 			b.mu.Unlock()
 			log.Printf("Mobile client disconnected: %s", clientID)
 		}()
 		
 		b.mu.Lock()
-		b.clients[clientID] = &WebSocketClient{
-			conn:        conn,
-			clientID:    clientID,
-			connectedAt: time.Now(),
-		}
+		b.clients[clientID] = client
 		b.mu.Unlock()
+		go client.writePump()
 
 		log.Printf("Mobile client connected: %s", clientID)
 
@@ -1629,9 +1742,15 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 					b.dispatcher.Dispatch(clientID, messageType, []byte(`{"error":"device not found"}`))
 					continue
 				}
-				if device.FCMTokens == nil || len(device.FCMTokens) > 10 {
-					// Bug #2 Fix: Prevent token exhaustion DoS by capping tokens per device
+				if device.FCMTokens == nil {
 					device.FCMTokens = make(map[string]bool)
+				}
+				if len(device.FCMTokens) >= 10 && !device.FCMTokens[token] {
+					// Cap at 10 tokens: evict one existing token instead of wiping the entire map
+					for k := range device.FCMTokens {
+						delete(device.FCMTokens, k)
+						break
+					}
 				}
 				device.FCMTokens[token] = true
 				b.mu.Unlock()
@@ -1651,16 +1770,15 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				}
 
 				b.mu.Lock()
-				failures := b.ipRateLimits[clientIP]
-				if failures > 5 {
+				if b.isIPRateLimited(clientIP) {
 					b.mu.Unlock()
 					b.addSecurityAlert("rate_limit", clientIP, deviceID, cID, "Unlock rate limit exceeded", "medium")
-					b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: Rate limited"))
+					b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: Rate limited. Please wait."))
 					continue
 				}
 				device, exists := b.devices[deviceID]
 				if !exists {
-					b.ipRateLimits[clientIP]++
+					b.recordIPFailure(clientIP)
 					b.mu.Unlock()
 					b.addSecurityAlert("auth_fail", clientIP, deviceID, cID, "Unlock attempt on non-existent device", "medium")
 					b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: Invalid device"))
@@ -1671,7 +1789,7 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				gotHash := hashPhrase(phrase, deviceID)
 				
 				if expectedHash != "" && gotHash == expectedHash {
-					b.ipRateLimits[clientIP] = 0 // reset
+					b.resetIPLimit(clientIP)
 					b.mu.Unlock()
 					
 					token, expiresAt := createSessionToken(deviceID, cID)
@@ -1705,7 +1823,7 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 					}
 					b.queueMu.Unlock()
 				} else {
-					b.ipRateLimits[clientIP]++
+					b.recordIPFailure(clientIP)
 					b.mu.Unlock()
 					b.addSecurityAlert("auth_fail", clientIP, deviceID, cID, "Invalid security phrase", "high")
 					b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: Invalid security phrase"))
@@ -2343,26 +2461,6 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				jsonData, _ := json.Marshal(deviceList)
 				b.dispatcher.Dispatch(clientID, messageType, jsonData)
 				
-				// Flush any pending offline messages
-				b.queueMu.Lock()
-				for dID, msgs := range b.offlineQueue {
-					if len(msgs) > 0 {
-						for _, msg := range msgs {
-							if time.Now().Before(msg.ExpiresAt) {
-								var pMap map[string]interface{}
-								if err := json.Unmarshal(msg.Payload, &pMap); err == nil {
-									pMap["delayed"] = true
-									if newPayload, err := json.Marshal(pMap); err == nil {
-										b.dispatcher.Dispatch(clientID, websocket.TextMessage, newPayload)
-									}
-								}
-							}
-						}
-						delete(b.offlineQueue, dID)
-					}
-				}
-				b.queueMu.Unlock()
-				
 			case "get_stats":
 				b.mu.RLock()
 				stats := map[string]interface{}{
@@ -2458,10 +2556,9 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 					}
 					
 					b.mu.Lock()
-					failures := b.ipRateLimits[clientIP]
-					if failures > 5 {
+					if b.isIPRateLimited(clientIP) {
 						b.mu.Unlock()
-						b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: Rate limited"))
+						b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: Rate limited. Please wait."))
 						continue
 					}
 					if len(b.devices) == 0 {
@@ -2478,12 +2575,12 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 						}
 					}
 					if validPhrase {
-						b.ipRateLimits[clientIP] = 0
+						b.resetIPLimit(clientIP)
 						b.mu.Unlock()
 						b.clearAllDevices()
 						b.dispatcher.Dispatch(clientID, messageType, []byte("OK: All devices cleared"))
 					} else {
-						b.ipRateLimits[clientIP]++
+						b.recordIPFailure(clientIP)
 						b.mu.Unlock()
 						b.dispatcher.Dispatch(clientID, messageType, []byte("ERROR: Invalid security phrase"))
 					}
@@ -2801,6 +2898,222 @@ func handleSentinelResolveIncident(b *Backend) http.HandlerFunc {
 	}
 }
 
+
+func handleRegister(backend *Backend) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var req struct {
+			DeviceID       string `json:"device_id"`
+			DeviceName     string `json:"device_name"`
+			Address        string `json:"address"`
+			Fingerprint    string `json:"fingerprint"`
+			Type           string `json:"type"`
+			SecurityPhrase string `json:"security_phrase"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			log.Printf("Registration failed: bad request - %v", err)
+			http.Error(w, "Bad request", http.StatusBadRequest)
+			return
+		}
+		if req.DeviceID == "" || req.Address == "" {
+			log.Printf("Registration failed: missing required fields (device_id=%s, address=%s)", req.DeviceID, req.Address)
+			http.Error(w, "device_id and address required", http.StatusBadRequest)
+			return
+		}
+		if !isValidAddress(req.Address) {
+			log.Printf("Registration failed: invalid or disallowed address: %s", req.Address)
+			http.Error(w, "Invalid address", http.StatusBadRequest)
+			return
+		}
+
+		if req.Type == "" {
+			req.Type = "desktop"
+		}
+
+		log.Printf("Registration request: device_id=%s, name=%s, address=%s, type=%s", req.DeviceID, req.DeviceName, req.Address, req.Type)
+
+		backend.mu.Lock()
+		defer backend.mu.Unlock()
+
+		d, exists := backend.devices[req.DeviceID]
+		if exists && d.SecurityPhraseHash != "" && req.SecurityPhrase != "" {
+			callerHash := hashPhrase(strings.TrimSpace(req.SecurityPhrase), req.DeviceID)
+			if subtle.ConstantTimeCompare([]byte(d.SecurityPhraseHash), []byte(callerHash)) != 1 {
+				log.Printf("Device registration rejected: security phrase mismatch for existing device %s", req.DeviceID)
+				http.Error(w, "Unauthorized: Device already registered with different security phrase", http.StatusUnauthorized)
+				return
+			}
+		}
+		if !exists {
+			d = &Device{ID: req.DeviceID}
+			backend.devices[req.DeviceID] = d
+			if backend.activeDevice == "" {
+				backend.activeDevice = req.DeviceID
+			}
+		}
+		wasActive := false
+		oldAddress := ""
+		if exists {
+			wasActive = d.Active
+			oldAddress = d.Address
+		}
+
+		d.Name = req.DeviceName
+		d.Address = strings.TrimRight(req.Address, "/")
+		d.Fingerprint = req.Fingerprint
+		d.Type = req.Type
+		d.Active = true
+		d.LastSeen = time.Now()
+		if d.AuthToken == "" {
+			d.AuthToken = generateAuthToken()
+		}
+		
+		if req.SecurityPhrase != "" {
+			d.SecurityPhraseHash = hashPhrase(strings.TrimSpace(req.SecurityPhrase), req.DeviceID)
+			log.Printf("Device registered with hashed security phrase")
+		}
+
+		wasNew := !exists
+		log.Printf("Device registered: %s (%s) @ %s (online: %v, new: %v, total devices: %d)", d.Name, d.ID, d.Address, d.Active, wasNew, len(backend.devices))
+		
+		if wasNew || !wasActive || oldAddress != d.Address {
+			go backend.broadcastDevices()
+		}
+
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		json.NewEncoder(w).Encode(map[string]string{
+			"status":    "ok",
+			"device_id": d.ID,
+		})
+	}
+}
+
+func handleHeartbeat(backend *Backend) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var req struct {
+			DeviceID   string `json:"device_id"`
+			Address    string `json:"address"`
+			SecretHash string `json:"secret_hash"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Bad request", http.StatusBadRequest)
+			return
+		}
+
+		backend.mu.Lock()
+		defer backend.mu.Unlock()
+
+		device, exists := backend.devices[req.DeviceID]
+		if !exists {
+			http.Error(w, "Device not found", http.StatusNotFound)
+			return
+		}
+
+		wasActive := device.Active
+		device.LastSeen = time.Now()
+		if req.Address != "" && device.Address != req.Address {
+			if !isValidAddress(req.Address) {
+				log.Printf("Heartbeat address update rejected: invalid address %s", req.Address)
+				http.Error(w, "Invalid address", http.StatusBadRequest)
+				return
+			}
+			if device.SecurityPhraseHash != "" {
+				if req.SecretHash == "" || subtle.ConstantTimeCompare([]byte(device.SecurityPhraseHash), []byte(req.SecretHash)) != 1 {
+					log.Printf("Heartbeat address update rejected: unauthorized or missing secret_hash for device %s", device.ID)
+					http.Error(w, "Unauthorized", http.StatusUnauthorized)
+					return
+				}
+			}
+			device.Address = req.Address
+			log.Printf("Device address updated: %s -> %s", device.ID, req.Address)
+		}
+		device.Active = true
+
+		if !wasActive {
+			go backend.broadcastDevices()
+		}
+
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	}
+}
+
+func handleProxy(backend *Backend) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Content-Type", "application/json")
+
+		pathParts := strings.Split(r.URL.Path, "/")
+		if len(pathParts) < 4 {
+			http.Error(w, "Invalid proxy path", http.StatusBadRequest)
+			return
+		}
+		
+		deviceID := pathParts[2]
+		endpoint := "/" + strings.Join(pathParts[3:], "/")
+
+		isAllowed := endpoint == "/bg-tasks" || strings.HasPrefix(endpoint, "/bg-tasks/") || strings.HasPrefix(endpoint, "/surveillance/")
+		if !isAllowed || strings.Contains(endpoint, "..") {
+			w.WriteHeader(http.StatusForbidden)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": "Access to requested proxy endpoint is forbidden", "tasks": []interface{}{}})
+			return
+		}
+
+		if r.URL.RawQuery != "" {
+			endpoint += "?" + r.URL.RawQuery
+		}
+
+		backend.mu.RLock()
+		device, exists := backend.devices[deviceID]
+		backend.mu.RUnlock()
+
+		if !exists || !device.Active {
+			w.WriteHeader(http.StatusBadGateway)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": "Device offline or not found", "tasks": []interface{}{}})
+			return
+		}
+
+		client := &http.Client{Timeout: 5 * time.Second}
+		req, err := http.NewRequest(r.Method, strings.TrimRight(device.Address, "/")+endpoint, r.Body)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": "Failed to create request", "tasks": []interface{}{}})
+			return
+		}
+		
+		for k, v := range r.Header {
+			req.Header[k] = v
+		}
+
+		if strings.Contains(device.Address, "ngrok") || strings.Contains(device.Address, "ngrok-free") {
+			req.Header.Set("ngrok-skip-browser-warning", "true")
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			w.WriteHeader(http.StatusBadGateway)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": "Failed to reach device", "tasks": []interface{}{}})
+			return
+		}
+		defer resp.Body.Close()
+
+		for k, v := range resp.Header {
+			w.Header()[k] = v
+		}
+		w.WriteHeader(resp.StatusCode)
+		io.Copy(w, resp.Body)
+	}
+}
+
 func main() {
 	startTime = time.Now()
 	backend := NewBackend()
@@ -2863,8 +3176,18 @@ func main() {
 			http.Error(w, "device_id required", http.StatusBadRequest)
 			return
 		}
-		// Store snapshot
+		secretHash, _ := payload["secret_hash"].(string)
+
 		backend.mu.Lock()
+		device, exists := backend.devices[deviceID]
+		if exists && device.SecurityPhraseHash != "" && secretHash != "" {
+			if subtle.ConstantTimeCompare([]byte(device.SecurityPhraseHash), []byte(secretHash)) != 1 {
+				backend.mu.Unlock()
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+		}
+		// Store snapshot
 		backend.lastTokenSnapshot[deviceID] = payload
 		backend.mu.Unlock()
 		// Broadcast to all connected mobile clients
@@ -2965,133 +3288,9 @@ func main() {
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "message": "All devices cleared"})
 	})
 
-	http.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
+	http.HandleFunc("/register", handleRegister(backend))
 
-	// AGENT_REGISTER_SECRET removed for zero-friction mode. Open registration.
-
-	var req struct {
-		DeviceID    string `json:"device_id"`
-		DeviceName  string `json:"device_name"`
-		Address     string `json:"address"` // e.g. https://xxxx.ngrok-free.app
-		Fingerprint string `json:"fingerprint"`
-		Type        string `json:"type"`
-		SecurityPhrase string `json:"security_phrase"` // NEW: client's security phrase
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		log.Printf("Registration failed: bad request - %v", err)
-		http.Error(w, "Bad request", http.StatusBadRequest)
-		return
-	}
-	if req.DeviceID == "" || req.Address == "" {
-		log.Printf("Registration failed: missing required fields (device_id=%s, address=%s)", req.DeviceID, req.Address)
-		http.Error(w, "device_id and address required", http.StatusBadRequest)
-		return
-	}
-	if !isValidAddress(req.Address) {
-		log.Printf("Registration failed: invalid or disallowed address: %s", req.Address)
-		http.Error(w, "Invalid address", http.StatusBadRequest)
-		return
-	}
-
-	if req.Type == "" {
-		req.Type = "desktop"
-	}
-
-	log.Printf("Registration request: device_id=%s, name=%s, address=%s, type=%s", req.DeviceID, req.DeviceName, req.Address, req.Type)
-
-	backend.mu.Lock()
-	defer backend.mu.Unlock()
-
-	d, exists := backend.devices[req.DeviceID]
-	if !exists {
-		d = &Device{ID: req.DeviceID}
-		backend.devices[req.DeviceID] = d
-		if backend.activeDevice == "" {
-			backend.activeDevice = req.DeviceID
-		}
-	}
-	wasActive := false
-	oldAddress := ""
-	if exists {
-		wasActive = d.Active
-		oldAddress = d.Address
-	}
-
-	d.Name = req.DeviceName
-	d.Address = strings.TrimRight(req.Address, "/")
-	d.Fingerprint = req.Fingerprint
-	d.Type = req.Type
-	d.Active = true
-	d.LastSeen = time.Now()
-	if d.AuthToken == "" {
-		d.AuthToken = generateAuthToken()
-	}
-	
-	if req.SecurityPhrase != "" {
-		d.SecurityPhraseHash = hashPhrase(strings.TrimSpace(req.SecurityPhrase), req.DeviceID)
-		log.Printf("Device registered with hashed security phrase")
-	}
-
-	wasNew := !exists
-	log.Printf("Device registered: %s (%s) @ %s (online: %v, new: %v, total devices: %d)", d.Name, d.ID, d.Address, d.Active, wasNew, len(backend.devices))
-	
-	if wasNew || !wasActive || oldAddress != d.Address {
-		go backend.broadcastDevices()
-	}
-
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	json.NewEncoder(w).Encode(map[string]string{
-		"status":    "ok",
-		"device_id": d.ID,
-	})
-})
-
-// Heartbeat endpoint for local agents to keep device marked as online
-http.HandleFunc("/heartbeat", func(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	var req struct {
-		DeviceID string `json:"device_id"`
-		Address  string `json:"address"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Bad request", http.StatusBadRequest)
-		return
-	}
-
-	backend.mu.Lock()
-	defer backend.mu.Unlock()
-
-	device, exists := backend.devices[req.DeviceID]
-	if !exists {
-		http.Error(w, "Device not found", http.StatusNotFound)
-		return
-	}
-
-	// Update device LastSeen and address if changed
-	wasActive := device.Active
-	device.LastSeen = time.Now()
-	if req.Address != "" && device.Address != req.Address {
-		device.Address = req.Address
-		log.Printf("Device address updated: %s -> %s", device.ID, req.Address)
-	}
-	device.Active = true
-
-	// Broadcast if device just came online
-	if !wasActive {
-		go backend.broadcastDevices()
-	}
-
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
-})
+	http.HandleFunc("/heartbeat", handleHeartbeat(backend))
 
 // Health check endpoint for Render keep-alive
 http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -3112,64 +3311,7 @@ http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 })
 
 
-// Proxy endpoint for mobile to fetch background tasks from a specific device
-http.HandleFunc("/proxy/", func(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Content-Type", "application/json")
-
-	// Expected path: /proxy/{device_id}/bg-tasks
-	pathParts := strings.Split(r.URL.Path, "/")
-	if len(pathParts) < 4 {
-		http.Error(w, "Invalid proxy path", http.StatusBadRequest)
-		return
-	}
-	
-	deviceID := pathParts[2]
-	endpoint := "/" + strings.Join(pathParts[3:], "/")
-	if r.URL.RawQuery != "" {
-		endpoint += "?" + r.URL.RawQuery
-	}
-
-	backend.mu.RLock()
-	device, exists := backend.devices[deviceID]
-	backend.mu.RUnlock()
-
-	if !exists || !device.Active {
-		w.WriteHeader(http.StatusBadGateway)
-		json.NewEncoder(w).Encode(map[string]interface{}{"error": "Device offline or not found", "tasks": []interface{}{}})
-		return
-	}
-
-	client := &http.Client{Timeout: 5 * time.Second}
-	req, err := http.NewRequest(r.Method, strings.TrimRight(device.Address, "/")+endpoint, r.Body)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]interface{}{"error": "Failed to create request", "tasks": []interface{}{}})
-		return
-	}
-	
-	for k, v := range r.Header {
-		req.Header[k] = v
-	}
-
-	if strings.Contains(device.Address, "ngrok") || strings.Contains(device.Address, "ngrok-free") {
-		req.Header.Set("ngrok-skip-browser-warning", "true")
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		w.WriteHeader(http.StatusBadGateway)
-		json.NewEncoder(w).Encode(map[string]interface{}{"error": "Failed to reach device", "tasks": []interface{}{}})
-		return
-	}
-	defer resp.Body.Close()
-
-	for k, v := range resp.Header {
-		w.Header()[k] = v
-	}
-	w.WriteHeader(resp.StatusCode)
-	io.Copy(w, resp.Body)
-})
+	http.HandleFunc("/proxy/", handleProxy(backend))
 
 // Status endpoint for monitoring
 http.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {

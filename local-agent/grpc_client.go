@@ -23,6 +23,7 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
+	"google.golang.org/grpc/metadata"
 
 	voilav1 "voice-cli-system/proto/v1"
 )
@@ -188,7 +189,8 @@ func (c *GRPCTunnelClient) connectAndServe(connData ConnectionData) error {
 	defer conn.Close()
 
 	tunnelServiceClient := voilav1.NewDesktopTunnelServiceClient(conn)
-	streamCtx, streamCancel := context.WithCancel(context.Background())
+	md := metadata.Pairs("x-device-id", connData.DeviceID, "x-security-phrase", connData.SecurityPhrase)
+	streamCtx, streamCancel := context.WithCancel(metadata.NewOutgoingContext(context.Background(), md))
 	defer streamCancel()
 
 	stream, err := tunnelServiceClient.EstablishTunnel(streamCtx)
