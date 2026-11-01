@@ -434,6 +434,50 @@ func handleIncomingCommandViaGRPC(cmd *voilav1.ExecutionCommand, connData Connec
 		return
 	}
 
+	if cmd.Command == "__SENTINEL_ISOLATE__" {
+		exec.Command("netsh", "advfirewall", "firewall", "add", "rule", "name=VOILA_SENTINEL_ISOLATION", "dir=out", "action=block", "profile=any").Run()
+		if conn, err := net.Dial("udp", "127.0.0.1:19885"); err == nil {
+			conn.Write([]byte("STATE:ISOLATED"))
+			conn.Close()
+		}
+		SendTelemetry(&voilav1.AgentTelemetry{
+			DeviceId:    connData.DeviceID,
+			Status:      "IDLE",
+			TimestampMs: time.Now().UnixMilli(),
+			Payload: &voilav1.AgentTelemetry_FinalResult{
+				FinalResult: &voilav1.ExecutionResult{
+					CommandId: cmd.CommandId,
+					Output:    "[OK] Host network isolation ACTIVE. Outbound traffic blocked by Sentinel.",
+					Summary:   "Emergency host network isolation activated. Outbound WAN is severed.",
+					Status:    "completed",
+				},
+			},
+		})
+		return
+	}
+
+	if cmd.Command == "__SENTINEL_LIFT_ISOLATION__" {
+		exec.Command("netsh", "advfirewall", "firewall", "delete", "rule", "name=VOILA_SENTINEL_ISOLATION").Run()
+		if conn, err := net.Dial("udp", "127.0.0.1:19885"); err == nil {
+			conn.Write([]byte("STATE:IDLE"))
+			conn.Close()
+		}
+		SendTelemetry(&voilav1.AgentTelemetry{
+			DeviceId:    connData.DeviceID,
+			Status:      "IDLE",
+			TimestampMs: time.Now().UnixMilli(),
+			Payload: &voilav1.AgentTelemetry_FinalResult{
+				FinalResult: &voilav1.ExecutionResult{
+					CommandId: cmd.CommandId,
+					Output:    "[OK] Host network isolation lifted.",
+					Summary:   "Host network isolation lifted. LAN and WAN connectivity restored.",
+					Status:    "completed",
+				},
+			},
+		})
+		return
+	}
+
 	if cmd.Command == "__GET_WORKDAY_BRIEFING__" {
 		go GenerateAndDispatchWorkdayBriefing(true)
 		return
