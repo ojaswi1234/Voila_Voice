@@ -1706,8 +1706,8 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 			deviceID, _ := msg["device_id"].(string)
 			sessionToken, _ := msg["session_token"].(string)
 
-			// Require token for sensitive operations
-			requiresAuth := msgType == "command" || msgType == "stop_command" || msgType == "lock_device" || msgType == "unlock_device" || msgType == "clear_all_devices" || msgType == "surveillance_action" || msgType == "approve_job" || msgType == "cancel_job" || msgType == "kill_task" || msgType == "register_fcm_token"
+			// Require token for sensitive administrative operations (commands flow to Honeypot 1 if unauthorized)
+			requiresAuth := msgType == "stop_command" || msgType == "lock_device" || msgType == "unlock_device" || msgType == "clear_all_devices" || msgType == "surveillance_action" || msgType == "approve_job" || msgType == "cancel_job" || msgType == "kill_task" || msgType == "register_fcm_token"
 			if requiresAuth {
 				// Special check for clear_all_devices which didn't use device_id originally
 				targetDeviceID := deviceID

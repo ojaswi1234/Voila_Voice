@@ -5127,9 +5127,13 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       }
       if (addr.endsWith('/')) addr = addr.substring(0, addr.length - 1);
       final url = Uri.parse('$addr/execute');
+      final Map<String, String> headers = {'Content-Type': 'application/json'};
+      if (_cachedSecurityPhrase.isNotEmpty) {
+        headers['X-Security-Phrase'] = _cachedSecurityPhrase;
+      }
       final resp = await http.post(
         url,
-        headers: {'Content-Type': 'application/json'},
+        headers: headers,
         body: jsonEncode({
           'command': command,
           'device_id': _activeDevice,

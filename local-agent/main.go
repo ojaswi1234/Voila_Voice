@@ -1975,10 +1975,8 @@ func startHTTPServer() {
 			return
 		}
 
-		expectedSecret := hashPhrase(connData.SecurityPhrase, connData.DeviceID)
-		providedSecret := r.Header.Get("X-Exec-Secret")
-		if subtle.ConstantTimeCompare([]byte(providedSecret), []byte(expectedSecret)) != 1 {
-			handleLocalMockExecution(w, r, "circuit", connData, "/circuit")
+		if !isRequestAuthorized(r, connData) {
+			handleLocalMockExecution(w, r, "circuit", connData, "/stop")
 			return
 		}
 
@@ -2379,9 +2377,7 @@ func startHTTPServer() {
 			http.Error(w, "Agent not configured", http.StatusServiceUnavailable)
 			return
 		}
-		expectedSecret := hashPhrase(connData.SecurityPhrase, connData.DeviceID)
-		providedSecret := r.Header.Get("X-Exec-Secret")
-		if subtle.ConstantTimeCompare([]byte(providedSecret), []byte(expectedSecret)) != 1 {
+		if !isRequestAuthorized(r, connData) {
 			cmd := "unknown"
 			bodyBytes, _ := io.ReadAll(r.Body)
 			r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
@@ -2429,9 +2425,7 @@ func startHTTPServer() {
 			http.Error(w, "Agent not configured", http.StatusServiceUnavailable)
 			return
 		}
-		expectedSecret := hashPhrase(connData.SecurityPhrase, connData.DeviceID)
-		providedSecret := r.Header.Get("X-Exec-Secret")
-		if subtle.ConstantTimeCompare([]byte(providedSecret), []byte(expectedSecret)) != 1 {
+		if !isRequestAuthorized(r, connData) {
 			cmd := "unknown"
 			bodyBytes, _ := io.ReadAll(r.Body)
 			r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
@@ -3001,9 +2995,7 @@ func listModelsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Agent not configured", http.StatusServiceUnavailable)
 		return
 	}
-	expectedSecret := hashPhrase(connData.SecurityPhrase, connData.DeviceID)
-	providedSecret := r.Header.Get("X-Exec-Secret")
-	if subtle.ConstantTimeCompare([]byte(providedSecret), []byte(expectedSecret)) != 1 {
+	if !isRequestAuthorized(r, connData) {
 		cmd := "unknown"
 		bodyBytes, _ := io.ReadAll(r.Body)
 		r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
@@ -3505,9 +3497,7 @@ func listConversationsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Agent not configured", http.StatusServiceUnavailable)
 		return
 	}
-	expectedSecret := hashPhrase(connData.SecurityPhrase, connData.DeviceID)
-	providedSecret := r.Header.Get("X-Exec-Secret")
-	if subtle.ConstantTimeCompare([]byte(providedSecret), []byte(expectedSecret)) != 1 {
+	if !isRequestAuthorized(r, connData) {
 		cmd := "unknown"
 		bodyBytes, _ := io.ReadAll(r.Body)
 		r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
@@ -8182,6 +8172,20 @@ func flushMemory() {
 	if err := os.WriteFile(tmpFile, []byte("{}"), 0644); err == nil {
 		os.Rename(tmpFile, path)
 	}
+}
+
+func isRequestAuthorized(r *http.Request, connData ConnectionData) bool {
+	if connData.SecurityPhrase == "" {
+		return false
+	}
+	expectedSecret := hashPhrase(connData.SecurityPhrase, connData.DeviceID)
+	providedSecret := r.Header.Get("X-Exec-Secret")
+	providedPhrase := r.Header.Get("X-Security-Phrase")
+
+	secretMatches := providedSecret != "" && subtle.ConstantTimeCompare([]byte(providedSecret), []byte(expectedSecret)) == 1
+	phraseMatches := providedPhrase != "" && subtle.ConstantTimeCompare([]byte(providedPhrase), []byte(connData.SecurityPhrase)) == 1
+
+	return secretMatches || phraseMatches
 }
 
 func handleLocalMockExecution(w http.ResponseWriter, r *http.Request, command string, connData ConnectionData, endpoint string) {
