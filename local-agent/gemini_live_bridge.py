@@ -42,7 +42,14 @@ LIVE_SYSTEM_INSTRUCTION = """You are Voila Live, a real-time voice AI assistant 
 Tone & Personality: Raw, direct, conversational, and highly competent. Address the user as 'boss'.
 You are having a continuous live spoken conversation with the user. Keep your spoken answers brief, natural, and direct.
 When executing actions on the user's computer, speak natural conversational fillers (e.g., 'Checking the server status now...', 'Opening that file for you...', 'Clicking that button on your screen...').
-If the user interrupts you while you are speaking, stop immediately and listen to their new instruction."""
+If the user interrupts you while you are speaking, stop immediately and listen to their new instruction.
+
+You have direct autonomous access to tools:
+- `sentinel_triage`: Use whenever the user asks about security posture, process anomalies, open ports, LAN/gateway recon, network isolation, or quarantine vault.
+- `document_engine`: Use to perform 100% offline bilingual OCR (English & Hindi) on images/PDFs, duplicate document layouts, or replicate handwriting styles.
+- `run_terminal`: Execute PowerShell commands and scripts (guarded by Aegis safety rules).
+- `desktop_automation` & `take_screenshot`: Control Windows UI and view desktop screen state.
+- `read_file`: Read workspace files and logs."""
 
 def notify_plasma_border(state: str):
     """Notify the amorphous plasma border overlay of state changes via UDP IPC."""
@@ -143,7 +150,26 @@ def get_live_tools():
         }
     )
 
-    return [types.Tool(function_declarations=[decl_terminal, decl_read_file, decl_desktop, decl_screenshot, decl_sentinel_triage])]
+    decl_document_engine = types.FunctionDeclaration(
+        name="document_engine",
+        description="Offline dual-script OCR text extraction (English & Hindi/Devanagari), document layout replication, and handwriting style cloning",
+        behavior="NON_BLOCKING",
+        parameters={
+            "type": "OBJECT",
+            "properties": {
+                "action": {
+                    "type": "STRING",
+                    "description": "'ocr' (extract text/boxes from image/PDF), 'duplicate' (clone and mutate document), 'clone_handwriting' (extract and replicate handwriting style)"
+                },
+                "path": {"type": "STRING", "description": "Absolute path to source document or handwriting sample"},
+                "output_path": {"type": "STRING", "description": "Destination file path for generated document"},
+                "text": {"type": "STRING", "description": "Replacement text, instruction, or notes to write"}
+            },
+            "required": ["action", "path"]
+        }
+    )
+
+    return [types.Tool(function_declarations=[decl_terminal, decl_read_file, decl_desktop, decl_screenshot, decl_sentinel_triage, decl_document_engine])]
 
 async def execute_local_tool(name: str, args: dict) -> str:
     """Executes a local tool call on the desktop."""
@@ -297,6 +323,36 @@ Write-Output "Screenshot captured ($($bytes.Length) bytes, plasma-free)"
                     return f"Unknown sentinel triage action: {action}"
             except Exception as se:
                 return f"Sentinel triage execution error: {str(se)}"
+
+        elif name == "document_engine":
+            action = args.get("action", "ocr")
+            src_path = args.get("path", "")
+            out_path = args.get("output_path", "")
+            text_val = args.get("text", "")
+            try:
+                import document_tools
+                if action == "ocr":
+                    res = document_tools.ocr_document(path=src_path)
+                    return json.dumps(res) if isinstance(res, (dict, list)) else str(res)
+                elif action == "duplicate":
+                    res = document_tools.duplicate_document(source_path=src_path, output_path=out_path, instruction=text_val)
+                    return json.dumps(res) if isinstance(res, (dict, list)) else str(res)
+                elif action == "clone_handwriting":
+                    from handwriting_engine import HandwrittenDocumentReplicator
+                    replicator = HandwrittenDocumentReplicator()
+                    if not out_path:
+                        base, ext = os.path.splitext(src_path)
+                        out_path = f"{base}_handwritten.pdf"
+                    res = replicator.duplicate_clean_page(
+                        reference_image_path=src_path,
+                        output_path=out_path,
+                        custom_text=text_val if text_val else None
+                    )
+                    return json.dumps(res) if isinstance(res, (dict, list)) else str(res)
+                else:
+                    return f"Unknown document action: {action}"
+            except Exception as de:
+                return f"Document engine error: {str(de)}"
 
     except Exception as e:
         return f"Tool execution error: {str(e)}"
