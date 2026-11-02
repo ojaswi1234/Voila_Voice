@@ -182,6 +182,38 @@ def handle_create(payload):
                     "path": target_path
                 }
                 result = document_tools.create_ppt(ppt_kwargs)
+
+            elif doc_type == "xlsx":
+                import data_tools
+                sheets = fills.get("sheets")
+                if not sheets:
+                    raw_data = fills.get("data", [{"Item": "Sample", "Value": 100}])
+                    sheets = [{
+                        "name": fills.get("sheet_name", "Summary"),
+                        "data": raw_data,
+                        "formulas": fills.get("formulas", []),
+                        "number_formats": fills.get("number_formats", {}),
+                        "charts": fills.get("charts", [])
+                    }]
+                res = data_tools.generate_excel_dashboard(target_path, fills.get("title", title), sheets)
+                result = target_path if res.get("ok") else str(res.get("message"))
+
+            elif doc_type == "html":
+                import data_tools
+                import pandas as pd
+                source_file = fills.get("source_path")
+                if not source_file or not os.path.exists(source_file):
+                    source_file = os.path.join(ARTIFACTS_DIR, f"{timestamp}_{safe_title}_data.csv")
+                    pd.DataFrame(fills.get("data", [{"Category": "Overview", "Score": 95}])).to_csv(source_file, index=False)
+                res = data_tools.generate_data_report(
+                    source_path=source_file,
+                    title=fills.get("title", title),
+                    summary_notes=fills.get("summary_notes"),
+                    metrics=fills.get("metrics"),
+                    output_path=target_path
+                )
+                result = target_path if res.get("ok") else str(res.get("message"))
+
             else:
                 result = f"Unsupported type: {doc_type}"
             

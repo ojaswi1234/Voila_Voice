@@ -4,27 +4,71 @@
     "provider": "local",
     "type": "pdf",
     "description": "General purpose PDF report. Fills: title, sections (list of {heading, body}), author, date.",
-    "placeholders": ["title", "sections", "author", "date"]
+    "placeholders": [
+      "title",
+      "sections",
+      "author",
+      "date"
+    ]
   },
   "local_slides": {
     "id": "local_slides",
     "provider": "local",
     "type": "pptx",
     "description": "General purpose presentation. Fills: title, slides (list of {title, bullets}), author.",
-    "placeholders": ["title", "slides", "author"]
+    "placeholders": [
+      "title",
+      "slides",
+      "author"
+    ]
   },
   "quarterly_report": {
     "id": "quarterly_report",
     "provider": "local",
     "type": "pdf",
     "description": "Quarterly business report. Fills: company, quarter, year, highlights (list of strings), metrics (dict of name:value), summary.",
-    "placeholders": ["company", "quarter", "year", "highlights", "metrics", "summary"]
+    "placeholders": [
+      "company",
+      "quarter",
+      "year",
+      "highlights",
+      "metrics",
+      "summary"
+    ]
   },
   "meeting_notes": {
     "id": "meeting_notes",
     "provider": "local",
     "type": "pdf",
     "description": "Meeting notes template. Fills: meeting_title, date, attendees (list), agenda (list), action_items (list of {owner, task, due}).",
-    "placeholders": ["meeting_title", "date", "attendees", "agenda", "action_items"]
+    "placeholders": [
+      "meeting_title",
+      "date",
+      "attendees",
+      "agenda",
+      "action_items"
+    ]
+  },
+  "financial_model": {
+    "id": "financial_model",
+    "provider": "local",
+    "type": "xlsx",
+    "description": "Executive multi-sheet financial model and KPI dashboard with dynamic Excel formulas. Fills: title, sheets (list of {name, data, formulas, number_formats, charts}).",
+    "placeholders": [
+      "title",
+      "sheets"
+    ]
+  },
+  "data_analytics_report": {
+    "id": "data_analytics_report",
+    "provider": "local",
+    "type": "html",
+    "description": "Interactive modern dark-mode analytics report dashboard artifact. Fills: title, source_path, summary_notes, metrics (list of {label, value, subtext}).",
+    "placeholders": [
+      "title",
+      "source_path",
+      "summary_notes",
+      "metrics"
+    ]
   }
 }
