@@ -80,10 +80,16 @@ def _transliterate_unicode(text):
 # --- (CSV/EXCEL Code omitted for brevity, keeping V3 implementations) ---
 def read_csv(kwargs):
     path = kwargs.get('path'); analyze = kwargs.get('analyze', False)
-    with open(path, 'r', encoding='utf-8') as f:
+    if analyze:
+        try:
+            import data_tools
+            res = data_tools.profile_dataset(path)
+            return json.dumps(res, indent=2, ensure_ascii=False)
+        except Exception as e:
+            return f"Error profiling dataset: {e}"
+    with open(path, 'r', encoding='utf-8', errors='ignore') as f:
         data = list(csv.reader(f))
     if not data: return "File is empty."
-    if analyze: return _analyze_dataset(data[0], data[1:])
     lines = [','.join(data[0])]
     for i, row in enumerate(data[1:]):
         if i >= 100: lines.append(f"... (truncated)"); break
@@ -107,13 +113,19 @@ def create_csv(kwargs):
     return f"Successfully created CSV at {path}"
 
 def read_excel(kwargs):
+    if kwargs.get('analyze', False):
+        try:
+            import data_tools
+            res = data_tools.profile_dataset(kwargs.get('path'), sheet_name=kwargs.get('sheet_name'))
+            return json.dumps(res, indent=2, ensure_ascii=False)
+        except Exception as e:
+            return f"Error profiling Excel dataset: {e}"
     import openpyxl
     wb = openpyxl.load_workbook(kwargs.get('path'), data_only=True)
     ws = wb[kwargs.get('sheet_name')] if kwargs.get('sheet_name') in wb.sheetnames else wb.active
     data = list(ws.iter_rows(values_only=True))
     if not data: return "File is empty."
     headers = [str(x) if x is not None else f"Col{i}" for i, x in enumerate(data[0])]
-    if kwargs.get('analyze', False): return _analyze_dataset(headers, data[1:])
     lines = [','.join(headers)]
     for i, row in enumerate(data[1:]):
         if i >= 100: lines.append("... (truncated)"); break
@@ -1390,10 +1402,26 @@ def main():
         req = json.loads(input_data)
         action = req.get("action"); kwargs = req.get("kwargs", {})
 
+        def _wrap_data_tool(fn_name):
+            import data_tools
+            fn = getattr(data_tools, fn_name)
+            def _runner(kw):
+                res = fn(**kw)
+                return json.dumps(res, indent=2, ensure_ascii=False) if isinstance(res, dict) else str(res)
+            return _runner
+
         actions = {
             "read_csv": read_csv, "create_csv": create_csv, "read_excel": read_excel, "create_excel": create_excel, "modify_excel": modify_excel,
             "read_pdf": read_pdf, "read_docx": read_docx, "read_doc": read_docx, "create_pdf": create_pdf, "create_doc": create_doc, "create_ppt": create_ppt, "create_docx": create_docx, "duplicate_document": duplicate_document, "analyze_document_structure": analyze_document_structure,
-            "ocr_document": ocr_document
+            "ocr_document": ocr_document,
+            # Data Engineering & Analytics Tools
+            "profile_dataset": _wrap_data_tool("profile_dataset"),
+            "query_dataset": _wrap_data_tool("query_dataset"),
+            "transform_dataset": _wrap_data_tool("transform_dataset"),
+            "aggregate_dataset": _wrap_data_tool("aggregate_dataset"),
+            "join_datasets": _wrap_data_tool("join_datasets"),
+            "generate_excel_dashboard": _wrap_data_tool("generate_excel_dashboard"),
+            "generate_data_report": _wrap_data_tool("generate_data_report"),
         }
         if action not in actions:
             print(f"Error: Unknown action '{action}'")

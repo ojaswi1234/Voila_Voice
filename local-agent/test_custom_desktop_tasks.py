@@ -21,8 +21,8 @@ PYTHON_EXE = sys.executable
 
 def run_desktop_tool(args_list: list[str]) -> dict:
     cmd = [PYTHON_EXE, os.path.join(LOCAL_AGENT_DIR, "desktop_tools.py")] + args_list
-    proc = subprocess.run(cmd, capture_output=True, text=True, cwd=LOCAL_AGENT_DIR, timeout=35)
-    stdout = proc.stdout.strip()
+    proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=LOCAL_AGENT_DIR, timeout=35)
+    stdout = (proc.stdout or "").strip()
     try:
         return json.loads(stdout)
     except Exception as e:

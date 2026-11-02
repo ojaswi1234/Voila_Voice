@@ -4612,6 +4612,135 @@ Example full deck:
 			},
 		},
 	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "profile_dataset",
+			Description: "Inspect, validate and statistically profile any CSV or Excel file. Returns row/column dimensions, column data types, missing value percentages, distributions (min, max, mean, std, median, IQR, outliers), frequency counts, and data quality alerts.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"path":        map[string]interface{}{"type": "string", "description": "Absolute path to CSV or Excel file"},
+					"sheet_name":  map[string]interface{}{"type": "string", "description": "Optional Excel sheet name"},
+					"sample_size": map[string]interface{}{"type": "integer", "description": "Maximum rows to sample (default: 100000, 0 for full file)"},
+				},
+				"required": []string{"path"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "query_dataset",
+			Description: "Execute standard ANSI SQL queries across one or multiple CSV and Excel files using an in-memory virtual SQLite engine. Supports JOINs, GROUP BY, aggregates, window functions, and exporting results directly to CSV/XLSX.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"query":       map[string]interface{}{"type": "string", "description": "ANSI SQL query string, e.g. SELECT dept, AVG(salary) FROM emp GROUP BY dept"},
+					"sources":     map[string]interface{}{"type": "object", "description": `Map of table names to file paths, e.g. {"emp":"C:/data/emp.csv","orders":"C:/data/orders.xlsx"}`},
+					"sheet_names": map[string]interface{}{"type": "object", "description": "Optional map of table names to Excel sheet names"},
+					"output_path": map[string]interface{}{"type": "string", "description": "Optional destination path to export query results as CSV or XLSX"},
+					"max_rows":    map[string]interface{}{"type": "integer", "description": "Maximum rows returned in preview records (default: 50)"},
+				},
+				"required": []string{"query", "sources"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "transform_dataset",
+			Description: "Execute a declarative ETL data engineering and cleaning pipeline on a CSV or Excel dataset. Supports string cleaning/trimming, missing value imputation (mean, median, mode, forward_fill, zero), type casting, row filtering, calculated derived columns, deduplication, and sorting.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"source_path": map[string]interface{}{"type": "string", "description": "Source CSV or Excel path"},
+					"output_path": map[string]interface{}{"type": "string", "description": "Destination file path"},
+					"steps":       map[string]interface{}{"type": "array", "description": "List of pipeline transformation steps to apply in order"},
+					"sheet_name":  map[string]interface{}{"type": "string", "description": "Optional Excel sheet name"},
+				},
+				"required": []string{"source_path", "output_path", "steps"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "aggregate_dataset",
+			Description: "Compute multi-metric GroupBy summaries or multi-dimensional 2D Pivot Tables on CSV/Excel files.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"source_path":   map[string]interface{}{"type": "string", "description": "Path to CSV or Excel file"},
+					"group_by":      map[string]interface{}{"type": "array", "description": "List of grouping dimension columns"},
+					"aggregations":  map[string]interface{}{"type": "object", "description": `Map of metric column names to aggregate functions, e.g. {"sales": ["sum", "mean"]}`},
+					"pivot_index":   map[string]interface{}{"type": "string", "description": "Row dimension for pivot table"},
+					"pivot_column":  map[string]interface{}{"type": "string", "description": "Column dimension for pivot table"},
+					"pivot_value":   map[string]interface{}{"type": "string", "description": "Value column for pivot table"},
+					"pivot_aggfunc": map[string]interface{}{"type": "string", "description": "Aggregation function for pivot (default: sum)"},
+					"output_path":   map[string]interface{}{"type": "string", "description": "Optional destination path to save aggregated file"},
+					"sheet_name":    map[string]interface{}{"type": "string", "description": "Optional sheet name for Excel source"},
+				},
+				"required": []string{"source_path"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "join_datasets",
+			Description: "Merge and combine two CSV or Excel datasets (inner, left, right, outer) on specified key columns, returning detailed match-rate analytics and saved file.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"left_path":   map[string]interface{}{"type": "string", "description": "Left file path"},
+					"right_path":  map[string]interface{}{"type": "string", "description": "Right file path"},
+					"how":         map[string]interface{}{"type": "string", "description": "Join type: inner | left | right | outer (default: inner)"},
+					"on":          map[string]interface{}{"type": "string", "description": "Common key column name"},
+					"left_on":     map[string]interface{}{"type": "string", "description": "Key column name in left dataset"},
+					"right_on":    map[string]interface{}{"type": "string", "description": "Key column name in right dataset"},
+					"output_path": map[string]interface{}{"type": "string", "description": "Destination file path"},
+					"left_sheet":  map[string]interface{}{"type": "string", "description": "Optional Excel sheet name for left file"},
+					"right_sheet": map[string]interface{}{"type": "string", "description": "Optional Excel sheet name for right file"},
+				},
+				"required": []string{"left_path", "right_path"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "generate_excel_dashboard",
+			Description: "Generate an executive, publication-ready multi-sheet Excel (.xlsx) dashboard workbook with dynamic Excel formulas (=SUM, =AVERAGE), corporate color palettes, auto-fit columns, number formatting (currency, percent, integer), and embedded charts.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"path":   map[string]interface{}{"type": "string", "description": "Destination .xlsx file path"},
+					"title":  map[string]interface{}{"type": "string", "description": "Workbook title"},
+					"sheets": map[string]interface{}{"type": "array", "description": "List of sheet definitions with data, dynamic formulas, formatting, and charts"},
+				},
+				"required": []string{"path", "title", "sheets"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: toolFuncDef{
+			Name:        "generate_data_report",
+			Description: "Generate a standalone, modern interactive HTML analytics report dashboard artifact with executive summary KPI cards, responsive data tables, and metrics.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"source_path":   map[string]interface{}{"type": "string", "description": "Source dataset to generate report for"},
+					"title":         map[string]interface{}{"type": "string", "description": "Report title"},
+					"summary_notes": map[string]interface{}{"type": "string", "description": "Analytical findings and insights commentary"},
+					"metrics":       map[string]interface{}{"type": "array", "description": `Top-line KPI metric cards, e.g. [{"label": "ARR", "value": "$1.2M"}]`},
+					"output_path":   map[string]interface{}{"type": "string", "description": "Optional destination HTML path"},
+				},
+				"required": []string{"source_path", "title"},
+			},
+		},
+	},
 }
 
 // executeTool dispatches to the correct tool implementation and returns a result string.
@@ -4658,6 +4787,20 @@ func executeTool(ctx context.Context, toolName string, argsJSON json.RawMessage,
 			pseudoCommand = "duplicate_document " + resolveAgentPath(getString("source_path")) + " -> " + resolveAgentPath(getString("output_path"))
 		case "analyze_document_structure":
 			pseudoCommand = "analyze_doc " + resolveAgentPath(getString("source_path"))
+		case "profile_dataset":
+			pseudoCommand = "profile_data " + resolveAgentPath(getString("path"))
+		case "query_dataset":
+			pseudoCommand = "sql_query " + getString("query")
+		case "transform_dataset":
+			pseudoCommand = "transform_data " + resolveAgentPath(getString("source_path")) + " -> " + resolveAgentPath(getString("output_path"))
+		case "aggregate_dataset":
+			pseudoCommand = "aggregate_data " + resolveAgentPath(getString("source_path"))
+		case "join_datasets":
+			pseudoCommand = "join_data " + resolveAgentPath(getString("left_path")) + " + " + resolveAgentPath(getString("right_path"))
+		case "generate_excel_dashboard":
+			pseudoCommand = "excel_dashboard " + resolveAgentPath(getString("path"))
+		case "generate_data_report":
+			pseudoCommand = "data_report " + resolveAgentPath(getString("source_path"))
 		case "browser_automation":
 			pseudoCommand = "browser " + getString("action") + " " + getString("url") + getString("selector")
 		default:
@@ -4747,6 +4890,44 @@ func callPythonDocumentTool(toolName string, argsJSON json.RawMessage) string {
 
 	if err != nil {
 		return fmt.Sprintf("Error executing python script: %v\nOutput: %s", err, string(outBytes))
+	}
+	return strings.TrimSpace(string(outBytes))
+}
+
+func callPythonDataTool(toolName string, argsJSON json.RawMessage) string {
+	exeDir, err := os.Executable()
+	if err != nil {
+		return "error: could not find executable directory"
+	}
+	scriptPath := filepath.Join(filepath.Dir(exeDir), "data_tools.py")
+	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
+		if _, err := os.Stat("data_tools.py"); err == nil {
+			scriptPath = "data_tools.py"
+		} else if _, err := os.Stat(filepath.Join("local-agent", "data_tools.py")); err == nil {
+			scriptPath = filepath.Join("local-agent", "data_tools.py")
+		}
+	}
+
+	payload := map[string]interface{}{
+		"action": toolName,
+	}
+
+	var args map[string]interface{}
+	if err := json.Unmarshal(argsJSON, &args); err == nil {
+		payload["kwargs"] = args
+	}
+
+	payloadBytes, _ := json.Marshal(payload)
+
+	cmd := exec.Command("python", scriptPath)
+	if runtime.GOOS == "windows" {
+		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	}
+	cmd.Stdin = bytes.NewReader(payloadBytes)
+	outBytes, err := cmd.CombinedOutput()
+
+	if err != nil {
+		return fmt.Sprintf("Error executing python data tool: %v\nOutput: %s", err, string(outBytes))
 	}
 	return strings.TrimSpace(string(outBytes))
 }
@@ -5681,6 +5862,9 @@ func executeToolInner(ctx context.Context, toolName string, argsJSON json.RawMes
 
 	case "create_pdf", "create_doc", "read_pdf", "read_doc", "read_docx", "create_ppt", "create_docx", "create_excel", "modify_excel", "read_excel", "create_csv", "read_csv", "duplicate_document", "analyze_document_structure":
 		return callPythonDocumentTool(toolName, argsJSON)
+
+	case "profile_dataset", "query_dataset", "transform_dataset", "aggregate_dataset", "join_datasets", "generate_excel_dashboard", "generate_data_report":
+		return callPythonDataTool(toolName, argsJSON)
 		case "browser_desktop_bridge":
 		action := getString("action")
 		selector := getString("selector")
