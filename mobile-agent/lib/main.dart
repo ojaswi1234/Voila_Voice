@@ -3602,6 +3602,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
             _isConnected = true;
             _reconnectAttempts = 0;
           });
+          _getDevices();
           _fetchConversations();
           if (_fcmToken != null && _activeDevice.isNotEmpty) {
             _sendFCMToken(_fcmToken!);
@@ -4184,7 +4185,6 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
             });
           }
           
-          _checkBackendHealth();
           _scrollToBottom();
       }, onError: (error) {
         if (!mounted) return;  // BUG-11b fix
@@ -4207,9 +4207,9 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
           });
         });
         
-        // Exponential backoff reconnection
+        // Fast exponential backoff reconnection capped at 8 seconds (instead of 1024s)
         _reconnectAttempts++;
-        final delay = Duration(seconds: 1 << _reconnectAttempts.clamp(0, 10));
+        final delay = Duration(milliseconds: (500 * (1 << _reconnectAttempts.clamp(0, 4))).clamp(500, 8000));
         // Bug #14 Fix: Explicitly close the old sink before reconnecting.
         // Without this, every reconnect orphans the old WebSocketChannel and its
         // stream listener, leaking memory indefinitely when disconnected.
@@ -4413,8 +4413,9 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       _startBgTaskChecks();
       _startHealthChecks();
 
-      // If disconnected during deep standby, reconnect smoothly
+      // If disconnected during deep standby, reconnect smoothly with reset backoff
       if (!_isConnected) {
+        _reconnectAttempts = 0;
         _connectToBackend();
       }
     } else if (state == AppLifecycleState.paused ||
@@ -4749,7 +4750,26 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       }
       return false;
     }
+
+    // Attempt 1: Seamless auto-unlock using cached security phrase from secure storage
+    if (_cachedSecurityPhrase.isNotEmpty) {
+      final message = {
+        'type': 'unlock',
+        'device_id': _activeDevice,
+        'client_device_id': _currentDeviceId,
+        'security_phrase': _cachedSecurityPhrase,
+      };
+      _channel?.sink.add(jsonEncode(message));
+
+      for (int i = 0; i < 25; i++) {
+        await Future.delayed(const Duration(milliseconds: 100));
+        if (_isSessionValid()) {
+          return true;
+        }
+      }
+    }
     
+    // Attempt 2: Interactive prompt if cached phrase is absent or expired
     final phrase = await _promptSecurityPhrase();
     if (phrase == null || phrase.isEmpty) return false;
     
@@ -4769,7 +4789,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     }
     
     // Wait for session token
-    for (int i = 0; i < 50; i++) {
+    for (int i = 0; i < 40; i++) {
       await Future.delayed(const Duration(milliseconds: 100));
       if (_isSessionValid()) {
         return true;
@@ -5139,7 +5159,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
           'device_id': _activeDevice,
           'session_token': _sessionToken,
         }),
-      ).timeout(const Duration(seconds: 4));
+      ).timeout(const Duration(milliseconds: 1500));
       return resp.statusCode == 200;
     } catch (e) {
       return false;

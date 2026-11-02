@@ -93,8 +93,8 @@ func SendTelemetry(t *voilav1.AgentTelemetry) {
 
 // runPersistentLoop runs the dial and reconnect loop
 func (c *GRPCTunnelClient) runPersistentLoop() {
-	backoff := 1 * time.Second
-	const maxBackoff = 15 * time.Second
+	backoff := 500 * time.Millisecond
+	const maxBackoff = 5 * time.Second
 
 	for {
 		select {
@@ -105,7 +105,7 @@ func (c *GRPCTunnelClient) runPersistentLoop() {
 
 		connData, err := loadConnectionData()
 		if err != nil || !connData.Connected || connData.BackendURL == "" || connData.SecurityPhrase == "" {
-			time.Sleep(3 * time.Second)
+			time.Sleep(2 * time.Second)
 			continue
 		}
 
@@ -119,7 +119,7 @@ func (c *GRPCTunnelClient) runPersistentLoop() {
 				backoff = maxBackoff
 			}
 		} else {
-			backoff = 1 * time.Second
+			backoff = 500 * time.Millisecond
 		}
 	}
 }
@@ -155,19 +155,20 @@ func (c *GRPCTunnelClient) connectAndServe(connData ConnectionData) error {
 		if useTLS {
 			targetHost += ":443"
 		} else {
-			targetHost += ":80"
+			targetHost += ":8090"
 		}
 	}
 
 	var dialCreds grpc.DialOption
 	if useTLS {
-		// Render and modern cloud providers use TLS on port 443
+		// Render and modern cloud providers use TLS on port 443 with HTTP/2 ALPN
 		hostOnly := targetHost
 		if h, _, err := net.SplitHostPort(targetHost); err == nil {
 			hostOnly = h
 		}
 		tlsConfig := &tls.Config{
 			ServerName: hostOnly,
+			NextProtos: []string{"h2"},
 		}
 		dialCreds = grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig))
 	} else {
@@ -180,9 +181,7 @@ func (c *GRPCTunnelClient) connectAndServe(connData ConnectionData) error {
 		PermitWithoutStream: true,
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	conn, err := grpc.DialContext(ctx, targetHost, dialCreds, grpc.WithKeepaliveParams(keepaliveParams), grpc.WithBlock())
-	cancel()
+	conn, err := grpc.Dial(targetHost, dialCreds, grpc.WithKeepaliveParams(keepaliveParams))
 	if err != nil {
 		return fmt.Errorf("dial failed to %s: %w", targetHost, err)
 	}
@@ -428,6 +427,10 @@ func handleIncomingCommandViaGRPC(cmd *voilav1.ExecutionCommand, connData Connec
 	// Always reload latest configuration dynamically from disk so model/key updates take effect immediately
 	if freshData, err := loadConnectionData(); err == nil {
 		connData = freshData
+	}
+	if cmd.Command == "__KEEPALIVE__" {
+		// Server downstream heartbeat to prevent reverse proxy 90s idle timeout
+		return
 	}
 	if cmd.Command == "__SCREENSHOT__" {
 		handleScreenshotViaGRPC(cmd, connData)

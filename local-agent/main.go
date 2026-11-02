@@ -1355,7 +1355,8 @@ func (m model) testConnection() tea.Cmd {
 			req.Header.Set("ngrok-skip-browser-warning", "true")
 		}
 
-		resp, err := http.DefaultClient.Do(req)
+		httpClient := &http.Client{Timeout: 10 * time.Second}
+		resp, err := httpClient.Do(req)
 		if err != nil {
 			return connectionResultMsg{success: false, message: "Failed to connect to backend: " + err.Error()}
 		}
@@ -1408,7 +1409,8 @@ func (m model) clearBackendDataWithPhrase(phrase string) tea.Cmd {
 			req.Header.Set("ngrok-skip-browser-warning", "true")
 		}
 
-		resp, err := http.DefaultClient.Do(req)
+		httpClient := &http.Client{Timeout: 10 * time.Second}
+		resp, err := httpClient.Do(req)
 		if err != nil {
 			return errorMsg{fmt.Sprintf("Failed to clear backend data: %v", err)}
 		}
@@ -7768,7 +7770,8 @@ func registerWithBackend(data ConnectionData, publicAddress string) error {
 		req.Header.Set("ngrok-skip-browser-warning", "true")
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	regClient := &http.Client{Timeout: 10 * time.Second}
+	resp, err := regClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -7804,7 +7807,8 @@ func sendHeartbeat(data ConnectionData, publicAddress string) error {
 		req.Header.Set("ngrok-skip-browser-warning", "true")
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	hbClient := &http.Client{Timeout: 10 * time.Second}
+	resp, err := hbClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -7999,9 +8003,7 @@ func startConnectionManager(data ConnectionData) {
 	go func() {
 		var lastRegisteredAddr string
 		var ngrokRetryCount int
-		var ngrokRetryDelay = 5 * time.Second
 		const maxNgrokRetries = 10
-		const maxNgrokRetryDelay = 60 * time.Second
 
 		for {
 			// CRITICAL FIX: Dynamically reload ConnectionData on every tick to catch updated keys/hashes!
@@ -8014,27 +8016,12 @@ func startConnectionManager(data ConnectionData) {
 					addSysLog("Ngrok", "Attempting operation...")
 					if err := startNgrok(); err != nil {
 						ngrokRetryCount++
-						addSysLog("Ngrok", "Attempting operation...")
-
-						if ngrokRetryCount >= maxNgrokRetries {
-							addSysLog("Ngrok", "Max ngrok retry attempts reached, giving up for now")
-							ngrokRetryCount = 0
-							ngrokRetryDelay = 5 * time.Second // Reset delay
-							time.Sleep(30 * time.Second)      // Wait longer before trying again
-							continue
-						}
-
-						time.Sleep(ngrokRetryDelay)
-						ngrokRetryDelay = time.Duration(float64(ngrokRetryDelay) * 1.5) // Exponential backoff
-						if ngrokRetryDelay > maxNgrokRetryDelay {
-							ngrokRetryDelay = maxNgrokRetryDelay
-						}
-						continue
+						addSysLog("Ngrok", fmt.Sprintf("Ngrok start skipped: %v (using direct gRPC tunnel)", err))
+					} else {
+						ngrokRetryCount = 0 // Reset on success
+						time.Sleep(3 * time.Second)
+						addr = getNgrokPublicURL()
 					}
-					ngrokRetryCount = 0 // Reset on success
-					ngrokRetryDelay = 5 * time.Second
-					time.Sleep(3 * time.Second)
-					addr = getNgrokPublicURL()
 				}
 				if addr == "" {
 					addSysLog("Ngrok", "ngrok URL not available yet (is ngrok running?)")

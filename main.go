@@ -572,6 +572,36 @@ func (b *Backend) broadcastDevices() {
 	}
 }
 
+// sendDevicesToClient immediately transmits the current online device snapshot to a specific client
+func (b *Backend) sendDevicesToClient(clientID string) {
+	b.mu.RLock()
+	devices := make([]*Device, 0, len(b.devices))
+	for _, d := range b.devices {
+		devices = append(devices, d)
+	}
+	activeDev := b.activeDevice
+	b.mu.RUnlock()
+
+	deviceList := make([]map[string]interface{}, 0, len(devices))
+	for _, d := range devices {
+		deviceList = append(deviceList, map[string]interface{}{
+			"id":          d.ID,
+			"name":        d.Name,
+			"active":      d.ID == activeDev,
+			"online":      d.Active,
+			"reachable":   d.Reachable,
+			"locked":      d.LockedBy != "",
+			"lockedBy":    d.LockedBy,
+			"lastSeen":    d.LastSeen,
+			"lastPing":    d.LastPing,
+			"fingerprint": d.Fingerprint,
+			"type":        d.Type,
+		})
+	}
+	jsonData, _ := json.Marshal(deviceList)
+	b.dispatcher.Dispatch(clientID, websocket.TextMessage, jsonData)
+}
+
 func (b *Backend) tripCircuitBreaker(deviceID string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -1231,6 +1261,10 @@ func (b *Backend) forwardCommand(deviceID, command, mode, clientID, conversation
 		log.Printf("[forwardCommand] Failed to send via gRPC tunnel for device %s, falling back to HTTP", deviceID)
 	}
 
+	if address == "" || (!strings.HasPrefix(address, "http://") && !strings.HasPrefix(address, "https://")) {
+		return "", fmt.Errorf("device %s unreachable: gRPC tunnel inactive and no valid HTTP address registered", deviceID)
+	}
+
 	payload := map[string]interface{}{"command": optimizedCommand, "mode": forwardMode, "client_id": clientID, "conversation_id": conversationID, "graphify_enabled": graphifyEnabled}
 	jsonPayload, _ := json.Marshal(payload)
 
@@ -1657,6 +1691,9 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 		go client.writePump()
 
 		log.Printf("Mobile client connected: %s", clientID)
+
+		// Immediately push current device list so mobile has active desktop state without waiting
+		go b.sendDevicesToClient(clientID)
 
 		// Set up ping/pong mechanism following gorilla websocket best practices
 		conn.SetReadLimit(maxMessageSize)
@@ -2445,25 +2482,7 @@ func handleWebSocket(b *Backend) http.HandlerFunc {
 				
 			case "get_devices":
 				b.markStaleDevices()
-				devices := b.getAllDevices()
-				deviceList := make([]map[string]interface{}, 0)
-				for _, d := range devices {
-					deviceList = append(deviceList, map[string]interface{}{
-						"id":          d.ID,
-						"name":        d.Name,
-						"active":      d.ID == b.activeDevice,
-						"online":      d.Active,
-						"reachable":   d.Reachable,
-						"locked":      d.LockedBy != "",
-						"lockedBy":    d.LockedBy,
-						"lastSeen":    d.LastSeen,
-						"lastPing":    d.LastPing,
-						"fingerprint": d.Fingerprint,
-						"type":        d.Type,
-					})
-				}
-				jsonData, _ := json.Marshal(deviceList)
-				b.dispatcher.Dispatch(clientID, messageType, jsonData)
+				b.sendDevicesToClient(clientID)
 				
 			case "get_stats":
 				b.mu.RLock()
@@ -2971,6 +2990,7 @@ func handleRegister(backend *Backend) http.HandlerFunc {
 		d.Fingerprint = req.Fingerprint
 		d.Type = req.Type
 		d.Active = true
+		d.Reachable = true
 		d.LastSeen = time.Now()
 		if d.AuthToken == "" {
 			d.AuthToken = generateAuthToken()
@@ -3041,6 +3061,7 @@ func handleHeartbeat(backend *Backend) http.HandlerFunc {
 			log.Printf("Device address updated: %s -> %s", device.ID, req.Address)
 		}
 		device.Active = true
+		device.Reachable = true
 
 		if !wasActive {
 			go backend.broadcastDevices()

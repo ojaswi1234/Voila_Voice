@@ -104,7 +104,11 @@ func (s *TunnelServer) EstablishTunnel(stream voilav1.DesktopTunnelService_Estab
 	}()
 
 	// Outbound sender loop (Cloud -> Desktop)
-	errChan := make(chan error, 1)
+	// Server keepalive ticker: sends downstream keepalive frame every 20s to ensure reverse
+	// proxies (e.g. Render 90s response idle timeout) NEVER drop the stream with 504 Gateway Timeout.
+	keepaliveTicker := time.NewTicker(20 * time.Second)
+	defer keepaliveTicker.Stop()
+
 	go func() {
 		for {
 			select {
@@ -113,7 +117,15 @@ func (s *TunnelServer) EstablishTunnel(stream voilav1.DesktopTunnelService_Estab
 					return
 				}
 				if err := stream.Send(cmd); err != nil {
-					errChan <- err
+					log.Printf("[gRPC Tunnel] Outbound send error to %s: %v", deviceID, err)
+					return
+				}
+			case <-keepaliveTicker.C:
+				keepaliveCmd := &voilav1.ExecutionCommand{
+					Command:     "__KEEPALIVE__",
+					TimestampMs: time.Now().UnixMilli(),
+				}
+				if err := stream.Send(keepaliveCmd); err != nil {
 					return
 				}
 			case <-stream.Context().Done():
