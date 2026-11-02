@@ -340,6 +340,15 @@ def _do_click(kind: str, cx: int, cy: int):
     hover_ms = random.uniform(5, 20) if precision_mode else random.uniform(30, 120)
     time.sleep(hover_ms / 1000.0)
 
+    # 1. Dispatch smooth macOS cursor click shrink animation
+    try:
+        _overlay_sock.sendto(f"CLICK,{int(cx)},{int(cy)},{kind}".encode("utf-8"), ("127.0.0.1", _OVERLAY_PORT))
+    except Exception as e:
+        _log(f"Overlay click animation dispatch error: {e}")
+
+    # Synchronize physical click with visual shrink
+    time.sleep(0.02 if precision_mode else 0.03)
+
     with desktop_lock.Mouse_Lock():
         orig_x, orig_y = _get_cursor_pos()
         _user32.SetCursorPos(int(cx), int(cy))
@@ -356,12 +365,7 @@ def _do_click(kind: str, cx: int, cy: int):
             time.sleep(settle_s)
             _user32.SetCursorPos(int(orig_x), int(orig_y))
 
-    # Pulse the overlay to show click
-    try:
-        _overlay_sock.sendto(b"HIDE", ("127.0.0.1", _OVERLAY_PORT))
-    except:
-        pass
-    time.sleep(0.02 if precision_mode else 0.05)
+    # Persist updated position
     _set_cursor_pos(cx, cy)
 
 # ─── Public API ───────────────────────────────────────────────────────────────
@@ -466,6 +470,12 @@ def move_to_goal() -> dict:
         d_steps = _compute_steps(d_dist, d_dur)
         d_path = _build_path(gx, gy, dx2, dy2, d_steps)
         
+        # Trigger macOS-style cursor press down for drag
+        try:
+            _overlay_sock.sendto(f"CLICK_DOWN,{int(gx)},{int(gy)}".encode("utf-8"), ("127.0.0.1", _OVERLAY_PORT))
+        except Exception:
+            pass
+
         with desktop_lock.Mouse_Lock():
             orig_x, orig_y = _get_cursor_pos()
             _user32.SetCursorPos(int(gx), int(gy))
@@ -485,6 +495,11 @@ def move_to_goal() -> dict:
                 _mouse_event(MOUSEEVENTF_LEFTUP)
                 time.sleep(0.04) # CRITICAL: Let OS register the drop before teleporting away
                 _user32.SetCursorPos(int(orig_x), int(orig_y))
+                # Release macOS-style cursor press with spring pop
+                try:
+                    _overlay_sock.sendto(f"CLICK_UP,{int(dx2)},{int(dy2)}".encode("utf-8"), ("127.0.0.1", _OVERLAY_PORT))
+                except Exception:
+                    pass
 
     elif _goal_click is not None:
         _do_click(_goal_click, gx, gy)

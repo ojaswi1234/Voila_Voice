@@ -160,6 +160,9 @@ class CursorOverlay:
         label = cfg.name[:4] if len(cfg.name) > 4 else cfg.name
         self.badge_text = self.canvas.create_text(px + pw/2, py + ph/2, text=label, fill=cfg.color_text, font=("Segoe UI", 5, "bold"))
 
+        # --- macOS Click Halo / Ripple Ring ---
+        self.click_ring = self.canvas.create_oval(-99999, -99999, -99999, -99999, fill="", outline=cfg.color_glow, width=2)
+
         self.target_x = -9999
         self.target_y = -9999
         self.is_visible = False
@@ -173,6 +176,12 @@ class CursorOverlay:
         self.home_y = 0
         self.home_start_x = 0
         self.home_start_y = 0
+
+        # macOS Click Shrink & Spring Properties
+        self.is_clicking = False
+        self.click_progress = 0.0
+        self.click_kind = "single"
+        self.is_depressed = False
 
         # Move window to virtual screen origin permanently
         ctypes.windll.user32.SetWindowPos(self.hwnd, -1, self.VX, self.VY, 0, 0, 0x0001 | 0x0010 | 0x0040)
@@ -203,6 +212,42 @@ class CursorOverlay:
                     self.target_x = -99999
                     self.target_y = -99999
                     continue
+                if data.startswith(b"CLICK_DOWN"):
+                    parts = data.decode("utf-8").split(",")
+                    if len(parts) >= 3:
+                        self.target_x = int(float(parts[1]))
+                        self.target_y = int(float(parts[2]))
+                    self.is_depressed = True
+                    self.is_clicking = False
+                    continue
+                if data.startswith(b"CLICK_UP"):
+                    parts = data.decode("utf-8").split(",")
+                    if len(parts) >= 3:
+                        self.target_x = int(float(parts[1]))
+                        self.target_y = int(float(parts[2]))
+                    self.is_depressed = False
+                    # Trigger spring release
+                    self.is_clicking = True
+                    self.click_progress = 0.40
+                    self.click_kind = "single"
+                    continue
+                if data.startswith(b"CLICK"):
+                    parts = data.decode("utf-8").split(",")
+                    kind = "single"
+                    if len(parts) >= 4:
+                        self.target_x = int(float(parts[1]))
+                        self.target_y = int(float(parts[2]))
+                        kind = parts[3]
+                    elif len(parts) == 3:
+                        self.target_x = int(float(parts[1]))
+                        self.target_y = int(float(parts[2]))
+                    elif len(parts) == 2:
+                        kind = parts[1]
+                    self.click_kind = kind
+                    self.is_clicking = True
+                    self.click_progress = 0.0
+                    self.is_depressed = False
+                    continue
                 if data.startswith(b"SPAWN,"):
                     parts = data.decode("utf-8").split(",")
                     self.target_x = int(float(parts[1]))
@@ -210,6 +255,8 @@ class CursorOverlay:
                     self.is_spawning = True
                     self.spawn_progress = 0.0
                     self.is_homing = False
+                    self.is_clicking = False
+                    self.is_depressed = False
                     continue
                 if data.startswith(b"HOME,"):
                     parts = data.decode("utf-8").split(",")
@@ -220,6 +267,8 @@ class CursorOverlay:
                     self.is_homing = True
                     self.home_progress = 0.0
                     self.is_spawning = False
+                    self.is_clicking = False
+                    self.is_depressed = False
                     continue
                 parts = data.decode("utf-8").split(",")
                 if len(parts) == 2:
@@ -234,6 +283,8 @@ class CursorOverlay:
             angle = 0.0
             show_tail = True
             base_x, base_y = self.target_x, self.target_y
+            ring_coords = None
+            ring_width = 1.0
 
             if self.is_spawning:
                 self.spawn_progress += 0.03
@@ -267,6 +318,72 @@ class CursorOverlay:
                         angle = jt * 360 * 2
                         scale = 1.0 - jt
                         show_tail = False
+            elif self.is_clicking:
+                # macOS-style cursor click animation:
+                # 1. Smoothly shrink down towards anchored tip (scale 1.0 -> 0.74)
+                # 2. Hold at compressed bottom during input event
+                # 3. Smooth elastic spring rebound with subtle overshoot back to 1.0
+                if self.click_kind == "double":
+                    self.click_progress += 0.055
+                    t = self.click_progress
+                    if t >= 1.0:
+                        self.is_clicking = False
+                        scale = 1.0
+                    else:
+                        if t < 0.48:
+                            pt = t / 0.48
+                            if pt < 0.35:
+                                p = pt / 0.35
+                                scale = 1.0 - 0.26 * (p * (2.0 - p))
+                            else:
+                                p = (pt - 0.35) / 0.65
+                                scale = 0.74 + 0.20 * math.sin(p * math.pi * 0.5)
+                        else:
+                            pt = (t - 0.48) / 0.52
+                            if pt < 0.30:
+                                p = pt / 0.30
+                                scale = 0.94 - 0.24 * (p * (2.0 - p))
+                            elif pt < 0.45:
+                                scale = 0.70
+                            else:
+                                p = (pt - 0.45) / 0.55
+                                spring = 1.0 - math.pow(1.0 - p, 2) * math.cos(p * math.pi * 1.2)
+                                scale = 0.70 + 0.30 * spring
+
+                            # Halo ripple for 2nd pulse
+                            rt = pt
+                            ring_r = 4 + 22 * rt
+                            ring_width = max(1.0, 2.5 * (1.0 - rt))
+                            ring_coords = ring_r
+                else:
+                    self.click_progress += 0.075  # ~13-14 frames (~210ms)
+                    t = self.click_progress
+                    if t >= 1.0:
+                        self.is_clicking = False
+                        scale = 1.0
+                    else:
+                        if t < 0.25:
+                            # Phase 1: Fast shrink towards tip (1.0 -> 0.74)
+                            p = t / 0.25
+                            scale = 1.0 - 0.26 * (p * (2.0 - p))
+                        elif t < 0.40:
+                            # Phase 2: Hold compressed at click target
+                            scale = 0.74
+                        else:
+                            # Phase 3: Elastic spring rebound (0.74 -> 1.05 -> 1.00)
+                            p = (t - 0.40) / 0.60
+                            spring = 1.0 - math.pow(1.0 - p, 2) * math.cos(p * math.pi * 1.2)
+                            scale = 0.74 + 0.26 * spring
+
+                        # Subtle macOS tactile click halo ring
+                        if t > 0.20:
+                            rt = (t - 0.20) / 0.80
+                            ring_r = 4 + 22 * rt
+                            ring_width = max(1.0, 2.5 * (1.0 - rt))
+                            ring_coords = ring_r
+            elif self.is_depressed:
+                # Held down during drag-and-drop
+                scale = 0.74
 
             if base_x <= -9999 or base_y <= -9999:
                 if self.is_visible:
@@ -276,12 +393,23 @@ class CursorOverlay:
                         self.canvas.coords(self.trail_outer[i], -99999, -99999, -99999, -99999)
                         self.canvas.coords(self.trail_inner[i], -99999, -99999, -99999, -99999)
                     self.move_head_to(-99999, -99999, 1.0, 0.0)
+                    self.canvas.coords(self.click_ring, -99999, -99999, -99999, -99999)
             else:
                 if not self.is_visible:
                     self.is_visible = True
 
                 canvas_tx = base_x - self.VX
                 canvas_ty = base_y - self.VY
+
+                # Update Click Halo Ring
+                if ring_coords is not None:
+                    rr = ring_coords
+                    self.canvas.coords(self.click_ring,
+                                       canvas_tx - rr, canvas_ty - rr,
+                                       canvas_tx + rr, canvas_ty + rr)
+                    self.canvas.itemconfig(self.click_ring, width=ring_width)
+                else:
+                    self.canvas.coords(self.click_ring, -99999, -99999, -99999, -99999)
 
                 # Insert current position into history
                 # We start the tail from the BASE of the cursor (approx +3, +10)
@@ -352,27 +480,24 @@ class CursorOverlay:
         self.canvas.coords(self.head_glow, *arrow_pts)
         self.canvas.coords(self.head_fill, *arrow_pts)
 
-        px, py = cx + 14, cy + 9
-        pw, ph = 18, 10
-        badge_pts = [
-            # Each list is a bounding box, we transform the center and scale the size
-            # But wait, bounding box can't rotate natively. We can just scale/offset it if it doesn't spin,
-            # or we can just hide the badge during scale/spin. Let's hide it during spawn/home.
-        ]
-        
-        if scale < 0.95 or angle > 0:
+        if scale < 0.5 or angle > 0:
             for item in self.badge_items:
                 self.canvas.coords(item, -99999, -99999, -99999, -99999)
             self.canvas.coords(self.badge_text, -99999, -99999)
         else:
-            self.canvas.coords(self.badge_items[0], px - 1, py - 1, px + ph + 1, py + ph + 1)
-            self.canvas.coords(self.badge_items[1], px + pw - ph - 1, py - 1, px + pw + 1, py + ph + 1)
-            self.canvas.coords(self.badge_items[2], px, py, px + ph, py + ph)
-            self.canvas.coords(self.badge_items[3], px + pw - ph, py, px + pw, py + ph)
-            self.canvas.coords(self.badge_items[4], px + ph/2, py, px + pw - ph/2, py + ph)
-            self.canvas.coords(self.badge_items[5], px + ph/2, py, px + pw - ph/2, py)
-            self.canvas.coords(self.badge_items[6], px + ph/2, py + ph, px + pw - ph/2, py + ph)
-            self.canvas.coords(self.badge_text, px + pw/2, py + ph/2)
+            b_x = cx + 14 * scale
+            b_y = cy + 9 * scale
+            b_w = 18 * scale
+            b_h = 10 * scale
+
+            self.canvas.coords(self.badge_items[0], b_x - 1, b_y - 1, b_x + b_h + 1, b_y + b_h + 1)
+            self.canvas.coords(self.badge_items[1], b_x + b_w - b_h - 1, b_y - 1, b_x + b_w + 1, b_y + b_h + 1)
+            self.canvas.coords(self.badge_items[2], b_x, b_y, b_x + b_h, b_y + b_h)
+            self.canvas.coords(self.badge_items[3], b_x + b_w - b_h, b_y, b_x + b_w, b_y + b_h)
+            self.canvas.coords(self.badge_items[4], b_x + b_h/2, b_y, b_x + b_w - b_h/2, b_y + b_h)
+            self.canvas.coords(self.badge_items[5], b_x + b_h/2, b_y, b_x + b_w - b_h/2, b_y)
+            self.canvas.coords(self.badge_items[6], b_x + b_h/2, b_y + b_h, b_x + b_w - b_h/2, b_y + b_h)
+            self.canvas.coords(self.badge_text, b_x + b_w/2, b_y + b_h/2)
 
 def create_overlay():
     CursorOverlay()
