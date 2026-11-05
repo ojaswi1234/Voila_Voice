@@ -8479,12 +8479,35 @@ func main() {
 	initDebugLog()
 	initBGLogger()
 
-	// CLI MCP tool dispatch subcommand: voila tool <name> [args_json]
+	// CLI MCP tool dispatch subcommand: voila tool <name> [args_json_or_-]
+	// PowerShell strips double-quotes from {…} when passed as CLI args.
+	// Workaround: pass "-" as args_json to read raw JSON from stdin instead.
+	//   echo '{"url":"xyz"}' | voila tool mcp__youtube__get_metadata -
+	// Or encode via VOILA_TOOL_ARGS env var (never mangled by shell):
+	//   $env:VOILA_TOOL_ARGS='{"url":"xyz"}'; voila tool mcp__youtube__get_metadata
 	if len(os.Args) >= 3 && (os.Args[1] == "tool" || os.Args[1] == "mcp" || os.Args[1] == "mcp-call") {
 		toolName := os.Args[2]
 		argsStr := "{}"
-		if len(os.Args) >= 4 {
-			argsStr = os.Args[3]
+		// Priority 1: env var VOILA_TOOL_ARGS (never mangled by any shell)
+		if ev := os.Getenv("VOILA_TOOL_ARGS"); ev != "" {
+			argsStr = ev
+		} else if len(os.Args) >= 4 {
+			cliArg := os.Args[3]
+			if cliArg == "-" {
+				// Priority 2: stdin pipe — avoids all shell quoting issues
+				if b, err := io.ReadAll(os.Stdin); err == nil {
+					argsStr = strings.TrimSpace(string(b))
+				}
+			} else {
+				argsStr = cliArg
+			}
+		}
+		// Validate: if JSON is mangled by PowerShell (strips double-quotes from {} args),
+		// give a clear error with stdin/env-var workarounds.
+		if err := json.Unmarshal([]byte(argsStr), &map[string]interface{}{}); err != nil {
+			fmt.Fprintln(os.Stderr, "ERROR: JSON args malformed (PowerShell stripped quotes).")
+			fmt.Fprintln(os.Stderr, "Workaround: set VOILA_TOOL_ARGS env var with valid JSON.")
+			os.Exit(1)
 		}
 		// Try running against live agent HTTP endpoint on 8088
 		reqBody := fmt.Sprintf(`{"tool":%q,"arguments":%s}`, toolName, argsStr)
