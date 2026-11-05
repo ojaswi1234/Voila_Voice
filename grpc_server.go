@@ -23,13 +23,15 @@ import (
 
 // DesktopTunnelManager tracks active bidirectional gRPC tunnel streams from connected desktop agents
 type DesktopTunnelManager struct {
-	mu      sync.RWMutex
-	tunnels map[string]chan *voilav1.ExecutionCommand
-	backend *Backend
+	mu       sync.RWMutex
+	tunnels  map[string]chan *voilav1.ExecutionCommand
+	backend  *Backend
+	cmdModes map[string]string
 }
 
 var globalTunnelManager = &DesktopTunnelManager{
-	tunnels: make(map[string]chan *voilav1.ExecutionCommand),
+	tunnels:  make(map[string]chan *voilav1.ExecutionCommand),
+	cmdModes: make(map[string]string),
 }
 
 func (m *DesktopTunnelManager) Register(deviceID string, ch chan *voilav1.ExecutionCommand) {
@@ -70,6 +72,12 @@ func (m *DesktopTunnelManager) SendCommand(deviceID string, cmd *voilav1.Executi
 	if !ok {
 		return false
 	}
+	m.mu.Lock()
+	if m.cmdModes == nil {
+		m.cmdModes = make(map[string]string)
+	}
+	m.cmdModes[cmd.CommandId] = cmd.Mode
+	m.mu.Unlock()
 	select {
 	case ch <- cmd:
 		return true
@@ -77,6 +85,19 @@ func (m *DesktopTunnelManager) SendCommand(deviceID string, cmd *voilav1.Executi
 		log.Printf("[gRPC Tunnel] Warning: Command buffer full for device %s", deviceID)
 		return false
 	}
+}
+
+func (m *DesktopTunnelManager) PopCommandMode(commandID string) string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.cmdModes == nil {
+		return ""
+	}
+	mode, ok := m.cmdModes[commandID]
+	if ok {
+		delete(m.cmdModes, commandID)
+	}
+	return mode
 }
 
 // TunnelServer implements voilav1.DesktopTunnelServiceServer
@@ -320,6 +341,13 @@ func (s *TunnelServer) EstablishTunnel(stream voilav1.DesktopTunnelService_Estab
 				continue
 			}
 
+			cmdMode := ""
+			if globalTunnelManager != nil {
+				cmdMode = globalTunnelManager.PopCommandMode(res.CommandId)
+			}
+			if cmdMode == "" {
+				cmdMode = "agent"
+			}
 			resp := map[string]interface{}{
 				"type":                "result",
 				"command_id":          res.CommandId,
@@ -327,7 +355,7 @@ func (s *TunnelServer) EstablishTunnel(stream voilav1.DesktopTunnelService_Estab
 				"summary":             res.Summary,
 				"status":              res.Status,
 				"artifact_path":       res.ArtifactPath,
-				"mode":                telemetry.Status,
+				"mode":                strings.ToLower(cmdMode),
 				"new_conversation_id": res.NewConversationId,
 			}
 			if b, err := json.Marshal(resp); err == nil && s.backend != nil {

@@ -1221,25 +1221,24 @@ func (b *Backend) forwardCommand(deviceID, command, mode, clientID, conversation
 	}
 
 	// Only apply command optimization for plain SHELL mode.
-	// AGENT/GROQ/OLLAMA modes send natural language â€” we must NOT rewrite them.
+	// AGENT/GROQ/OLLAMA modes send natural language — we must NOT rewrite them.
 	optimizedCommand := command
-	if strings.ToUpper(mode) == "SHELL" || mode == "" {
+	if strings.ToUpper(mode) == "SHELL" {
 		optimizedCommand = b.optimizeCommand(command)
 	}
 
 	urlStr := address + "/execute"
-	// Mode forwarding rules (preserve original design intent):
-	//   "agent" from mobile â†’ "" (desktop badge decides the AI engine)
-	//   "shell" from mobile â†’ "SHELL" (direct raw PowerShell, no AI, no visible terminal)
-	//   "groq" / "ollama"  â†’ forwarded as explicit cloud AI override
 	modeUp := strings.ToUpper(mode)
-	forwardMode := ""
+	forwardMode := "AGENT"
 	switch modeUp {
 	case "SHELL":
 		forwardMode = "SHELL"
 	case "GROQ", "OLLAMA":
 		forwardMode = modeUp
-	// "AGENT" and anything else → "" → local agent uses desktop badge
+	case "AGENT", "LOCAL", "":
+		forwardMode = "AGENT"
+	default:
+		forwardMode = modeUp
 	}
 
 	// Check if device is connected via persistent gRPC reverse tunnel
@@ -1625,7 +1624,7 @@ func handleWebhookResult(b *Backend) http.HandlerFunc {
 				}
 				
 				if mode == "" {
-					mode = "shell"
+					mode = "agent"
 				}
 				
 				response := map[string]string{

@@ -70,6 +70,16 @@ TIER 1 (INSTANT STRUCTURED DATA, SPECIALIZED APIS & DOCUMENT TOOLS - ALWAYS PREF
 - For Gmail tasks (search emails, read messages, send replies) -> ALWAYS use 'mcp__gmail__*' tools.
 - For General Web Research (facts, news, documentation, finding URLs) -> ALWAYS use 'web_research' (instant, headless, zero token waste).
 COMBINE Tier 1 tools freely! For example: use 'web_research' to discover trending topics or repo names, and use 'mcp__github__*' or 'mcp__youtube__*' to fetch deep metadata and analyze the content.
+- HOW TO EXECUTE MCP TOOLS FROM TERMINAL/AGENT:
+  Run via terminal: voila tool <mcp_tool_name> '<json_arguments>'
+  Examples:
+    voila tool mcp__github__search_repositories '{"query": "Voila_Voice"}'
+    voila tool mcp__github__get_file_contents '{"owner": "ojaswi1234", "repo": "Voila_Voice", "path": "README.md"}'
+    voila tool mcp__youtube__get_metadata '{"url": "jNQXAC9IVRw"}'
+    voila tool mcp__notion__API-post-search '{"query": ""}'
+    voila tool mcp__gmail__message-search '{"query": "important"}'
+    voila tool mcp_list_tools '{}'
+  This executes directly on the running MCP servers and outputs pure JSON.
 
 TIER 2 (LOCAL SYSTEM, CODE & ENVIRONMENT):
 - Use 'read_file', 'write_file', 'edit_file', 'list_dir', 'run_terminal' to inspect or execute local project code.
@@ -2130,6 +2140,35 @@ func startHTTPServer() {
 		json.NewEncoder(w).Encode(map[string]interface{}{"tasks": listBGTasks()})
 	})
 
+	mux.HandleFunc("/mcp-call", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method != http.MethodPost {
+			http.Error(w, "POST required", http.StatusMethodNotAllowed)
+			return
+		}
+		var req struct {
+			Tool      string          `json:"tool"`
+			Arguments json.RawMessage `json:"arguments"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), 400)
+			return
+		}
+		if req.Tool == "" {
+			http.Error(w, "tool required", 400)
+			return
+		}
+		argsBytes := req.Arguments
+		if len(argsBytes) == 0 {
+			argsBytes = json.RawMessage("{}")
+		}
+		res := executeTool(r.Context(), req.Tool, argsBytes, nil)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"ok":     !strings.HasPrefix(res, "error:"),
+			"output": res,
+		})
+	})
 	mux.HandleFunc("/mcp-api", mcpApiHandler)
 	mux.HandleFunc("/api-keys", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -2592,11 +2631,11 @@ Write-Output $base64
 			}
 		}
 
-		if graphifyEnabled {
+		if graphifyEnabled && reqMode != "SHELL" {
 			effectiveMode = "AGENT"
 		}
 
-		if graphifyEnabled {
+		if graphifyEnabled && reqMode != "SHELL" {
 			w.WriteHeader(http.StatusAccepted)
 
 			go func() {
@@ -2606,10 +2645,11 @@ Write-Output $base64
 				isGraphifyRunning = true
 				cmdMu.Unlock()
 				
-				// Force spawn a completely independent Windows Terminal or PowerShell window
-				exe, _ := os.Executable()
-				exeDir := filepath.Dir(exe)
-				psScript := `
+				// Only launch visible TUI window if specifically requested via interactive flag
+				if isTUIMode {
+					exe, _ := os.Executable()
+					exeDir := filepath.Dir(exe)
+					psScript := `
 $ErrorActionPreference = 'Continue'
 Set-Location -Path '` + exeDir + `'
 $host.UI.RawUI.WindowTitle = 'Voila AI - Graphify Tracker'
@@ -2620,24 +2660,23 @@ if ($LASTEXITCODE -ne 0) {
     Read-Host
 }
 `
-				psScriptPath := filepath.Join(os.TempDir(), "voila_tui_launcher.ps1")
-				os.WriteFile(psScriptPath, []byte(psScript), 0644)
-				
-				// Use cmd /c start to completely detach the process from the parent's stdout pipe!
-				tuiCmd := exec.Command("wt.exe", "-w", "new-window", "--title", "Voila TUI", "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", psScriptPath)
-				errWt := tuiCmd.Start()
-				if errWt != nil {
-					// Fallback to legacy console if Windows Terminal is not installed
-					tuiCmd = exec.Command("cmd.exe", "/c", "start", "Voila TUI", "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", psScriptPath)
-					if runtime.GOOS == "windows" {
-						tuiCmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+					psScriptPath := filepath.Join(os.TempDir(), "voila_tui_launcher.ps1")
+					os.WriteFile(psScriptPath, []byte(psScript), 0644)
+					
+					tuiCmd := exec.Command("wt.exe", "-w", "new-window", "--title", "Voila TUI", "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", psScriptPath)
+					errWt := tuiCmd.Start()
+					if errWt != nil {
+						tuiCmd = exec.Command("cmd.exe", "/c", "start", "Voila TUI", "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", psScriptPath)
+						if runtime.GOOS == "windows" {
+							tuiCmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+						}
+						tuiCmd.Start()
 					}
-					tuiCmd.Start()
-				}
-				if tuiCmd != nil && tuiCmd.Process != nil {
-					cmdMu.Lock()
-					graphifyTuiPid = tuiCmd.Process.Pid
-					cmdMu.Unlock()
+					if tuiCmd != nil && tuiCmd.Process != nil {
+						cmdMu.Lock()
+						graphifyTuiPid = tuiCmd.Process.Pid
+						cmdMu.Unlock()
+					}
 				}
 				
 				fmt.Println("STATUS: GRAPHIFY")
@@ -2811,7 +2850,7 @@ if ($LASTEXITCODE -ne 0) {
 					m = connData.GroqModel
 				}
 				if m == "" {
-					m = "openai/gpt-oss-120b"
+					m = "llama-3.3-70b-versatile"
 				}
 				output, err = executeGroqCommand(ctx, command, connData.GroqAPIKey, m, clientID, nil, taskID, conversationID)
 				fmt.Println("STATUS: IDLE")
@@ -3590,6 +3629,30 @@ func conversationDeleteHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func findAgyPath() string {
+	if p, err := exec.LookPath("agy.exe"); err == nil {
+		return p
+	}
+	if p, err := exec.LookPath("agy"); err == nil {
+		return p
+	}
+	localApp := os.Getenv("LOCALAPPDATA")
+	if localApp != "" {
+		fallback := filepath.Join(localApp, "agy", "bin", "agy.exe")
+		if _, err := os.Stat(fallback); err == nil {
+			return fallback
+		}
+	}
+	userProfile := os.Getenv("USERPROFILE")
+	if userProfile != "" {
+		fallback := filepath.Join(userProfile, "AppData", "Local", "agy", "bin", "agy.exe")
+		if _, err := os.Stat(fallback); err == nil {
+			return fallback
+		}
+	}
+	return "agy"
+}
+
 func executeCommand(ctx context.Context, command string, mode string, conversationID string, modelName string) (string, string, error) {
 	var cmd *exec.Cmd
 
@@ -3598,8 +3661,8 @@ func executeCommand(ctx context.Context, command string, mode string, conversati
 	// Only SHELL = raw PowerShell. Empty string = default to agy.
 	if modeUpper == "AGENT" || modeUpper == "LOCAL" || modeUpper == "" {
 		prompt := command + "\n\n" + ToolSelectionHierarchyPrompt + "\n\nCRITICAL - COMMAND MEMORY:\nHere are your highly compressed, previously successful PowerShell techniques:\n" + loadMemory() + "\nWhen asked to do a task, FIRST check if a command in this memory perfectly satisfies the purpose. If yes, USE IT AS A REFERENCE TEMPLATE, but you MUST carefully adapt any arguments, file paths, or app names to match the user's exact request instead of blindly running the old command. If you invent a NEW successful technique, you MUST immediately call the 'save_command_memory' tool to permanently memorize it.\n\n(CRITICAL SYSTEM NOTE: When speaking to the user in your final text response, deliver a sharp, natural executive summary using rich Markdown (## Headers, bold highlights, clean bullets, `code`, and callouts). Address the user as 'boss'. Keep your voice response natural, punchy, and conversational. The mobile app automatically handles voice normalization, so make the visual text as clean and structured as possible. HOWEVER, when writing code, generating PDFs, or creating documents via tools, your output MUST be exhaustively detailed, massive, and highly comprehensive.)\n\nCRITICAL - ONE-SHOT TERMINAL EXECUTION (MAX TOOLS):\nTo avoid hitting max_tool iteration limits and increase execution speed, you MUST combine multiple PowerShell steps into a SINGLE detailed command per tool_call. Do NOT run one tiny command, wait for the result, and then run the next tiny command. Instead, write a robust PowerShell script block (using semicolons or newlines) that loops, searches, or processes everything in one shot and returns the final desired output. Keep writing detailed combined commands until you get the exact required output!\n\nCRITICAL OS GUARDRAIL: You MUST NEVER modify, delete, or touch Windows system files, System32, Program Files, the Registry, or any critical OS configuration. You must refuse commands that could harm or break the OS. Address the user as 'boss'. Do not use overly formal language.\n\nCRITICAL SYSTEM NOTE: You are running inside an isolated background sandbox (`exebox` desktop). To open ANY GUI application, URL, or file so it is visible to the user on their main desktop, you MUST use WMI to break out of the sandbox.\n\nCRITICAL - UI AUTOMATION SYNC (WAITING FOR APPS):\nIf you must launch a UI application by interacting with the Start Menu (e.g. typing the app name and pressing ENTER), you MUST NOT immediately proceed to type text or click elements. Applications take 1-5 seconds to launch. You MUST immediately use the `focus_window` action of `desktop_automation` with the app's title (e.g. `focus_window` with window=\"Notepad\") before executing your next tool call. `focus_window` will intelligently wait up to 5 seconds for the app to open and focus. If you skip this, your next keystrokes will be typed into the Start Menu and fail. If the user asks you to switch to desktop 2 or another desktop and it fails or might not exist, use switch_desktop with value=\"new\" to explicitly create and jump to a new virtual desktop. Use exactly this command format: `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'explorer.exe \"<URL_OR_PATH>\"'` (for URLs/files) or `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList '<APP_EXE>'` (for apps). DO NOT use Start-Process, as it will spawn invisibly in the sandbox! To control the user's desktop (click buttons, open apps from taskbar, fill forms, move the mouse on screen), you MUST use the desktop_automation tool — NEVER use run_terminal for UI interactions. To perform browser automation, you MUST use the browser_automation tool â€” do NOT launch Edge via WMI/shell with about:blank, and do NOT call browser_tools.py via a hardcoded path. Workflow: (1) Choose browser_automation action=goto (navigate current tab) OR action=new_tab (open new tab) based on whether the current tab must be preserved. Use new_tab when user says 'in another tab', 'keep this page', 'compare A and B', or for independent URLs. (2) Use list_tabs/switch_tab when working across tabs. (3) MANDATORY PAGE OBSERVATION: After EVERY goto/new_tab, your VERY NEXT action MUST be action=extract_interactive — this returns ALL visible clickable elements with their exact CSS selectors. NEVER guess or hardcode a selector without observing first. Only AFTER extract_interactive shows you what exists on the page may you click/type/press/scroll/hover/search_word. (4) close_tab when done with an extra tab if useful. Never use about:blank. Every tool result includes ok/url/title - if ok is false, explain the error to the user. Never stop after only opening a blank browser. LOOP PREVENTION: If you have already called goto with the same URL more than once without making progress, STOP retrying goto. Instead call extract_interactive to see what is actually on the page now, then re-plan. To create or save a playbook, you MUST use the save_playbook tool. To list, create, or delete scheduled Voila tasks, use the list_schedules, create_schedule, and delete_schedule tools. Do NOT use PowerShell Get-ScheduledTask unless the user explicitly asks for Windows OS tasks.\n\nCRITICAL BACKGROUND TASK GUIDELINE: If a Background Task (BG TASK COMORADE) or long-running command fails, you MUST meticulously analyze the failure logs/snapshot provided. DO NOT simply report the failure and give up. You MUST automatically deduce the root cause, formulate an alternative solution, and autonomously retry the execution using a corrected command or alternative tools until the task is successfully completed.\n\nCRITICAL - .AIIGNORE & DEPENDENCY OVERHEAD (0 BUGS POLICY):\nWhen exploring projects, NEVER search or read inside dependency folders (node_modules, .venv, venv, __pycache__, vendor, .git, .m2, .gradle, target, packages, .cargo/registry). They contain massive overhead that breaks your context limits.\nTo understand dependencies, ONLY read blueprint files (package.json, pyproject.toml, requirements.txt, go.mod, pom.xml, build.gradle, composer.json, Gemfile, Cargo.toml, *.csproj). Also NEVER read standard '.env' files; if you need environment context, ONLY look at '.env.example' or '.env.local'.\nWhen searching for files, enforce this .aiignore policy by using native PowerShell regex filtering:\n`Get-ChildItem -Recurse -Filter \"*name*\" -File -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch '[\\\\/](node_modules|\\.venv|venv|vendor|\\.git|\\.m2|\\.gradle|target|packages|__pycache__|dist|build|out|bin|obj|\\.idea|\\.vscode)($|[\\\\/])' } | Select-Object -ExpandProperty FullName`\n\nCRITICAL: You are running inside a Windows PowerShell environment. You MUST use PowerShell syntax, NOT Bash!\n- Use 'Get-ChildItem' or 'ls' (without bash flags like -la). Do NOT use 'ls -la'.\n- Use 'Select-String' or 'findstr', NOT 'grep'.\n- Use 'Get-Content' or 'cat' (no bash flags).\n- STRICT: In PowerShell, NEVER use Linux/Bash heredocs like \"python - <<'EOF'\". The '<' operator is reserved and causes fatal parse errors!\n- In PowerShell, 'where' is an alias for 'Where-Object'. To find an executable path, use 'where.exe <command>' or 'Get-Command <command>'.\n- Paths use backslashes (\\) on Windows.\n\nCRITICAL - HIGH-FIDELITY DOCUMENT DUPLICATION & REPLICATION ENGINE ('duplicate_document', 'analyze_document_structure'):\n- When the user asks to duplicate, clone, replicate, or re-theme an existing document (e.g. \"duplicate doc.pdf with topic X\", \"remove watermark\", \"add a table with original styling\", or changing sections/headings in a resume):\n- Locating Documents: If the document path is ambiguous or unspecified, autonomously use 'list_dir' or native PowerShell 'Get-ChildItem' to locate the exact source PDF or DOCX file. NEVER write python scripts to search through PDFs!\n- Rapid Structural Analysis: Call 'analyze_document_structure' to obtain an executive structural blueprint (<400 tokens) with heading hierarchy, table columns, bullet counts, and watermark status without bloating your context window.\n- High-Fidelity Replication: Call 'duplicate_document' with 'source_path', 'output_path', 'replacements', 'additions', 'length_controls', and 'watermark'.\n- Archetype Inheritance: If adding new elements (tables, bullets, callout boxes), the engine automatically clones the styling DNA of the original document.\n- Watermark Management: Pass watermark=\"remove\" to strip all watermarks cleanly with zero text distortion, or pass watermark=\"CONFIDENTIAL\" to add/modify watermarks.)"
-		if modelName == "" || modelName == "flash" {
-			modelName = "Gemini 3.7 Flash (High)"
+		if modelName == "" || modelName == "flash" || modelName == "Gemini 3.7 Flash (High)" {
+			modelName = "Gemini 3.8 Flash (High)"
 		}
 
 		workingDirMutex.Lock()
@@ -3647,18 +3710,15 @@ func executeCommand(ctx context.Context, command string, mode string, conversati
 
 		debugLog.Printf("[executeCommand/AGENT] command preview=%q modelName=%q cwd=%q", preview, modelName, cwd)
 
-		// Encode prompt safely as base64 to avoid quoting issues
-		encodedPrompt := base64.StdEncoding.EncodeToString([]byte(prompt))
-
-		// Build agy invocation string
-		var agyCmd string
-		if conversationID != "" {
-			agyCmd = fmt.Sprintf(`agy --model "%s" --conversation "%s" --dangerously-skip-permissions --print ([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('%s')))`,
-				modelName, conversationID, encodedPrompt)
-		} else {
-			agyCmd = fmt.Sprintf(`agy --model "%s" --dangerously-skip-permissions --print ([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('%s')))`,
-				modelName, encodedPrompt)
+		// Build agy arguments
+		var agyArgs []string
+		if modelName != "" {
+			agyArgs = append(agyArgs, "--model", modelName)
 		}
+		if conversationID != "" {
+			agyArgs = append(agyArgs, "--conversation", conversationID)
+		}
+		agyArgs = append(agyArgs, "--dangerously-skip-permissions")
 
 		// Temp file for output capture
 		tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("voila_agent_%d.txt", time.Now().UnixNano()))
@@ -3676,10 +3736,19 @@ func executeCommand(ctx context.Context, command string, mode string, conversati
 		fmt.Println("STATUS: RUNNING")
 		if !isTUIMode { os.Stdout.Sync() }
 
-		cmdObj := exec.CommandContext(ctx, "powershell", "-Command", agyCmd)
+		agyPath := findAgyPath()
+		cmdObj := exec.CommandContext(ctx, agyPath, agyArgs...)
+		cmdObj.Stdin = strings.NewReader(prompt)
+		if cwd != "" {
+			cmdObj.Dir = cwd
+		}
 		if runtime.GOOS == "windows" {
 			cmdObj.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 		}
+
+		var stdout, stderr bytes.Buffer
+		cmdObj.Stdout = &stdout
+		cmdObj.Stderr = &stderr
 
 		cmdMu.Lock()
 		currentCmd = cmdObj
@@ -3687,7 +3756,7 @@ func executeCommand(ctx context.Context, command string, mode string, conversati
 		cmdMu.Unlock()
 
 		// Execute agy silently in the background
-		outBytes, _ := cmdObj.CombinedOutput()
+		execErr := cmdObj.Run()
 
 		cmdMu.Lock()
 		currentCmd = nil
@@ -3697,7 +3766,13 @@ func executeCommand(ctx context.Context, command string, mode string, conversati
 		fmt.Println("STATUS: IDLE")
 		if !isTUIMode { os.Stdout.Sync() }
 
-		outStr := strings.TrimSpace(string(outBytes))
+		outStr := strings.TrimSpace(stdout.String())
+		if outStr == "" && execErr != nil {
+			outStr = strings.TrimSpace(stderr.String())
+		}
+		if stderr.Len() > 0 {
+			debugLog.Printf("[executeCommand/AGENT] stderr: %s", stderr.String())
+		}
 
 		// Print the agent's response to the main server terminal as well
 		fmt.Println(outStr)
@@ -6580,7 +6655,7 @@ func executeGroqCommand(ctx context.Context, command, apiKey, modelName, clientI
 		return "", fmt.Errorf("Groq API key not set. Open the Voila dashboard Ã¢â€ â€™ Settings to add your key")
 	}
 	if modelName == "" {
-		modelName = "openai/gpt-oss-120b" // Groq free-tier default
+		modelName = "llama-3.3-70b-versatile" // Groq free-tier default
 	}
 
 	// Mask key for logging (show last 4 chars only)
@@ -7163,7 +7238,7 @@ RECOMMENDED_FIX: <One powershell command or code fix to resolve it>`, label, sna
 	if connData.ActiveMode == "GROQ" && connData.GroqAPIKey != "" {
 		m := connData.GroqModel
 		if m == "" {
-			m = "openai/gpt-oss-120b"
+			m = "llama-3.3-70b-versatile"
 		}
 		rawResponse, _ = runFastCompletionGroq(ctx, prompt, connData.GroqAPIKey, m)
 	} else if connData.OllamaAPIKey != "" || connData.OllamaBaseURL != "" {
@@ -8404,6 +8479,42 @@ func main() {
 	initDebugLog()
 	initBGLogger()
 
+	// CLI MCP tool dispatch subcommand: voila tool <name> [args_json]
+	if len(os.Args) >= 3 && (os.Args[1] == "tool" || os.Args[1] == "mcp" || os.Args[1] == "mcp-call") {
+		toolName := os.Args[2]
+		argsStr := "{}"
+		if len(os.Args) >= 4 {
+			argsStr = os.Args[3]
+		}
+		// Try running against live agent HTTP endpoint on 8088
+		reqBody := fmt.Sprintf(`{"tool":%q,"arguments":%s}`, toolName, argsStr)
+		if resp, err := http.Post("http://127.0.0.1:8088/mcp-call", "application/json", strings.NewReader(reqBody)); err == nil && resp.StatusCode == http.StatusOK {
+			defer resp.Body.Close()
+			var resObj struct {
+				OK     bool   `json:"ok"`
+				Output string `json:"output"`
+			}
+			if json.NewDecoder(resp.Body).Decode(&resObj) == nil {
+				fmt.Println(resObj.Output)
+				return
+			}
+		}
+		// If live server not running, spin up MCP host locally and dispatch
+		initMCPHost()
+		defer mcp.GlobalHost.StopAll()
+		out := executeTool(context.Background(), toolName, json.RawMessage(argsStr), nil)
+		fmt.Println(out)
+		return
+	}
+
+	if len(os.Args) >= 2 && (os.Args[1] == "tool-list" || os.Args[1] == "mcp-list") {
+		initMCPHost()
+		defer mcp.GlobalHost.StopAll()
+		out := executeTool(context.Background(), "mcp_list_tools", json.RawMessage("{}"), nil)
+		fmt.Println(out)
+		return
+	}
+
 	go func() {
 		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
@@ -8431,6 +8542,8 @@ func main() {
 	StartWorkdayBriefingScheduler()
 	// Autonomous Nightly Project Maintenance (Cron-Agent)
 	StartNightlyGuardianScheduler()
+
+
 
 	// Check for background mode flag
 	backgroundMode := false

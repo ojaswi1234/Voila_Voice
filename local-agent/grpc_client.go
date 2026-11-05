@@ -644,7 +644,7 @@ func handleIncomingCommandViaGRPC(cmd *voilav1.ExecutionCommand, connData Connec
 		}
 	}
 
-	if cmd.GraphifyEnabled {
+	if cmd.GraphifyEnabled && reqMode != "SHELL" {
 		effectiveMode = "AGENT"
 	}
 
@@ -718,7 +718,7 @@ func handleIncomingCommandViaGRPC(cmd *voilav1.ExecutionCommand, connData Connec
 
 	taskID := fmt.Sprintf("Agent-%x", time.Now().UnixNano()%0xFFFF)
 
-	if cmd.GraphifyEnabled {
+	if cmd.GraphifyEnabled && reqMode != "SHELL" {
 		output, err = executeGraphifyDAG(ctx, cmd.Command)
 		newConvID = effectiveConvID
 		if err == nil && output != "" {
@@ -728,8 +728,8 @@ func handleIncomingCommandViaGRPC(cmd *voilav1.ExecutionCommand, connData Connec
 		switch effectiveMode {
 		case "GROQ":
 			m := connData.GroqModel
-			if m == "" {
-				m = "openai/gpt-oss-120b"
+			if m == "" || m == "openai/gpt-oss-120b" || m == "openai/gpt-oss-20b" {
+				m = "llama-3.3-70b-versatile"
 			}
 			output, err = executeGroqCommand(ctx, cmd.Command, connData.GroqAPIKey, m, cmd.ClientId, nil, taskID, effectiveConvID)
 			newConvID = effectiveConvID

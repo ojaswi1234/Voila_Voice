@@ -44,6 +44,8 @@ func mcpApiHandler(w http.ResponseWriter, r *http.Request) {
 			Token        string            `json:"token"`
 			Credentials  map[string]string `json:"credentials"` // multi-field auth (e.g. Gmail)
 			SourceURL    string            `json:"source_url"`
+			Tool         string            `json:"tool"`
+			Arguments    json.RawMessage   `json:"arguments"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, err.Error(), 400)
@@ -51,6 +53,22 @@ func mcpApiHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		switch req.Action {
+		case "call_tool":
+			if req.Tool == "" {
+				http.Error(w, "tool name required", 400)
+				return
+			}
+			argsBytes := req.Arguments
+			if len(argsBytes) == 0 {
+				argsBytes = json.RawMessage("{}")
+			}
+			res := executeTool(r.Context(), req.Tool, argsBytes, nil)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":     !strings.HasPrefix(res, "error:"),
+				"output": res,
+			})
+			return
+
 		case "toggle_server":
 			cfg, _ := mcp.LoadConfig(mcpServersPath())
 			for i, s := range cfg.Servers {

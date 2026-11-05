@@ -293,14 +293,20 @@ func initMCPHost() {
 	}
 	cfg, err := mcp.LoadConfig(p)
 	if err != nil {
-		debugLog.Printf("[MCP] Failed to load config: %v", err)
+		if debugLog != nil {
+			debugLog.Printf("[MCP] Failed to load config: %v", err)
+		}
 		return
 	}
 	if err := mcp.GlobalHost.StartEnabled(cfg); err != nil {
-		debugLog.Printf("[MCP] StartEnabled error: %v", err)
+		if debugLog != nil {
+			debugLog.Printf("[MCP] StartEnabled error: %v", err)
+		}
 	}
-	debugLog.Printf("[MCP] Host started. Servers: %d, Tools: %d",
-		len(mcp.GlobalHost.ListServers()), len(mcp.GlobalHost.ToolDefs()))
+	if debugLog != nil {
+		debugLog.Printf("[MCP] Host started. Servers: %d, Tools: %d",
+			len(mcp.GlobalHost.ListServers()), len(mcp.GlobalHost.ToolDefs()))
+	}
 }
 
 // ---------------------------------------------------------------------------

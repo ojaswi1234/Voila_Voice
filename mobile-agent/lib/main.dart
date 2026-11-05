@@ -1084,7 +1084,9 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     if (msg['type'] == 'error') {
       HapticFeedback.heavyImpact();
     }
-    if (_currentMode.toUpperCase() == 'AGENT') {
+    final msgMode = (msg['mode'] as String? ?? '').trim().toUpperCase();
+    final bool isAgentTarget = msgMode.isNotEmpty ? (msgMode != 'SHELL') : (_currentMode.toUpperCase() == 'AGENT');
+    if (isAgentTarget) {
       _messagesAgent.add(msg);
       if (_messagesAgent.length > 200) _messagesAgent.removeAt(0);
       if (_currentConversationId.isNotEmpty) {
@@ -1607,6 +1609,14 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     _storage.read(key: 'will_talk').then((val) {
       if (val != null && mounted) {
         setState(() => _willTalk = val == 'true');
+      }
+    });
+    _storage.read(key: 'last_mode').then((val) {
+      if (val != null && mounted) {
+        final mode = val.toLowerCase();
+        if (mode == 'agent' || mode == 'shell') {
+          setState(() => _currentMode = mode);
+        }
       }
     });
     _storage.read(key: 'graphify_enabled').then((val) {
@@ -4617,6 +4627,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
         _addMessage({
           'type': 'user',
           'content': text == '__SCREENSHOT__' ? '📸 Taking screenshot...' : text,
+          'mode': _currentMode,
           'timestamp': DateTime.now().toString(),
         });
       });
@@ -7008,7 +7019,46 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    _buildModeToggle(colorScheme),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _buildModeToggle(colorScheme),
+                        if (_graphifyEnabled) ...[
+                          const SizedBox(width: 8),
+                          GestureDetector(
+                            onTap: () {
+                              setState(() => _graphifyEnabled = false);
+                              _storage.write(key: 'graphify_enabled', value: 'false');
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Graphify multi-agent mode disabled'),
+                                  duration: Duration(seconds: 2),
+                                ),
+                              );
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF59E0B).withOpacity(0.18),
+                                borderRadius: BorderRadius.circular(100),
+                                border: Border.all(color: const Color(0xFFF59E0B), width: 1.2),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.bolt, size: 14, color: Color(0xFFF59E0B)),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'GRAPHIFY ON (TAP TO OFF)',
+                                    style: GoogleFonts.spaceGrotesk(color: const Color(0xFFF59E0B), fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.5),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -7384,7 +7434,6 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                         onChanged: (bool value) {
                           if (mounted) setState(() => _graphifyEnabled = value);
                           _storage.write(key: 'graphify_enabled', value: value.toString());
-                          Navigator.pop(context);
                         },
                       ),
                       Divider(color: AppTokens.border(isDark), height: 1),

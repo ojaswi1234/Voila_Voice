@@ -11,6 +11,8 @@ import (
 	"os"
 	"path/filepath"
 	"os/exec"
+	"runtime"
+	"syscall"
 	"sync"
 	"strings"
 	"time"
@@ -203,6 +205,12 @@ func (p *mcpServerProcess) start() error {
 	}
 
 	p.cmd = exec.Command(p.config.Command, p.config.Args...)
+	if runtime.GOOS == "windows" {
+		p.cmd.SysProcAttr = &syscall.SysProcAttr{
+			HideWindow:    true,
+			CreationFlags: 0x08000000,
+		}
+	}
 
 	env := os.Environ()
 	for k, v := range p.config.Env {
@@ -426,6 +434,9 @@ func (p *mcpServerProcess) callTool(ctx context.Context, namespacedName string, 
 			return "", err
 		}
 	}
+	if argsMap == nil {
+		argsMap = make(map[string]interface{})
+	}
 
 	
 	// Policy Hook / Path Allowlist Enforcement
@@ -502,6 +513,13 @@ func (p *mcpServerProcess) callTool(ctx context.Context, namespacedName string, 
 
 		if callResult.IsError {
 			return "", errors.New(output)
+		}
+
+		if len(output) == 0 && len(res.resp.Result) > 0 {
+			output = string(res.resp.Result)
+		}
+		if output == "" {
+			output = "(tool executed successfully with no textual output)"
 		}
 
 		if len(output) > 65536 {
