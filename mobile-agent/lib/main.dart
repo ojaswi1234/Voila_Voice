@@ -5887,7 +5887,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
                   const SizedBox(height: 8),
                   for (final provider in [
                     {'id': 'GROQ', 'name': 'Groq Cloud (Ultra Fast)', 'icon': Icons.bolt_rounded},
-                    {'id': 'OLLAMA', 'name': 'Ollama Local (Offline / Private)', 'icon': Icons.memory_rounded},
+                    {'id': 'NVIDIA', 'name': 'NVIDIA Cloud NIM (Free Tier 40 RPM)', 'icon': Icons.memory_rounded},
                     {'id': 'LOCAL', 'name': 'Local Default Agent', 'icon': Icons.terminal_rounded},
                   ])
                     Container(

@@ -553,10 +553,14 @@ type ConnectionData struct {
 	GroqAPIKey           string `json:"groq_api_key,omitempty"`
 	GroqSecondaryAPIKey  string `json:"groq_secondary_api_key,omitempty"`
 	GroqModel            string `json:"groq_model,omitempty"`
-	OllamaBaseURL        string `json:"ollama_base_url,omitempty"` // e.g. https://api.ollama.ai
-	OllamaAPIKey         string `json:"ollama_api_key,omitempty"`  // optional auth
+	NvidiaBaseURL        string `json:"nvidia_base_url,omitempty"` // e.g. https://integrate.api.nvidia.com/v1
+	NvidiaAPIKey         string `json:"nvidia_api_key,omitempty"`  // nvapi-...
+	NvidiaSecondaryAPIKey string `json:"nvidia_secondary_api_key,omitempty"`
+	NvidiaModel          string `json:"nvidia_model,omitempty"`    // e.g. meta/llama-3.3-70b-instruct
+	OllamaBaseURL        string `json:"ollama_base_url,omitempty"` // legacy alias
+	OllamaAPIKey         string `json:"ollama_api_key,omitempty"`  // legacy alias
 	OllamaSecondaryAPIKey string `json:"ollama_secondary_api_key,omitempty"`
-	OllamaModel          string `json:"ollama_model,omitempty"`    // e.g. llama3.2:1b
+	OllamaModel          string `json:"ollama_model,omitempty"`    // legacy alias
 	ActiveMode    string `json:"active_mode,omitempty"`
 }
 
@@ -575,11 +579,35 @@ type TokenUsageFile struct {
 	GroqDayTokensOut   int64  `json:"groq_day_tokens_out"`
 	GroqSessionIn      int64  `json:"groq_session_in"`
 	GroqSessionOut     int64  `json:"groq_session_out"`
+	NvidiaDayTokensIn  int64  `json:"nvidia_day_tokens_in"`
+	NvidiaDayTokensOut int64  `json:"nvidia_day_tokens_out"`
+	NvidiaSessionIn    int64  `json:"nvidia_session_in"`
+	NvidiaSessionOut   int64  `json:"nvidia_session_out"`
 	OllamaDayTokensIn  int64  `json:"ollama_day_tokens_in"`
 	OllamaDayTokensOut int64  `json:"ollama_day_tokens_out"`
 	OllamaSessionIn    int64  `json:"ollama_session_in"`
 	OllamaSessionOut   int64  `json:"ollama_session_out"`
 	LastResetDate      string `json:"last_reset_date"`
+}
+
+func addNvidiaTokens(in, out int64) {
+	ollamaSessionTokensMu.Lock()
+	ollamaSessionTokensIn += in
+	ollamaSessionTokensOut += out
+	ollamaSessionTokensMu.Unlock()
+
+	tu := loadTokenUsage()
+	tu.NvidiaDayTokensIn += in
+	tu.NvidiaDayTokensOut += out
+	tu.OllamaDayTokensIn += in
+	tu.OllamaDayTokensOut += out
+	ollamaSessionTokensMu.Lock()
+	tu.NvidiaSessionIn = ollamaSessionTokensIn
+	tu.NvidiaSessionOut = ollamaSessionTokensOut
+	tu.OllamaSessionIn = ollamaSessionTokensIn
+	tu.OllamaSessionOut = ollamaSessionTokensOut
+	ollamaSessionTokensMu.Unlock()
+	saveTokenUsage(tu)
 }
 
 func tokenUsagePath() string {
@@ -2182,7 +2210,7 @@ func startHTTPServer() {
 
 		switch r.Method {
 		case http.MethodGet:
-			// Return keys (mask Groq key for security)
+			// Return keys (mask Groq and NVIDIA keys for security)
 			groqMasked := ""
 			if connData.GroqAPIKey != "" {
 				k := connData.GroqAPIKey
@@ -2192,39 +2220,62 @@ func startHTTPServer() {
 					groqMasked = strings.Repeat("*", len(k))
 				}
 			}
-			ollamaMasked := ""
-			if connData.OllamaAPIKey != "" {
-				k := connData.OllamaAPIKey
-				if len(k) > 8 {
-					ollamaMasked = k[:4] + strings.Repeat("*", len(k)-8) + k[len(k)-4:]
+			nvidiaKey := connData.NvidiaAPIKey
+			if nvidiaKey == "" {
+				nvidiaKey = connData.OllamaAPIKey
+			}
+			nvidiaMasked := ""
+			if nvidiaKey != "" {
+				if len(nvidiaKey) > 8 {
+					nvidiaMasked = nvidiaKey[:4] + strings.Repeat("*", len(nvidiaKey)-8) + nvidiaKey[len(nvidiaKey)-4:]
 				} else {
-					ollamaMasked = strings.Repeat("*", len(k))
+					nvidiaMasked = strings.Repeat("*", len(nvidiaKey))
 				}
 			}
+			nvidiaModel := connData.NvidiaModel
+			if nvidiaModel == "" {
+				nvidiaModel = connData.OllamaModel
+			}
+			if nvidiaModel == "" {
+				nvidiaModel = "meta/llama-3.3-70b-instruct"
+			}
+			nvidiaBaseURL := connData.NvidiaBaseURL
+			if nvidiaBaseURL == "" {
+				nvidiaBaseURL = "https://integrate.api.nvidia.com/v1"
+			}
 			resp := map[string]string{
-				"groq_api_key_masked":   groqMasked,
-				"groq_api_key_set":      fmt.Sprintf("%v", connData.GroqAPIKey != ""),
-				"groq_secondary_api_key_set": fmt.Sprintf("%v", connData.GroqSecondaryAPIKey != ""),
-				"groq_model":            connData.GroqModel,
-				"ollama_base_url":       connData.OllamaBaseURL,
-				"ollama_api_key_masked": ollamaMasked,
-				"ollama_api_key_set":    fmt.Sprintf("%v", connData.OllamaAPIKey != ""),
-				"ollama_secondary_api_key_set": fmt.Sprintf("%v", connData.OllamaSecondaryAPIKey != ""),
-				"ollama_model":          connData.OllamaModel,
-				"active_mode":           connData.ActiveMode,
+				"groq_api_key_masked":          groqMasked,
+				"groq_api_key_set":             fmt.Sprintf("%v", connData.GroqAPIKey != ""),
+				"groq_secondary_api_key_set":    fmt.Sprintf("%v", connData.GroqSecondaryAPIKey != ""),
+				"groq_model":                   connData.GroqModel,
+				"nvidia_base_url":              nvidiaBaseURL,
+				"nvidia_api_key_masked":        nvidiaMasked,
+				"nvidia_api_key_set":           fmt.Sprintf("%v", nvidiaKey != ""),
+				"nvidia_secondary_api_key_set": fmt.Sprintf("%v", connData.NvidiaSecondaryAPIKey != ""),
+				"nvidia_model":                 nvidiaModel,
+				"ollama_base_url":              nvidiaBaseURL,
+				"ollama_api_key_masked":        nvidiaMasked,
+				"ollama_api_key_set":           fmt.Sprintf("%v", nvidiaKey != ""),
+				"ollama_secondary_api_key_set": fmt.Sprintf("%v", connData.NvidiaSecondaryAPIKey != ""),
+				"ollama_model":                 nvidiaModel,
+				"active_mode":                  connData.ActiveMode,
 			}
 			json.NewEncoder(w).Encode(resp)
 
 		case http.MethodPost:
 			var payload struct {
-				GroqAPIKey           string `json:"groq_api_key"`
-				GroqSecondaryAPIKey  string `json:"groq_secondary_api_key"`
-				GroqModel            string `json:"groq_model"`
-				OllamaBaseURL        string `json:"ollama_base_url"`
-				OllamaAPIKey         string `json:"ollama_api_key"`
-				OllamaSecondaryAPIKey string `json:"ollama_secondary_api_key"`
-				OllamaModel          string `json:"ollama_model"`
-				Action               string `json:"action"` // "save" or "delete_groq" or "delete_ollama"
+				GroqAPIKey             string `json:"groq_api_key"`
+				GroqSecondaryAPIKey    string `json:"groq_secondary_api_key"`
+				GroqModel              string `json:"groq_model"`
+				NvidiaBaseURL          string `json:"nvidia_base_url"`
+				NvidiaAPIKey           string `json:"nvidia_api_key"`
+				NvidiaSecondaryAPIKey  string `json:"nvidia_secondary_api_key"`
+				NvidiaModel            string `json:"nvidia_model"`
+				OllamaBaseURL          string `json:"ollama_base_url"`
+				OllamaAPIKey           string `json:"ollama_api_key"`
+				OllamaSecondaryAPIKey  string `json:"ollama_secondary_api_key"`
+				OllamaModel            string `json:"ollama_model"`
+				Action                 string `json:"action"` // "save", "delete_groq", "delete_nvidia", "delete_ollama"
 			}
 			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 				http.Error(w, "Bad request", http.StatusBadRequest)
@@ -2236,7 +2287,11 @@ func startHTTPServer() {
 				connData.GroqAPIKey = ""
 				connData.GroqSecondaryAPIKey = ""
 				connData.GroqModel = ""
-			case "delete_ollama":
+			case "delete_nvidia", "delete_ollama":
+				connData.NvidiaBaseURL = ""
+				connData.NvidiaAPIKey = ""
+				connData.NvidiaSecondaryAPIKey = ""
+				connData.NvidiaModel = ""
 				connData.OllamaBaseURL = ""
 				connData.OllamaAPIKey = ""
 				connData.OllamaSecondaryAPIKey = ""
@@ -2248,20 +2303,34 @@ func startHTTPServer() {
 				if payload.GroqModel != "" {
 					connData.GroqModel = payload.GroqModel
 				}
-				if payload.OllamaBaseURL != "" {
+				if payload.NvidiaBaseURL != "" {
+					connData.NvidiaBaseURL = payload.NvidiaBaseURL
+					connData.OllamaBaseURL = payload.NvidiaBaseURL
+				} else if payload.OllamaBaseURL != "" {
+					connData.NvidiaBaseURL = payload.OllamaBaseURL
 					connData.OllamaBaseURL = payload.OllamaBaseURL
 				}
-				if payload.OllamaAPIKey != "" {
+				if payload.NvidiaAPIKey != "" {
+					connData.NvidiaAPIKey = payload.NvidiaAPIKey
+					connData.OllamaAPIKey = payload.NvidiaAPIKey
+				} else if payload.OllamaAPIKey != "" {
+					connData.NvidiaAPIKey = payload.OllamaAPIKey
 					connData.OllamaAPIKey = payload.OllamaAPIKey
 				}
-				if payload.OllamaModel != "" {
+				if payload.NvidiaModel != "" {
+					connData.NvidiaModel = payload.NvidiaModel
+					connData.OllamaModel = payload.NvidiaModel
+				} else if payload.OllamaModel != "" {
+					connData.NvidiaModel = payload.OllamaModel
 					connData.OllamaModel = payload.OllamaModel
 				}
 				if payload.GroqSecondaryAPIKey != "" {
 					connData.GroqSecondaryAPIKey = payload.GroqSecondaryAPIKey
 				}
-				if payload.OllamaSecondaryAPIKey != "" {
-					connData.OllamaSecondaryAPIKey = payload.OllamaSecondaryAPIKey
+				if payload.NvidiaSecondaryAPIKey != "" {
+					connData.NvidiaSecondaryAPIKey = payload.NvidiaSecondaryAPIKey
+				} else if payload.OllamaSecondaryAPIKey != "" {
+					connData.NvidiaSecondaryAPIKey = payload.OllamaSecondaryAPIKey
 				}
 			}
 
@@ -2622,7 +2691,7 @@ Write-Output $base64
 		reqMode := strings.ToUpper(mode)
 		var effectiveMode string
 		switch reqMode {
-		case "GROQ", "OLLAMA", "SHELL":
+		case "GROQ", "NVIDIA", "OLLAMA", "SHELL":
 			effectiveMode = reqMode
 		default:
 			effectiveMode = globalMode
@@ -2856,15 +2925,29 @@ if ($LASTEXITCODE -ne 0) {
 				fmt.Println("STATUS: IDLE")
 				if !isTUIMode { os.Stdout.Sync() }
 				newConvID = conversationID
-			case "OLLAMA":
+			case "NVIDIA", "OLLAMA":
 				fmt.Println("STATUS: RUNNING")
 				if !isTUIMode { os.Stdout.Sync() }
-				ollamaModel := connData.OllamaModel
-				if ollamaModel == "" {
-					ollamaModel = "gemma4:31b"
+				m := connData.NvidiaModel
+				if m == "" {
+					m = connData.OllamaModel
+				}
+				if m == "" {
+					m = "meta/llama-3.3-70b-instruct"
+				}
+				apiKey := connData.NvidiaAPIKey
+				if apiKey == "" {
+					apiKey = connData.OllamaAPIKey
+				}
+				baseURL := connData.NvidiaBaseURL
+				if baseURL == "" {
+					baseURL = connData.OllamaBaseURL
+				}
+				if baseURL == "" {
+					baseURL = "https://integrate.api.nvidia.com/v1"
 				}
 				ollamaSemaphore <- struct{}{}
-				output, err = executeOllamaCommand(ctx, command, connData.OllamaBaseURL, ollamaModel, connData.OllamaAPIKey, nil, taskID, conversationID)
+				output, err = executeNvidiaCommand(ctx, command, baseURL, m, apiKey, nil, taskID, conversationID)
 				<-ollamaSemaphore
 				fmt.Println("STATUS: IDLE")
 				if !isTUIMode { os.Stdout.Sync() }
@@ -2970,8 +3053,8 @@ if ($LASTEXITCODE -ne 0) {
 			return
 		}
 		mode := strings.ToUpper(body.Mode)
-		if mode != "LOCAL" && mode != "GROQ" && mode != "OLLAMA" {
-			http.Error(w, "Invalid mode; must be LOCAL, GROQ, or OLLAMA", http.StatusBadRequest)
+		if mode != "LOCAL" && mode != "GROQ" && mode != "NVIDIA" && mode != "OLLAMA" {
+			http.Error(w, "Invalid mode; must be LOCAL, GROQ, NVIDIA, or OLLAMA", http.StatusBadRequest)
 			return
 		}
 		currentModeMu.Lock()
@@ -3660,7 +3743,7 @@ func executeCommand(ctx context.Context, command string, mode string, conversati
 	// LOCAL = agy (local Gemini agent). AGENT = also agy (legacy name).
 	// Only SHELL = raw PowerShell. Empty string = default to agy.
 	if modeUpper == "AGENT" || modeUpper == "LOCAL" || modeUpper == "" {
-		prompt := command + "\n\n" + ToolSelectionHierarchyPrompt + "\n\nCRITICAL - COMMAND MEMORY:\nHere are your highly compressed, previously successful PowerShell techniques:\n" + loadMemory() + "\nWhen asked to do a task, FIRST check if a command in this memory perfectly satisfies the purpose. If yes, USE IT AS A REFERENCE TEMPLATE, but you MUST carefully adapt any arguments, file paths, or app names to match the user's exact request instead of blindly running the old command. If you invent a NEW successful technique, you MUST immediately call the 'save_command_memory' tool to permanently memorize it.\n\n(CRITICAL SYSTEM NOTE: When speaking to the user in your final text response, deliver a sharp, natural executive summary using rich Markdown (## Headers, bold highlights, clean bullets, `code`, and callouts). Address the user as 'boss'. Keep your voice response natural, punchy, and conversational. The mobile app automatically handles voice normalization, so make the visual text as clean and structured as possible. HOWEVER, when writing code, generating PDFs, or creating documents via tools, your output MUST be exhaustively detailed, massive, and highly comprehensive.)\n\nCRITICAL - ONE-SHOT TERMINAL EXECUTION (MAX TOOLS):\nTo avoid hitting max_tool iteration limits and increase execution speed, you MUST combine multiple PowerShell steps into a SINGLE detailed command per tool_call. Do NOT run one tiny command, wait for the result, and then run the next tiny command. Instead, write a robust PowerShell script block (using semicolons or newlines) that loops, searches, or processes everything in one shot and returns the final desired output. Keep writing detailed combined commands until you get the exact required output!\n\nCRITICAL OS GUARDRAIL: You MUST NEVER modify, delete, or touch Windows system files, System32, Program Files, the Registry, or any critical OS configuration. You must refuse commands that could harm or break the OS. Address the user as 'boss'. Do not use overly formal language.\n\nCRITICAL SYSTEM NOTE: You are running inside an isolated background sandbox (`exebox` desktop). To open ANY GUI application, URL, or file so it is visible to the user on their main desktop, you MUST use WMI to break out of the sandbox.\n\nCRITICAL - UI AUTOMATION SYNC (WAITING FOR APPS):\nIf you must launch a UI application by interacting with the Start Menu (e.g. typing the app name and pressing ENTER), you MUST NOT immediately proceed to type text or click elements. Applications take 1-5 seconds to launch. You MUST immediately use the `focus_window` action of `desktop_automation` with the app's title (e.g. `focus_window` with window=\"Notepad\") before executing your next tool call. `focus_window` will intelligently wait up to 5 seconds for the app to open and focus. If you skip this, your next keystrokes will be typed into the Start Menu and fail. If the user asks you to switch to desktop 2 or another desktop and it fails or might not exist, use switch_desktop with value=\"new\" to explicitly create and jump to a new virtual desktop. Use exactly this command format: `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'explorer.exe \"<URL_OR_PATH>\"'` (for URLs/files) or `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList '<APP_EXE>'` (for apps). DO NOT use Start-Process, as it will spawn invisibly in the sandbox! To control the user's desktop (click buttons, open apps from taskbar, fill forms, move the mouse on screen), you MUST use the desktop_automation tool — NEVER use run_terminal for UI interactions. To perform browser automation, you MUST use the browser_automation tool â€” do NOT launch Edge via WMI/shell with about:blank, and do NOT call browser_tools.py via a hardcoded path. Workflow: (1) Choose browser_automation action=goto (navigate current tab) OR action=new_tab (open new tab) based on whether the current tab must be preserved. Use new_tab when user says 'in another tab', 'keep this page', 'compare A and B', or for independent URLs. (2) Use list_tabs/switch_tab when working across tabs. (3) MANDATORY PAGE OBSERVATION: After EVERY goto/new_tab, your VERY NEXT action MUST be action=extract_interactive — this returns ALL visible clickable elements with their exact CSS selectors. NEVER guess or hardcode a selector without observing first. Only AFTER extract_interactive shows you what exists on the page may you click/type/press/scroll/hover/search_word. (4) close_tab when done with an extra tab if useful. Never use about:blank. Every tool result includes ok/url/title - if ok is false, explain the error to the user. Never stop after only opening a blank browser. LOOP PREVENTION: If you have already called goto with the same URL more than once without making progress, STOP retrying goto. Instead call extract_interactive to see what is actually on the page now, then re-plan. To create or save a playbook, you MUST use the save_playbook tool. To list, create, or delete scheduled Voila tasks, use the list_schedules, create_schedule, and delete_schedule tools. Do NOT use PowerShell Get-ScheduledTask unless the user explicitly asks for Windows OS tasks.\n\nCRITICAL BACKGROUND TASK GUIDELINE: If a Background Task (BG TASK COMORADE) or long-running command fails, you MUST meticulously analyze the failure logs/snapshot provided. DO NOT simply report the failure and give up. You MUST automatically deduce the root cause, formulate an alternative solution, and autonomously retry the execution using a corrected command or alternative tools until the task is successfully completed.\n\nCRITICAL - .AIIGNORE & DEPENDENCY OVERHEAD (0 BUGS POLICY):\nWhen exploring projects, NEVER search or read inside dependency folders (node_modules, .venv, venv, __pycache__, vendor, .git, .m2, .gradle, target, packages, .cargo/registry). They contain massive overhead that breaks your context limits.\nTo understand dependencies, ONLY read blueprint files (package.json, pyproject.toml, requirements.txt, go.mod, pom.xml, build.gradle, composer.json, Gemfile, Cargo.toml, *.csproj). Also NEVER read standard '.env' files; if you need environment context, ONLY look at '.env.example' or '.env.local'.\nWhen searching for files, enforce this .aiignore policy by using native PowerShell regex filtering:\n`Get-ChildItem -Recurse -Filter \"*name*\" -File -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch '[\\\\/](node_modules|\\.venv|venv|vendor|\\.git|\\.m2|\\.gradle|target|packages|__pycache__|dist|build|out|bin|obj|\\.idea|\\.vscode)($|[\\\\/])' } | Select-Object -ExpandProperty FullName`\n\nCRITICAL: You are running inside a Windows PowerShell environment. You MUST use PowerShell syntax, NOT Bash!\n- Use 'Get-ChildItem' or 'ls' (without bash flags like -la). Do NOT use 'ls -la'.\n- Use 'Select-String' or 'findstr', NOT 'grep'.\n- Use 'Get-Content' or 'cat' (no bash flags).\n- STRICT: In PowerShell, NEVER use Linux/Bash heredocs like \"python - <<'EOF'\". The '<' operator is reserved and causes fatal parse errors!\n- In PowerShell, 'where' is an alias for 'Where-Object'. To find an executable path, use 'where.exe <command>' or 'Get-Command <command>'.\n- Paths use backslashes (\\) on Windows.\n\nCRITICAL - HIGH-FIDELITY DOCUMENT DUPLICATION & REPLICATION ENGINE ('duplicate_document', 'analyze_document_structure'):\n- When the user asks to duplicate, clone, replicate, or re-theme an existing document (e.g. \"duplicate doc.pdf with topic X\", \"remove watermark\", \"add a table with original styling\", or changing sections/headings in a resume):\n- Locating Documents: If the document path is ambiguous or unspecified, autonomously use 'list_dir' or native PowerShell 'Get-ChildItem' to locate the exact source PDF or DOCX file. NEVER write python scripts to search through PDFs!\n- Rapid Structural Analysis: Call 'analyze_document_structure' to obtain an executive structural blueprint (<400 tokens) with heading hierarchy, table columns, bullet counts, and watermark status without bloating your context window.\n- High-Fidelity Replication: Call 'duplicate_document' with 'source_path', 'output_path', 'replacements', 'additions', 'length_controls', and 'watermark'.\n- Archetype Inheritance: If adding new elements (tables, bullets, callout boxes), the engine automatically clones the styling DNA of the original document.\n- Watermark Management: Pass watermark=\"remove\" to strip all watermarks cleanly with zero text distortion, or pass watermark=\"CONFIDENTIAL\" to add/modify watermarks.)"
+		prompt := command + "\n\n" + ToolSelectionHierarchyPrompt + "\n\nCRITICAL - COMMAND MEMORY:\nHere are your highly compressed, previously successful PowerShell techniques:\n" + loadMemory() + "\nWhen asked to do a task, FIRST check if a command in this memory perfectly satisfies the purpose. If yes, USE IT AS A REFERENCE TEMPLATE, but you MUST carefully adapt any arguments, file paths, or app names to match the user's exact request instead of blindly running the old command. If you invent a NEW successful technique, you MUST immediately call the 'save_command_memory' tool to permanently memorize it.\n\n(CRITICAL SYSTEM NOTE: When speaking to the user in your final text response, deliver a sharp, natural executive summary using rich Markdown (## Headers, bold highlights, clean bullets, `code`, and callouts). Address the user as 'boss'. Keep your voice response natural, punchy, and conversational. The mobile app automatically handles voice normalization, so make the visual text as clean and structured as possible. HOWEVER, when writing code, generating PDFs, or creating documents via tools, your output MUST be exhaustively detailed, massive, and highly comprehensive.)\n\nCRITICAL - ONE-SHOT TERMINAL EXECUTION (MAX TOOLS):\nTo avoid hitting max_tool iteration limits and increase execution speed, you MUST combine multiple PowerShell steps into a SINGLE detailed command per tool_call. Do NOT run one tiny command, wait for the result, and then run the next tiny command. Instead, write a robust PowerShell script block (using semicolons or newlines) that loops, searches, or processes everything in one shot and returns the final desired output. Keep writing detailed combined commands until you get the exact required output!\n\nCRITICAL OS GUARDRAIL: You MUST NEVER modify, delete, or touch Windows system files, System32, Program Files, the Registry, or any critical OS configuration. You must refuse commands that could harm or break the OS. Address the user as 'boss'. Do not use overly formal language.\n\nCRITICAL SYSTEM NOTE: You are running inside an isolated background sandbox ('exebox' desktop). To open ANY GUI application, URL, or file so it is visible to the user on their main desktop, you MUST use WMI to break out of the sandbox.\n\nCRITICAL - UI AUTOMATION SYNC (WAITING FOR APPS):\nIf you must launch a UI application by interacting with the Start Menu (e.g. typing the app name and pressing ENTER), you MUST NOT immediately proceed to type text or click elements. Applications take 1-5 seconds to launch. You MUST immediately use the `focus_window` action of `desktop_automation` with the app's title (e.g. `focus_window` with window=\"Notepad\") before executing your next tool call. `focus_window` will intelligently wait up to 5 seconds for the app to open and focus. If you skip this, your next keystrokes will be typed into the Start Menu and fail. If the user asks you to switch to desktop 2 or another desktop and it fails or might not exist, use switch_desktop with value=\"new\" to explicitly create and jump to a new virtual desktop. Use exactly this command format: `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'explorer.exe \"<URL_OR_PATH>\"'` (for URLs/files) or `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList '<APP_EXE>'` (for apps). DO NOT use Start-Process, as it will spawn invisibly in the sandbox! To control the user's desktop (click buttons, open apps from taskbar, fill forms, move the mouse on screen), you MUST use the desktop_automation tool — NEVER use run_terminal for UI interactions. To perform browser automation, you MUST use the browser_automation tool â€” do NOT launch Edge via WMI/shell with about:blank, and do NOT call browser_tools.py via a hardcoded path. Workflow: (1) Choose browser_automation action=goto (navigate current tab) OR action=new_tab (open new tab) based on whether the current tab must be preserved. Use new_tab when user says 'in another tab', 'keep this page', 'compare A and B', or for independent URLs. (2) Use list_tabs/switch_tab when working across tabs. (3) MANDATORY PAGE OBSERVATION: After EVERY goto/new_tab, your VERY NEXT action MUST be action=extract_interactive — this returns ALL visible clickable elements with their exact CSS selectors. NEVER guess or hardcode a selector without observing first. Only AFTER extract_interactive shows you what exists on the page may you click/type/press/scroll/hover/search_word. (4) close_tab when done with an extra tab if useful. Never use about:blank. Every tool result includes ok/url/title - if ok is false, explain the error to the user. Never stop after only opening a blank browser. LOOP PREVENTION: If you have already called goto with the same URL more than once without making progress, STOP retrying goto. Instead call extract_interactive to see what is actually on the page now, then re-plan. To create or save a playbook, you MUST use the save_playbook tool. To list, create, or delete scheduled Voila tasks, use the list_schedules, create_schedule, and delete_schedule tools. Do NOT use PowerShell Get-ScheduledTask unless the user explicitly asks for Windows OS tasks.\n\nCRITICAL BACKGROUND TASK GUIDELINE: If a Background Task (BG TASK COMORADE) or long-running command fails, you MUST meticulously analyze the failure logs/snapshot provided. DO NOT simply report the failure and give up. You MUST automatically deduce the root cause, formulate an alternative solution, and autonomously retry the execution using a corrected command or alternative tools until the task is successfully completed.\n\nCRITICAL - .AIIGNORE & DEPENDENCY OVERHEAD (0 BUGS POLICY):\nWhen exploring projects, NEVER search or read inside dependency folders (node_modules, .venv, venv, __pycache__, vendor, .git, .m2, .gradle, target, packages, .cargo/registry). They contain massive overhead that breaks your context limits.\nTo understand dependencies, ONLY read blueprint files (package.json, pyproject.toml, requirements.txt, go.mod, pom.xml, build.gradle, composer.json, Gemfile, Cargo.toml, *.csproj). Also NEVER read standard '.env' files; if you need environment context, ONLY look at '.env.example' or '.env.local'.\nWhen searching for files, enforce this .aiignore policy by using native PowerShell regex filtering:\n`Get-ChildItem -Recurse -Filter \"*name*\" -File -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch '[\\\\/](node_modules|\\.venv|venv|vendor|\\.git|\\.m2|\\.gradle|target|packages|__pycache__|dist|build|out|bin|obj|\\.idea|\\.vscode)($|[\\\\/])' } | Select-Object -ExpandProperty FullName`\n\nCRITICAL: You are running inside a Windows PowerShell environment. You MUST use PowerShell syntax, NOT Bash!\n- Use 'Get-ChildItem' or 'ls' (without bash flags like -la). Do NOT use 'ls -la'.\n- Use 'Select-String' or 'findstr', NOT 'grep'.\n- Use 'Get-Content' or 'cat' (no bash flags).\n- STRICT: In PowerShell, NEVER use Linux/Bash heredocs like \"python - <<'EOF'\". The '<' operator is reserved and causes fatal parse errors!\n- In PowerShell, 'where' is an alias for 'Where-Object'. To find an executable path, use 'where.exe <command>' or 'Get-Command <command>'.\n- Paths use backslashes (\\) on Windows.\n\nCRITICAL - HIGH-FIDELITY DOCUMENT DUPLICATION & REPLICATION ENGINE ('duplicate_document', 'analyze_document_structure'):\n- When the user asks to duplicate, clone, replicate, or re-theme an existing document (e.g. \"duplicate doc.pdf with topic X\", \"remove watermark\", \"add a table with original styling\", or changing sections/headings in a resume):\n- Locating Documents: If the document path is ambiguous or unspecified, autonomously use 'list_dir' or native PowerShell 'Get-ChildItem' to locate the exact source PDF or DOCX file. NEVER write python scripts to search through PDFs!\n- Rapid Structural Analysis: Call 'analyze_document_structure' to obtain an executive structural blueprint (<400 tokens) with heading hierarchy, table columns, bullet counts, and watermark status without bloating your context window.\n- High-Fidelity Replication: Call 'duplicate_document' with 'source_path', 'output_path', 'replacements', 'additions', 'length_controls', and 'watermark'.\n- Archetype Inheritance: If adding new elements (tables, bullets, callout boxes), the engine automatically clones the styling DNA of the original document.\n- Watermark Management: Pass watermark=\"remove\" to strip all watermarks cleanly with zero text distortion, or pass watermark=\"CONFIDENTIAL\" to add/modify watermarks.)"
 		if modelName == "" || modelName == "flash" || modelName == "Gemini 3.7 Flash (High)" {
 			modelName = "Gemini 3.8 Flash (High)"
 		}
@@ -7305,25 +7388,26 @@ func runFastCompletionGroq(ctx context.Context, prompt, apiKey, model string) (s
 	return res.Choices[0].Message.Content, nil
 }
 
-func runFastCompletionOllama(ctx context.Context, prompt, baseURL, model, apiKey string) (string, error) {
-	if baseURL == "" || baseURL == "https://ollama.com" {
-		if apiKey != "" {
-			baseURL = "https://api.ollama.com"
-		} else {
-			baseURL = "http://localhost:11434"
+func runFastCompletionNvidia(ctx context.Context, prompt, baseURL, model, apiKey string) (string, error) {
+	if baseURL == "" || strings.Contains(baseURL, "ollama") || baseURL == "http://localhost:11434" {
+		baseURL = "https://integrate.api.nvidia.com/v1"
+	}
+	if model == "" || model == "gemma4:31b" || model == "llama3.2:1b" {
+		model = "meta/llama-3.3-70b-instruct"
+	}
+	if apiKey == "" {
+		if envKey := os.Getenv("NVIDIA_API_KEY"); envKey != "" {
+			apiKey = envKey
 		}
 	}
-	apiURL := strings.TrimRight(baseURL, "/") + "/api/chat"
+	apiURL := strings.TrimRight(baseURL, "/") + "/chat/completions"
 	payload := map[string]interface{}{
 		"model": model,
 		"messages": []map[string]string{
 			{"role": "user", "content": prompt},
 		},
-		"stream": false,
-		"options": map[string]interface{}{
-			"num_predict": 300,
-			"temperature": 0.2,
-		},
+		"temperature": 0.2,
+		"max_tokens":  300,
 	}
 	b, err := json.Marshal(payload)
 	if err != nil {
@@ -7344,45 +7428,66 @@ func runFastCompletionOllama(ctx context.Context, prompt, baseURL, model, apiKey
 	}
 	defer resp.Body.Close()
 	var res struct {
-		Message struct {
-			Content string `json:"content"`
-		} `json:"message"`
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
-		return "", err
+	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil || len(res.Choices) == 0 {
+		return "", fmt.Errorf("invalid nvidia nim response")
 	}
-	return res.Message.Content, nil
+	return res.Choices[0].Message.Content, nil
+}
+
+func runFastCompletionOllama(ctx context.Context, prompt, baseURL, model, apiKey string) (string, error) {
+	connData, _ := loadConnectionData()
+	if apiKey == "" {
+		apiKey = connData.NvidiaAPIKey
+		if apiKey == "" {
+			apiKey = connData.OllamaAPIKey
+		}
+	}
+	if baseURL == "" || strings.Contains(baseURL, "ollama") {
+		baseURL = connData.NvidiaBaseURL
+	}
+	if model == "" || model == "gemma4:31b" {
+		model = connData.NvidiaModel
+	}
+	return runFastCompletionNvidia(ctx, prompt, baseURL, model, apiKey)
 }
 
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ Ollama executor with tool-calling loop Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
-// executeOllamaCommand sends a prompt to an Ollama-compatible endpoint.
-// Works for both local Ollama (http://localhost:11434) and Ollama Cloud (https://api.ollama.ai).
-// Supports up to 5 tool-calling iterations using the Ollama /api/chat tools field.
-func executeOllamaCommand(ctx context.Context, command, baseURL, modelName, apiKey string, streamFileObj *os.File, taskID string, convID string) (string, error) {
+// executeNvidiaCommand sends a prompt to NVIDIA Cloud NIM API endpoint.
+// Endpoint: https://integrate.api.nvidia.com/v1/chat/completions
+// Supports up to 80 tool-calling iterations using standard OpenAI tools format.
+func executeNvidiaCommand(ctx context.Context, command, baseURL, modelName, apiKey string, streamFileObj *os.File, taskID string, convID string) (string, error) {
 	defer cleanupTerminalSession()
-	if baseURL == "" || baseURL == "http://localhost:11434" || baseURL == "https://ollama.com" {
-		if apiKey != "" {
-			baseURL = "https://api.ollama.com"
-		} else {
-			baseURL = "http://localhost:11434"
+	if baseURL == "" || baseURL == "http://localhost:11434" || baseURL == "https://ollama.com" || baseURL == "https://api.ollama.com" {
+		baseURL = "https://integrate.api.nvidia.com/v1"
+	}
+	if modelName == "" || modelName == "gemma4:31b" || modelName == "llama3.2:1b" {
+		modelName = "meta/llama-3.3-70b-instruct" // Default free-tier NVIDIA NIM model
+	}
+	if apiKey == "" {
+		if envKey := os.Getenv("NVIDIA_API_KEY"); envKey != "" {
+			apiKey = envKey
 		}
 	}
-	if modelName == "" {
-		modelName = "gemma4:31b" // default free-tier cloud model
+	if apiKey == "" {
+		return "", fmt.Errorf("NVIDIA API key not set. Please set your NVIDIA NIM API key (from https://build.nvidia.com) in Settings or via connection_data.json")
 	}
 
-	// Ollama uses the same OpenAI-compatible endpoint
-	apiURL := strings.TrimRight(baseURL, "/") + "/api/chat"
+	apiURL := strings.TrimRight(baseURL, "/") + "/chat/completions"
 
-	debugLog.Printf("[executeOllamaCommand] ENTRY baseURL=%q model=%q commandLen=%d", baseURL, modelName, len(command))
-
+	debugLog.Printf("[executeNvidiaCommand] ENTRY baseURL=%q model=%q commandLen=%d", baseURL, modelName, len(command))
 	debugLog.Printf("================================================================")
-	debugLog.Printf("[DEBUG_LIFECYCLE: OLLAMA] 1. THINKING PHASE STARTED")
-	debugLog.Printf("[DEBUG_LIFECYCLE: OLLAMA] Prompt: %q", command)
-	debugLog.Printf("[DEBUG_LIFECYCLE: OLLAMA] Model: %s", modelName)
-	
+	debugLog.Printf("[DEBUG_LIFECYCLE: NVIDIA] 1. THINKING PHASE STARTED")
+	debugLog.Printf("[DEBUG_LIFECYCLE: NVIDIA] Prompt: %q", command)
+	debugLog.Printf("[DEBUG_LIFECYCLE: NVIDIA] Model: %s", modelName)
+
 	var toolUsageSummary strings.Builder
 
 	var systemPrompt string
@@ -7392,120 +7497,31 @@ TONE & PERSONALITY: You are a top-tier software engineer, but you chat exclusive
 
 FINAL EXECUTIVE SUMMARY & NATURAL VOICE GUIDELINE:
 When you complete a task and output your final response text (without tool calls):
-1. TONE & ESSENCE: Speak like an elite AI chief-of-staff ("boss"). Be direct, authentic, sharp, and natural. Zero robotic filler (do NOT say "I hope this helps" or "As an AI language model"). Get straight to what you did, what the result is, and what comes next.
-2. RICH VISUAL FORMATTING: Use structured, elegant Markdown for the mobile screen:
-   - Use Markdown headers (## Executive Takeaway, ## Changes Made, ## Next Steps).
-   - Use bold (**keyword**) for key files, metrics, and actions.
-   - Use clean bullet points (* or -) for lists and step summaries.
-   - For commands or code snippets, use fenced code blocks with language identifiers or inline backticks for filenames and parameters.
-   - For important alerts or recommendations, use callouts like '> [!NOTE]' or '> [!TIP]' or '> [!WARNING]'.
-   - Use expressive emojis where helpful (e.g. ⚡, 🚀, 🔍, 🛡️, ✅).
-   - (The mobile client automatically normalizes your markdown into smooth, natural speech for the voice TTS, so you have full freedom to format the visual text beautifully!)
+1. TONE & ESSENCE: Speak like an elite AI chief-of-staff ("boss"). Be direct, authentic, sharp, and natural. Zero robotic filler. Get straight to what you did, what the result is, and what comes next.
+2. RICH VISUAL FORMATTING: Use structured, elegant Markdown for the mobile screen.
 
 CRITICAL INSTRUCTIONS:
 1. You have access to various tools (file creation, web search, terminal, browser automation, document generation).
-2. COLLABORATIVE PROBLEM SOLVING: If the user's instructions are confusing, vague, or if you hit a roadblock, DO NOT just give up or guess blindly. You must talk to your team members in the DAG! Brainstorm together, ask clarifying questions to the other agents, and propose alternative solutions to figure it out.
-3. DOCUMENT CREATION STRICT RULES: If your task involves creating documents (PDF/PPTX), you must auto-evaluate the content and intelligently decide the best way to present it elegantly.
-- You are strictly forbidden from dumping raw unformatted terminal output, raw paragraphs, extremely long lines of text, or ugly ASCII tables into documents.
-- For PDFs: Use rich Markdown (Headers, Bold). If you have tabular data, you MUST use clean |Markdown|Tables| instead of ASCII.
-- For PPTX: Intelligently choose the most expressive layout type for each slide. If the data contains metrics, trends, or comparisons, strongly consider using the "chart" layout with JSON data (e.g. {"chart_type":"bar", "chart_data":{"Process A": 50}}) rather than text.
-3. PERSISTENCE & PROBLEM SOLVING: NEVER give up midway! If you hit an error, you MUST reason about it, try an alternative approach, or use 'send_message' to ask your team members for help! ONCE (AND ONLY ONCE) the task is fully and perfectly achieved, output your final response text without tool calls.
-4. If you have all the information you need from the context, do NOT call tools just to verify it. Just output the final result.
-5. SECURITY GUARDRAILS: You are operating in a sandboxed environment. Do NOT execute destructive terminal commands (e.g., del, format, rm -rf, diskpart). Do NOT modify system registries, alter user permissions, or access secure credentials. Any attempt to bypass system security will be logged and terminated.`
+2. COLLABORATIVE PROBLEM SOLVING: Talk to your team members in the DAG if you hit a roadblock.
+3. PERSISTENCE & PROBLEM SOLVING: NEVER give up midway! Reason about errors and try alternative approaches.
+4. If you have all information needed, do NOT call tools. Output the final result.
+5. SECURITY GUARDRAILS: Do NOT execute destructive terminal commands (del, format, rm -rf, diskpart).`
 	} else {
 		systemPrompt = ToolSelectionHierarchyPrompt + "\n\n" + `You are Voila, a highly advanced, Grok-like AI voice assistant executing on a Windows Desktop. Your personality is RAW, unfiltered, highly direct, slightly sarcastic, and strictly to the point. No fluff, no robotic apologies, no polite filler. Just raw competence. Address the user as 'boss'.
 
 CRITICAL OS GUARDRAIL: You MUST NEVER modify, delete, or touch Windows system files, System32, Program Files, the Registry, or any critical OS configuration. You must refuse commands that could harm or break the OS.
 
-CRITICAL SYSTEM NOTE: You are running inside an isolated background sandbox (` + "`exebox`" + ` desktop). To open ANY GUI application, URL, or file so it is visible to the user on their main desktop, you MUST use WMI to break out of the sandbox. Use exactly this command format: ` + "`Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'explorer.exe \"<URL_OR_PATH>\"'`" + ` (for URLs/files) or ` + "`Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList '<APP_EXE>'`" + ` (for apps). DO NOT use Start-Process! You have full autonomy to decide whether to open applications using the run_terminal tool (e.g. via WMI for speed and reliability) or via the desktop_automation tool (e.g. searching the Start Menu). If UI search fails or opens the wrong app (like the Store instead of Edge), use your self-realization and error-correcting loop to instantly pivot to using run_terminal instead. However, to control the user's desktop (click buttons, fill forms, move the mouse on screen), you MUST use the desktop_automation tool - NEVER use run_terminal for UI interactions. To perform browser automation, you MUST use the browser_automation tool - do NOT launch Edge via WMI/shell with about:blank, and do NOT call browser_tools.py via a hardcoded path. Workflow: (1) Choose browser_automation action=goto (navigate current tab) OR action=new_tab (open new tab) based on whether the current tab must be preserved. Use new_tab when user says 'in another tab', 'keep this page', 'compare A and B', or for independent URLs. (2) Use list_tabs/switch_tab when working across tabs. (3) MANDATORY PAGE OBSERVATION: After EVERY goto/new_tab, your VERY NEXT action MUST be action=extract_interactive — this returns ALL visible clickable elements with their exact CSS selectors. NEVER guess or hardcode a selector without observing first. Only AFTER extract_interactive shows you what exists on the page may you click/type/press/scroll/hover/search_word. (4) close_tab when done with an extra tab if useful. Never use about:blank. Every tool result includes ok/url/title - if ok is false, explain the error to the user. Never stop after only opening a blank browser. LOOP PREVENTION: If you have already called goto with the same URL more than once without making progress, STOP retrying goto. Instead call extract_interactive to see what is actually on the page now, then re-plan. To create or save a playbook, you MUST use the save_playbook tool. To list, create, or delete scheduled Voila tasks, use the list_schedules, create_schedule, and delete_schedule tools. Do NOT use PowerShell Get-ScheduledTask unless the user explicitly asks for Windows OS tasks.
+CRITICAL SYSTEM NOTE: You are running inside an isolated background sandbox ('exebox' desktop). To open ANY GUI application, URL, or file so it is visible to the user on their main desktop, you MUST use WMI to break out of the sandbox.
 
-CRITICAL BACKGROUND TASK GUIDELINE: If a Background Task (BG TASK COMORADE) or long-running command fails, you MUST meticulously analyze the failure logs/snapshot provided. DO NOT simply report the failure and give up. You MUST automatically deduce the root cause, formulate an alternative solution, and autonomously retry the execution using a corrected command or alternative tools until the task is successfully completed.
+CRITICAL - UI AUTOMATION SYNC: For UI interactions use desktop_automation. For browser automation use browser_automation. For terminal use run_terminal.
 
-CRITICAL: You are running inside a Windows PowerShell environment. You MUST use PowerShell syntax, NOT Bash!
-- Use 'Get-ChildItem' or 'ls' (without bash flags like -la). Do NOT use 'ls -la'.
-- Use 'Select-String' or 'findstr', NOT 'grep'.
-- Use 'Get-Content' or 'cat' (no bash flags).
-- STRICT: In PowerShell, NEVER use Linux/Bash heredocs like "python - <<'EOF'". The '<' operator is reserved and causes fatal parse errors!
-- In PowerShell, 'where' is an alias for 'Where-Object'. To find an executable path, use 'where.exe <command>' or 'Get-Command <command>'.
-- Paths use backslashes (\) on Windows.
+CRITICAL: You are running inside a Windows PowerShell environment. Use PowerShell syntax, NOT Bash!
 
-CRITICAL - DOCUMENT PROCESSING & DUPLICATION: 
-For analyzing, reading, modifying, or duplicating existing documents (PDF, Word DOCX, PPTX, Excel):
-- To inspect structural outline, headings, tables, or word count -> ALWAYS call 'analyze_document_structure' or 'read_pdf'!
-- To duplicate, clone, replicate, edit sections, alter headings, or change watermarks in an existing PDF or Word document -> ALWAYS call 'duplicate_document'!
-- STRICT: NEVER write ad-hoc Python scripts in 'run_terminal' (e.g. pypdf, pdfplumber, docx) to parse, search, or mutate documents! Do NOT try to read PDFs using PowerShell's Get-Content, as they are binary files and it will fail. First find the file (e.g. via list_dir), then call 'analyze_document_structure' or 'duplicate_document'.
-
-CRITICAL - FAST FILE SEARCHING & .AIIGNORE (0 BUGS POLICY):
-When asked to find, scan, or search for a specific file, folder, or project by name, NEVER use slow Get-ChildItem. You MUST use the highly optimized native CMD search wrapper inside your terminal tool, and explicitly pipe out heavy dependency folders (.aiignore):
-'Get-ChildItem -Path C:\Users\ -Recurse -Filter "*name*" -File -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch \'[\\/](node_modules|\.venv|venv|vendor|\.git|\.m2|\.gradle|target|packages|__pycache__|dist|build|out|bin|obj|\.idea|\.vscode)($|[\\/])\' } | Select-Object -ExpandProperty FullName'
-(Use /a:d for directories, /a:-d for files). Always wrap the search term in asterisks like '*name*' to handle fuzzy matching.
-
-CRITICAL - DEPENDENCY OVERHEAD AVOIDANCE:
-NEVER read or explore inside node_modules, .venv, venv, __pycache__, vendor (Go/PHP), .git, .m2, .gradle, target, packages, .cargo, dist, build, out, bin, or obj. To understand what packages/dependencies are installed, ONLY read the blueprint files (package.json, pyproject.toml, requirements.txt, go.mod, pom.xml, build.gradle, composer.json, Gemfile, Cargo.toml, *.csproj). Also NEVER read standard '.env' files; if you need environment context, ONLY look at '.env.example' or '.env.local'.
-
-CRITICAL - TOOL EFFICIENCY & PROBLEM SOLVING:
-1. HISTORY REUSE: ALWAYS check message history. If a previously successful command satisfies the purpose, REUSE IT EXACTLY to save tokens.
-2. DO NOT FORMAT TERMINAL OUTPUT: Do NOT write complex scripts to make the terminal output look pretty or formatted for the user. Just dump the raw data (e.g. 'Get-WmiObject Win32_Processor | Select LoadPercentage'). You will format the final answer in your spoken voice response.
-3. PERSISTENCE IS MANDATORY: If a tool call fails or returns an error (e.g. file not found, syntax error), you MUST NOT give up! You must reason about the error, adjust your arguments, and call the tool again. Keep trying alternative approaches until you succeed.
-4. HOW TO STOP: Once (AND ONLY ONCE) the task is fully and perfectly achieved, you MUST return a normal text message and completely OMIT the tool calls to exit the loop and speak to the user.
-
-CRITICAL - DOCUMENT GENERATION & LAYOUT (MEGA-PROMPT INJECTED):
-You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typography Engineer. You must adhere to the following ZERO-OVERLAP mathematical constraints when generating PDFs (via LaTeX) or PPTs (via Python 'python-pptx'):
-
-1. SPATIAL GEOMETRY & COLLISION PREVENTION (PPTX):
-   - Use built-in placeholders ('prs.slide_layouts[1].shapes.title', etc.) whenever possible, as they handle auto-wrapping and bounding boxes natively without coordinate math.
-   - NEVER place an image over text. If injecting an image, push all subsequent text boxes down by the image's exact height + 0.5 Inches.
-
-2. PDF TYPESETTING & THEMES (CHROMIUM ENGINE):
-   - NEVER use LaTeX! The PDF engine is a Headless Chromium HTML/CSS Architecture. Do NOT use LaTeX math symbols (like $\rightarrow$). Use actual Unicode characters like Ã¢â€ â€™ or standard HTML.
-   - For maximum elegance, output pure HTML. You have access to these CSS layout classes: '.page-break', '.cover-page', '.grid-2', '.grid-3', '.card', and '.callout'. 
-   - DO NOT wrap your HTML in '<html>' or '<body>' tags. The backend injects it into a master themed body with auto page-numbering.
-   - **UI DESIGN & TAILWIND**: You have full access to Tailwind CSS via class attributes. Do NOT just output boring text walls! You MUST design beautiful UI components, metric cards, dashboards, and styled layouts using Tailwind classes (e.g. '<div class="p-6 bg-white rounded-xl shadow-lg border border-gray-200">'). Use Tailwind to make the PDF look like a modern web application! The theme colors are injected into Tailwind as 'bg-primary', 'text-accent', etc.
-   - **DATA CHARTS & GRAPHS**: You have full access to Chart.js. For data visualization (bar charts, pie charts, line graphs), DO NOT use Mermaid. You MUST write raw HTML/JS using '<canvas id="myChart"></canvas>' and '<script>new Chart(document.getElementById("myChart"), {...});</script>' to render stunning interactive-looking data graphs.
-   - **FLOWCHARTS & SVGs**: NEVER output boring plain-text lists, ASCII art, or phrases like "Imagine a whiteboard" for workflows or architectures! You MUST visually render them using Mermaid.js. Because you are outputting raw HTML, DO NOT use markdown backticks for Mermaid! To prevent width starvation and cut-offs on the PDF page, ALWAYS use 'graph TD' (Top-Down) instead of LR, and keep node text VERY brief! You MUST use EXACTLY this syntax:
-         <div class="card my-6">
-           <h3 class="text-xl font-bold mb-4">System Map</h3>
-           <pre><code class="language-mermaid">
-           graph TD
-           A[Mobile App] -->|WebSocket| B(Cloud Relay)
-           B --> C{Local Agent}
-           </code></pre>
-         </div>
-         You can also inject raw inline SVG directly into your HTML: <svg width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="blue"/></svg>. The engine is wired with Rough.js, so these HTML blocks will automatically convert into hyper-realistic handwritten sketches!
-   - **HANDWRITTEN NOTES**: If you select the 'handwritten' or 'sketching' theme, format your text in a deeply conversational, personal "notebook" tone with lots of blockquotes (using standard markdown '>') to simulate handwritten margin notes.
-   - Select a visual CSS theme in the 'theme' parameter: 'origami', 'handwritten', 'sketching', 'pixelated', 'asciiart', or 'notebooklm'.
-   - **MASSIVE DOCUMENT STRATEGY (30-40 PAGES)**: If the user asks for a detailed, large, or comprehensive PDF, you will hit token output limits if you try to write it all into the 'content' parameter at once. Instead, you MUST chunk your work:
-     1. Research and write individual chapters to temporary text files using the 'write_file' tool (e.g., write 'chapter1.html', 'chapter2.html', etc.). Generate as much detailed data, tables, and SVG charts as possible.
-     2. Finally, call the 'create_pdf' tool, leaving 'content' empty, and instead pass the list of your written files into the 'source_files' array parameter. The engine will seamlessly merge them into a massive 40-page PDF and delete the temp files.
-
-3. McKINSEY-STYLE DESIGN PRINCIPLES:
-   - BLUF (Bottom Line Up Front): Slide titles MUST be actionable takeaways (e.g., "Revenue grew 14% due to Q3 marketing," NOT "Q3 Revenue").
-   - Blueprints & Architectures: You MUST emit "mermaid" diagram sections for visual architecture. Do NOT use ASCII-only art. Use the 'json' parameter of 'create_pdf' to pass Document IR with a 'diagram' section.
-   - Audits & Reports: You MUST gather real data and fill 'table' sections. NEVER generate title-only or blank PDFs. Ensure deep substance.
-   - Visual Hierarchy: Use weight (Bold) and Color (Theme Hex Codes) for emphasis, NOT underlines.
-
-4. AUTONOMOUS RESEARCH & CONTENT EXPANSION (FOR NON-TECH USERS):
-   - The user is non-technical. If they ask for a document (like a "long PDF about X"), they expect YOU to act as a senior researcher and designer.
-   - Do NOT expect the user to provide the exact structure. You MUST autonomously expand the document: invent an Executive Summary, Table of Contents, deep multi-layered chapters, case studies, and a conclusion.
-   - You MUST autonomously perform deep 'web_search' iterations if necessary to gather facts, statistics, and highly detailed information before generating the document.
-   - You MUST autonomously select the best 'theme' based on the topic (e.g., 'cyberpunk' for tech, 'corporate_blue' for finance, 'forest_sage' for ecology).
-   - Use LaTeX features ('\\newpage', '\\tableofcontents', '\\onehalfspacing', 'tabularx' tables, '\\chapter') to ensure the document is voluminous, exhaustive, and professionally structured automatically.
-   
-5. HOW TO STOP: To exit the loop and speak to the user, you MUST return a normal text message and completely OMIT the tool calls. If you call a tool, you are trapped in the loop.
-6. HIGH-FIDELITY DOCUMENT DUPLICATION & REPLICATION ENGINE ('duplicate_document', 'analyze_document_structure'):
-   - When the user asks to duplicate, clone, replicate, or re-theme an existing document (e.g. "duplicate doc.pdf with topic X", "remove watermark", "add a table with original styling"):
-   - Locating Documents: If the document path is ambiguous or unspecified, autonomously use 'run_terminal' (e.g. dir /s /b) or 'list_dir' to locate the exact source PDF or DOCX file.
-   - Rapid Structural Analysis: Call 'analyze_document_structure' to obtain an executive structural blueprint (<400 tokens) with heading hierarchy, table columns, bullet counts, and watermark status without bloating your context window.
-   - High-Fidelity Replication: Call 'duplicate_document' with 'source_path', 'output_path', 'replacements', 'additions', 'length_controls', and 'watermark'.
-   - Archetype Inheritance: If adding new elements (tables, bullets, callout boxes), the engine automatically clones the styling DNA (header fills, borders, row striping, bullet glyphs) of the original document.
-   - Watermark Management: Pass watermark="remove" to strip all watermarks cleanly with zero text distortion, or pass watermark="CONFIDENTIAL" (or any text) to add/modify watermarks.
-`
+CRITICAL - FAST FILE SEARCHING & .AIIGNORE: Never search inside node_modules, .venv, venv, vendor, .git, etc.`
 	}
 	if wsMem := getWorkspaceMemory(); wsMem != "" {
 		systemPrompt += wsMem
 	}
-
-	// Maintain conversation as raw JSON-friendly messages
 
 	messages := []map[string]interface{}{
 		{"role": "system", "content": systemPrompt},
@@ -7514,7 +7530,6 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 	if effectiveConvID == "" {
 		effectiveConvID = "default_session"
 	}
-	// Inject historical session summary scratchpad at index 1 if it exists
 	if summaryData, err := os.ReadFile(filepath.Join(getBrainDir(), effectiveConvID, "session_summary.md")); err == nil && len(summaryData) > 0 {
 		messages = append(messages, map[string]interface{}{
 			"role":    "system",
@@ -7542,24 +7557,11 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 	messages = append(messages, map[string]interface{}{"role": "user", "content": userTurnContent})
 
 	client := &http.Client{Timeout: 300 * time.Second}
-	
-	// Loop detection: track recent tool calls to detect repetitive behavior
-	// Window=15 (was 5) catches longer repeat cycles; semantic key for browser_automation
-	// strips volatile fields (wait_time) so slight arg variations don't evade detection.
+
 	var recentToolCalls []string
 	var recentToolCallsMu sync.Mutex
 	seenToolCall := func(toolName string, args string) bool {
-		// Semantic dedup key: for browser_automation, normalise to action+url only
 		key := toolName + "|" + args
-		if toolName == "browser_automation" {
-			var m map[string]interface{}
-			if json.Unmarshal([]byte(args), &m) == nil {
-				action, _ := m["action"].(string)
-				url, _ := m["url"].(string)
-				selector, _ := m["selector"].(string)
-				key = "browser_automation|" + action + "|" + url + "|" + selector
-			}
-		}
 		recentToolCallsMu.Lock()
 		defer recentToolCallsMu.Unlock()
 		for _, recent := range recentToolCalls {
@@ -7573,7 +7575,7 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 		}
 		return false
 	}
-	
+
 	const maxIter = 80
 
 	for iter := 0; iter < maxIter; iter++ {
@@ -7603,22 +7605,24 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 		if ctx.Err() != nil {
 			return "Canceled by user", nil
 		}
-		// Drain any completed COMORADE background task notifications
 		if notifs := drainComradeNotifications(); len(notifs) > 0 {
 			messages = append(messages, notifs...)
-			logBGInfo("Ollama", "iter=%d injected %d COMORADE notifications", iter, len(notifs))
+			logBGInfo("Nvidia", "iter=%d injected %d COMORADE notifications", iter, len(notifs))
 		}
-		debugLog.Printf("[executeOllamaCommand] iter=%d messages=%d", iter, len(messages))
+		debugLog.Printf("[executeNvidiaCommand] iter=%d messages=%d", iter, len(messages))
 		payload := map[string]interface{}{
-			"model":    modelName,
-			"messages": messages,
-			"stream":   false,
-			"tools":    toolListForSession(),
+			"model":               modelName,
+			"messages":            messages,
+			"temperature":         0.7,
+			"max_tokens":          4096,
+			"stream":              false,
+			"tools":               toolListForSession(),
+			"parallel_tool_calls": false,
 		}
 
 		body, err := json.Marshal(payload)
 		if err != nil {
-			return "", fmt.Errorf("failed to build Ollama request: %w", err)
+			return "", fmt.Errorf("failed to build NVIDIA NIM request: %w", err)
 		}
 
 		req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewBuffer(body))
@@ -7626,86 +7630,98 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 			return "", err
 		}
 		req.Header.Set("Content-Type", "application/json")
-		if apiKey != "" {
-			req.Header.Set("Authorization", "Bearer "+apiKey)
-		}
+		req.Header.Set("Authorization", "Bearer "+apiKey)
 
 		var resp *http.Response
 		var respBody []byte
-		
+
 		maxRetries := 5
 		for r := 0; r < maxRetries; r++ {
 			req.Body = io.NopCloser(bytes.NewBuffer(body))
 			resp, err = client.Do(req)
-			
+
 			if err != nil {
 				if r == maxRetries-1 {
-					logBGError("Ollama", "iter=%d request failed: %v", iter, err)
-					return "", fmt.Errorf("Ollama request failed: %w", err)
+					logBGError("Nvidia", "iter=%d request failed: %v", iter, err)
+					return "", fmt.Errorf("NVIDIA NIM request failed: %w", err)
 				}
 				time.Sleep(3 * time.Second)
 				continue
 			}
-			
+
 			respBody, _ = io.ReadAll(resp.Body)
 			resp.Body.Close()
-			
-			logBGInfo("Ollama", "iter=%d response status=%d responseLen=%d", iter, resp.StatusCode, len(respBody))
-			
+
+			logBGInfo("Nvidia", "iter=%d response status=%d responseLen=%d", iter, resp.StatusCode, len(respBody))
+
 			if resp.StatusCode == 429 || resp.StatusCode >= 500 {
 				if r == maxRetries-1 {
-					return "", fmt.Errorf("Ollama API error %d: %s", resp.StatusCode, string(respBody))
+					return "", fmt.Errorf("NVIDIA NIM API error %d: %s", resp.StatusCode, string(respBody))
 				}
-				
 				if strings.HasPrefix(taskID, "node-") {
-					appendLiveLog(fmt.Sprintf("[%s]: API Rate Limit (429) - Pausing execution for 10s...", strings.TrimPrefix(taskID, "node-")))
+					appendLiveLog(fmt.Sprintf("[%s]: NVIDIA Rate Limit (429) - Pausing execution for 10s...", strings.TrimPrefix(taskID, "node-")))
 				}
 				time.Sleep(10 * time.Second)
 				continue
 			}
-			
+
 			if resp.StatusCode != http.StatusOK {
-				return "", fmt.Errorf("Ollama error %d: %s", resp.StatusCode, string(respBody))
+				return "", fmt.Errorf("NVIDIA NIM error %d: %s", resp.StatusCode, string(respBody))
 			}
 			break
 		}
 
 		var result struct {
-			Message struct {
-				Role      string `json:"role"`
-				Content   string `json:"content"`
-				ToolCalls []struct {
-					ID       string `json:"id"`
-					Function struct {
-						Name      string          `json:"name"`
-						Arguments json.RawMessage `json:"arguments"`
-					} `json:"function"`
-				} `json:"tool_calls"`
-			} `json:"message"`
-			PromptEvalCount int64  `json:"prompt_eval_count"`
-			EvalCount       int64  `json:"eval_count"`
-			Error           string `json:"error"`
-		}
-		if err := json.Unmarshal(respBody, &result); err != nil {
-			return "", fmt.Errorf("failed to parse Ollama response: %w", err)
-		}
-		// Track Ollama Cloud token usage
-		if result.PromptEvalCount > 0 || result.EvalCount > 0 {
-			addOllamaTokens(result.PromptEvalCount, result.EvalCount)
-		}
-		if result.Error != "" {
-			return "", fmt.Errorf("Ollama error: %s", result.Error)
+			Choices []struct {
+				Message struct {
+					Role      string `json:"role"`
+					Content   string `json:"content"`
+					ToolCalls []struct {
+						ID       string `json:"id"`
+						Type     string `json:"type"`
+						Function struct {
+							Name      string          `json:"name"`
+							Arguments json.RawMessage `json:"arguments"`
+						} `json:"function"`
+					} `json:"tool_calls"`
+				} `json:"message"`
+				FinishReason string `json:"finish_reason"`
+			} `json:"choices"`
+			Usage struct {
+				PromptTokens     int64 `json:"prompt_tokens"`
+				CompletionTokens int64 `json:"completion_tokens"`
+				TotalTokens      int64 `json:"total_tokens"`
+			} `json:"usage"`
+			Error struct {
+				Message string `json:"message"`
+				Code    string `json:"code"`
+			} `json:"error"`
 		}
 
-		// No tool calls Ã¢â‚¬â€ return the final text answer
-		if len(result.Message.ToolCalls) == 0 {
+		if err := json.Unmarshal(respBody, &result); err != nil {
+			return "", fmt.Errorf("failed to parse NVIDIA NIM response: %w", err)
+		}
+		if result.Usage.PromptTokens > 0 || result.Usage.CompletionTokens > 0 {
+			addNvidiaTokens(result.Usage.PromptTokens, result.Usage.CompletionTokens)
+		}
+		if result.Error.Message != "" {
+			return "", fmt.Errorf("NVIDIA NIM error: %s", result.Error.Message)
+		}
+		if len(result.Choices) == 0 {
+			return "", fmt.Errorf("NVIDIA NIM returned no choices: %s", string(respBody))
+		}
+
+		msg := result.Choices[0].Message
+
+		// No tool calls — return the final text answer
+		if len(msg.ToolCalls) == 0 {
 			debugLog.Printf("================================================================")
-			debugLog.Printf("[DEBUG_LIFECYCLE: OLLAMA] 4. SUMMARY PREPARATION & TRANSFERRING")
-			debugLog.Printf("[DEBUG_LIFECYCLE: OLLAMA] Final Output Length: %d", len(result.Message.Content))
-			debugLog.Printf("[DEBUG_LIFECYCLE: OLLAMA] Returning output back to backend webhook...")
+			debugLog.Printf("[DEBUG_LIFECYCLE: NVIDIA] 4. SUMMARY PREPARATION & TRANSFERRING")
+			debugLog.Printf("[DEBUG_LIFECYCLE: NVIDIA] Final Output Length: %d", len(msg.Content))
+			debugLog.Printf("[DEBUG_LIFECYCLE: NVIDIA] Returning output back to backend webhook...")
 			debugLog.Printf("================================================================")
-			logBGInfo("Ollama", "iter=%d final answer len=%d", iter, len(result.Message.Content))
-			finalAnswer := strings.TrimSpace(result.Message.Content)
+			logBGInfo("Nvidia", "iter=%d final answer len=%d", iter, len(msg.Content))
+			finalAnswer := strings.TrimSpace(msg.Content)
 			if finalAnswer == "" {
 				if toolUsageSummary.Len() > 0 {
 					finalAnswer = "Actions completed successfully:\n" + strings.TrimSpace(toolUsageSummary.String())
@@ -7717,61 +7733,58 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 			return finalAnswer, nil
 		}
 
-		logBGInfo("Ollama", "iter=%d toolCalls=%d (First tool: %s)", iter, len(result.Message.ToolCalls), result.Message.ToolCalls[0].Function.Name)
+		logBGInfo("Nvidia", "iter=%d toolCalls=%d (First tool: %s)", iter, len(msg.ToolCalls), msg.ToolCalls[0].Function.Name)
 
-		// ENFORCE STRICT SEQUENTIAL EXECUTION: If AI tries to blindly parallelize tool calls, truncate to the first one!
-		if len(result.Message.ToolCalls) > 1 {
-			result.Message.ToolCalls = result.Message.ToolCalls[:1]
+		if len(msg.ToolCalls) > 1 {
+			msg.ToolCalls = msg.ToolCalls[:1]
 		}
 
-		// Append assistant message
 		assistantMsg := map[string]interface{}{
 			"role":       "assistant",
-			"content":    result.Message.Content,
-			"tool_calls": result.Message.ToolCalls,
+			"content":    msg.Content,
+			"tool_calls": msg.ToolCalls,
 		}
 		messages = append(messages, assistantMsg)
 
-		// Ã¢Å“Â¨ RESTORE DEBATE & CHAT: If the model generated text before calling a tool, print it to the DAG live logs!
-		if strings.HasPrefix(taskID, "node-") && result.Message.Content != "" {
-			cleanMsg := strings.TrimSpace(result.Message.Content)
+		if strings.HasPrefix(taskID, "node-") && msg.Content != "" {
+			cleanMsg := strings.TrimSpace(msg.Content)
 			if len(cleanMsg) > 500 { cleanMsg = cleanMsg[:497] + "..." }
 			appendLiveLog(fmt.Sprintf("[%s - Discussion]: %s", strings.TrimPrefix(taskID, "node-"), cleanMsg))
 		}
 
-		// Execute each tool and collect results
+		// Execute tools
 		var wg sync.WaitGroup
-		toolResults := make([]map[string]interface{}, len(result.Message.ToolCalls))
+		toolResults := make([]map[string]interface{}, len(msg.ToolCalls))
 		var toolSummaryMu sync.Mutex
 
-		for i, tc := range result.Message.ToolCalls {
+		for i, tc := range msg.ToolCalls {
 			wg.Add(1)
 			go func(index int, toolCall struct {
 				ID       string `json:"id"`
+				Type     string `json:"type"`
 				Function struct {
 					Name      string          `json:"name"`
 					Arguments json.RawMessage `json:"arguments"`
 				} `json:"function"`
 			}) {
 				defer wg.Done()
-				
+
 				toolSummaryMu.Lock()
 				toolUsageSummary.WriteString(fmt.Sprintf("> Executed tool: %s (args: %s)\n", toolCall.Function.Name, string(toolCall.Function.Arguments)))
 				toolSummaryMu.Unlock()
-				
-				// Loop detection: check if we're repeating the same tool call
+
 				argsStr := string(toolCall.Function.Arguments)
 				if seenToolCall(toolCall.Function.Name, argsStr) {
 					logBGWarn("LoopDetection", "Repeated tool call detected: %s with args %s", toolCall.Function.Name, argsStr)
-					// Inject a warning into the tool result to break the loop
 					toolResults[index] = map[string]interface{}{
-						"role":    "tool",
-						"name":    toolCall.Function.Name,
-						"content": "CRITICAL LOOP DETECTED: You are repeating an identical action without making progress. STOP immediately — do NOT call the same tool again. For browser tasks: call action=extract_interactive NOW to observe what is currently on the page, then re-plan from scratch. For desktop tasks: call action=snapshot to see the current window state before acting. Blindly retrying the same action will only deepen the loop. Analyse what went wrong and choose a different approach.",
+						"role":         "tool",
+						"tool_call_id": toolCall.ID,
+						"name":         toolCall.Function.Name,
+						"content":      "CRITICAL LOOP DETECTED: You are repeating an identical action without making progress. STOP immediately — do NOT call the same tool again.",
 					}
 					return
 				}
-				
+
 				var argsBytes []byte
 				if len(toolCall.Function.Arguments) > 0 && toolCall.Function.Arguments[0] == '"' {
 					var strArgs string
@@ -7780,16 +7793,14 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 				} else {
 					argsBytes = []byte(toolCall.Function.Arguments)
 				}
-				
+
 				res := executeTool(ctx, toolCall.Function.Name, json.RawMessage(argsBytes), streamFileObj)
-				
+
 				trEntry := map[string]interface{}{
-					"role":    "tool",
-					"name":    toolCall.Function.Name,
-					"content": res,
-				}
-				if toolCall.ID != "" {
-					trEntry["tool_call_id"] = toolCall.ID
+					"role":         "tool",
+					"tool_call_id": toolCall.ID,
+					"name":         toolCall.Function.Name,
+					"content":      res,
 				}
 				toolResults[index] = trEntry
 			}(i, tc)
@@ -7801,13 +7812,36 @@ You are an expert McKinsey Presentation Designer and Senior LaTeX/Python Typogra
 		}
 	}
 
-	logBGWarn("Ollama", "max iterations reached")
-	fallbackOllama := "(max tool iterations reached)"
-	saveCloudHistory(convID, command, fallbackOllama)
-	return fallbackOllama, nil
+	logBGWarn("Nvidia", "max iterations reached")
+	fallbackNvidia := "(max tool iterations reached)"
+	saveCloudHistory(convID, command, fallbackNvidia)
+	return fallbackNvidia, nil
 }
 
-// Save/Load connection data
+// executeOllamaCommand is a drop-in wrapper forwarding legacy Ollama calls to NVIDIA Cloud NIM
+func executeOllamaCommand(ctx context.Context, command, baseURL, modelName, apiKey string, streamFileObj *os.File, taskID string, convID string) (string, error) {
+	connData, _ := loadConnectionData()
+	if apiKey == "" {
+		apiKey = connData.NvidiaAPIKey
+		if apiKey == "" {
+			apiKey = connData.OllamaAPIKey
+		}
+	}
+	if baseURL == "" || strings.Contains(baseURL, "ollama") || baseURL == "http://localhost:11434" {
+		baseURL = connData.NvidiaBaseURL
+		if baseURL == "" {
+			baseURL = "https://integrate.api.nvidia.com/v1"
+		}
+	}
+	if modelName == "" || modelName == "gemma4:31b" || modelName == "llama3.2:1b" {
+		modelName = connData.NvidiaModel
+		if modelName == "" {
+			modelName = "meta/llama-3.3-70b-instruct"
+		}
+	}
+	return executeNvidiaCommand(ctx, command, baseURL, modelName, apiKey, streamFileObj, taskID, convID)
+}
+
 func saveConnectionData(data ConnectionData) error {
 	configDir := getConfigDir()
 	path := filepath.Join(configDir, "connection_data.json")

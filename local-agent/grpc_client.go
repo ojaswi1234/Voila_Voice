@@ -629,7 +629,7 @@ func handleIncomingCommandViaGRPC(cmd *voilav1.ExecutionCommand, connData Connec
 	var effectiveMode string
 	if reqMode == "SHELL" {
 		effectiveMode = "SHELL"
-	} else if reqMode == "GROQ" || reqMode == "OLLAMA" {
+	} else if reqMode == "GROQ" || reqMode == "NVIDIA" || reqMode == "OLLAMA" {
 		effectiveMode = reqMode
 	} else {
 		// In AGENT mode, check if the session was forked with a specific model type
@@ -733,13 +733,21 @@ func handleIncomingCommandViaGRPC(cmd *voilav1.ExecutionCommand, connData Connec
 			}
 			output, err = executeGroqCommand(ctx, cmd.Command, connData.GroqAPIKey, m, cmd.ClientId, nil, taskID, effectiveConvID)
 			newConvID = effectiveConvID
-		case "OLLAMA":
-			ollamaModel := connData.OllamaModel
-			if ollamaModel == "" {
-				ollamaModel = "gemma4:31b"
+		case "NVIDIA", "OLLAMA":
+			m := connData.NvidiaModel
+			if m == "" {
+				m = "meta/llama-3.3-70b-instruct"
+			}
+			apiKey := connData.NvidiaAPIKey
+			if apiKey == "" {
+				apiKey = connData.OllamaAPIKey
+			}
+			baseURL := connData.NvidiaBaseURL
+			if baseURL == "" {
+				baseURL = "https://integrate.api.nvidia.com/v1"
 			}
 			ollamaSemaphore <- struct{}{}
-			output, err = executeOllamaCommand(ctx, cmd.Command, connData.OllamaBaseURL, ollamaModel, connData.OllamaAPIKey, nil, taskID, effectiveConvID)
+			output, err = executeNvidiaCommand(ctx, cmd.Command, baseURL, m, apiKey, nil, taskID, effectiveConvID)
 			<-ollamaSemaphore
 			newConvID = effectiveConvID
 		default:

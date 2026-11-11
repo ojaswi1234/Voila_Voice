@@ -1233,7 +1233,7 @@ func (b *Backend) forwardCommand(deviceID, command, mode, clientID, conversation
 	switch modeUp {
 	case "SHELL":
 		forwardMode = "SHELL"
-	case "GROQ", "OLLAMA":
+	case "GROQ", "NVIDIA", "OLLAMA":
 		forwardMode = modeUp
 	case "AGENT", "LOCAL", "":
 		forwardMode = "AGENT"
@@ -1610,7 +1610,7 @@ func handleWebhookResult(b *Backend) http.HandlerFunc {
 			} else {
 				summary := ""
 				lowerMode := strings.ToLower(mode)
-				if lowerMode == "agent" || lowerMode == "local" || lowerMode == "groq" || lowerMode == "ollama" {
+				if lowerMode == "agent" || lowerMode == "local" || lowerMode == "groq" || lowerMode == "nvidia" || lowerMode == "ollama" {
 					summary = output
 				} else {
 					summary = b.generateTaskSummary("Command", output)

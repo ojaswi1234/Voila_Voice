@@ -549,11 +549,14 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 					}
 					// If Groq completely fails, fallback to Ollama
 					if nodeErr != nil {
-						fallbackOllama := connData.OllamaModel
+						fallbackOllama := connData.NvidiaModel
 						if fallbackOllama == "" {
-							fallbackOllama = "gemma4:31b"
+							fallbackOllama = connData.OllamaModel
 						}
-						fmt.Printf("STATUS: SYSTEM_MSG:Node %s Groq exhausted, falling back to Ollama %s...\n", nodeID, fallbackOllama)
+						if fallbackOllama == "" {
+							fallbackOllama = "meta/llama-3.3-70b-instruct"
+						}
+						fmt.Printf("STATUS: SYSTEM_MSG:Node %s Groq exhausted, falling back to NVIDIA NIM %s...\n", nodeID, fallbackOllama)
 						os.Stdout.Sync()
 						graphifyOllamaSem <- struct{}{}
 						nodeOut, nodeErr = executeOllamaCommand(ctx, finalCommand, connData.OllamaBaseURL, fallbackOllama, connData.OllamaAPIKey, nil, taskID, "")
@@ -568,11 +571,14 @@ func executeGraphifyDAG(ctx context.Context, command string) (string, error) {
 					
 					// Edge Case: Model doesn't support tools
 					if nodeErr != nil && (strings.Contains(strings.ToLower(nodeErr.Error()), "tool") || strings.Contains(strings.ToLower(nodeErr.Error()), "support") || strings.Contains(strings.ToLower(nodeErr.Error()), "parse")) {
-						fallbackOllama := connData.OllamaModel
+						fallbackOllama := connData.NvidiaModel
 						if fallbackOllama == "" {
-							fallbackOllama = "gemma4:31b"
+							fallbackOllama = connData.OllamaModel
 						}
-						fmt.Printf("STATUS: SYSTEM_MSG:Node %s model %s lacks tool support, dynamically switching to %s...\n", nodeID, actualModel, fallbackOllama)
+						if fallbackOllama == "" {
+							fallbackOllama = "meta/llama-3.3-70b-instruct"
+						}
+						fmt.Printf("STATUS: SYSTEM_MSG:Node %s model %s lacks tool support, dynamically switching to NVIDIA NIM %s...\n", nodeID, actualModel, fallbackOllama)
 						os.Stdout.Sync()
 						actualModel = fallbackOllama
 						nodeOut, nodeErr = executeOllamaCommand(ctx, finalCommand, connData.OllamaBaseURL, actualModel, connData.OllamaAPIKey, nil, taskID, "")

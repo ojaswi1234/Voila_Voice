@@ -40,7 +40,31 @@ func pingGroq(ctx context.Context, apiKey string) bool {
 	return resp.StatusCode == 200
 }
 
+func pingNvidia(ctx context.Context, baseURL string, apiKey string) bool {
+	if baseURL == "" { baseURL = "https://integrate.api.nvidia.com/v1" }
+	if apiKey == "" { apiKey = os.Getenv("NVIDIA_API_KEY") }
+	if apiKey == "" { return false }
+	client := &http.Client{Timeout: 10 * time.Second}
+	req, _ := http.NewRequestWithContext(ctx, "GET", strings.TrimRight(baseURL, "/")+"/models", nil)
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	resp, err := client.Do(req)
+	if err == nil && resp != nil {
+		resp.Body.Close()
+		return resp.StatusCode == 200
+	}
+	return false
+}
+
 func pingOllama(ctx context.Context, baseURL string, apiKey string) bool {
+	connData, _ := loadConnectionData()
+	nvKey := connData.NvidiaAPIKey
+	if nvKey == "" { nvKey = apiKey }
+	if nvKey == "" { nvKey = os.Getenv("NVIDIA_API_KEY") }
+	nvURL := connData.NvidiaBaseURL
+	if nvURL == "" { nvURL = baseURL }
+	if pingNvidia(ctx, nvURL, nvKey) {
+		return true
+	}
 	if baseURL == "" { baseURL = "http://localhost:11434" }
 	client := &http.Client{Timeout: 10 * time.Second}
 	
@@ -232,16 +256,28 @@ Rules:
 }
 
 func tryOllamaConfig(ctx context.Context, baseURL, apiKey string, body []byte) (string, error) {
-	if baseURL == "" {
-		baseURL = "http://localhost:11434"
+	connData, _ := loadConnectionData()
+	if apiKey == "" {
+		apiKey = connData.NvidiaAPIKey
+		if apiKey == "" {
+			apiKey = connData.OllamaAPIKey
+		}
 	}
-	req, _ := http.NewRequestWithContext(ctx, "POST", strings.TrimRight(baseURL, "/")+"/api/chat", bytes.NewReader(body))
+	if baseURL == "" || strings.Contains(baseURL, "ollama") || baseURL == "http://localhost:11434" {
+		baseURL = connData.NvidiaBaseURL
+		if baseURL == "" {
+			baseURL = "https://integrate.api.nvidia.com/v1"
+		}
+	}
+	
+	apiURL := strings.TrimRight(baseURL, "/") + "/chat/completions"
+	req, _ := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	if apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}
 	
-	client := &http.Client{}
+	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
@@ -254,11 +290,19 @@ func tryOllamaConfig(ctx context.Context, baseURL, apiKey string, body []byte) (
 	}
 	
 	var res struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
 		Message struct {
 			Content string `json:"content"`
 		} `json:"message"`
 	}
 	json.NewDecoder(resp.Body).Decode(&res)
+	if len(res.Choices) > 0 {
+		return res.Choices[0].Message.Content, nil
+	}
 	return res.Message.Content, nil
 }
 
