@@ -619,9 +619,9 @@ for _layer_item in (sun_aura, sun_glow4, sun_glow3, sun_glow2, sun_glow1,
     canvas.tag_raise(_layer_item)
 
 # ─── LOCAL/CLOUD mode toggle  ────────────────────────────────────────────
-MODES = ["LOCAL", "GROQ", "OLLAMA"]
-MODE_COLORS = {"LOCAL": "#6366F1", "GROQ": "#10B981", "OLLAMA": "#F59E0B"}
-MODE_LABELS = {"LOCAL": "⚡LOCAL", "GROQ": "☕ GROQ", "OLLAMA": "🦙 OLLAMA"}
+MODES = ["LOCAL", "GROQ", "NVIDIA"]
+MODE_COLORS = {"LOCAL": "#6366F1", "GROQ": "#10B981", "NVIDIA": "#76B900", "OLLAMA": "#76B900"}
+MODE_LABELS = {"LOCAL": "⚡LOCAL", "GROQ": "☕ GROQ", "NVIDIA": "🟢 NVIDIA", "OLLAMA": "🟢 NVIDIA"}
 
 def _set_voila_mode(mode):
     def _do():
@@ -1422,8 +1422,12 @@ def _api_call_async(method, path, payload=None, callback=None, timeout=3.0):
 _settings_data_cache = {
     'groq_api_key_set': 'false',
     'groq_model': 'openai/gpt-oss-120b',
-    'ollama_base_url': 'http://localhost:11434',
-    'ollama_model': 'gemma4:31b',
+    'nvidia_base_url': 'https://integrate.api.nvidia.com/v1',
+    'nvidia_model': 'meta/llama-3.3-70b-instruct',
+    'nvidia_api_key_set': 'false',
+    'nvidia_secondary_api_key_set': 'false',
+    'ollama_base_url': 'https://integrate.api.nvidia.com/v1',
+    'ollama_model': 'meta/llama-3.3-70b-instruct',
     'ollama_api_key_set': 'false',
     'ollama_secondary_api_key_set': 'false',
 }
@@ -1717,43 +1721,43 @@ def _show_settings_widgets():
              bg='#1A1D23', fg='#4B5563', font=('Segoe UI', 8, 'italic')).grid(
         row=4, column=0, columnspan=4, padx=12, pady=(15, 15), sticky='w')
 
-    # ─── OLLAMA SECTION ──────────────────────────────────────────────────────
-    ollama_frame = tk.LabelFrame(inner, text=' Ollama (Local / Ollama Cloud free tier) ',
-                                 bg='#1A1D23', fg='#F59E0B', font=('Segoe UI', 10, 'bold'),
+    # ─── NVIDIA CLOUD NIM SECTION ─────────────────────────────────────────────
+    ollama_frame = tk.LabelFrame(inner, text=' NVIDIA Cloud NIM (Free Tier: 40 RPM / 10k Req/Day) ',
+                                 bg='#1A1D23', fg='#76B900', font=('Segoe UI', 10, 'bold'),
                                  bd=1, relief='solid', labelanchor='nw')
     ollama_frame.grid(row=2, column=0, columnspan=4, padx=16, pady=(12, 6), sticky='ew')
 
     tk.Label(ollama_frame, text='Base URL:', bg='#1A1D23', fg='#9CA3AF', font=('Segoe UI', 9)).grid(
         row=0, column=0, padx=12, pady=8, sticky='w')
-    ollama_url_var = tk.StringVar(value=data.get('ollama_base_url', 'http://localhost:11434'))
+    ollama_url_var = tk.StringVar(value=data.get('nvidia_base_url') or data.get('ollama_base_url') or 'https://integrate.api.nvidia.com/v1')
     tk.Entry(ollama_frame, textvariable=ollama_url_var, bg='#2D3039', fg='#E5E7EB',
              insertbackground='#E5E7EB', relief='flat', font=('Segoe UI', 9), width=42).grid(
         row=0, column=1, columnspan=3, padx=6, pady=8, sticky='ew')
 
     tk.Label(ollama_frame, text='Model:', bg='#1A1D23', fg='#9CA3AF', font=('Segoe UI', 9)).grid(
         row=3, column=0, padx=12, pady=4, sticky='w')
-    ollama_model_var = tk.StringVar(value=data.get('ollama_model', 'gemma4:31b'))
+    ollama_model_var = tk.StringVar(value=data.get('nvidia_model') or data.get('ollama_model') or 'meta/llama-3.3-70b-instruct')
     
     ollama_models = [
-        "gemma4:31b",
-        "gpt-oss:120b",
-        "gpt-oss:20b",
-        "nemotron-3-nano:30b",
-        "nemotron-3-super",
-        "nemotron-3-ultra",
-        "beam"
+        "meta/llama-3.3-70b-instruct",
+        "meta/llama-3.1-70b-instruct",
+        "meta/llama-3.1-8b-instruct",
+        "mistralai/mistral-large-2-instruct",
+        "nvidia/llama-3.1-nemotron-70b-instruct",
+        "deepseek-ai/deepseek-r1"
     ]
     ollama_model_cb = ttk.Combobox(ollama_frame, textvariable=ollama_model_var, values=ollama_models, width=40, font=('Segoe UI', 9))
     ollama_model_cb.grid(row=3, column=1, columnspan=2, padx=10, pady=8, sticky='w')
-    tk.Label(ollama_frame, text='(Free tier + tool calling)', bg='#1A1D23', fg='#6B7280', font=('Segoe UI', 8)).grid(row=3, column=3, sticky='w')
+    tk.Label(ollama_frame, text='(Free tier + tool calling: 40 RPM)', bg='#1A1D23', fg='#76B900', font=('Segoe UI', 8)).grid(row=3, column=3, sticky='w')
 
     def _on_ollama_model_selected(event=None):
         m = ollama_model_var.get().strip()
         u = ollama_url_var.get().strip()
         if not m:
             return
-        payload = {'ollama_model': m, 'action': 'save'}
+        payload = {'nvidia_model': m, 'ollama_model': m, 'action': 'save'}
         if u:
+            payload['nvidia_base_url'] = u
             payload['ollama_base_url'] = u
         res = _api_call('POST', '/api-keys', payload)
         if 'error' in res:
@@ -1765,32 +1769,22 @@ def _show_settings_widgets():
 
     ollama_model_cb.bind('<<ComboboxSelected>>', _on_ollama_model_selected)
 
-    tk.Label(ollama_frame, text='API Key (Opt):', bg='#1A1D23', fg='#9CA3AF', font=('Segoe UI', 9)).grid(
+    tk.Label(ollama_frame, text='API Key (NIM):', bg='#1A1D23', fg='#9CA3AF', font=('Segoe UI', 9)).grid(
         row=1, column=0, padx=12, pady=4, sticky='w')
-    ollama_key_var = tk.StringVar(value=data.get('ollama_api_key_set') == 'true' and '********' or '')
+    is_key_set = (data.get('nvidia_api_key_set') == 'true' or data.get('ollama_api_key_set') == 'true')
+    ollama_key_var = tk.StringVar(value=is_key_set and '********' or '')
     tk.Entry(ollama_frame, textvariable=ollama_key_var, bg='#2D3039', fg='#E5E7EB',
              insertbackground='#E5E7EB', relief='flat', font=('Segoe UI', 9), width=42, show='*').grid(
         row=1, column=1, columnspan=3, padx=10, pady=8, sticky='ew')
 
     tk.Label(ollama_frame, text='Sec Key:', bg='#1A1D23', fg='#9CA3AF', font=('Segoe UI', 9)).grid(
         row=2, column=0, padx=12, pady=4, sticky='w')
-    ollama_sec_key_var = tk.StringVar(value=data.get('ollama_secondary_api_key_set') == 'true' and '********' or '')
+    is_sec_set = (data.get('nvidia_secondary_api_key_set') == 'true' or data.get('ollama_secondary_api_key_set') == 'true')
+    ollama_sec_key_var = tk.StringVar(value=is_sec_set and '********' or '')
     ollama_sec_entry = tk.Entry(ollama_frame, textvariable=ollama_sec_key_var, bg='#2D3039', fg='#E5E7EB',
                           insertbackground='#E5E7EB', relief='flat', font=('Segoe UI', 9), width=40, show='*')
     ollama_sec_entry.grid(row=2, column=1, padx=10, pady=8, sticky='ew')
-    tk.Label(ollama_frame, text='(Optional)', bg='#1A1D23', fg='#6B7280', font=('Segoe UI', 8)).grid(row=2, column=2, sticky='w')
-
-    def _on_ollama_key_change(*args):
-        k = ollama_key_var.get().strip()
-        u = ollama_url_var.get().strip()
-        if k and k != '********':
-            if u == '' or u == 'http://localhost:11434':
-                ollama_url_var.set('https://ollama.com')
-        elif not k:
-            if u == 'https://ollama.com':
-                ollama_url_var.set('http://localhost:11434')
-    
-    ollama_key_var.trace_add('write', _on_ollama_key_change)
+    tk.Label(ollama_frame, text='(Failover Key)', bg='#1A1D23', fg='#6B7280', font=('Segoe UI', 8)).grid(row=2, column=2, sticky='w')
 
     ollama_status_var = tk.StringVar(value='')
     ollama_status_lbl = tk.Label(ollama_frame, textvariable=ollama_status_var,
@@ -1808,29 +1802,43 @@ def _show_settings_widgets():
             return
         sec_key = ollama_sec_key_var.get().strip()
         sec_key = '' if sec_key == '********' else sec_key
-        res = _api_call('POST', '/api-keys', {'ollama_base_url': url, 'ollama_model': model, 'ollama_api_key': key, 'ollama_secondary_api_key': sec_key, 'action': 'save'})
+        payload = {
+            'nvidia_base_url': url,
+            'nvidia_model': model,
+            'nvidia_api_key': key,
+            'nvidia_secondary_api_key': sec_key,
+            'ollama_base_url': url,
+            'ollama_model': model,
+            'ollama_api_key': key,
+            'ollama_secondary_api_key': sec_key,
+            'action': 'save'
+        }
+        res = _api_call('POST', '/api-keys', payload)
         if 'error' in res:
             ollama_status_var.set(f'⚡ {res["error"][:40]}')
             ollama_status_lbl.config(fg='#EF4444')
         else:
-            ollama_status_var.set('● Saved')
+            ollama_status_var.set('● Saved NVIDIA NIM Config')
             ollama_status_lbl.config(fg='#10B981')
 
     def on_ollama_verify():
-        ollama_status_var.set('⏳ Verifying...')
+        ollama_status_var.set('⏳ Verifying with NVIDIA NIM...')
         ollama_status_lbl.config(fg='#F59E0B')
         base_u = ollama_url_var.get().strip()
         model_k = ollama_model_var.get().strip()
         api_k = ollama_key_var.get().strip()
 
         def _do():
-            # Save URL/model first so the agent uses the live values
             _api_call('POST', '/api-keys', {
+                'nvidia_base_url': base_u,
+                'nvidia_model': model_k,
                 'ollama_base_url': base_u,
                 'ollama_model': model_k,
                 'action': 'save'
             })
-            res = _api_call('POST', '/verify-ollama', {'base_url': base_u, 'model': model_k, 'api_key': api_k})
+            res = _api_call('POST', '/verify-nvidia', {'base_url': base_u, 'model': model_k, 'api_key': api_k})
+            if 'error' in res or res.get('status') == 'error':
+                res = _api_call('POST', '/verify-ollama', {'base_url': base_u, 'model': model_k, 'api_key': api_k})
             def _apply():
                 if not _settings_frame_widget: return
                 if res.get('status') == 'ok':
@@ -1843,23 +1851,27 @@ def _show_settings_widgets():
         threading.Thread(target=_do, daemon=True).start()
 
     def on_ollama_delete():
-        res = _api_call('POST', '/api-keys', {'action': 'delete_ollama'})
+        res = _api_call('POST', '/api-keys', {'action': 'delete_nvidia'})
+        if 'error' in res:
+            res = _api_call('POST', '/api-keys', {'action': 'delete_ollama'})
         if 'error' in res:
             ollama_status_var.set(f'✗ {res["error"][:40]}')
             ollama_status_lbl.config(fg='#EF4444')
         else:
-            ollama_url_var.set('http://localhost:11434')
-            ollama_model_var.set('llama3.2:1b')
+            ollama_url_var.set('https://integrate.api.nvidia.com/v1')
+            ollama_model_var.set('meta/llama-3.3-70b-instruct')
+            ollama_key_var.set('')
+            ollama_sec_key_var.set('')
             ollama_status_var.set('○ Cleared')
             ollama_status_lbl.config(fg='#6B7280')
 
     obtn_row = tk.Frame(ollama_frame, bg='#1A1D23')
     obtn_row.grid(row=5, column=0, columnspan=4, padx=12, pady=(15, 15), sticky='w')
-    _make_btn(obtn_row, '💾 Save', on_ollama_save, bg='#D97706', width=9).pack(side='left', padx=(0, 6))
+    _make_btn(obtn_row, '💾 Save', on_ollama_save, bg='#76B900', width=9).pack(side='left', padx=(0, 6))
     _make_btn(obtn_row, '✓ Verify', on_ollama_verify, bg='#10B981', width=9).pack(side='left', padx=(0, 6))
     _make_btn(obtn_row, '🗑️ Delete', on_ollama_delete, bg='#DC2626', width=9).pack(side='left')
 
-    tk.Label(ollama_frame, text='Ollama Cloud free models: gemma4:31b, gpt-oss:120b, nemotron-3-nano:30b, ...',
+    tk.Label(ollama_frame, text='NVIDIA Cloud NIM models (OpenAI-compatible): meta/llama-3.3-70b-instruct, mistralai/mistral-large-2-instruct, ...',
              bg='#1A1D23', fg='#4B5563', font=('Segoe UI', 8, 'italic')).grid(
         row=6, column=0, columnspan=4, padx=12, pady=(15, 15), sticky='w')
 
@@ -1911,7 +1923,7 @@ def _show_settings_widgets():
     ollama_col = tk.Frame(token_frame, bg='#1A1D23')
     ollama_col.grid(row=1, column=3, columnspan=2, padx=12, pady=6, sticky='nsew')
 
-    tk.Label(ollama_col, text='🦙 Ollama Cloud', bg='#1A1D23', fg='#F59E0B',
+    tk.Label(ollama_col, text='🟢 NVIDIA Cloud NIM', bg='#1A1D23', fg='#76B900',
              font=('Segoe UI', 10, 'bold')).pack(anchor='w')
 
     ollama_sess_var = tk.StringVar(value='Session: — / —')
@@ -1922,8 +1934,8 @@ def _show_settings_widgets():
     tk.Label(ollama_col, textvariable=ollama_day_var, bg='#1A1D23', fg='#9CA3AF',
              font=('Segoe UI', 9)).pack(anchor='w')
 
-    tk.Label(ollama_col, text='Per-request tracking (no public billing API)',
-             bg='#1A1D23', fg='#4B5563', font=('Segoe UI', 8, 'italic')).pack(anchor='w', pady=(2, 4))
+    tk.Label(ollama_col, text='40 RPM / 10,000 req/day free evaluation cap',
+             bg='#1A1D23', fg='#76B900', font=('Segoe UI', 8, 'italic')).pack(anchor='w', pady=(2, 4))
 
     ollama_bar_canvas = tk.Canvas(ollama_col, bg='#0F1115', height=8, bd=0,
                                   highlightthickness=0, relief='flat')
@@ -2010,7 +2022,7 @@ def _show_settings_widgets():
                 o_day_txt  = f'Today:    {_fmt_tokens(o_day)}  ({_fmt_tokens(o_d_in)} in / {_fmt_tokens(o_d_out)} out)'
                 ollama_sess_var.set(o_sess_txt)
                 ollama_day_var.set(o_day_txt)
-                _draw_progress_bar(ollama_bar_canvas, o_day, 0, '#F59E0B')
+                _draw_progress_bar(ollama_bar_canvas, o_day, 0, '#76B900')
 
                 reset = data.get('reset_date', '')
                 token_status_var.set(f'✓ Updated  |  Daily counters reset: {reset}  |  Last refresh: {time.strftime("%H:%M:%S")}')
@@ -2052,13 +2064,15 @@ def _show_settings_widgets():
                 groq_status_lbl.config(fg='#10B981')
             if 'groq_model' in new_data and new_data['groq_model']:
                 groq_model_var.set(new_data['groq_model'])
-            if 'ollama_base_url' in new_data and new_data['ollama_base_url']:
-                ollama_url_var.set(new_data['ollama_base_url'])
-            if 'ollama_model' in new_data and new_data['ollama_model']:
-                ollama_model_var.set(new_data['ollama_model'])
-            if new_data.get('ollama_api_key_set') == 'true' and not ollama_key_var.get():
+            nv_url = new_data.get('nvidia_base_url') or new_data.get('ollama_base_url')
+            if nv_url:
+                ollama_url_var.set(nv_url)
+            nv_model = new_data.get('nvidia_model') or new_data.get('ollama_model')
+            if nv_model:
+                ollama_model_var.set(nv_model)
+            if (new_data.get('nvidia_api_key_set') == 'true' or new_data.get('ollama_api_key_set') == 'true') and not ollama_key_var.get():
                 ollama_key_var.set('********')
-            if new_data.get('ollama_secondary_api_key_set') == 'true' and not ollama_sec_key_var.get():
+            if (new_data.get('nvidia_secondary_api_key_set') == 'true' or new_data.get('ollama_secondary_api_key_set') == 'true') and not ollama_sec_key_var.get():
                 ollama_sec_key_var.set('********')
         except Exception:
             pass
@@ -2670,7 +2684,7 @@ def _draw_analytics_section(dc, w, h):
     tot_groq = groq_day if groq_day > 0 else groq_sess
     dc.create_text(right_x + 16, c5_box_y + 22, text="Groq Day/Sess:", fill='#6B7280', font=('Segoe UI', 9), anchor='w')
     dc.create_text(right_x + 130, c5_box_y + 22, text=f"{tot_groq:,}", fill='#EC4899', font=('Segoe UI', 10, 'bold'), anchor='w')
-    dc.create_text(right_x + 185, c5_box_y + 22, text="Ollama (Free):", fill='#6B7280', font=('Segoe UI', 9), anchor='w')
+    dc.create_text(right_x + 185, c5_box_y + 22, text="NVIDIA NIM (Free):", fill='#6B7280', font=('Segoe UI', 9), anchor='w')
     dc.create_text(right_x + col_w - 16, c5_box_y + 22, text=f"{ollama_day:,}", fill='#10B981', font=('Segoe UI', 10, 'bold'), anchor='e')
 
     # Daily TPD Budget Bar
@@ -2684,7 +2698,7 @@ def _draw_analytics_section(dc, w, h):
 
     quota_label = f"Daily Quota: {tot_groq:,} / 100,000 TPD ({used_pct*100:.1f}%)"
     dc.create_text(right_x + 16, c5_box_y + 80, text=quota_label, fill='#E5E7EB', font=('Segoe UI', 9, 'bold'), anchor='w')
-    dc.create_text(right_x + 16, c5_box_y + 104, text="Zero Cloud Egress Cost on Local Ollama Mesh", fill='#6B7280', font=('Segoe UI', 8), anchor='w')
+    dc.create_text(right_x + 16, c5_box_y + 104, text="NVIDIA Cloud NIM Enterprise-Grade Microservices", fill='#6B7280', font=('Segoe UI', 8), anchor='w')
 
 def _draw_settings_section(dc, w, h):
     """Settings section is rendered as real Tk widgets inside the dashboard canvas frame.
@@ -4134,7 +4148,7 @@ def _draw_teams_section(dc, w, h):
             entries.clear()
             
             groq_models = ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "groq/compound", "groq/compound-mini", "qwen/qwen3.8-27b", "allam-2-7b"]
-            ollama_models = ["gemma4:31b", "gpt-oss:120b", "gpt-oss:20b", "nemotron-3-nano:30b", "nemotron-3-super", "nemotron-3-ultra", "beam"]
+            ollama_models = ["meta/llama-3.3-70b-instruct", "meta/llama-3.1-70b-instruct", "meta/llama-3.1-8b-instruct", "mistralai/mistral-large-2-instruct", "nvidia/llama-3.1-nemotron-70b-instruct", "deepseek-ai/deepseek-r1"]
             
             for i, n in enumerate(editor_nodes):
                 row = tk.Frame(scrollable_frame, bg='#1A1D23', bd=1, relief='solid', pady=5, padx=5)

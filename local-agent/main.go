@@ -2377,15 +2377,30 @@ func startHTTPServer() {
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "response": out})
 	})
 
-	// /verify-ollama Ã¢â‚¬â€ pings Ollama endpoint with a tiny "hello" prompt
-	mux.HandleFunc("/verify-ollama", func(w http.ResponseWriter, r *http.Request) {
+	// /verify-nvidia and /verify-ollama — pings endpoint with a tiny "hello" prompt
+	verifyNvidiaHandler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Content-Type", "application/json")
 
 		connData, _ := loadConnectionData()
-		baseURL := connData.OllamaBaseURL
-		modelName := connData.OllamaModel
-		apiKey := connData.OllamaAPIKey
+		baseURL := connData.NvidiaBaseURL
+		if baseURL == "" {
+			baseURL = connData.OllamaBaseURL
+		}
+		if baseURL == "" {
+			baseURL = "https://integrate.api.nvidia.com/v1"
+		}
+		modelName := connData.NvidiaModel
+		if modelName == "" {
+			modelName = connData.OllamaModel
+		}
+		if modelName == "" {
+			modelName = "meta/llama-3.3-70b-instruct"
+		}
+		apiKey := connData.NvidiaAPIKey
+		if apiKey == "" {
+			apiKey = connData.OllamaAPIKey
+		}
 
 		if r.Method == http.MethodPost {
 			var payload struct {
@@ -2406,13 +2421,15 @@ func startHTTPServer() {
 			}
 		}
 
-		out, err := executeOllamaCommand(context.Background(), "Say hello in one word", baseURL, modelName, apiKey, nil, "verify", "")
+		out, err := executeNvidiaCommand(context.Background(), "Say hello in one word", baseURL, modelName, apiKey, nil, "verify", "")
 		if err != nil {
 			json.NewEncoder(w).Encode(map[string]string{"status": "error", "message": err.Error()})
 			return
 		}
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "response": out})
-	})
+	}
+	mux.HandleFunc("/verify-nvidia", verifyNvidiaHandler)
+	mux.HandleFunc("/verify-ollama", verifyNvidiaHandler)
 
 	// /token-usage Ã¢â‚¬â€ returns local session + daily token counts, plus Groq rate limit headers
 	mux.HandleFunc("/token-usage", func(w http.ResponseWriter, r *http.Request) {
